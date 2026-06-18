@@ -14,12 +14,13 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(LIBVIRTUALHID_IS_TOP_LEVEL OFF)
 if(CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
-    set(LIBVIRTUALHID_IS_TOP_LEVEL ON)
+  set(LIBVIRTUALHID_IS_TOP_LEVEL ON)
 endif()
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
-    message(STATUS "Setting build type to 'Release' as none was specified.")
-    set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Choose the type of build." FORCE)
+  message(STATUS "Setting build type to 'Release' as none was specified.")
+  set(CMAKE_BUILD_TYPE "Release" CACHE STRING
+      "Choose the type of build." FORCE)
 endif()
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
@@ -37,22 +38,26 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 include(CMakePackageConfigHelpers)
 include(GNUInstallDirs)
 
+# Copy MinGW runtime DLLs beside a target when using GNU toolchains on Windows.
 function(libvirtualhid_copy_mingw_runtime target_name)
-    if(NOT WIN32 OR NOT CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-        return()
-    endif()
+  if(NOT WIN32 OR NOT CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    return()
+  endif()
 
-    get_filename_component(_lvh_compiler_dir "${CMAKE_CXX_COMPILER}" DIRECTORY)
-    foreach(_lvh_runtime_dll IN ITEMS libgcc_s_seh-1.dll libstdc++-6.dll libwinpthread-1.dll)
-        set(_lvh_runtime_path "${_lvh_compiler_dir}/${_lvh_runtime_dll}")
-        if(EXISTS "${_lvh_runtime_path}")
-            add_custom_command(TARGET "${target_name}" POST_BUILD
-                    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                    "${_lvh_runtime_path}"
-                    "$<TARGET_FILE_DIR:${target_name}>"
-                    COMMENT "Copying ${_lvh_runtime_dll} to $<TARGET_FILE_DIR:${target_name}>")
-        endif()
-    endforeach()
+  get_filename_component(lvh_compiler_dir "${CMAKE_CXX_COMPILER}" DIRECTORY)
+  foreach(lvh_runtime_dll IN ITEMS
+          libgcc_s_seh-1.dll
+          libstdc++-6.dll
+          libwinpthread-1.dll)
+    set(lvh_runtime_path "${lvh_compiler_dir}/${lvh_runtime_dll}")
+    if(EXISTS "${lvh_runtime_path}")
+      add_custom_command(TARGET "${target_name}" POST_BUILD
+                         COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                                 "${lvh_runtime_path}"
+                                 "$<TARGET_FILE_DIR:${target_name}>"
+                         COMMENT "Copying MinGW runtime ${lvh_runtime_dll}")
+    endif()
+  endforeach()
 endfunction()
 
 #
@@ -64,36 +69,36 @@ add_subdirectory(src)
 # Examples, tests, and docs are top-level only
 #
 if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
-    if(BUILD_DOCS)
-        add_subdirectory(third-party/doxyconfig docs)
-    endif()
+  if(BUILD_DOCS)
+    add_subdirectory(third-party/doxyconfig docs)
+  endif()
 
-    if(BUILD_EXAMPLES)
-        add_subdirectory(examples)
-    endif()
+  if(BUILD_EXAMPLES)
+    add_subdirectory(examples)
+  endif()
 
-    if(BUILD_TESTS)
-        enable_testing()
-        add_subdirectory(tests)
-    endif()
+  if(BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+  endif()
 endif()
 
 #
 # Package config
 #
 configure_package_config_file(
-        "${CMAKE_CURRENT_SOURCE_DIR}/cmake/libvirtualhid-config.cmake.in"
-        "${CMAKE_CURRENT_BINARY_DIR}/libvirtualhid-config.cmake"
-        INSTALL_DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/libvirtualhid"
+  "${CMAKE_CURRENT_SOURCE_DIR}/cmake/libvirtualhid-config.cmake.in"
+  "${CMAKE_CURRENT_BINARY_DIR}/libvirtualhid-config.cmake"
+  INSTALL_DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/libvirtualhid"
 )
 
 write_basic_package_version_file(
-        "${CMAKE_CURRENT_BINARY_DIR}/libvirtualhid-config-version.cmake"
-        VERSION ${PROJECT_VERSION}
-        COMPATIBILITY SameMajorVersion
+  "${CMAKE_CURRENT_BINARY_DIR}/libvirtualhid-config-version.cmake"
+  VERSION ${PROJECT_VERSION}
+  COMPATIBILITY SameMajorVersion
 )
 
 install(FILES
         "${CMAKE_CURRENT_BINARY_DIR}/libvirtualhid-config.cmake"
         "${CMAKE_CURRENT_BINARY_DIR}/libvirtualhid-config-version.cmake"
-        DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/libvirtualhid")
+  DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/libvirtualhid")

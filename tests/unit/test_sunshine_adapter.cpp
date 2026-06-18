@@ -1,6 +1,5 @@
-#include <libvirtualhid/libvirtualhid.hpp>
-
 #include <gtest/gtest.h>
+#include <libvirtualhid/libvirtualhid.hpp>
 
 TEST(SunshineAdapterTest, ExercisesArrivalUpdateFeedbackAndRemoval) {
   auto runtime = lvh::Runtime::create();
@@ -26,7 +25,7 @@ TEST(SunshineAdapterTest, ExercisesArrivalUpdateFeedbackAndRemoval) {
   EXPECT_TRUE(created.gamepad->profile().capabilities.supports_touchpad);
 
   bool feedback_received = false;
-  created.gamepad->set_output_callback([&](const lvh::GamepadOutput& output) {
+  created.gamepad->set_output_callback([&](const lvh::GamepadOutput &output) {
     feedback_received = output.kind == lvh::GamepadOutputKind::rumble &&
                         output.low_frequency_rumble == 0x4000 &&
                         output.high_frequency_rumble == 0x2000;

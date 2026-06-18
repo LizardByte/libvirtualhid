@@ -1,7 +1,6 @@
+#include <gtest/gtest.h>
 #include <libvirtualhid/profiles.hpp>
 #include <libvirtualhid/report.hpp>
-
-#include <gtest/gtest.h>
 
 TEST(ReportTest, NormalizesAxesAndTriggers) {
   EXPECT_EQ(lvh::reports::normalize_axis(-2.0F), -32768);

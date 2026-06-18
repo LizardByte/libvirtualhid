@@ -1,12 +1,11 @@
-#include <libvirtualhid/profiles.hpp>
-
 #include <gtest/gtest.h>
+#include <libvirtualhid/profiles.hpp>
 
 TEST(ProfileTest, BuiltInProfilesHaveDescriptors) {
   const auto profiles = lvh::profiles::built_in_gamepad_profiles();
 
   ASSERT_GE(profiles.size(), 4U);
-  for(const auto& profile : profiles) {
+  for (const auto &profile : profiles) {
     EXPECT_EQ(profile.device_type, lvh::DeviceType::gamepad);
     EXPECT_FALSE(profile.name.empty());
     EXPECT_NE(profile.vendor_id, 0);

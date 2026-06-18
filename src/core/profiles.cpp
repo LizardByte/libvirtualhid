@@ -1,189 +1,236 @@
+#include <array>
 #include <libvirtualhid/profiles.hpp>
 
-#include <array>
-
 namespace lvh::profiles {
-namespace {
+  namespace {
 
-constexpr std::size_t common_report_size = 14;
+    constexpr std::size_t common_report_size = 14;
 
-std::vector<std::uint8_t> make_gamepad_report_descriptor(std::uint8_t report_id) {
-  return {
-    0x05, 0x01,        // Usage Page (Generic Desktop)
-    0x09, 0x05,        // Usage (Game Pad)
-    0xA1, 0x01,        // Collection (Application)
-    0x85, report_id,   // Report ID
-    0x05, 0x09,        // Usage Page (Button)
-    0x19, 0x01,        // Usage Minimum (Button 1)
-    0x29, 0x0C,        // Usage Maximum (Button 12)
-    0x15, 0x00,        // Logical Minimum (0)
-    0x25, 0x01,        // Logical Maximum (1)
-    0x75, 0x01,        // Report Size (1)
-    0x95, 0x0C,        // Report Count (12)
-    0x81, 0x02,        // Input (Data,Var,Abs)
-    0x75, 0x01,        // Report Size (1)
-    0x95, 0x04,        // Report Count (4)
-    0x81, 0x03,        // Input (Const,Var,Abs)
-    0x05, 0x01,        // Usage Page (Generic Desktop)
-    0x09, 0x39,        // Usage (Hat switch)
-    0x15, 0x00,        // Logical Minimum (0)
-    0x25, 0x07,        // Logical Maximum (7)
-    0x35, 0x00,        // Physical Minimum (0)
-    0x46, 0x3B, 0x01,  // Physical Maximum (315)
-    0x65, 0x14,        // Unit (Degrees)
-    0x75, 0x04,        // Report Size (4)
-    0x95, 0x01,        // Report Count (1)
-    0x81, 0x42,        // Input (Data,Var,Abs,Null)
-    0x75, 0x04,        // Report Size (4)
-    0x95, 0x01,        // Report Count (1)
-    0x81, 0x03,        // Input (Const,Var,Abs)
-    0x16, 0x00, 0x80,  // Logical Minimum (-32768)
-    0x26, 0xFF, 0x7F,  // Logical Maximum (32767)
-    0x75, 0x10,        // Report Size (16)
-    0x95, 0x04,        // Report Count (4)
-    0x09, 0x30,        // Usage (X)
-    0x09, 0x31,        // Usage (Y)
-    0x09, 0x33,        // Usage (Rx)
-    0x09, 0x34,        // Usage (Ry)
-    0x81, 0x02,        // Input (Data,Var,Abs)
-    0x15, 0x00,        // Logical Minimum (0)
-    0x26, 0xFF, 0x00,  // Logical Maximum (255)
-    0x75, 0x08,        // Report Size (8)
-    0x95, 0x02,        // Report Count (2)
-    0x09, 0x32,        // Usage (Z)
-    0x09, 0x35,        // Usage (Rz)
-    0x81, 0x02,        // Input (Data,Var,Abs)
-    0xC0,              // End Collection
-  };
-}
-
-DeviceProfile make_gamepad_profile(
-  GamepadProfileKind kind,
-  std::string name,
-  std::uint16_t vendor_id,
-  std::uint16_t product_id,
-  std::uint16_t version,
-  GamepadProfileCapabilities capabilities
-) {
-  DeviceProfile profile;
-  profile.device_type = DeviceType::gamepad;
-  profile.gamepad_kind = kind;
-  profile.bus_type = BusType::usb;
-  profile.vendor_id = vendor_id;
-  profile.product_id = product_id;
-  profile.version = version;
-  profile.report_id = 1;
-  profile.input_report_size = common_report_size;
-  profile.name = std::move(name);
-  profile.manufacturer = "LizardByte";
-  profile.capabilities = capabilities;
-  profile.report_descriptor = make_gamepad_report_descriptor(profile.report_id);
-  return profile;
-}
-
-}  // namespace
-
-DeviceProfile generic_gamepad() {
-  return make_gamepad_profile(
-    GamepadProfileKind::generic,
-    "libvirtualhid Generic Gamepad",
-    0x1209,
-    0x0001,
-    0x0001,
-    {}
-  );
-}
-
-DeviceProfile xbox_360() {
-  return make_gamepad_profile(
-    GamepadProfileKind::xbox_360,
-    "Microsoft X-Box 360 pad",
-    0x045E,
-    0x028E,
-    0x0114,
-    {.supports_rumble = true}
-  );
-}
-
-DeviceProfile xbox_one() {
-  return make_gamepad_profile(
-    GamepadProfileKind::xbox_one,
-    "Xbox One Controller",
-    0x045E,
-    0x02EA,
-    0x0408,
-    {.supports_rumble = true}
-  );
-}
-
-DeviceProfile xbox_series() {
-  return make_gamepad_profile(
-    GamepadProfileKind::xbox_series,
-    "Xbox Wireless Controller",
-    0x045E,
-    0x0B12,
-    0x0500,
-    {.supports_rumble = true, .supports_battery = true}
-  );
-}
-
-DeviceProfile dualsense() {
-  return make_gamepad_profile(
-    GamepadProfileKind::dualsense,
-    "DualSense Wireless Controller",
-    0x054C,
-    0x0CE6,
-    0x8111,
-    {
-      .supports_rumble = true,
-      .supports_motion = true,
-      .supports_touchpad = true,
-      .supports_rgb_led = true,
-      .supports_battery = true,
-      .supports_adaptive_triggers = true,
+    std::vector<std::uint8_t> make_gamepad_report_descriptor(std::uint8_t report_id) {
+      return {
+        0x05,
+        0x01,  // Usage Page (Generic Desktop)
+        0x09,
+        0x05,  // Usage (Game Pad)
+        0xA1,
+        0x01,  // Collection (Application)
+        0x85,
+        report_id,  // Report ID
+        0x05,
+        0x09,  // Usage Page (Button)
+        0x19,
+        0x01,  // Usage Minimum (Button 1)
+        0x29,
+        0x0C,  // Usage Maximum (Button 12)
+        0x15,
+        0x00,  // Logical Minimum (0)
+        0x25,
+        0x01,  // Logical Maximum (1)
+        0x75,
+        0x01,  // Report Size (1)
+        0x95,
+        0x0C,  // Report Count (12)
+        0x81,
+        0x02,  // Input (Data,Var,Abs)
+        0x75,
+        0x01,  // Report Size (1)
+        0x95,
+        0x04,  // Report Count (4)
+        0x81,
+        0x03,  // Input (Const,Var,Abs)
+        0x05,
+        0x01,  // Usage Page (Generic Desktop)
+        0x09,
+        0x39,  // Usage (Hat switch)
+        0x15,
+        0x00,  // Logical Minimum (0)
+        0x25,
+        0x07,  // Logical Maximum (7)
+        0x35,
+        0x00,  // Physical Minimum (0)
+        0x46,
+        0x3B,
+        0x01,  // Physical Maximum (315)
+        0x65,
+        0x14,  // Unit (Degrees)
+        0x75,
+        0x04,  // Report Size (4)
+        0x95,
+        0x01,  // Report Count (1)
+        0x81,
+        0x42,  // Input (Data,Var,Abs,Null)
+        0x75,
+        0x04,  // Report Size (4)
+        0x95,
+        0x01,  // Report Count (1)
+        0x81,
+        0x03,  // Input (Const,Var,Abs)
+        0x16,
+        0x00,
+        0x80,  // Logical Minimum (-32768)
+        0x26,
+        0xFF,
+        0x7F,  // Logical Maximum (32767)
+        0x75,
+        0x10,  // Report Size (16)
+        0x95,
+        0x04,  // Report Count (4)
+        0x09,
+        0x30,  // Usage (X)
+        0x09,
+        0x31,  // Usage (Y)
+        0x09,
+        0x33,  // Usage (Rx)
+        0x09,
+        0x34,  // Usage (Ry)
+        0x81,
+        0x02,  // Input (Data,Var,Abs)
+        0x15,
+        0x00,  // Logical Minimum (0)
+        0x26,
+        0xFF,
+        0x00,  // Logical Maximum (255)
+        0x75,
+        0x08,  // Report Size (8)
+        0x95,
+        0x02,  // Report Count (2)
+        0x09,
+        0x32,  // Usage (Z)
+        0x09,
+        0x35,  // Usage (Rz)
+        0x81,
+        0x02,  // Input (Data,Var,Abs)
+        0xC0,  // End Collection
+      };
     }
-  );
-}
 
-DeviceProfile switch_pro() {
-  return make_gamepad_profile(
-    GamepadProfileKind::switch_pro,
-    "Nintendo Switch Pro Controller",
-    0x057E,
-    0x2009,
-    0x8111,
-    {.supports_rumble = true, .supports_motion = true, .supports_battery = true}
-  );
-}
+    DeviceProfile make_gamepad_profile(
+      GamepadProfileKind kind,
+      std::string name,
+      std::uint16_t vendor_id,
+      std::uint16_t product_id,
+      std::uint16_t version,
+      GamepadProfileCapabilities capabilities
+    ) {
+      DeviceProfile profile;
+      profile.device_type = DeviceType::gamepad;
+      profile.gamepad_kind = kind;
+      profile.bus_type = BusType::usb;
+      profile.vendor_id = vendor_id;
+      profile.product_id = product_id;
+      profile.version = version;
+      profile.report_id = 1;
+      profile.input_report_size = common_report_size;
+      profile.name = std::move(name);
+      profile.manufacturer = "LizardByte";
+      profile.capabilities = capabilities;
+      profile.report_descriptor = make_gamepad_report_descriptor(profile.report_id);
+      return profile;
+    }
 
-std::optional<DeviceProfile> gamepad_profile(GamepadProfileKind kind) {
-  switch(kind) {
-    case GamepadProfileKind::generic:
-      return generic_gamepad();
-    case GamepadProfileKind::xbox_360:
-      return xbox_360();
-    case GamepadProfileKind::xbox_one:
-      return xbox_one();
-    case GamepadProfileKind::xbox_series:
-      return xbox_series();
-    case GamepadProfileKind::dualsense:
-      return dualsense();
-    case GamepadProfileKind::switch_pro:
-      return switch_pro();
+  }  // namespace
+
+  DeviceProfile generic_gamepad() {
+    return make_gamepad_profile(
+      GamepadProfileKind::generic,
+      "libvirtualhid Generic Gamepad",
+      0x1209,
+      0x0001,
+      0x0001,
+      {}
+    );
   }
 
-  return std::nullopt;
-}
+  DeviceProfile xbox_360() {
+    return make_gamepad_profile(
+      GamepadProfileKind::xbox_360,
+      "Microsoft X-Box 360 pad",
+      0x045E,
+      0x028E,
+      0x0114,
+      {.supports_rumble = true}
+    );
+  }
 
-std::vector<DeviceProfile> built_in_gamepad_profiles() {
-  return {
-    generic_gamepad(),
-    xbox_360(),
-    xbox_one(),
-    xbox_series(),
-    dualsense(),
-    switch_pro(),
-  };
-}
+  DeviceProfile xbox_one() {
+    return make_gamepad_profile(
+      GamepadProfileKind::xbox_one,
+      "Xbox One Controller",
+      0x045E,
+      0x02EA,
+      0x0408,
+      {.supports_rumble = true}
+    );
+  }
+
+  DeviceProfile xbox_series() {
+    return make_gamepad_profile(
+      GamepadProfileKind::xbox_series,
+      "Xbox Wireless Controller",
+      0x045E,
+      0x0B12,
+      0x0500,
+      {.supports_rumble = true, .supports_battery = true}
+    );
+  }
+
+  DeviceProfile dualsense() {
+    return make_gamepad_profile(
+      GamepadProfileKind::dualsense,
+      "DualSense Wireless Controller",
+      0x054C,
+      0x0CE6,
+      0x8111,
+      {
+        .supports_rumble = true,
+        .supports_motion = true,
+        .supports_touchpad = true,
+        .supports_rgb_led = true,
+        .supports_battery = true,
+        .supports_adaptive_triggers = true,
+      }
+    );
+  }
+
+  DeviceProfile switch_pro() {
+    return make_gamepad_profile(
+      GamepadProfileKind::switch_pro,
+      "Nintendo Switch Pro Controller",
+      0x057E,
+      0x2009,
+      0x8111,
+      {.supports_rumble = true, .supports_motion = true, .supports_battery = true}
+    );
+  }
+
+  std::optional<DeviceProfile> gamepad_profile(GamepadProfileKind kind) {
+    switch (kind) {
+      case GamepadProfileKind::generic:
+        return generic_gamepad();
+      case GamepadProfileKind::xbox_360:
+        return xbox_360();
+      case GamepadProfileKind::xbox_one:
+        return xbox_one();
+      case GamepadProfileKind::xbox_series:
+        return xbox_series();
+      case GamepadProfileKind::dualsense:
+        return dualsense();
+      case GamepadProfileKind::switch_pro:
+        return switch_pro();
+    }
+
+    return std::nullopt;
+  }
+
+  std::vector<DeviceProfile> built_in_gamepad_profiles() {
+    return {
+      generic_gamepad(),
+      xbox_360(),
+      xbox_one(),
+      xbox_series(),
+      dualsense(),
+      switch_pro(),
+    };
+  }
 
 }  // namespace lvh::profiles

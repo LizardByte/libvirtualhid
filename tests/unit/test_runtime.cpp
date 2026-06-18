@@ -1,6 +1,5 @@
-#include <libvirtualhid/libvirtualhid.hpp>
-
 #include <gtest/gtest.h>
+#include <libvirtualhid/libvirtualhid.hpp>
 
 TEST(RuntimeTest, FakeBackendReportsCapabilities) {
   auto runtime = lvh::Runtime::create();
@@ -59,7 +58,7 @@ TEST(RuntimeTest, DispatchesOutputCallback) {
 
   lvh::GamepadOutput received;
   bool was_called = false;
-  created.gamepad->set_output_callback([&](const lvh::GamepadOutput& output) {
+  created.gamepad->set_output_callback([&](const lvh::GamepadOutput &output) {
     received = output;
     was_called = true;
   });
