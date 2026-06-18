@@ -38,6 +38,15 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 include(CMakePackageConfigHelpers)
 include(GNUInstallDirs)
 
+#
+# Additional setup for coverage
+# https://gcovr.com/en/stable/guide/compiling.html#compiler-options
+#
+if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME AND BUILD_TESTS AND NOT CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    set(CMAKE_CXX_FLAGS "-fprofile-arcs -ftest-coverage -ggdb -O0")
+    set(CMAKE_C_FLAGS "-fprofile-arcs -ftest-coverage -ggdb -O0")
+endif()
+
 # Copy MinGW runtime DLLs beside a target when using GNU toolchains on Windows.
 function(libvirtualhid_copy_mingw_runtime target_name)
     if(NOT WIN32 OR NOT CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
@@ -61,7 +70,8 @@ function(libvirtualhid_copy_mingw_runtime target_name)
 endfunction()
 
 #
-# Library
+# Library code is located here
+# When building tests this must be after the coverage flags are set
 #
 add_subdirectory(src)
 

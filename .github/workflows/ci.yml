@@ -12,6 +12,9 @@ concurrency:
   group: "${{ github.workflow }}-${{ github.ref }}"
   cancel-in-progress: true
 
+env:
+  PYTHON_VERSION: '3.14'
+
 jobs:
   build:
     name: Build (${{ matrix.name }})
@@ -31,18 +34,22 @@ jobs:
             kind: unix
             cc: gcc
             cxx: g++
+            gcov_executable: gcov
           - name: Linux-Clang
             os: ubuntu-latest
             shell: bash
             kind: unix
             cc: clang
             cxx: clang++
+            # Clang writes LLVM coverage notes, so gcovr needs llvm-cov's gcov compatibility mode.
+            gcov_executable: llvm-cov gcov
           - name: macOS
             os: macos-latest
             shell: bash
             kind: unix
             cc: clang
             cxx: clang++
+            gcov_executable: gcov
           - name: Windows-MinGW-UCRT64
             os: windows-latest
             shell: msys2 {0}
@@ -51,6 +58,7 @@ jobs:
             cxx: g++
             msystem: ucrt64
             toolchain: ucrt-x86_64
+            gcov_executable: gcov
           - name: Windows-MSVC
             os: windows-2022
             shell: pwsh
@@ -69,6 +77,7 @@ jobs:
             build-essential \
             clang \
             cmake \
+            llvm \
             ninja-build
 
       - name: Setup Dependencies macOS
@@ -88,6 +97,29 @@ jobs:
             mingw-w64-${{ matrix.toolchain }}-cmake
             mingw-w64-${{ matrix.toolchain }}-ninja
             mingw-w64-${{ matrix.toolchain }}-toolchain
+
+      - name: Setup python
+        id: setup-python
+        if: matrix.kind != 'msvc'
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Setup uv
+        if: matrix.kind != 'msvc'
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0
+        with:
+          enable-cache: true
+
+      - name: Sync Python tools
+        if: matrix.kind != 'msvc'
+        env:
+          MSYS2_PATH_TYPE: inherit
+          UV_PYTHON: ${{ steps.setup-python.outputs.python-path }}
+        run: |
+          uv sync --project third-party/lizardbyte-common --locked --only-group test-c \
+            --no-python-downloads \
+            --no-install-project
 
       - name: Configure
         if: matrix.kind != 'msvc'
@@ -124,13 +156,40 @@ jobs:
         if: matrix.kind == 'msvc'
         run: cmake --build cmake-build-ci --config Debug --parallel 2
 
+      - name: Prepare report directory
+        run: cmake -E make_directory cmake-build-ci/reports
+
       - name: Run tests
+        id: test
         if: matrix.kind != 'msvc'
-        run: ctest --test-dir cmake-build-ci --output-on-failure
+        working-directory: cmake-build-ci/tests
+        run: ./test_libvirtualhid --gtest_color=yes --gtest_output=xml:../reports/junit.xml
 
       - name: Run tests MSVC
+        id: test_msvc
         if: matrix.kind == 'msvc'
-        run: ctest --test-dir cmake-build-ci --build-config Debug --output-on-failure
+        working-directory: cmake-build-ci/tests
+        run: .\Debug\test_libvirtualhid.exe --gtest_color=yes --gtest_output=xml:..\reports\junit.xml
+
+      - name: Generate gcov report
+        id: test_report
+        if: >-
+          always() &&
+          matrix.kind != 'msvc' &&
+          (steps.test.outcome == 'success' || steps.test.outcome == 'failure')
+        working-directory: cmake-build-ci
+        env:
+          GCOV_EXECUTABLE: ${{ matrix.gcov_executable }}
+          MSYS2_PATH_TYPE: inherit
+        run: |
+          uv run --project ../third-party/lizardbyte-common --locked --no-sync gcovr . -r ../src \
+            --gcov-executable "${GCOV_EXECUTABLE}" \
+            --exclude-noncode-lines \
+            --exclude-throw-branches \
+            --exclude-unreachable-branches \
+            --verbose \
+            --xml-pretty \
+            -o reports/coverage.xml
 
       - name: Run Sunshine adapter example
         if: matrix.kind != 'msvc'
@@ -159,3 +218,83 @@ jobs:
           name: install-${{ matrix.name }}
           path: cmake-build-ci/install
           if-no-files-found: error
+
+      - name: Upload report artifact
+        if: >-
+          always() &&
+          (
+            steps.test_report.outcome == 'success' ||
+            steps.test_msvc.outcome == 'success' ||
+            steps.test_msvc.outcome == 'failure'
+          )
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: reports-${{ matrix.name }}
+          path: cmake-build-ci/reports
+          if-no-files-found: error
+
+  codecov:
+    name: Codecov-${{ matrix.flag }}
+    if: >-
+      always() &&
+      (needs.build.result == 'success' || needs.build.result == 'failure') &&
+      startsWith(github.repository, 'LizardByte/')
+    needs: build
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - build_name: Linux-GCC
+            flag: Linux-GCC
+            has_coverage: true
+          - build_name: Linux-Clang
+            flag: Linux-Clang
+            has_coverage: true
+          - build_name: macOS
+            flag: macOS
+            has_coverage: true
+          - build_name: Windows-MinGW-UCRT64
+            flag: Windows-MinGW-UCRT64
+            has_coverage: true
+          - build_name: Windows-MSVC
+            flag: Windows-MSVC
+            has_coverage: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+
+      - name: Download report artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: reports-${{ matrix.build_name }}
+          path: _reports
+
+      - name: Debug coverage file
+        if: matrix.has_coverage
+        run: cat _reports/coverage.xml
+
+      - name: Upload test coverage
+        if: matrix.has_coverage
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f  # v7.0.0
+        with:
+          disable_search: true
+          fail_ci_if_error: true
+          files: ./_reports/coverage.xml
+          report_type: coverage
+          flags: ${{ matrix.flag }}
+          token: ${{ secrets.CODECOV_TOKEN }}
+          verbose: true
+
+      - name: Upload test results
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f  # v7.0.0
+        with:
+          disable_search: true
+          fail_ci_if_error: true
+          files: ./_reports/junit.xml
+          report_type: test_results
+          flags: ${{ matrix.flag }}
+          token: ${{ secrets.CODECOV_TOKEN }}
+          verbose: true
