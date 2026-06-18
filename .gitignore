@@ -1,6 +1,9 @@
 # JetBrains IDEs
 .idea/
 
+# Python
+.venv/
+
 # CMake
 build/
 cmake-build-*/
