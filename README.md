@@ -191,6 +191,8 @@ consumers:
 - Put all submodules under `third-party`.
 - Add GoogleTest as a submodule at `third-party/googletest`; do not download it
   during configure.
+- Add the LizardByte Doxygen configuration as a submodule at
+  `third-party/doxyconfig` and use it for local docs and Read the Docs builds.
 - Expose `libvirtualhid::libvirtualhid` as the main CMake target.
 - Keep the public headers under `include/libvirtualhid` and the implementation
   split into shared core code plus platform-specific backends.
@@ -215,6 +217,8 @@ profiles/                     Built-in gamepad profiles
 examples/                     Minimal consumers and platform smoke tests
 tests/                        Unit and integration tests
 cmake/                        Package config and helper modules
+docs/                         Project Doxygen configuration
+third-party/doxyconfig/       LizardByte Doxygen configuration submodule
 third-party/googletest/       GoogleTest submodule
 ```
 
@@ -228,6 +232,8 @@ third-party/googletest/       GoogleTest submodule
 - Add a fake in-memory backend so API tests can run on every platform.
 - Add GoogleTest as a submodule under `third-party/googletest` and wire tests
   using the same top-level-only pattern as `tray` and `libdisplaydevice`.
+- Add Doxygen documentation wiring with `third-party/doxyconfig`, a project
+  `docs/Doxyfile`, and Read the Docs configuration.
 - Add CI using the `libdisplaydevice` workflow pattern for Linux GCC, Linux
   Clang, macOS, Windows MinGW/UCRT64, and Windows MSVC configure/build/test
   coverage.

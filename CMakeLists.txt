@@ -27,7 +27,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 #
 # Project optional configuration
 #
-option(BUILD_DOCS "Build documentation" OFF)
+option(BUILD_DOCS "Build documentation" ${LIBVIRTUALHID_IS_TOP_LEVEL})
 option(BUILD_TESTS "Build tests" ${LIBVIRTUALHID_IS_TOP_LEVEL})
 option(BUILD_EXAMPLES "Build examples" ${LIBVIRTUALHID_IS_TOP_LEVEL})
 
@@ -64,6 +64,10 @@ add_subdirectory(src)
 # Examples, tests, and docs are top-level only
 #
 if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
+    if(BUILD_DOCS)
+        add_subdirectory(third-party/doxyconfig docs)
+    endif()
+
     if(BUILD_EXAMPLES)
         add_subdirectory(examples)
     endif()

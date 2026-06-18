@@ -4,3 +4,9 @@
 # CMake
 build/
 cmake-build-*/
+
+# Local temp directories
+.tmp/
+
+# doxyconfig
+docs/doxyconfig*
