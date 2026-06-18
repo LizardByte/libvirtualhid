@@ -228,6 +228,9 @@ third-party/googletest/       GoogleTest submodule
 - Add a fake in-memory backend so API tests can run on every platform.
 - Add GoogleTest as a submodule under `third-party/googletest` and wire tests
   using the same top-level-only pattern as `tray` and `libdisplaydevice`.
+- Add CI using the `libdisplaydevice` workflow pattern for Linux GCC, Linux
+  Clang, macOS, Windows MinGW/UCRT64, and Windows MSVC configure/build/test
+  coverage.
 - Add descriptor/profile models for at least Xbox 360, Xbox Series, DualSense,
   and a generic HID gamepad.
 - Add unit tests for state normalization and HID report packing.

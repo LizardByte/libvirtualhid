@@ -1,0 +1,161 @@
+---
+name: CI
+permissions: {}
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+concurrency:
+  group: "${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build (${{ matrix.name }})
+    permissions:
+      contents: read
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux-GCC
+            os: ubuntu-latest
+            shell: bash
+            kind: unix
+            cc: gcc
+            cxx: g++
+          - name: Linux-Clang
+            os: ubuntu-latest
+            shell: bash
+            kind: unix
+            cc: clang
+            cxx: clang++
+          - name: macOS
+            os: macos-latest
+            shell: bash
+            kind: unix
+            cc: clang
+            cxx: clang++
+          - name: Windows-MinGW-UCRT64
+            os: windows-latest
+            shell: msys2 {0}
+            kind: msys2
+            cc: gcc
+            cxx: g++
+            msystem: ucrt64
+            toolchain: ucrt-x86_64
+          - name: Windows-MSVC
+            os: windows-latest
+            shell: pwsh
+            kind: msvc
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+        with:
+          submodules: recursive
+
+      - name: Setup Dependencies Linux
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            clang \
+            cmake \
+            ninja-build
+
+      - name: Setup Dependencies macOS
+        if: runner.os == 'macOS'
+        run: |
+          brew install \
+            cmake \
+            ninja
+
+      - name: Setup Dependencies Windows MinGW
+        if: matrix.kind == 'msys2'
+        uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884  # v2.32.0
+        with:
+          msystem: ${{ matrix.msystem }}
+          update: true
+          install: >-
+            mingw-w64-${{ matrix.toolchain }}-cmake
+            mingw-w64-${{ matrix.toolchain }}-ninja
+            mingw-w64-${{ matrix.toolchain }}-toolchain
+
+      - name: Configure
+        if: matrix.kind != 'msvc'
+        env:
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+        run: |
+          cmake \
+            -DBUILD_DOCS=OFF \
+            -DBUILD_EXAMPLES=ON \
+            -DBUILD_TESTS=ON \
+            -DCMAKE_BUILD_TYPE:STRING=Debug \
+            -B cmake-build-ci \
+            -G Ninja \
+            -S .
+
+      - name: Configure MSVC
+        if: matrix.kind == 'msvc'
+        run: |
+          cmake `
+            -DBUILD_DOCS=OFF `
+            -DBUILD_EXAMPLES=ON `
+            -DBUILD_TESTS=ON `
+            -A x64 `
+            -B cmake-build-ci `
+            -G "Visual Studio 17 2022" `
+            -S .
+
+      - name: Build
+        if: matrix.kind != 'msvc'
+        run: cmake --build cmake-build-ci -- -j2
+
+      - name: Build MSVC
+        if: matrix.kind == 'msvc'
+        run: cmake --build cmake-build-ci --config Debug --parallel 2
+
+      - name: Run tests
+        if: matrix.kind != 'msvc'
+        run: ctest --test-dir cmake-build-ci --output-on-failure
+
+      - name: Run tests MSVC
+        if: matrix.kind == 'msvc'
+        run: ctest --test-dir cmake-build-ci --build-config Debug --output-on-failure
+
+      - name: Run Sunshine adapter example
+        if: matrix.kind != 'msvc'
+        run: |
+          if [[ "${RUNNER_OS}" == "Windows" ]]; then
+            ./cmake-build-ci/examples/sunshine_gamepad_adapter.exe
+          else
+            ./cmake-build-ci/examples/sunshine_gamepad_adapter
+          fi
+
+      - name: Run Sunshine adapter example MSVC
+        if: matrix.kind == 'msvc'
+        run: .\cmake-build-ci\examples\Debug\sunshine_gamepad_adapter.exe
+
+      - name: Install
+        if: matrix.kind != 'msvc'
+        run: cmake --install cmake-build-ci --prefix cmake-build-ci/install
+
+      - name: Install MSVC
+        if: matrix.kind == 'msvc'
+        run: cmake --install cmake-build-ci --config Debug --prefix cmake-build-ci/install
+
+      - name: Upload install artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: install-${{ matrix.name }}
+          path: cmake-build-ci/install
+          if-no-files-found: error
