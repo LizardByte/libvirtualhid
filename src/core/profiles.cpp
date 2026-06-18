@@ -1,4 +1,14 @@
-#include <array>
+/**
+ * @file src/core/profiles.cpp
+ * @brief Built-in virtual gamepad profile definitions.
+ */
+
+// standard includes
+#include <cstddef>
+#include <cstdint>
+#include <vector>
+
+// local includes
 #include <libvirtualhid/profiles.hpp>
 
 namespace lvh::profiles {

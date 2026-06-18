@@ -1,6 +1,13 @@
-#include <libvirtualhid/libvirtualhid.hpp>
+/**
+ * @file examples/sunshine_gamepad_adapter.cpp
+ * @brief Minimal Sunshine-oriented gamepad adapter example.
+ */
 
+// standard includes
 #include <iostream>
+
+// local includes
+#include <libvirtualhid/libvirtualhid.hpp>
 
 int main() {
   auto runtime = lvh::Runtime::create();
@@ -17,13 +24,13 @@ int main() {
   options.metadata.stable_id = "sunshine-client-0";
 
   auto created = runtime->create_gamepad(options);
-  if(!created) {
+  if (!created) {
     std::cerr << created.status.message() << '\n';
     return 1;
   }
 
-  created.gamepad->set_output_callback([](const lvh::GamepadOutput& output) {
-    if(output.kind == lvh::GamepadOutputKind::rumble) {
+  created.gamepad->set_output_callback([](const lvh::GamepadOutput &output) {
+    if (output.kind == lvh::GamepadOutputKind::rumble) {
       std::cout << "rumble " << output.low_frequency_rumble << ' '
                 << output.high_frequency_rumble << '\n';
     }
@@ -34,7 +41,7 @@ int main() {
   state.left_stick = {0.25F, -0.5F};
   state.right_trigger = 1.0F;
 
-  if(const auto status = created.gamepad->submit(state); !status.ok()) {
+  if (const auto status = created.gamepad->submit(state); !status.ok()) {
     std::cerr << status.message() << '\n';
     return 1;
   }

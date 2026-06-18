@@ -1,4 +1,12 @@
+/**
+ * @file tests/unit/test_profiles.cpp
+ * @brief Unit tests for built-in gamepad profiles.
+ */
+
+// lib includes
 #include <gtest/gtest.h>
+
+// local includes
 #include <libvirtualhid/profiles.hpp>
 
 TEST(ProfileTest, BuiltInProfilesHaveDescriptors) {

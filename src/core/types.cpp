@@ -1,5 +1,13 @@
-#include <libvirtualhid/types.hpp>
+/**
+ * @file src/core/types.cpp
+ * @brief Core type helper definitions.
+ */
+
+// standard includes
 #include <utility>
+
+// local includes
+#include <libvirtualhid/types.hpp>
 
 namespace lvh {
 

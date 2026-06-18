@@ -1,4 +1,12 @@
+/**
+ * @file tests/unit/test_runtime.cpp
+ * @brief Unit tests for runtime and virtual gamepad handles.
+ */
+
+// lib includes
 #include <gtest/gtest.h>
+
+// local includes
 #include <libvirtualhid/libvirtualhid.hpp>
 
 TEST(RuntimeTest, FakeBackendReportsCapabilities) {

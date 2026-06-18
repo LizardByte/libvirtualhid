@@ -1,8 +1,16 @@
+/**
+ * @file src/core/runtime.cpp
+ * @brief Runtime and virtual gamepad handle definitions.
+ */
+
+// standard includes
 #include <algorithm>
-#include <libvirtualhid/report.hpp>
-#include <libvirtualhid/runtime.hpp>
 #include <mutex>
 #include <utility>
+
+// local includes
+#include <libvirtualhid/report.hpp>
+#include <libvirtualhid/runtime.hpp>
 
 namespace lvh::detail {
 

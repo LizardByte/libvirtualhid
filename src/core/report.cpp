@@ -1,5 +1,13 @@
+/**
+ * @file src/core/report.cpp
+ * @brief Gamepad report normalization and packing definitions.
+ */
+
+// standard includes
 #include <algorithm>
 #include <cmath>
+
+// local includes
 #include <libvirtualhid/report.hpp>
 
 namespace lvh::reports {

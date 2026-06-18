@@ -1,4 +1,12 @@
+/**
+ * @file tests/unit/test_sunshine_adapter.cpp
+ * @brief Unit tests for the Sunshine-oriented gamepad lifecycle.
+ */
+
+// lib includes
 #include <gtest/gtest.h>
+
+// local includes
 #include <libvirtualhid/libvirtualhid.hpp>
 
 TEST(SunshineAdapterTest, ExercisesArrivalUpdateFeedbackAndRemoval) {

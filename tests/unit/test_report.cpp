@@ -1,4 +1,12 @@
+/**
+ * @file tests/unit/test_report.cpp
+ * @brief Unit tests for gamepad report packing.
+ */
+
+// lib includes
 #include <gtest/gtest.h>
+
+// local includes
 #include <libvirtualhid/profiles.hpp>
 #include <libvirtualhid/report.hpp>
 
