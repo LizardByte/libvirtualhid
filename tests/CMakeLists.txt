@@ -19,7 +19,7 @@ add_executable(${TEST_BINARY}
   "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_profiles.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_report.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_runtime.cpp"
-  "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_sunshine_adapter.cpp")
+  "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_gamepad_lifecycle.cpp")
 
 target_include_directories(${TEST_BINARY}
   PRIVATE

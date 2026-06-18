@@ -23,7 +23,7 @@ TEST(ProfileTest, BuiltInProfilesHaveDescriptors) {
   }
 }
 
-TEST(ProfileTest, SunshineProfilesArePresent) {
+TEST(ProfileTest, StreamingControllerProfilesArePresent) {
   const auto xbox_one = lvh::profiles::xbox_one();
   const auto dualsense = lvh::profiles::dualsense();
   const auto switch_pro = lvh::profiles::switch_pro();

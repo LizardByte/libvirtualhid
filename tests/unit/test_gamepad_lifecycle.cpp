@@ -1,6 +1,6 @@
 /**
- * @file tests/unit/test_sunshine_adapter.cpp
- * @brief Unit tests for the Sunshine-oriented gamepad lifecycle.
+ * @file tests/unit/test_gamepad_lifecycle.cpp
+ * @brief Unit tests for the gamepad lifecycle.
  */
 
 // local includes
@@ -8,7 +8,7 @@
 
 #include <libvirtualhid/libvirtualhid.hpp>
 
-TEST(SunshineAdapterTest, ExercisesArrivalUpdateFeedbackAndRemoval) {
+TEST(GamepadLifecycleTest, ExercisesArrivalUpdateFeedbackAndRemoval) {
   auto runtime = lvh::Runtime::create();
 
   lvh::CreateGamepadOptions options;
@@ -20,7 +20,7 @@ TEST(SunshineAdapterTest, ExercisesArrivalUpdateFeedbackAndRemoval) {
   options.metadata.has_touchpad = true;
   options.metadata.has_rgb_led = true;
   options.metadata.has_battery = true;
-  options.metadata.stable_id = "moonlight-client-0";
+  options.metadata.stable_id = "remote-client-0";
 
   auto created = runtime->create_gamepad(options);
   ASSERT_TRUE(created);

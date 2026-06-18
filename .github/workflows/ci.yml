@@ -254,18 +254,18 @@ jobs:
             --xml-pretty \
             -o reports/coverage.xml
 
-      - name: Run Sunshine adapter example
+      - name: Run gamepad adapter example
         if: matrix.kind != 'msvc'
         run: |
           if [[ "${RUNNER_OS}" == "Windows" ]]; then
-            ./cmake-build-ci/examples/sunshine_gamepad_adapter.exe
+            ./cmake-build-ci/examples/gamepad_adapter.exe
           else
-            ./cmake-build-ci/examples/sunshine_gamepad_adapter
+            ./cmake-build-ci/examples/gamepad_adapter
           fi
 
-      - name: Run Sunshine adapter example MSVC
+      - name: Run gamepad adapter example MSVC
         if: matrix.kind == 'msvc'
-        run: .\cmake-build-ci\examples\Debug\sunshine_gamepad_adapter.exe
+        run: .\cmake-build-ci\examples\Debug\gamepad_adapter.exe
 
       - name: Install
         if: matrix.kind != 'msvc'

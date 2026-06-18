@@ -1,6 +1,6 @@
 /**
- * @file examples/sunshine_gamepad_adapter.cpp
- * @brief Minimal Sunshine-oriented gamepad adapter example.
+ * @file examples/gamepad_adapter.cpp
+ * @brief Minimal gamepad adapter example.
  */
 
 // standard includes
@@ -21,7 +21,7 @@ int main() {
   options.metadata.has_touchpad = true;
   options.metadata.has_rgb_led = true;
   options.metadata.has_battery = true;
-  options.metadata.stable_id = "sunshine-client-0";
+  options.metadata.stable_id = "remote-client-0";
 
   auto created = runtime->create_gamepad(options);
   if (!created) {

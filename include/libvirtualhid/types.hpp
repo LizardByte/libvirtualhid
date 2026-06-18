@@ -505,9 +505,9 @@ namespace lvh {
   /**
    * @brief Keyboard key code accepted by the keyboard event model.
    *
-   * The initial Linux backend treats this as a Moonlight/Windows virtual-key code
-   * because that matches Sunshine's current input path. Backends translate this
-   * value to their native key representation.
+   * The initial Linux backend treats this as a Windows virtual-key code so
+   * streaming hosts can pass common client key codes without exposing platform
+   * backends. Backends translate this value to their native key representation.
    */
   using KeyboardKeyCode = std::uint16_t;
 

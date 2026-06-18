@@ -103,12 +103,48 @@ node is missing or permission is denied, the same backend remains selectable
 but reports the affected capability as unavailable and returns
 `backend_unavailable` from that device creation path.
 
-A minimal udev rule for hosts that grant controller creation to the `input`
-group is:
+The Linux packaging model needs `/dev/uinput` and `/dev/uhid` access. Install a udev rules file such
+as `/etc/udev/rules.d/60-libvirtualhid.rules` with:
 
 ```udev
+# Allows libvirtualhid consumers to access /dev/uinput
+KERNEL=="uinput", SUBSYSTEM=="misc", OPTIONS+="static_node=uinput", GROUP="input", MODE="0660", TAG+="uaccess"
+
+# Allows libvirtualhid consumers to access /dev/uhid
 KERNEL=="uhid", GROUP="input", MODE="0660", TAG+="uaccess"
-KERNEL=="uinput", GROUP="input", MODE="0660", TAG+="uaccess"
+```
+
+Consuming applications may also install name-matched rules for their stable
+virtual device names when generated `hidraw` or `input` nodes must be
+accessible to the session user:
+
+```udev
+KERNEL=="hidraw*", ATTRS{name}=="Your App Controller*", GROUP="input", MODE="0660", TAG+="uaccess"
+SUBSYSTEMS=="input", ATTRS{name}=="Your App Controller*", GROUP="input", MODE="0660", TAG+="uaccess"
+```
+
+For `uhid` gamepad support, install a modules-load entry such as
+`/etc/modules-load.d/60-libvirtualhid.conf` containing:
+
+```text
+uhid
+```
+
+After installing the rules, load `uhid`, reload udev, and trigger the device
+nodes:
+
+```bash
+sudo modprobe uhid
+sudo udevadm control --reload-rules
+sudo udevadm trigger --property-match=DEVNAME=/dev/uinput
+sudo udevadm trigger --property-match=DEVNAME=/dev/uhid
+```
+
+If input still does not work, add the user running the consuming application to
+the `input` group, then log out and back in:
+
+```bash
+sudo usermod -aG input $USER
 ```
 
 The Linux UHID smoke test is opt-in because it creates a real virtual gamepad.
@@ -124,7 +160,6 @@ keyboard and mouse injection on X11, but it does not create virtual HID devices,
 does not help on Wayland, and should not replace `uhid`/`uinput` for gamepads.
 It is enabled automatically when `LIBVIRTUALHID_ENABLE_XTEST` is `ON` and CMake
 finds X11/XTest development files.
-Sunshine's removed legacy implementation is the first reference for this path:
 commit `8227e8f8` added the XTest input fallback, and commit `f57aee90` removed
 `src/platform/linux/input/legacy_input.cpp` when Sunshine moved fully to
 inputtino.
@@ -180,16 +215,12 @@ Expected core types:
   `supports_keyboard`, `supports_mouse`, `supports_xtest_fallback`, and
   `requires_installed_driver`.
 
-## Sunshine Integration Requirements
 
-Sunshine is the first consumer to design against. The initial implementation
 should cover Sunshine's active input behavior before optimizing for unrelated
 consumers:
 
-- [x] CMake consumption must work as a vendored dependency under Sunshine's
   `third-party` tree.
 - [x] The API must support multiple client-relative and global gamepad indexes so
-  Sunshine can preserve stable controller lifecycles across arrival, update,
   feedback, and removal events.
 - [x] Built-in profiles should cover Sunshine's current gamepad choices: automatic
   selection, Xbox One-style, DualSense-style, and Switch Pro-style devices. Xbox
@@ -200,15 +231,12 @@ consumers:
 - [ ] Output callbacks must carry rumble first, then RGB LED, adaptive trigger,
   motion activation, and raw output report data where the selected profile
   supports it.
-- [x] Keyboard and mouse APIs should map cleanly to Sunshine's current relative
   mouse, absolute mouse, buttons, scroll, horizontal scroll, keyboard scancode,
   and Unicode paths.
 - [x] Linux fallback behavior should match Sunshine's operational expectation:
   prefer real virtual devices through `uhid`/`uinput`; only use XTest for
   keyboard/mouse when virtual device creation fails and X11 is available.
-- [x] The library must not own Sunshine's network protocol, Moonlight packet
   parsing, configuration system, or feedback queue. It should expose the device
-  primitives Sunshine needs to keep that ownership in Sunshine.
 
 ## Tooling and Dependency Plan
 
@@ -268,17 +296,17 @@ third-party/googletest/       GoogleTest submodule
 - [x] Add descriptor/profile models for at least Xbox 360, Xbox Series, DualSense,
   and a generic HID gamepad.
 - [x] Add unit tests for state normalization and HID report packing.
-- [x] Add a Sunshine-oriented example or adapter test that exercises controller
-  arrival, state updates, output feedback, and removal without depending on
-  Sunshine internals.
+- [x] Add a streaming-host-oriented example or adapter test that exercises
+  controller arrival, state updates, output feedback, and removal without
+  depending on consumer internals.
 
 ### Phase 2: Linux MVP
 
 - [x] Implement gamepad creation over `uhid` for descriptor-driven controllers.
 - [x] Add `uinput` support for keyboard and mouse once the gamepad path is stable.
 - [x] Support output report callbacks for rumble and profile-specific feedback.
-- [x] Add X11/XTest fallback support for keyboard and mouse only, using Sunshine's
   historical legacy input implementation as the reference point.
+- [x] Add X11/XTest fallback support for keyboard and mouse only.
 - [ ] Add examples and integration tests that validate SDL/HIDAPI discovery where
   available.
 - [x] Document required Linux permissions and sample udev rules.

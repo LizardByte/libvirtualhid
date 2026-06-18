@@ -1,6 +1,6 @@
 /**
- * @file examples/sunshine_keyboard_mouse_adapter.cpp
- * @brief Minimal Sunshine-style keyboard and mouse input example.
+ * @file examples/keyboard_mouse_adapter.cpp
+ * @brief Minimal keyboard and mouse input example.
  */
 
 // standard includes
