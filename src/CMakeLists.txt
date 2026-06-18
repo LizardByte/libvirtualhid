@@ -18,6 +18,12 @@ if(LIBVIRTUALHID_USES_THREADS)
     target_sources(${PROJECT_NAME}
       PRIVATE
       "${CMAKE_CURRENT_SOURCE_DIR}/platform/linux/uhid_backend.cpp")
+    if(BUILD_TESTS)
+        # Expose private Linux backend helpers only to tests so coverage does not depend on real device nodes.
+        target_compile_definitions(${PROJECT_NAME}
+          PRIVATE
+          LIBVIRTUALHID_ENABLE_TEST_HOOKS=1)
+    endif()
     target_link_libraries(${PROJECT_NAME}
       PUBLIC
       Threads::Threads)
