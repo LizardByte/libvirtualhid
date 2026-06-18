@@ -5,6 +5,7 @@
 
 // local includes
 #include "fixtures/fixtures.hpp"
+
 #include <libvirtualhid/profiles.hpp>
 
 TEST(ProfileTest, BuiltInProfilesHaveDescriptors) {

@@ -4,8 +4,8 @@
 set(INSTALL_GTEST OFF)
 set(INSTALL_GMOCK OFF)
 if(WIN32)
-  set(gtest_force_shared_crt ON CACHE BOOL  # cmake-lint: disable=C0103
-      "Always use msvcrt.dll" FORCE)
+    set(gtest_force_shared_crt ON CACHE BOOL  # cmake-lint: disable=C0103
+        "Always use msvcrt.dll" FORCE)
 endif()
 
 include(GoogleTest)
