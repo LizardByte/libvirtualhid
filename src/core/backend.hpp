@@ -56,6 +56,82 @@ namespace lvh::detail {
   };
 
   /**
+   * @brief Backend-owned keyboard device implementation.
+   */
+  class BackendKeyboard {
+  public:
+    BackendKeyboard(const BackendKeyboard &) = delete;
+    BackendKeyboard &operator=(const BackendKeyboard &) = delete;
+    BackendKeyboard(BackendKeyboard &&) noexcept = delete;
+    BackendKeyboard &operator=(BackendKeyboard &&) noexcept = delete;
+
+    /**
+     * @brief Destroy the backend keyboard.
+     */
+    virtual ~BackendKeyboard() = default;
+
+    /**
+     * @brief Submit a keyboard key transition to the backend.
+     *
+     * @param event Keyboard event.
+     * @return Submit status.
+     */
+    virtual Status submit(const KeyboardEvent &event) = 0;
+
+    /**
+     * @brief Submit UTF-8 text to the backend.
+     *
+     * @param event Text event.
+     * @return Submit status.
+     */
+    virtual Status type_text(const KeyboardTextEvent &event) = 0;
+
+    /**
+     * @brief Close the backend device.
+     *
+     * @return Close status.
+     */
+    virtual Status close() = 0;
+
+  protected:
+    BackendKeyboard() = default;
+  };
+
+  /**
+   * @brief Backend-owned mouse device implementation.
+   */
+  class BackendMouse {
+  public:
+    BackendMouse(const BackendMouse &) = delete;
+    BackendMouse &operator=(const BackendMouse &) = delete;
+    BackendMouse(BackendMouse &&) noexcept = delete;
+    BackendMouse &operator=(BackendMouse &&) noexcept = delete;
+
+    /**
+     * @brief Destroy the backend mouse.
+     */
+    virtual ~BackendMouse() = default;
+
+    /**
+     * @brief Submit a mouse event to the backend.
+     *
+     * @param event Mouse event.
+     * @return Submit status.
+     */
+    virtual Status submit(const MouseEvent &event) = 0;
+
+    /**
+     * @brief Close the backend device.
+     *
+     * @return Close status.
+     */
+    virtual Status close() = 0;
+
+  protected:
+    BackendMouse() = default;
+  };
+
+  /**
    * @brief Result returned by an internal backend gamepad creation request.
    */
   struct BackendGamepadCreationResult {
@@ -76,6 +152,54 @@ namespace lvh::detail {
      */
     explicit operator bool() const {
       return status.ok() && gamepad != nullptr;
+    }
+  };
+
+  /**
+   * @brief Result returned by an internal backend keyboard creation request.
+   */
+  struct BackendKeyboardCreationResult {
+    /**
+     * @brief Creation status.
+     */
+    Status status;
+
+    /**
+     * @brief Backend device when creation succeeds.
+     */
+    std::unique_ptr<BackendKeyboard> keyboard;
+
+    /**
+     * @brief Check whether creation succeeded.
+     *
+     * @return `true` when creation succeeded.
+     */
+    explicit operator bool() const {
+      return status.ok() && keyboard != nullptr;
+    }
+  };
+
+  /**
+   * @brief Result returned by an internal backend mouse creation request.
+   */
+  struct BackendMouseCreationResult {
+    /**
+     * @brief Creation status.
+     */
+    Status status;
+
+    /**
+     * @brief Backend device when creation succeeds.
+     */
+    std::unique_ptr<BackendMouse> mouse;
+
+    /**
+     * @brief Check whether creation succeeded.
+     *
+     * @return `true` when creation succeeded.
+     */
+    explicit operator bool() const {
+      return status.ok() && mouse != nullptr;
     }
   };
 
@@ -109,6 +233,24 @@ namespace lvh::detail {
      * @return Backend gamepad creation result.
      */
     virtual BackendGamepadCreationResult create_gamepad(DeviceId id, const CreateGamepadOptions &options) = 0;
+
+    /**
+     * @brief Create a backend keyboard device.
+     *
+     * @param id Runtime-assigned device id.
+     * @param options Keyboard creation options.
+     * @return Backend keyboard creation result.
+     */
+    virtual BackendKeyboardCreationResult create_keyboard(DeviceId id, const CreateKeyboardOptions &options) = 0;
+
+    /**
+     * @brief Create a backend mouse device.
+     *
+     * @param id Runtime-assigned device id.
+     * @param options Mouse creation options.
+     * @return Backend mouse creation result.
+     */
+    virtual BackendMouseCreationResult create_mouse(DeviceId id, const CreateMouseOptions &options) = 0;
 
   protected:
     Backend() = default;

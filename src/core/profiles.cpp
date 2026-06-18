@@ -169,6 +169,18 @@ namespace lvh::profiles {
       return profile;
     }
 
+    DeviceProfile make_simple_profile(DeviceType device_type, std::string name, std::uint16_t product_id) {
+      DeviceProfile profile;
+      profile.device_type = device_type;
+      profile.bus_type = BusType::usb;
+      profile.vendor_id = 0x1209;
+      profile.product_id = product_id;
+      profile.version = 0x0001;
+      profile.name = std::move(name);
+      profile.manufacturer = "LizardByte";
+      return profile;
+    }
+
   }  // namespace
 
   DeviceProfile generic_gamepad() {
@@ -242,6 +254,14 @@ namespace lvh::profiles {
       0x8111,
       {.supports_rumble = true, .supports_motion = true, .supports_battery = true}
     );
+  }
+
+  DeviceProfile keyboard() {
+    return make_simple_profile(DeviceType::keyboard, "libvirtualhid Keyboard", 0x0002);
+  }
+
+  DeviceProfile mouse() {
+    return make_simple_profile(DeviceType::mouse, "libvirtualhid Mouse", 0x0003);
   }
 
   std::optional<DeviceProfile> gamepad_profile(GamepadProfileKind kind) {

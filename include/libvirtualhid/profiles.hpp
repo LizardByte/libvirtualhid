@@ -1,6 +1,6 @@
 /**
  * @file include/libvirtualhid/profiles.hpp
- * @brief Built-in virtual gamepad profile declarations.
+ * @brief Built-in virtual device profile declarations.
  */
 #pragma once
 
@@ -54,6 +54,20 @@ namespace lvh::profiles {
    * @return Switch Pro-compatible device profile.
    */
   DeviceProfile switch_pro();
+
+  /**
+   * @brief Create the generic keyboard profile.
+   *
+   * @return Generic keyboard device profile.
+   */
+  DeviceProfile keyboard();
+
+  /**
+   * @brief Create the generic mouse profile.
+   *
+   * @return Generic mouse device profile.
+   */
+  DeviceProfile mouse();
 
   /**
    * @brief Look up a built-in gamepad profile by kind.

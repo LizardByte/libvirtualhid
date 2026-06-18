@@ -11,6 +11,9 @@ target_sources(${PROJECT_NAME}
 
 if(LIBVIRTUALHID_USES_THREADS)
     find_package(Threads REQUIRED)
+    if(LIBVIRTUALHID_ENABLE_XTEST)
+        find_package(X11 QUIET)
+    endif()
 
     target_sources(${PROJECT_NAME}
       PRIVATE
@@ -18,6 +21,19 @@ if(LIBVIRTUALHID_USES_THREADS)
     target_link_libraries(${PROJECT_NAME}
       PUBLIC
       Threads::Threads)
+    if(LIBVIRTUALHID_ENABLE_XTEST AND X11_FOUND AND X11_XTest_FOUND)
+        target_compile_definitions(${PROJECT_NAME}
+          PRIVATE
+          LIBVIRTUALHID_HAVE_XTEST=1)
+        target_include_directories(${PROJECT_NAME}
+          PRIVATE
+          ${X11_INCLUDE_DIR}
+          ${X11_XTest_INCLUDE_PATH})
+        target_link_libraries(${PROJECT_NAME}
+          PRIVATE
+          ${X11_LIBRARIES}
+          ${X11_XTest_LIB})
+    endif()
 else()
     target_sources(${PROJECT_NAME}
       PRIVATE

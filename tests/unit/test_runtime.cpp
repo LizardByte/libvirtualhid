@@ -18,6 +18,8 @@ TEST(RuntimeTest, FakeBackendReportsCapabilities) {
   EXPECT_EQ(runtime->backend_kind(), lvh::BackendKind::fake);
   EXPECT_EQ(runtime->capabilities().backend_name, "fake");
   EXPECT_TRUE(runtime->capabilities().supports_gamepad);
+  EXPECT_TRUE(runtime->capabilities().supports_keyboard);
+  EXPECT_TRUE(runtime->capabilities().supports_mouse);
   EXPECT_TRUE(runtime->capabilities().supports_output_reports);
   EXPECT_FALSE(runtime->capabilities().requires_installed_driver);
 }
@@ -30,10 +32,7 @@ TEST(RuntimeTest, PlatformDefaultReportsCurrentPlatformCapabilities) {
   EXPECT_EQ(runtime->backend_kind(), lvh::BackendKind::platform_default);
 
 #if defined(__linux__)
-  EXPECT_EQ(runtime->capabilities().backend_name, "linux-uhid");
-  EXPECT_FALSE(runtime->capabilities().supports_keyboard);
-  EXPECT_FALSE(runtime->capabilities().supports_mouse);
-  EXPECT_FALSE(runtime->capabilities().supports_xtest_fallback);
+  EXPECT_EQ(runtime->capabilities().backend_name, "linux-uhid-uinput");
   EXPECT_FALSE(runtime->capabilities().requires_installed_driver);
 #else
   EXPECT_EQ(runtime->capabilities().backend_name, "platform-default-unimplemented");
@@ -95,6 +94,61 @@ TEST(RuntimeTest, DispatchesOutputCallback) {
   EXPECT_EQ(received.high_frequency_rumble, 456);
 }
 
+TEST(RuntimeTest, CreatesSubmitsAndClosesKeyboard) {
+  auto runtime = lvh::Runtime::create();
+  auto created = runtime->create_keyboard();
+
+  ASSERT_TRUE(created);
+  ASSERT_NE(created.keyboard, nullptr);
+  EXPECT_TRUE(created.keyboard->is_open());
+  EXPECT_EQ(created.keyboard->profile().device_type, lvh::DeviceType::keyboard);
+  EXPECT_EQ(runtime->active_device_count(), 1U);
+
+  EXPECT_TRUE(created.keyboard->press(0x41).ok());
+  EXPECT_EQ(created.keyboard->submit_count(), 1U);
+  EXPECT_EQ(created.keyboard->last_submitted_event().key_code, 0x41);
+  EXPECT_TRUE(created.keyboard->last_submitted_event().pressed);
+
+  EXPECT_TRUE(created.keyboard->release(0x41).ok());
+  EXPECT_TRUE(created.keyboard->type_text({.text = "A"}).ok());
+  EXPECT_EQ(created.keyboard->submit_count(), 3U);
+
+  EXPECT_EQ(created.keyboard->press(0).code(), lvh::ErrorCode::invalid_argument);
+  EXPECT_TRUE(created.keyboard->close().ok());
+  EXPECT_FALSE(created.keyboard->is_open());
+  EXPECT_EQ(runtime->active_device_count(), 0U);
+  EXPECT_EQ(created.keyboard->press(0x41).code(), lvh::ErrorCode::device_closed);
+}
+
+TEST(RuntimeTest, CreatesSubmitsAndClosesMouse) {
+  auto runtime = lvh::Runtime::create();
+  auto created = runtime->create_mouse();
+
+  ASSERT_TRUE(created);
+  ASSERT_NE(created.mouse, nullptr);
+  EXPECT_TRUE(created.mouse->is_open());
+  EXPECT_EQ(created.mouse->profile().device_type, lvh::DeviceType::mouse);
+  EXPECT_EQ(runtime->active_device_count(), 1U);
+
+  EXPECT_TRUE(created.mouse->move_relative(10, -5).ok());
+  EXPECT_EQ(created.mouse->submit_count(), 1U);
+  EXPECT_EQ(created.mouse->last_submitted_event().kind, lvh::MouseEventKind::relative_motion);
+  EXPECT_EQ(created.mouse->last_submitted_event().x, 10);
+  EXPECT_EQ(created.mouse->last_submitted_event().y, -5);
+
+  EXPECT_TRUE(created.mouse->move_absolute(100, 200, 1920, 1080).ok());
+  EXPECT_TRUE(created.mouse->button(lvh::MouseButton::right, true).ok());
+  EXPECT_TRUE(created.mouse->vertical_scroll(120).ok());
+  EXPECT_TRUE(created.mouse->horizontal_scroll(-120).ok());
+  EXPECT_EQ(created.mouse->submit_count(), 5U);
+
+  EXPECT_EQ(created.mouse->move_absolute(1, 1, 0, 0).code(), lvh::ErrorCode::invalid_argument);
+  EXPECT_TRUE(created.mouse->close().ok());
+  EXPECT_FALSE(created.mouse->is_open());
+  EXPECT_EQ(runtime->active_device_count(), 0U);
+  EXPECT_EQ(created.mouse->move_relative(1, 1).code(), lvh::ErrorCode::device_closed);
+}
+
 TEST(RuntimeTest, LinuxUhidSmokeTestWhenExplicitlyEnabled) {
 #if defined(__linux__)
   const auto *enabled = std::getenv("LIBVIRTUALHID_ENABLE_UHID_INTEGRATION_TESTS");
@@ -121,5 +175,33 @@ TEST(RuntimeTest, LinuxUhidSmokeTestWhenExplicitlyEnabled) {
   EXPECT_TRUE(created.gamepad->close().ok());
 #else
   GTEST_SKIP() << "UHID is only available on Linux";
+#endif
+}
+
+TEST(RuntimeTest, LinuxUinputSmokeTestWhenExplicitlyEnabled) {
+#if defined(__linux__)
+  const auto *enabled = std::getenv("LIBVIRTUALHID_ENABLE_UINPUT_INTEGRATION_TESTS");
+  if (enabled == nullptr || std::string_view {enabled} != "1") {
+    GTEST_SKIP() << "set LIBVIRTUALHID_ENABLE_UINPUT_INTEGRATION_TESTS=1 to exercise /dev/uinput";
+  }
+
+  lvh::RuntimeOptions options;
+  options.backend = lvh::BackendKind::platform_default;
+  auto runtime = lvh::Runtime::create(options);
+  if (!runtime->capabilities().supports_keyboard || !runtime->capabilities().supports_mouse) {
+    GTEST_SKIP() << "/dev/uinput or XTest fallback is not accessible";
+  }
+
+  auto keyboard = runtime->create_keyboard();
+  ASSERT_TRUE(keyboard) << keyboard.status.message();
+  EXPECT_TRUE(keyboard.keyboard->press(0x41).ok());
+  EXPECT_TRUE(keyboard.keyboard->release(0x41).ok());
+
+  auto mouse = runtime->create_mouse();
+  ASSERT_TRUE(mouse) << mouse.status.message();
+  EXPECT_TRUE(mouse.mouse->move_relative(1, 1).ok());
+  EXPECT_TRUE(mouse.mouse->vertical_scroll(120).ok());
+#else
+  GTEST_SKIP() << "uinput is only available on Linux";
 #endif
 }

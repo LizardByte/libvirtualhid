@@ -16,6 +16,8 @@ namespace lvh {
 
   namespace detail {
     struct GamepadDevice;
+    struct KeyboardDevice;
+    struct MouseDevice;
     class RuntimeState;
   }  // namespace detail
 
@@ -175,6 +177,249 @@ namespace lvh {
   };
 
   /**
+   * @brief Virtual keyboard device handle.
+   */
+  class Keyboard final: public VirtualDevice {
+  public:
+    /**
+     * @brief Copy construction is disabled because the handle owns device lifetime.
+     */
+    Keyboard(const Keyboard &) = delete;
+
+    /**
+     * @brief Copy assignment is disabled because the handle owns device lifetime.
+     *
+     * @return This keyboard handle.
+     */
+    Keyboard &operator=(const Keyboard &) = delete;
+
+    /**
+     * @brief Move construct a keyboard handle.
+     *
+     * @param other Handle to move from.
+     */
+    Keyboard(Keyboard &&other) noexcept;
+
+    /**
+     * @brief Move assign a keyboard handle.
+     *
+     * @param other Handle to move from.
+     * @return This keyboard handle.
+     */
+    Keyboard &operator=(Keyboard &&other) noexcept;
+
+    /**
+     * @brief Destroy the keyboard handle.
+     */
+    ~Keyboard() override;
+
+    /**
+     * @copydoc VirtualDevice::device_id
+     */
+    DeviceId device_id() const override;
+
+    /**
+     * @copydoc VirtualDevice::profile
+     */
+    const DeviceProfile &profile() const override;
+
+    /**
+     * @copydoc VirtualDevice::is_open
+     */
+    bool is_open() const override;
+
+    /**
+     * @copydoc VirtualDevice::close
+     */
+    Status close() override;
+
+    /**
+     * @brief Submit a keyboard key transition.
+     *
+     * @param event Keyboard event.
+     * @return Submit operation status.
+     */
+    Status submit(const KeyboardEvent &event);
+
+    /**
+     * @brief Press a keyboard key.
+     *
+     * @param key_code Portable key code.
+     * @return Submit operation status.
+     */
+    Status press(KeyboardKeyCode key_code);
+
+    /**
+     * @brief Release a keyboard key.
+     *
+     * @param key_code Portable key code.
+     * @return Submit operation status.
+     */
+    Status release(KeyboardKeyCode key_code);
+
+    /**
+     * @brief Type UTF-8 text.
+     *
+     * @param event Text event.
+     * @return Submit operation status.
+     */
+    Status type_text(const KeyboardTextEvent &event);
+
+    /**
+     * @brief Get the most recently submitted keyboard event.
+     *
+     * @return Last submitted keyboard event.
+     */
+    KeyboardEvent last_submitted_event() const;
+
+    /**
+     * @brief Get the number of successful submit operations.
+     *
+     * @return Submit count.
+     */
+    std::size_t submit_count() const;
+
+  private:
+    friend class Runtime;
+
+    explicit Keyboard(std::shared_ptr<detail::KeyboardDevice> device);
+
+    std::shared_ptr<detail::KeyboardDevice> device_;
+  };
+
+  /**
+   * @brief Virtual mouse device handle.
+   */
+  class Mouse final: public VirtualDevice {
+  public:
+    /**
+     * @brief Copy construction is disabled because the handle owns device lifetime.
+     */
+    Mouse(const Mouse &) = delete;
+
+    /**
+     * @brief Copy assignment is disabled because the handle owns device lifetime.
+     *
+     * @return This mouse handle.
+     */
+    Mouse &operator=(const Mouse &) = delete;
+
+    /**
+     * @brief Move construct a mouse handle.
+     *
+     * @param other Handle to move from.
+     */
+    Mouse(Mouse &&other) noexcept;
+
+    /**
+     * @brief Move assign a mouse handle.
+     *
+     * @param other Handle to move from.
+     * @return This mouse handle.
+     */
+    Mouse &operator=(Mouse &&other) noexcept;
+
+    /**
+     * @brief Destroy the mouse handle.
+     */
+    ~Mouse() override;
+
+    /**
+     * @copydoc VirtualDevice::device_id
+     */
+    DeviceId device_id() const override;
+
+    /**
+     * @copydoc VirtualDevice::profile
+     */
+    const DeviceProfile &profile() const override;
+
+    /**
+     * @copydoc VirtualDevice::is_open
+     */
+    bool is_open() const override;
+
+    /**
+     * @copydoc VirtualDevice::close
+     */
+    Status close() override;
+
+    /**
+     * @brief Submit a mouse event.
+     *
+     * @param event Mouse event.
+     * @return Submit operation status.
+     */
+    Status submit(const MouseEvent &event);
+
+    /**
+     * @brief Submit relative pointer movement.
+     *
+     * @param delta_x Horizontal delta.
+     * @param delta_y Vertical delta.
+     * @return Submit operation status.
+     */
+    Status move_relative(std::int32_t delta_x, std::int32_t delta_y);
+
+    /**
+     * @brief Submit absolute pointer movement.
+     *
+     * @param x Absolute X coordinate.
+     * @param y Absolute Y coordinate.
+     * @param width Width of the absolute coordinate space.
+     * @param height Height of the absolute coordinate space.
+     * @return Submit operation status.
+     */
+    Status move_absolute(std::int32_t x, std::int32_t y, std::int32_t width, std::int32_t height);
+
+    /**
+     * @brief Submit a mouse button transition.
+     *
+     * @param button Mouse button.
+     * @param pressed Whether the button is pressed.
+     * @return Submit operation status.
+     */
+    Status button(MouseButton button, bool pressed);
+
+    /**
+     * @brief Submit high-resolution vertical scroll.
+     *
+     * @param distance High-resolution scroll distance.
+     * @return Submit operation status.
+     */
+    Status vertical_scroll(std::int32_t distance);
+
+    /**
+     * @brief Submit high-resolution horizontal scroll.
+     *
+     * @param distance High-resolution scroll distance.
+     * @return Submit operation status.
+     */
+    Status horizontal_scroll(std::int32_t distance);
+
+    /**
+     * @brief Get the most recently submitted mouse event.
+     *
+     * @return Last submitted mouse event.
+     */
+    MouseEvent last_submitted_event() const;
+
+    /**
+     * @brief Get the number of successful submit operations.
+     *
+     * @return Submit count.
+     */
+    std::size_t submit_count() const;
+
+  private:
+    friend class Runtime;
+
+    explicit Mouse(std::shared_ptr<detail::MouseDevice> device);
+
+    std::shared_ptr<detail::MouseDevice> device_;
+  };
+
+  /**
    * @brief Result returned by gamepad creation.
    */
   struct GamepadCreationResult {
@@ -195,6 +440,54 @@ namespace lvh {
      */
     explicit operator bool() const {
       return status.ok() && gamepad != nullptr;
+    }
+  };
+
+  /**
+   * @brief Result returned by keyboard creation.
+   */
+  struct KeyboardCreationResult {
+    /**
+     * @brief Creation status.
+     */
+    Status status;
+
+    /**
+     * @brief Created keyboard handle when creation succeeds.
+     */
+    std::unique_ptr<Keyboard> keyboard;
+
+    /**
+     * @brief Check whether creation succeeded and produced a handle.
+     *
+     * @return `true` when creation succeeded.
+     */
+    explicit operator bool() const {
+      return status.ok() && keyboard != nullptr;
+    }
+  };
+
+  /**
+   * @brief Result returned by mouse creation.
+   */
+  struct MouseCreationResult {
+    /**
+     * @brief Creation status.
+     */
+    Status status;
+
+    /**
+     * @brief Created mouse handle when creation succeeds.
+     */
+    std::unique_ptr<Mouse> mouse;
+
+    /**
+     * @brief Check whether creation succeeded and produced a handle.
+     *
+     * @return `true` when creation succeeded.
+     */
+    explicit operator bool() const {
+      return status.ok() && mouse != nullptr;
     }
   };
 
@@ -272,6 +565,36 @@ namespace lvh {
      * @return Gamepad creation result.
      */
     GamepadCreationResult create_gamepad(const CreateGamepadOptions &options);
+
+    /**
+     * @brief Create a keyboard with the built-in keyboard profile.
+     *
+     * @return Keyboard creation result.
+     */
+    KeyboardCreationResult create_keyboard();
+
+    /**
+     * @brief Create a keyboard from full creation options.
+     *
+     * @param options Keyboard creation options.
+     * @return Keyboard creation result.
+     */
+    KeyboardCreationResult create_keyboard(const CreateKeyboardOptions &options);
+
+    /**
+     * @brief Create a mouse with the built-in mouse profile.
+     *
+     * @return Mouse creation result.
+     */
+    MouseCreationResult create_mouse();
+
+    /**
+     * @brief Create a mouse from full creation options.
+     *
+     * @param options Mouse creation options.
+     * @return Mouse creation result.
+     */
+    MouseCreationResult create_mouse(const CreateMouseOptions &options);
 
     /**
      * @brief Get the number of open devices owned by the runtime.

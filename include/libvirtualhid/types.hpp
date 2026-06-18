@@ -362,6 +362,36 @@ namespace lvh {
   };
 
   /**
+   * @brief Full keyboard creation request.
+   */
+  struct CreateKeyboardOptions {
+    /**
+     * @brief Device profile to instantiate.
+     */
+    DeviceProfile profile;
+
+    /**
+     * @brief Consumer-defined stable identity string.
+     */
+    std::string stable_id;
+  };
+
+  /**
+   * @brief Full mouse creation request.
+   */
+  struct CreateMouseOptions {
+    /**
+     * @brief Device profile to instantiate.
+     */
+    DeviceProfile profile;
+
+    /**
+     * @brief Consumer-defined stable identity string.
+     */
+    std::string stable_id;
+  };
+
+  /**
    * @brief Logical gamepad buttons accepted by the common gamepad state model.
    */
   enum class GamepadButton : std::uint8_t {
@@ -470,6 +500,107 @@ namespace lvh {
      * @brief Right trigger value in the inclusive range `[0.0, 1.0]`.
      */
     float right_trigger = 0.0F;
+  };
+
+  /**
+   * @brief Keyboard key code accepted by the keyboard event model.
+   *
+   * The initial Linux backend treats this as a Moonlight/Windows virtual-key code
+   * because that matches Sunshine's current input path. Backends translate this
+   * value to their native key representation.
+   */
+  using KeyboardKeyCode = std::uint16_t;
+
+  /**
+   * @brief Keyboard key transition.
+   */
+  struct KeyboardEvent {
+    /**
+     * @brief Portable key code.
+     */
+    KeyboardKeyCode key_code = 0;
+
+    /**
+     * @brief Whether the key is pressed.
+     */
+    bool pressed = false;
+  };
+
+  /**
+   * @brief UTF-8 text input request.
+   */
+  struct KeyboardTextEvent {
+    /**
+     * @brief UTF-8 text to type.
+     */
+    std::string text;
+  };
+
+  /**
+   * @brief Mouse buttons accepted by the mouse event model.
+   */
+  enum class MouseButton : std::uint8_t {
+    left = 0,  ///< Primary mouse button.
+    middle,  ///< Middle mouse button.
+    right,  ///< Secondary mouse button.
+    side,  ///< First auxiliary mouse button.
+    extra,  ///< Second auxiliary mouse button.
+  };
+
+  /**
+   * @brief Mouse event categories accepted by the mouse event model.
+   */
+  enum class MouseEventKind {
+    relative_motion,  ///< Relative pointer movement.
+    absolute_motion,  ///< Absolute pointer movement inside a target area.
+    button,  ///< Mouse button transition.
+    vertical_scroll,  ///< High-resolution vertical scroll event.
+    horizontal_scroll,  ///< High-resolution horizontal scroll event.
+  };
+
+  /**
+   * @brief Mouse input event.
+   */
+  struct MouseEvent {
+    /**
+     * @brief Event category.
+     */
+    MouseEventKind kind = MouseEventKind::relative_motion;
+
+    /**
+     * @brief Relative delta or absolute X coordinate.
+     */
+    std::int32_t x = 0;
+
+    /**
+     * @brief Relative delta or absolute Y coordinate.
+     */
+    std::int32_t y = 0;
+
+    /**
+     * @brief Width of the absolute coordinate space.
+     */
+    std::int32_t width = 0;
+
+    /**
+     * @brief Height of the absolute coordinate space.
+     */
+    std::int32_t height = 0;
+
+    /**
+     * @brief Button used by `MouseEventKind::button`.
+     */
+    MouseButton button = MouseButton::left;
+
+    /**
+     * @brief Whether the button is pressed.
+     */
+    bool pressed = false;
+
+    /**
+     * @brief High-resolution scroll distance.
+     */
+    std::int32_t high_resolution_scroll = 0;
   };
 
   /**

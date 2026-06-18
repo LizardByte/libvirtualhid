@@ -63,3 +63,18 @@ TEST(ProfileTest, CanFindProfileByKind) {
   ASSERT_TRUE(profile.has_value());
   EXPECT_EQ(profile->gamepad_kind, lvh::GamepadProfileKind::xbox_series);
 }
+
+TEST(ProfileTest, KeyboardAndMouseProfilesArePresent) {
+  const auto keyboard = lvh::profiles::keyboard();
+  const auto mouse = lvh::profiles::mouse();
+
+  EXPECT_EQ(keyboard.device_type, lvh::DeviceType::keyboard);
+  EXPECT_FALSE(keyboard.name.empty());
+  EXPECT_NE(keyboard.vendor_id, 0);
+  EXPECT_NE(keyboard.product_id, 0);
+
+  EXPECT_EQ(mouse.device_type, lvh::DeviceType::mouse);
+  EXPECT_FALSE(mouse.name.empty());
+  EXPECT_NE(mouse.vendor_id, 0);
+  EXPECT_NE(mouse.product_id, 0);
+}

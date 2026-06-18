@@ -29,6 +29,17 @@ namespace lvh::detail {
         return {Status::failure(ErrorCode::backend_unavailable, "platform backend is not implemented yet"), nullptr};
       }
 
+      BackendKeyboardCreationResult create_keyboard(
+        DeviceId /*id*/,
+        const CreateKeyboardOptions & /*options*/
+      ) override {
+        return {Status::failure(ErrorCode::backend_unavailable, "platform backend is not implemented yet"), nullptr};
+      }
+
+      BackendMouseCreationResult create_mouse(DeviceId /*id*/, const CreateMouseOptions & /*options*/) override {
+        return {Status::failure(ErrorCode::backend_unavailable, "platform backend is not implemented yet"), nullptr};
+      }
+
     private:
       BackendCapabilities capabilities_;
     };

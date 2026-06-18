@@ -95,26 +95,35 @@ Linux deployment should be documentation and permissions focused: users need
 access to `/dev/uinput` and/or `/dev/uhid`, usually through udev rules or group
 membership. No out-of-tree kernel module should be required.
 
-The current Linux MVP uses `uhid` for `BackendKind::platform_default`. When
-`/dev/uhid` is readable and writable, the backend reports `linux-uhid` with
-gamepad and output-report support. When the node is missing or permission is
-denied, the same backend remains selectable but reports the gamepad capability
-as unavailable and returns `backend_unavailable` from gamepad creation.
+The current Linux MVP uses `uhid` and `uinput` for
+`BackendKind::platform_default`. When `/dev/uhid` is readable and writable, the
+backend reports gamepad and output-report support. When `/dev/uinput` is
+readable and writable, it reports keyboard and mouse support. When a required
+node is missing or permission is denied, the same backend remains selectable
+but reports the affected capability as unavailable and returns
+`backend_unavailable` from that device creation path.
 
 A minimal udev rule for hosts that grant controller creation to the `input`
 group is:
 
 ```udev
 KERNEL=="uhid", GROUP="input", MODE="0660", TAG+="uaccess"
+KERNEL=="uinput", GROUP="input", MODE="0660", TAG+="uaccess"
 ```
 
 The Linux UHID smoke test is opt-in because it creates a real virtual gamepad.
 Run it with `LIBVIRTUALHID_ENABLE_UHID_INTEGRATION_TESTS=1` on a Linux host
 where the current user can open `/dev/uhid`.
 
+The Linux uinput smoke test is opt-in because it creates real keyboard and
+mouse devices. Run it with `LIBVIRTUALHID_ENABLE_UINPUT_INTEGRATION_TESTS=1` on
+a Linux host where the current user can open `/dev/uinput`.
+
 The XTest fallback should not be treated as a gamepad backend. It can cover
 keyboard and mouse injection on X11, but it does not create virtual HID devices,
 does not help on Wayland, and should not replace `uhid`/`uinput` for gamepads.
+It is enabled automatically when `LIBVIRTUALHID_ENABLE_XTEST` is `ON` and CMake
+finds X11/XTest development files.
 Sunshine's removed legacy implementation is the first reference for this path:
 commit `8227e8f8` added the XTest input fallback, and commit `f57aee90` removed
 `src/platform/linux/input/legacy_input.cpp` when Sunshine moved fully to
@@ -157,7 +166,9 @@ Expected core types:
 - `Runtime`: owns platform backend discovery, initialization, and shutdown.
 - `VirtualDevice`: common lifecycle for create, destroy, and hot-plug.
 - `Gamepad`: gamepad-specific state submission and output callbacks.
-- `Keyboard` and `Mouse`: later secondary device types.
+- `Keyboard`: key press/release and UTF-8 text submission.
+- `Mouse`: relative motion, absolute motion, button, vertical scroll, and
+  horizontal scroll submission.
 - `DeviceProfile`: VID/PID, product strings, bus type, HID descriptor, report
   layout, and platform capability metadata.
 - `GamepadState`: normalized buttons, axes, triggers, hats, motion sensors, and
@@ -189,10 +200,10 @@ consumers:
 - [ ] Output callbacks must carry rumble first, then RGB LED, adaptive trigger,
   motion activation, and raw output report data where the selected profile
   supports it.
-- [ ] Keyboard and mouse APIs should map cleanly to Sunshine's current relative
+- [x] Keyboard and mouse APIs should map cleanly to Sunshine's current relative
   mouse, absolute mouse, buttons, scroll, horizontal scroll, keyboard scancode,
   and Unicode paths.
-- [ ] Linux fallback behavior should match Sunshine's operational expectation:
+- [x] Linux fallback behavior should match Sunshine's operational expectation:
   prefer real virtual devices through `uhid`/`uinput`; only use XTest for
   keyboard/mouse when virtual device creation fails and X11 is available.
 - [x] The library must not own Sunshine's network protocol, Moonlight packet
@@ -264,9 +275,9 @@ third-party/googletest/       GoogleTest submodule
 ### Phase 2: Linux MVP
 
 - [x] Implement gamepad creation over `uhid` for descriptor-driven controllers.
-- [ ] Add `uinput` support for keyboard and mouse once the gamepad path is stable.
+- [x] Add `uinput` support for keyboard and mouse once the gamepad path is stable.
 - [x] Support output report callbacks for rumble and profile-specific feedback.
-- [ ] Add X11/XTest fallback support for keyboard and mouse only, using Sunshine's
+- [x] Add X11/XTest fallback support for keyboard and mouse only, using Sunshine's
   historical legacy input implementation as the reference point.
 - [ ] Add examples and integration tests that validate SDL/HIDAPI discovery where
   available.
