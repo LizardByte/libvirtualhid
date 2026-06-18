@@ -3,10 +3,8 @@
  * @brief Unit tests for gamepad report packing.
  */
 
-// lib includes
-#include <gtest/gtest.h>
-
 // local includes
+#include "fixtures/fixtures.hpp"
 #include <libvirtualhid/profiles.hpp>
 #include <libvirtualhid/report.hpp>
 
