@@ -38,6 +38,11 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 include(CMakePackageConfigHelpers)
 include(GNUInstallDirs)
 
+set(LIBVIRTUALHID_USES_THREADS OFF)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(LIBVIRTUALHID_USES_THREADS ON)
+endif()
+
 #
 # Additional setup for coverage
 # https://gcovr.com/en/stable/guide/compiling.html#compiler-options

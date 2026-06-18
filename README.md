@@ -58,12 +58,12 @@ That means a consuming application can compile the C++ library as part of its
 own build, but compiling the library alone is not enough to create virtual HID
 devices on Windows. The project should provide:
 
-- A CMake-built C++ client library for consumers.
-- A Windows driver package containing the INF, signed catalog, UMDF driver DLL,
+- [x] A CMake-built C++ client library for consumers.
+- [ ] A Windows driver package containing the INF, signed catalog, UMDF driver DLL,
   and any helper/control component needed by the backend.
-- Install/uninstall helpers suitable for developer machines and application
+- [ ] Install/uninstall helpers suitable for developer machines and application
   installers.
-- A path for projects to either build the driver package themselves with the
+- [ ] A path for projects to either build the driver package themselves with the
   Windows SDK/WDK or redistribute an official prebuilt, signed package.
 
 The public API should not expose these details. Consumers should create a
@@ -94,6 +94,23 @@ user-space interfaces:
 Linux deployment should be documentation and permissions focused: users need
 access to `/dev/uinput` and/or `/dev/uhid`, usually through udev rules or group
 membership. No out-of-tree kernel module should be required.
+
+The current Linux MVP uses `uhid` for `BackendKind::platform_default`. When
+`/dev/uhid` is readable and writable, the backend reports `linux-uhid` with
+gamepad and output-report support. When the node is missing or permission is
+denied, the same backend remains selectable but reports the gamepad capability
+as unavailable and returns `backend_unavailable` from gamepad creation.
+
+A minimal udev rule for hosts that grant controller creation to the `input`
+group is:
+
+```udev
+KERNEL=="uhid", GROUP="input", MODE="0660", TAG+="uaccess"
+```
+
+The Linux UHID smoke test is opt-in because it creates a real virtual gamepad.
+Run it with `LIBVIRTUALHID_ENABLE_UHID_INTEGRATION_TESTS=1` on a Linux host
+where the current user can open `/dev/uhid`.
 
 The XTest fallback should not be treated as a gamepad backend. It can cover
 keyboard and mouse injection on X11, but it does not create virtual HID devices,
@@ -158,49 +175,49 @@ Sunshine is the first consumer to design against. The initial implementation
 should cover Sunshine's active input behavior before optimizing for unrelated
 consumers:
 
-- CMake consumption must work as a vendored dependency under Sunshine's
+- [x] CMake consumption must work as a vendored dependency under Sunshine's
   `third-party` tree.
-- The API must support multiple client-relative and global gamepad indexes so
+- [x] The API must support multiple client-relative and global gamepad indexes so
   Sunshine can preserve stable controller lifecycles across arrival, update,
   feedback, and removal events.
-- Built-in profiles should cover Sunshine's current gamepad choices: automatic
+- [x] Built-in profiles should cover Sunshine's current gamepad choices: automatic
   selection, Xbox One-style, DualSense-style, and Switch Pro-style devices. Xbox
   360 can remain useful as a compatibility profile and test target.
-- Controller metadata must be rich enough for Sunshine's selection rules:
+- [x] Controller metadata must be rich enough for Sunshine's selection rules:
   client controller type, motion sensor capability, touchpad capability, RGB LED
   support, battery state, and per-controller identity data.
-- Output callbacks must carry rumble first, then RGB LED, adaptive trigger,
+- [ ] Output callbacks must carry rumble first, then RGB LED, adaptive trigger,
   motion activation, and raw output report data where the selected profile
   supports it.
-- Keyboard and mouse APIs should map cleanly to Sunshine's current relative
+- [ ] Keyboard and mouse APIs should map cleanly to Sunshine's current relative
   mouse, absolute mouse, buttons, scroll, horizontal scroll, keyboard scancode,
   and Unicode paths.
-- Linux fallback behavior should match Sunshine's operational expectation:
+- [ ] Linux fallback behavior should match Sunshine's operational expectation:
   prefer real virtual devices through `uhid`/`uinput`; only use XTest for
   keyboard/mouse when virtual device creation fails and X11 is available.
-- The library must not own Sunshine's network protocol, Moonlight packet
+- [x] The library must not own Sunshine's network protocol, Moonlight packet
   parsing, configuration system, or feedback queue. It should expose the device
   primitives Sunshine needs to keep that ownership in Sunshine.
 
 ## Tooling and Dependency Plan
 
-- Use CMake as the only build system for the core library.
-- Follow the LizardByte `tray` and `libdisplaydevice` pattern: top-level-only
+- [x] Use CMake as the only build system for the core library.
+- [x] Follow the LizardByte `tray` and `libdisplaydevice` pattern: top-level-only
   `BUILD_TESTS` and `BUILD_DOCS` options, reusable library targets, and tests
   that do not force themselves on parent projects.
-- Put all submodules under `third-party`.
-- Add GoogleTest as a submodule at `third-party/googletest`; do not download it
+- [x] Put all submodules under `third-party`.
+- [x] Add GoogleTest as a submodule at `third-party/googletest`; do not download it
   during configure.
-- Add the LizardByte Doxygen configuration as a submodule at
+- [x] Add the LizardByte Doxygen configuration as a submodule at
   `third-party/doxyconfig` and use it for local docs and Read the Docs builds.
-- Expose `libvirtualhid::libvirtualhid` as the main CMake target.
-- Keep the public headers under `include/libvirtualhid` and the implementation
+- [x] Expose `libvirtualhid::libvirtualhid` as the main CMake target.
+- [x] Keep the public headers under `include/libvirtualhid` and the implementation
   split into shared core code plus platform-specific backends.
-- Add Windows CI coverage for the client library with MSVC and MinGW/UCRT64.
-  Add separate WDK/MSVC validation for the driver package once driver sources
-  exist.
-- Add Linux CI coverage for GCC and Clang, with integration tests gated behind
+- [x] Add Windows CI coverage for the client library with MSVC and MinGW/UCRT64.
+- [x] Add Linux CI coverage for GCC and Clang, with integration tests gated behind
   explicit availability of `/dev/uinput`, `/dev/uhid`, or X11/XTest.
+- [ ] Add separate WDK/MSVC validation for the driver package once driver sources
+  exist.
 
 ## Repository Plan
 
@@ -226,72 +243,72 @@ third-party/googletest/       GoogleTest submodule
 
 ### Phase 1: Project Foundation
 
-- Add CMake project scaffolding and exported target
+- [x] Add CMake project scaffolding and exported target
   `libvirtualhid::libvirtualhid`.
-- Define the public C++ API, error model, device lifecycle, and ownership rules.
-- Add a fake in-memory backend so API tests can run on every platform.
-- Add GoogleTest as a submodule under `third-party/googletest` and wire tests
+- [x] Define the public C++ API, error model, device lifecycle, and ownership rules.
+- [x] Add a fake in-memory backend so API tests can run on every platform.
+- [x] Add GoogleTest as a submodule under `third-party/googletest` and wire tests
   using the same top-level-only pattern as `tray` and `libdisplaydevice`.
-- Add Doxygen documentation wiring with `third-party/doxyconfig`, a project
+- [x] Add Doxygen documentation wiring with `third-party/doxyconfig`, a project
   `docs/Doxyfile`, and Read the Docs configuration.
-- Add CI using the `libdisplaydevice` workflow pattern for Linux GCC, Linux
+- [x] Add CI using the `libdisplaydevice` workflow pattern for Linux GCC, Linux
   Clang, macOS, Windows MinGW/UCRT64, and Windows MSVC configure/build/test
   coverage.
-- Add descriptor/profile models for at least Xbox 360, Xbox Series, DualSense,
+- [x] Add descriptor/profile models for at least Xbox 360, Xbox Series, DualSense,
   and a generic HID gamepad.
-- Add unit tests for state normalization and HID report packing.
-- Add a Sunshine-oriented example or adapter test that exercises controller
+- [x] Add unit tests for state normalization and HID report packing.
+- [x] Add a Sunshine-oriented example or adapter test that exercises controller
   arrival, state updates, output feedback, and removal without depending on
   Sunshine internals.
 
 ### Phase 2: Linux MVP
 
-- Implement gamepad creation over `uhid` for descriptor-driven controllers.
-- Add `uinput` support for keyboard and mouse once the gamepad path is stable.
-- Support output report callbacks for rumble and profile-specific feedback.
-- Add X11/XTest fallback support for keyboard and mouse only, using Sunshine's
+- [x] Implement gamepad creation over `uhid` for descriptor-driven controllers.
+- [ ] Add `uinput` support for keyboard and mouse once the gamepad path is stable.
+- [ ] Support output report callbacks for rumble and profile-specific feedback.
+- [ ] Add X11/XTest fallback support for keyboard and mouse only, using Sunshine's
   historical legacy input implementation as the reference point.
-- Add examples and integration tests that validate SDL/HIDAPI discovery where
+- [ ] Add examples and integration tests that validate SDL/HIDAPI discovery where
   available.
-- Document required Linux permissions and sample udev rules.
+- [x] Document required Linux permissions and sample udev rules.
 
 ### Phase 3: Windows MVP
 
-- Build a UMDF2 HID minidriver package with CMake/WDK integration.
-- Implement the Windows backend and control channel between the C++ library and
+- [ ] Build a UMDF2 HID minidriver package with CMake/WDK integration.
+- [ ] Implement the Windows backend and control channel between the C++ library and
   the UMDF driver.
-- Keep the client library buildable with MSVC and MinGW/UCRT64. Keep the driver
+- [x] Keep the client library buildable with MSVC and MinGW/UCRT64. Keep the driver
   package on the Microsoft WDK toolchain.
-- Add install/uninstall tooling for developer workflows.
-- Support hot-plug, multi-controller instances, and output report callbacks.
-- Validate visibility through DirectInput, XInput where applicable, SDL/HIDAPI,
+- [ ] Add install/uninstall tooling for developer workflows.
+- [ ] Support hot-plug, multi-controller instances, and output report callbacks.
+- [ ] Validate visibility through DirectInput, XInput where applicable, SDL/HIDAPI,
   Windows.Gaming.Input/GameInput, and browser Gamepad API.
 
 ### Phase 4: API Parity and Packaging
 
-- Keep one API surface across Windows and Linux, with capability queries for
+- [ ] Keep one API surface across Windows and Linux, with capability queries for
   platform limitations instead of platform-specific methods.
-- Add installed CMake package support and `FetchContent` documentation.
-- Add CI for formatting, static analysis, CMake configure/build, unit tests, and
+- [ ] Add installed CMake package support and `FetchContent` documentation.
+- [x] Add CI for formatting, static analysis, CMake configure/build, unit tests, and
   platform smoke tests.
-- Decide whether official Windows releases should ship signed driver packages
+- [ ] Decide whether official Windows releases should ship signed driver packages
   in addition to source.
 
 ### Phase 5: macOS Research and Backend
 
-- Prototype macOS virtual HID creation and report submission.
-- Document signing, entitlement, and installer constraints.
-- Add macOS backend behind the existing public API.
-- Add macOS discovery and smoke-test coverage.
+- [ ] Prototype macOS virtual HID creation and report submission.
+- [ ] Document signing, entitlement, and installer constraints.
+- [ ] Add macOS backend behind the existing public API.
+- [ ] Add macOS discovery and smoke-test coverage.
 
 ## Testing Plan
 
-- Unit test descriptor generation, report packing, axis scaling, button mapping,
+- [ ] Unit test descriptor generation, report packing, axis scaling, button mapping,
   and output report parsing.
-- Run lifecycle tests for create, submit, output callback, destroy, repeated
+- [ ] Run lifecycle tests for create, submit, output callback, destroy, repeated
   hot-plug, and process shutdown cleanup.
-- Validate multi-controller behavior and stable ordering.
-- Test against real consumers where practical: SDL, HIDAPI, browser Gamepad API,
+- [ ] Validate multi-controller behavior and stable ordering.
+- [ ] Test against real consumers where practical: SDL, HIDAPI, browser Gamepad API,
   DirectInput/XInput/GameInput on Windows, and evdev/libinput tooling on Linux.
 
 ## License

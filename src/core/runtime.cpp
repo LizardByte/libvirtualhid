@@ -5,22 +5,31 @@
 
 // standard includes
 #include <algorithm>
+#include <memory>
 #include <mutex>
 #include <utility>
 
 // local includes
+#include "core/backend.hpp"
+
 #include <libvirtualhid/report.hpp>
 #include <libvirtualhid/runtime.hpp>
 
 namespace lvh::detail {
 
   struct GamepadDevice {
-    explicit GamepadDevice(DeviceId device_id, CreateGamepadOptions create_options):
+    explicit GamepadDevice(
+      DeviceId device_id,
+      CreateGamepadOptions create_options,
+      std::unique_ptr<BackendGamepad> backend_gamepad
+    ):
         id {device_id},
-        options {std::move(create_options)} {}
+        options {std::move(create_options)},
+        backend {std::move(backend_gamepad)} {}
 
     DeviceId id;
     CreateGamepadOptions options;
+    std::unique_ptr<BackendGamepad> backend;
     bool open = true;
     GamepadState last_state;
     std::vector<std::uint8_t> last_report;
@@ -33,21 +42,11 @@ namespace lvh::detail {
   public:
     explicit RuntimeState(RuntimeOptions runtime_options):
         options {runtime_options},
-        caps {make_capabilities(runtime_options.backend)} {}
-
-    static BackendCapabilities make_capabilities(BackendKind kind) {
-      BackendCapabilities capabilities;
-      if (kind == BackendKind::fake) {
-        capabilities.backend_name = "fake";
-        capabilities.supports_gamepad = true;
-        capabilities.supports_output_reports = true;
-      } else {
-        capabilities.backend_name = "platform-default-unimplemented";
-      }
-      return capabilities;
-    }
+        backend {create_backend(runtime_options.backend)},
+        caps {backend->capabilities()} {}
 
     RuntimeOptions options;
+    std::unique_ptr<Backend> backend;
     BackendCapabilities caps;
     DeviceId next_device_id = 1;
     std::vector<std::weak_ptr<GamepadDevice>> gamepads;
@@ -117,8 +116,14 @@ namespace lvh {
       if (!device.open) {
         return Status::success();
       }
+
+      auto status = Status::success();
+      if (device.backend) {
+        status = device.backend->close();
+      }
+
       device.open = false;
-      return Status::success();
+      return status;
     });
   }
 
@@ -133,6 +138,12 @@ namespace lvh {
         return Status::failure(ErrorCode::backend_failure, "failed to pack gamepad input report");
       }
 
+      if (device.backend) {
+        if (const auto status = device.backend->submit(report); !status.ok()) {
+          return status;
+        }
+      }
+
       device.last_state = reports::normalize_state(state);
       device.last_report = std::move(report);
       ++device.submitted_reports;
@@ -143,6 +154,9 @@ namespace lvh {
   void Gamepad::set_output_callback(OutputCallback callback) {
     with_device(device_, [&callback](auto &device) {
       device.output_callback = std::move(callback);
+      if (device.backend) {
+        device.backend->set_output_callback(device.output_callback);
+      }
       return 0;
     });
   }
@@ -189,7 +203,12 @@ namespace lvh {
 
   Runtime::Runtime(Runtime &&) noexcept = default;
   Runtime &Runtime::operator=(Runtime &&) noexcept = default;
-  Runtime::~Runtime() = default;
+
+  Runtime::~Runtime() {
+    if (state_) {
+      close_all();
+    }
+  }
 
   std::unique_ptr<Runtime> Runtime::create(RuntimeOptions options) {
     return std::unique_ptr<Runtime> {new Runtime {options}};
@@ -210,18 +229,27 @@ namespace lvh {
   }
 
   GamepadCreationResult Runtime::create_gamepad(const CreateGamepadOptions &options) {
-    if (state_->options.backend != BackendKind::fake) {
-      return {Status::failure(ErrorCode::backend_unavailable, "platform backend is not implemented yet"), nullptr};
-    }
-
     if (const auto validation = validate_gamepad_options(options); !validation.ok()) {
       return {validation, nullptr};
     }
 
-    std::lock_guard lock {state_->mutex};
-    const auto id = state_->next_device_id++;
-    auto device = std::make_shared<detail::GamepadDevice>(id, options);
-    state_->gamepads.emplace_back(device);
+    DeviceId id;
+    {
+      std::lock_guard lock {state_->mutex};
+      id = state_->next_device_id++;
+    }
+
+    auto backend_result = state_->backend->create_gamepad(id, options);
+    if (!backend_result) {
+      return {std::move(backend_result.status), nullptr};
+    }
+
+    auto device = std::make_shared<detail::GamepadDevice>(id, options, std::move(backend_result.gamepad));
+    {
+      std::lock_guard lock {state_->mutex};
+      state_->gamepads.emplace_back(device);
+    }
+
     return {Status::success(), std::unique_ptr<Gamepad> {new Gamepad {std::move(device)}}};
   }
 
@@ -243,6 +271,9 @@ namespace lvh {
     for (const auto &weak_device : state_->gamepads) {
       if (const auto device = weak_device.lock()) {
         std::lock_guard device_lock {device->mutex};
+        if (device->backend) {
+          static_cast<void>(device->backend->close());
+        }
         device->open = false;
       }
     }

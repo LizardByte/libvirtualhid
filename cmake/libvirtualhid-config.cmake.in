@@ -1,5 +1,11 @@
 @PACKAGE_INIT@
 
+include(CMakeFindDependencyMacro)
+
+if(@LIBVIRTUALHID_USES_THREADS@)
+    find_dependency(Threads)
+endif()
+
 include("${CMAKE_CURRENT_LIST_DIR}/libvirtualhid-targets.cmake")
 
 check_required_components(libvirtualhid)
