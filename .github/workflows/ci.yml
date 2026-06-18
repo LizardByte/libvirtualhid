@@ -52,7 +52,7 @@ jobs:
             msystem: ucrt64
             toolchain: ucrt-x86_64
           - name: Windows-MSVC
-            os: windows-latest
+            os: windows-2022
             shell: pwsh
             kind: msvc
     steps:
