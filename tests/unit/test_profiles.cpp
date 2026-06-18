@@ -42,6 +42,21 @@ TEST(ProfileTest, SunshineProfilesArePresent) {
   EXPECT_EQ(switch_pro.product_id, 0x2009);
 }
 
+TEST(ProfileTest, RumbleProfilesExposeOutputReports) {
+  const auto generic = lvh::profiles::generic_gamepad();
+  const auto xbox_360 = lvh::profiles::xbox_360();
+
+  EXPECT_FALSE(generic.capabilities.supports_rumble);
+  EXPECT_EQ(generic.output_report_size, 0U);
+
+  EXPECT_TRUE(xbox_360.capabilities.supports_rumble);
+  EXPECT_EQ(xbox_360.output_report_size, 5U);
+  ASSERT_GE(xbox_360.report_descriptor.size(), 3U);
+  EXPECT_EQ(xbox_360.report_descriptor[xbox_360.report_descriptor.size() - 3U], 0x91);
+  EXPECT_EQ(xbox_360.report_descriptor[xbox_360.report_descriptor.size() - 2U], 0x02);
+  EXPECT_EQ(xbox_360.report_descriptor.back(), 0xC0);
+}
+
 TEST(ProfileTest, CanFindProfileByKind) {
   const auto profile = lvh::profiles::gamepad_profile(lvh::GamepadProfileKind::xbox_series);
 

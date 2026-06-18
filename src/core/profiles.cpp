@@ -16,8 +16,10 @@ namespace lvh::profiles {
 
     constexpr std::size_t common_report_size = 14;
 
-    std::vector<std::uint8_t> make_gamepad_report_descriptor(std::uint8_t report_id) {
-      return {
+    constexpr std::size_t common_output_report_size = 5;
+
+    std::vector<std::uint8_t> make_gamepad_report_descriptor(std::uint8_t report_id, bool supports_rumble) {
+      std::vector<std::uint8_t> descriptor {
         0x05,
         0x01,  // Usage Page (Generic Desktop)
         0x09,
@@ -110,8 +112,34 @@ namespace lvh::profiles {
         0x35,  // Usage (Rz)
         0x81,
         0x02,  // Input (Data,Var,Abs)
-        0xC0,  // End Collection
       };
+
+      if (supports_rumble) {
+        descriptor.insert(
+          descriptor.end(),
+          {
+            0x06,
+            0x00,
+            0xFF,  // Usage Page (Vendor Defined)
+            0x09,
+            0x01,  // Usage (Vendor Usage 1)
+            0x15,
+            0x00,  // Logical Minimum (0)
+            0x26,
+            0xFF,
+            0x00,  // Logical Maximum (255)
+            0x75,
+            0x08,  // Report Size (8)
+            0x95,
+            0x04,  // Report Count (4)
+            0x91,
+            0x02,  // Output (Data,Var,Abs)
+          }
+        );
+      }
+
+      descriptor.push_back(0xC0);  // End Collection
+      return descriptor;
     }
 
     DeviceProfile make_gamepad_profile(
@@ -131,10 +159,13 @@ namespace lvh::profiles {
       profile.version = version;
       profile.report_id = 1;
       profile.input_report_size = common_report_size;
+      if (capabilities.supports_rumble) {
+        profile.output_report_size = common_output_report_size;
+      }
       profile.name = std::move(name);
       profile.manufacturer = "LizardByte";
       profile.capabilities = capabilities;
-      profile.report_descriptor = make_gamepad_report_descriptor(profile.report_id);
+      profile.report_descriptor = make_gamepad_report_descriptor(profile.report_id, profile.capabilities.supports_rumble);
       return profile;
     }
 

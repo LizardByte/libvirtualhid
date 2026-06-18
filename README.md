@@ -265,7 +265,7 @@ third-party/googletest/       GoogleTest submodule
 
 - [x] Implement gamepad creation over `uhid` for descriptor-driven controllers.
 - [ ] Add `uinput` support for keyboard and mouse once the gamepad path is stable.
-- [ ] Support output report callbacks for rumble and profile-specific feedback.
+- [x] Support output report callbacks for rumble and profile-specific feedback.
 - [ ] Add X11/XTest fallback support for keyboard and mouse only, using Sunshine's
   historical legacy input implementation as the reference point.
 - [ ] Add examples and integration tests that validate SDL/HIDAPI discovery where

@@ -6,6 +6,8 @@
 // standard includes
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 
 // local includes
 #include <libvirtualhid/report.hpp>
@@ -22,6 +24,12 @@ namespace lvh::reports {
 
     void append_i16(std::vector<std::uint8_t> &report, std::int16_t value) {
       append_u16(report, static_cast<std::uint16_t>(value));
+    }
+
+    std::uint16_t read_u16(const std::vector<std::uint8_t> &report, std::size_t offset) {
+      const auto low = static_cast<std::uint16_t>(report[offset]);
+      const auto high = static_cast<std::uint16_t>(report[offset + 1U]);
+      return static_cast<std::uint16_t>(low | static_cast<std::uint16_t>(high << 8U));
     }
 
     std::uint16_t report_button_bits(const ButtonSet &buttons) {
@@ -161,6 +169,22 @@ namespace lvh::reports {
 
     report.resize(profile.input_report_size, 0);
     return report;
+  }
+
+  GamepadOutput parse_output_report(const DeviceProfile &profile, const std::vector<std::uint8_t> &report) {
+    GamepadOutput output;
+    output.raw_report = report;
+
+    if (
+      profile.capabilities.supports_rumble && profile.output_report_size >= 5U &&
+      report.size() >= profile.output_report_size && report[0] == profile.report_id
+    ) {
+      output.kind = GamepadOutputKind::rumble;
+      output.low_frequency_rumble = read_u16(report, 1U);
+      output.high_frequency_rumble = read_u16(report, 3U);
+    }
+
+    return output;
   }
 
 }  // namespace lvh::reports

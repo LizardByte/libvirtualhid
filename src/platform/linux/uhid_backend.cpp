@@ -30,6 +30,8 @@
 // local includes
 #include "core/backend.hpp"
 
+#include <libvirtualhid/report.hpp>
+
 namespace lvh::detail {
   namespace {
 
@@ -97,6 +99,7 @@ namespace lvh::detail {
         request.product = options.profile.product_id;
         request.version = options.profile.version;
         std::memcpy(request.rd_data, options.profile.report_descriptor.data(), options.profile.report_descriptor.size());
+        profile_ = options.profile;
 
         if (const auto status = write_event(event); !status.ok()) {
           return status;
@@ -218,20 +221,21 @@ namespace lvh::detail {
       void handle_event(const uhid_event &event) {
         switch (event.type) {
           case UHID_OUTPUT:
-            dispatch_output(event.u.output);
+            dispatch_output_report(event.u.output.data, event.u.output.size);
             break;
           case UHID_GET_REPORT:
             send_get_report_reply(event.u.get_report.id);
             break;
           case UHID_SET_REPORT:
-            send_set_report_reply(event.u.set_report.id);
+            dispatch_output_report(event.u.set_report.data, event.u.set_report.size);
+            send_set_report_reply(event.u.set_report.id, 0);
             break;
           default:
             break;
         }
       }
 
-      void dispatch_output(const uhid_output_req &request) {
+      void dispatch_output_report(const __u8 *data, std::size_t report_size) {
         OutputCallback callback;
         {
           std::lock_guard lock {callback_mutex_};
@@ -242,10 +246,9 @@ namespace lvh::detail {
           return;
         }
 
-        GamepadOutput output;
-        output.kind = GamepadOutputKind::raw_report;
-        const auto size = std::min<std::size_t>(request.size, sizeof(request.data));
-        output.raw_report.assign(request.data, request.data + size);
+        const auto size = std::min<std::size_t>(report_size, UHID_DATA_MAX);
+        std::vector<std::uint8_t> report(data, data + size);
+        auto output = reports::parse_output_report(profile_, report);
         callback(output);
       }
 
@@ -257,15 +260,16 @@ namespace lvh::detail {
         static_cast<void>(write_event(event));
       }
 
-      void send_set_report_reply(std::uint32_t id) {
+      void send_set_report_reply(std::uint32_t id, std::uint16_t error) {
         uhid_event event {};
         event.type = UHID_SET_REPORT_REPLY;
         event.u.set_report_reply.id = id;
-        event.u.set_report_reply.err = EIO;
+        event.u.set_report_reply.err = error;
         static_cast<void>(write_event(event));
       }
 
       int fd_ = -1;
+      DeviceProfile profile_;
       std::atomic_bool open_ = true;
       std::atomic_bool running_ = false;
       std::thread reader_;

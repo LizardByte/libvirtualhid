@@ -266,6 +266,11 @@ namespace lvh {
     std::size_t input_report_size = 0;
 
     /**
+     * @brief Expected packed output report size in bytes, or `0` when none is defined.
+     */
+    std::size_t output_report_size = 0;
+
+    /**
      * @brief Human-readable device name.
      */
     std::string name;

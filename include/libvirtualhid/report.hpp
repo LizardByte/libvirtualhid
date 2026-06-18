@@ -1,6 +1,6 @@
 /**
  * @file include/libvirtualhid/report.hpp
- * @brief Gamepad state normalization and report packing declarations.
+ * @brief Gamepad state normalization, report packing, and output parsing declarations.
  */
 #pragma once
 
@@ -69,5 +69,14 @@ namespace lvh::reports {
    * @return Packed input report bytes.
    */
   std::vector<std::uint8_t> pack_input_report(const DeviceProfile &profile, const GamepadState &state);
+
+  /**
+   * @brief Parse a backend output report into the profile-neutral output model.
+   *
+   * @param profile Device profile used for report identity and capabilities.
+   * @param report Raw HID output report bytes.
+   * @return Parsed gamepad output. Unrecognized reports are returned as raw reports.
+   */
+  GamepadOutput parse_output_report(const DeviceProfile &profile, const std::vector<std::uint8_t> &report);
 
 }  // namespace lvh::reports
