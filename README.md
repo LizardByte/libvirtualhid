@@ -155,6 +155,17 @@ The Linux uinput smoke test is opt-in because it creates real keyboard and
 mouse devices. Run it with `LIBVIRTUALHID_ENABLE_UINPUT_INTEGRATION_TESTS=1` on
 a Linux host where the current user can open `/dev/uinput`.
 
+The Linux discovery integration test is opt-in because it creates a real UHID
+gamepad and probes external input discovery tools. Run it with
+`LIBVIRTUALHID_ENABLE_DISCOVERY_INTEGRATION_TESTS=1` on a Linux host where the
+current user can open `/dev/uhid`. The test uses `sdl2-jstest` and
+`hidapitester` when either tool is installed, and skips cleanly when no
+discovery tool is available.
+
+When `BUILD_EXAMPLES` is enabled on Linux, the `linux_discovery_probe` example
+creates a generic UHID gamepad and performs the same SDL/HIDAPI discovery probe
+outside the test runner.
+
 The XTest fallback should not be treated as a gamepad backend. It can cover
 keyboard and mouse injection on X11, but it does not create virtual HID devices,
 does not help on Wayland, and should not replace `uhid`/`uinput` for gamepads.
@@ -182,18 +193,22 @@ portable concepts instead of platform concepts:
 
 auto runtime = lvh::Runtime::create();
 
-auto gamepad = runtime->create_gamepad(lvh::profiles::xbox_360());
+auto created = runtime->create_gamepad(lvh::profiles::xbox_360());
+if (!created) {
+  return;
+}
 
-gamepad->set_output_callback([](const lvh::GamepadOutput& output) {
+auto &gamepad = *created.gamepad;
+gamepad.set_output_callback([](const lvh::GamepadOutput &output) {
   // Route rumble, LED, or trigger feedback back to the physical controller.
 });
 
 lvh::GamepadState state;
-state.buttons.set(lvh::GamepadButton::A, true);
+state.buttons.set(lvh::GamepadButton::a, true);
 state.left_stick = {0.25f, -0.5f};
 state.right_trigger = 1.0f;
 
-gamepad->submit(state);
+gamepad.submit(state);
 ```
 
 Expected core types:
@@ -215,28 +230,37 @@ Expected core types:
   `supports_keyboard`, `supports_mouse`, `supports_xtest_fallback`, and
   `requires_installed_driver`.
 
+## Streaming Host Integration Requirements
 
-should cover Sunshine's active input behavior before optimizing for unrelated
-consumers:
+Streaming hosts are the first consumer class to design against. The initial
+implementation should cover the behavior Sunshine needs first, while keeping
+the requirements expressed in terms that apply to other consumers:
 
-  `third-party` tree.
+- [x] CMake consumption must work as a vendored dependency under a consuming
+  project's `third-party` tree.
 - [x] The API must support multiple client-relative and global gamepad indexes so
-  feedback, and removal events.
-- [x] Built-in profiles should cover Sunshine's current gamepad choices: automatic
-  selection, Xbox One-style, DualSense-style, and Switch Pro-style devices. Xbox
-  360 can remain useful as a compatibility profile and test target.
-- [x] Controller metadata must be rich enough for Sunshine's selection rules:
+  streaming hosts can preserve stable controller lifecycles across arrival,
+  update, feedback, and removal events.
+- [x] Built-in profiles should cover common streaming controller choices:
+  automatic selection, Xbox One-style, DualSense-style, and Switch Pro-style
+  devices. Xbox 360 can remain useful as a compatibility profile and test
+  target.
+- [x] Controller metadata must be rich enough for streaming-host selection rules:
   client controller type, motion sensor capability, touchpad capability, RGB LED
   support, battery state, and per-controller identity data.
 - [ ] Output callbacks must carry rumble first, then RGB LED, adaptive trigger,
   motion activation, and raw output report data where the selected profile
   supports it.
-  mouse, absolute mouse, buttons, scroll, horizontal scroll, keyboard scancode,
-  and Unicode paths.
-- [x] Linux fallback behavior should match Sunshine's operational expectation:
+- [x] Keyboard and mouse APIs should map cleanly to common relative mouse,
+  absolute mouse, buttons, scroll, horizontal scroll, keyboard scancode, and
+  Unicode paths.
+- [x] Linux fallback behavior should match streaming-host operational
+  expectations:
   prefer real virtual devices through `uhid`/`uinput`; only use XTest for
   keyboard/mouse when virtual device creation fails and X11 is available.
+- [x] The library must not own a consumer's network protocol, client packet
   parsing, configuration system, or feedback queue. It should expose the device
+  primitives consumers need to keep that ownership in their applications.
 
 ## Tooling and Dependency Plan
 
@@ -305,9 +329,8 @@ third-party/googletest/       GoogleTest submodule
 - [x] Implement gamepad creation over `uhid` for descriptor-driven controllers.
 - [x] Add `uinput` support for keyboard and mouse once the gamepad path is stable.
 - [x] Support output report callbacks for rumble and profile-specific feedback.
-  historical legacy input implementation as the reference point.
 - [x] Add X11/XTest fallback support for keyboard and mouse only.
-- [ ] Add examples and integration tests that validate SDL/HIDAPI discovery where
+- [x] Add examples and integration tests that validate SDL/HIDAPI discovery where
   available.
 - [x] Document required Linux permissions and sample udev rules.
 
@@ -347,8 +370,9 @@ third-party/googletest/       GoogleTest submodule
 - [ ] Run lifecycle tests for create, submit, output callback, destroy, repeated
   hot-plug, and process shutdown cleanup.
 - [ ] Validate multi-controller behavior and stable ordering.
-- [ ] Test against real consumers where practical: SDL, HIDAPI, browser Gamepad API,
-  DirectInput/XInput/GameInput on Windows, and evdev/libinput tooling on Linux.
+- [ ] Test against real consumers where practical: Sunshine, SDL, HIDAPI, browser
+  Gamepad API, DirectInput/XInput/GameInput on Windows, and evdev/libinput
+  tooling on Linux.
 
 ## License
 

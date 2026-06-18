@@ -16,10 +16,11 @@ set(TEST_BINARY test_libvirtualhid)
 
 add_executable(${TEST_BINARY}
   "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/fixtures.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_gamepad_lifecycle.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_linux_discovery.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_profiles.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_report.cpp"
-  "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_runtime.cpp"
-  "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_gamepad_lifecycle.cpp")
+  "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_runtime.cpp")
 
 target_include_directories(${TEST_BINARY}
   PRIVATE
