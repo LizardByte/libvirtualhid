@@ -2,7 +2,7 @@
 # Project configuration
 #
 cmake_minimum_required(VERSION 3.24)
-project(libvirtualhid VERSION 0.1.0
+project(libvirtualhid VERSION 0.0.0
         DESCRIPTION "Cross-platform virtual HID device library."
         HOMEPAGE_URL "https://app.lizardbyte.dev"
         LANGUAGES CXX)
