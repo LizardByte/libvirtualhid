@@ -18,12 +18,16 @@ set(LIBVIRTUALHID_TEST_SOURCES
   "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/fixtures.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_gamepad_lifecycle.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_linux_backend.cpp"
-  "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_linux_discovery.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_linux_consumers.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_profiles.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_report.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_runtime.cpp")
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(LIBINPUT REQUIRED IMPORTED_TARGET libinput)
+    pkg_check_modules(SDL2 REQUIRED IMPORTED_TARGET sdl2)
+
     list(APPEND LIBVIRTUALHID_TEST_SOURCES
          "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/linux_backend_test_hooks.cpp")
 
@@ -44,6 +48,13 @@ target_link_libraries(${TEST_BINARY}
   PRIVATE
   gmock_main
   libvirtualhid::libvirtualhid)
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_link_libraries(${TEST_BINARY}
+      PRIVATE
+      PkgConfig::LIBINPUT
+      PkgConfig::SDL2)
+endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND LIBVIRTUALHID_ENABLE_XTEST AND X11_FOUND AND X11_XTest_FOUND)
     target_compile_definitions(${TEST_BINARY}

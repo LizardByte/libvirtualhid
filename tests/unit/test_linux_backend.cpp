@@ -454,17 +454,30 @@ TEST_F(LinuxBackendTest, PlatformRuntimeReportsUnavailableDeviceCreationWhenNode
 }
 #else
 TEST_F(LinuxBackendTest, TranslatesKeyboardKeys) {}
+
 TEST_F(LinuxBackendTest, TranslatesMouseButtonsAndBusTypes) {}
+
 TEST_F(LinuxBackendTest, ScalesAbsoluteAxesAndScrollSteps) {}
+
 TEST_F(LinuxBackendTest, DecodesTextHelpers) {}
+
 TEST_F(LinuxBackendTest, HandlesUhidInvalidFileDescriptorPaths) {}
+
 TEST_F(LinuxBackendTest, HandlesUinputKeyboardInvalidFileDescriptorPaths) {}
+
 TEST_F(LinuxBackendTest, PipeBackedUinputKeyboardEmitsEvents) {}
+
 TEST_F(LinuxBackendTest, HandlesUinputMouseInvalidFileDescriptorPaths) {}
+
 TEST_F(LinuxBackendTest, PipeBackedUinputMouseEmitsEvents) {}
+
 TEST_F(LinuxBackendTest, SocketpairBackedUhidGamepadRoundTripsEvents) {}
+
 TEST_F(LinuxBackendTest, FakeLinuxBackendCreatesAllDeviceTypes) {}
+
 TEST_F(LinuxBackendTest, FakeUhidSyscallsCoverFailureBranches) {}
+
 TEST_F(LinuxBackendTest, FakeUinputSyscallsCoverFailureBranches) {}
+
 TEST_F(LinuxBackendTest, PlatformRuntimeReportsUnavailableDeviceCreationWhenNodesAreMissing) {}
 #endif

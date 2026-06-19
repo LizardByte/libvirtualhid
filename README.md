@@ -153,14 +153,11 @@ current user cannot open `/dev/uhid`.
 The Linux uinput smoke test creates real keyboard and mouse devices and fails
 when the current user cannot open `/dev/uinput`.
 
-The Linux discovery integration test creates a real UHID gamepad and probes
-external input discovery tools. It fails when `/dev/uhid` is unavailable, or
-when neither `evdev-joystick` from the `joystick` package nor `hidapitester` is
-installed.
-
-When `BUILD_EXAMPLES` is enabled on Linux, the `linux_discovery_probe` example
-creates a generic UHID gamepad and performs the same external discovery probe
-outside the test runner.
+The Linux consumer integration tests create real virtual devices and validate
+them through in-process consumer libraries. SDL2 must see the UHID gamepad and
+observe button/axis input. libinput must see the uinput keyboard and mouse and
+observe key, pointer motion, and button events. These tests fail when the Linux
+device nodes or consumer development libraries are unavailable.
 
 The XTest fallback should not be treated as a gamepad backend. It can cover
 keyboard and mouse injection on X11, but it does not create virtual HID devices,
@@ -273,8 +270,8 @@ the requirements expressed in terms that apply to other consumers:
 - [x] Keep the public headers under `include/libvirtualhid` and the implementation
   split into shared core code plus platform-specific backends.
 - [x] Add Windows CI coverage for the client library with MSVC and MinGW/UCRT64.
-- [x] Add Linux CI coverage for GCC and Clang, with integration tests gated behind
-  explicit availability of `/dev/uinput`, `/dev/uhid`, or X11/XTest.
+- [x] Add Linux CI coverage for GCC and Clang, with integration tests requiring
+  `/dev/uinput`, `/dev/uhid`, SDL2, libinput, and X11/XTest where applicable.
 - [ ] Add separate WDK/MSVC validation for the driver package once driver sources
   exist.
 
@@ -326,8 +323,8 @@ third-party/googletest/       GoogleTest submodule
 - [x] Add `uinput` support for keyboard and mouse once the gamepad path is stable.
 - [x] Support output report callbacks for rumble and profile-specific feedback.
 - [x] Add X11/XTest fallback support for keyboard and mouse only.
-- [x] Add examples and integration tests that validate external gamepad
-  discovery where available.
+- [x] Add examples and integration tests that validate virtual device visibility
+  through SDL2 for gamepads and libinput for keyboard/mouse.
 - [x] Document required Linux permissions and sample udev rules.
 
 ### Phase 3: Windows MVP
@@ -368,7 +365,7 @@ third-party/googletest/       GoogleTest submodule
 - [ ] Validate multi-controller behavior and stable ordering.
 - [ ] Test against real consumers where practical: Sunshine, SDL, HIDAPI, browser
   Gamepad API, DirectInput/XInput/GameInput on Windows, and evdev/libinput
-  tooling on Linux.
+  libraries on Linux.
 
 ## License
 

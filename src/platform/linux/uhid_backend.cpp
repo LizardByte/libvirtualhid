@@ -39,6 +39,11 @@
   #include <X11/keysym.h>
   #include <X11/Xlib.h>
   #include <X11/Xutil.h>
+
+  // Xlib defines Status as a macro, which collides with lvh::Status.
+  #if defined(Status)
+    #undef Status
+  #endif
 #endif
 
 // local includes

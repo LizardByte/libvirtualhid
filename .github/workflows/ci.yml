@@ -78,19 +78,38 @@ jobs:
             build-essential \
             clang \
             cmake \
-            joystick \
+            libinput-dev \
+            libsdl2-dev \
             libx11-dev \
             libxtst-dev \
             llvm \
-            ninja-build
+            ninja-build \
+            pkg-config
+          kernel_modules_package="linux-modules-extra-$(uname -r)"
+          if apt-cache show "${kernel_modules_package}" >/dev/null 2>&1; then
+            sudo apt-get install -y "${kernel_modules_package}"
+          else
+            echo "::warning::${kernel_modules_package} is unavailable; relying on the runner image kernel modules."
+          fi
           sudo tee /etc/udev/rules.d/99-libvirtualhid-ci.rules >/dev/null <<'EOF'
           KERNEL=="hidraw*", ATTRS{name}=="libvirtualhid*", MODE="0666", TAG+="uaccess"
           SUBSYSTEMS=="input", ATTRS{name}=="libvirtualhid*", MODE="0666", TAG+="uaccess"
           EOF
           sudo udevadm control --reload-rules
-          sudo modprobe uhid
-          sudo modprobe uinput
-          sudo chmod a+rw /dev/uhid /dev/uinput
+          for module in uhid uinput; do
+            if ! sudo modprobe "${module}"; then
+              message="Unable to load ${module}; tests requiring /dev/${module} will fail unless the device already exists."
+              echo "::warning::${message}"
+            fi
+          done
+          for node in /dev/uhid /dev/uinput; do
+            if [[ -e "${node}" ]]; then
+              sudo chmod a+rw "${node}"
+            else
+              echo "::error::${node} does not exist after module setup."
+              exit 1
+            fi
+          done
 
       - name: Setup Dependencies macOS
         if: runner.os == 'macOS'

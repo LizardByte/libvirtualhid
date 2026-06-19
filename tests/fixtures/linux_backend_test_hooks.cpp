@@ -31,6 +31,11 @@
   #if defined(LIBVIRTUALHID_HAVE_XTEST)
     #include <X11/extensions/XTest.h>
     #include <X11/Xlib.h>
+
+    // Xlib defines Status as a macro, which collides with lvh::Status declarations.
+    #if defined(Status)
+      #undef Status
+    #endif
   #endif
 #endif
 
@@ -194,7 +199,7 @@ std::ptrdiff_t lvh_linux_test_read(int fd, void *buffer, std::size_t size) {
   return static_cast<std::ptrdiff_t>(::read(fd, buffer, size));
 }
 
-#if defined(LIBVIRTUALHID_HAVE_XTEST)
+  #if defined(LIBVIRTUALHID_HAVE_XTEST)
 Display *lvh_linux_test_x_open_display(const char *) {
   return reinterpret_cast<Display *>(0x1);
 }
@@ -242,55 +247,55 @@ int lvh_linux_test_xtest_fake_motion_event(Display *, int, int, int, unsigned lo
 int lvh_linux_test_xtest_fake_relative_motion_event(Display *, int, int, unsigned long) {
   return 1;
 }
-#endif
+  #endif
 
-#define access lvh_linux_test_access
-#define ioctl lvh_linux_test_ioctl
-#define open lvh_linux_test_open
-#define poll lvh_linux_test_poll
-#define read lvh_linux_test_read
-#define write lvh_linux_test_write
+  #define access lvh_linux_test_access
+  #define ioctl lvh_linux_test_ioctl
+  #define open lvh_linux_test_open
+  #define poll lvh_linux_test_poll
+  #define read lvh_linux_test_read
+  #define write lvh_linux_test_write
 
-#if defined(LIBVIRTUALHID_HAVE_XTEST)
-  #define DefaultScreen lvh_linux_test_default_screen
-  #define DisplayHeight lvh_linux_test_display_height
-  #define DisplayWidth lvh_linux_test_display_width
-  #define XCloseDisplay lvh_linux_test_x_close_display
-  #define XFlush lvh_linux_test_x_flush
-  #define XKeysymToKeycode lvh_linux_test_x_keysym_to_keycode
-  #define XOpenDisplay lvh_linux_test_x_open_display
-  #define XTestFakeButtonEvent lvh_linux_test_xtest_fake_button_event
-  #define XTestFakeKeyEvent lvh_linux_test_xtest_fake_key_event
-  #define XTestFakeMotionEvent lvh_linux_test_xtest_fake_motion_event
-  #define XTestFakeRelativeMotionEvent lvh_linux_test_xtest_fake_relative_motion_event
-  #define XTestQueryExtension lvh_linux_test_xtest_query_extension
-#endif
+  #if defined(LIBVIRTUALHID_HAVE_XTEST)
+    #define DefaultScreen lvh_linux_test_default_screen
+    #define DisplayHeight lvh_linux_test_display_height
+    #define DisplayWidth lvh_linux_test_display_width
+    #define XCloseDisplay lvh_linux_test_x_close_display
+    #define XFlush lvh_linux_test_x_flush
+    #define XKeysymToKeycode lvh_linux_test_x_keysym_to_keycode
+    #define XOpenDisplay lvh_linux_test_x_open_display
+    #define XTestFakeButtonEvent lvh_linux_test_xtest_fake_button_event
+    #define XTestFakeKeyEvent lvh_linux_test_xtest_fake_key_event
+    #define XTestFakeMotionEvent lvh_linux_test_xtest_fake_motion_event
+    #define XTestFakeRelativeMotionEvent lvh_linux_test_xtest_fake_relative_motion_event
+    #define XTestQueryExtension lvh_linux_test_xtest_query_extension
+  #endif
 
-#define create_platform_backend create_platform_backend_for_linux_backend_test_hooks
-#include "../../src/platform/linux/uhid_backend.cpp"
-#undef create_platform_backend
+  #define create_platform_backend create_platform_backend_for_linux_backend_test_hooks
+  #include "../../src/platform/linux/uhid_backend.cpp"
+  #undef create_platform_backend
 
-#if defined(LIBVIRTUALHID_HAVE_XTEST)
-  #undef XTestQueryExtension
-  #undef XTestFakeRelativeMotionEvent
-  #undef XTestFakeMotionEvent
-  #undef XTestFakeKeyEvent
-  #undef XTestFakeButtonEvent
-  #undef XOpenDisplay
-  #undef XKeysymToKeycode
-  #undef XFlush
-  #undef XCloseDisplay
-  #undef DisplayWidth
-  #undef DisplayHeight
-  #undef DefaultScreen
-#endif
+  #if defined(LIBVIRTUALHID_HAVE_XTEST)
+    #undef XTestQueryExtension
+    #undef XTestFakeRelativeMotionEvent
+    #undef XTestFakeMotionEvent
+    #undef XTestFakeKeyEvent
+    #undef XTestFakeButtonEvent
+    #undef XOpenDisplay
+    #undef XKeysymToKeycode
+    #undef XFlush
+    #undef XCloseDisplay
+    #undef DisplayWidth
+    #undef DisplayHeight
+    #undef DefaultScreen
+  #endif
 
-#undef write
-#undef read
-#undef poll
-#undef open
-#undef ioctl
-#undef access
+  #undef write
+  #undef read
+  #undef poll
+  #undef open
+  #undef ioctl
+  #undef access
 
 namespace lvh::detail::test {
   namespace {
@@ -742,7 +747,7 @@ namespace lvh::detail::test {
   }
 
   Status linux_backend_keyboard_fake_fallback_success() {
-#if defined(LIBVIRTUALHID_HAVE_XTEST)
+  #if defined(LIBVIRTUALHID_HAVE_XTEST)
     LinuxTestSyscalls syscalls;
     enable_fake_device_syscalls(syscalls);
     syscalls.fail_ioctl_call = 1;
@@ -757,9 +762,9 @@ namespace lvh::detail::test {
       return keyboard.status;
     }
     return keyboard.keyboard->close();
-#else
+  #else
     return Status::failure(ErrorCode::backend_unavailable, "XTest fallback is not enabled");
-#endif
+  #endif
   }
 
   Status linux_backend_mouse_fake_open_failure() {
@@ -790,7 +795,7 @@ namespace lvh::detail::test {
   }
 
   Status linux_backend_mouse_fake_fallback_success() {
-#if defined(LIBVIRTUALHID_HAVE_XTEST)
+  #if defined(LIBVIRTUALHID_HAVE_XTEST)
     LinuxTestSyscalls syscalls;
     enable_fake_device_syscalls(syscalls);
     syscalls.fail_ioctl_call = 1;
@@ -805,9 +810,9 @@ namespace lvh::detail::test {
       return mouse.status;
     }
     return mouse.mouse->close();
-#else
+  #else
     return Status::failure(ErrorCode::backend_unavailable, "XTest fallback is not enabled");
-#endif
+  #endif
   }
 
   Status linux_uhid_submit_fake_write_failure() {
