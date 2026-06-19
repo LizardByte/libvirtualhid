@@ -1,5 +1,5 @@
 /**
- * @file include/libvirtualhid/types.hpp
+ * @file src/include/libvirtualhid/types.hpp
  * @brief Core public types for libvirtualhid.
  */
 #pragma once

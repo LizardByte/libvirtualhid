@@ -1,5 +1,5 @@
 /**
- * @file include/libvirtualhid/runtime.hpp
+ * @file src/include/libvirtualhid/runtime.hpp
  * @brief Runtime and virtual device handle declarations.
  */
 #pragma once

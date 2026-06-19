@@ -1,5 +1,5 @@
 /**
- * @file libvirtualhid/libvirtualhid.hpp
+ * @file src/include/libvirtualhid/libvirtualhid.hpp
  * @brief Aggregate include for the libvirtualhid public C++ API.
  */
 #pragma once

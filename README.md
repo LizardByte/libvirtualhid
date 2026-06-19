@@ -288,7 +288,7 @@ the requirements expressed in terms that apply to other consumers:
 - [x] Add the LizardByte Doxygen configuration as a submodule at
   `third-party/doxyconfig` and use it for local docs and Read the Docs builds.
 - [x] Expose `libvirtualhid::libvirtualhid` as the main CMake target.
-- [x] Keep the public headers under `include/libvirtualhid` and the implementation
+- [x] Keep the public headers under `src/include/libvirtualhid` and the implementation
   split into shared core code plus platform-specific backends.
 - [x] Add Windows CI coverage for the client library with MSVC and MinGW/UCRT64.
 - [x] Add Linux CI coverage for GCC and Clang, with integration tests requiring
@@ -301,7 +301,7 @@ the requirements expressed in terms that apply to other consumers:
 The intended project layout is:
 
 ```text
-include/libvirtualhid/        Public C++ headers
+src/include/libvirtualhid/    Public C++ headers
 src/core/                     Shared profile, descriptor, and report logic
 src/platform/windows/         Windows client backend and UMDF control channel
 src/platform/linux/           Linux uhid/uinput backend

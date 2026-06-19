@@ -36,4 +36,4 @@ WARN_IF_UNDOCUMENTED = YES
 USE_MDFILE_AS_MAINPAGE = ../README.md
 INPUT = ../README.md \
         ../third-party/doxyconfig/docs/source_code.md \
-        ../include
+        ../src/include

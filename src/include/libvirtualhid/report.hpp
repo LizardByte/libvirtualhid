@@ -1,5 +1,5 @@
 /**
- * @file include/libvirtualhid/report.hpp
+ * @file src/include/libvirtualhid/report.hpp
  * @brief Gamepad state normalization, report packing, and output parsing declarations.
  */
 #pragma once

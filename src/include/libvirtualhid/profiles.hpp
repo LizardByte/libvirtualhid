@@ -1,5 +1,5 @@
 /**
- * @file include/libvirtualhid/profiles.hpp
+ * @file src/include/libvirtualhid/profiles.hpp
  * @brief Built-in virtual device profile declarations.
  */
 #pragma once
