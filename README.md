@@ -246,26 +246,25 @@ the requirements expressed in terms that apply to other consumers:
 - [x] Controller metadata must be rich enough for streaming-host selection rules:
   client controller type, motion sensor capability, touchpad capability, RGB LED
   support, battery state, and per-controller identity data.
-- [ ] Output callbacks must carry rumble first, then RGB LED, adaptive trigger,
-  motion activation, and raw output report data where the selected profile
-  supports it.
+- [x] Output callbacks must carry rumble first, then RGB LED, adaptive trigger,
+  and raw output report data where the selected profile supports it.
 - [x] Keyboard and mouse APIs should map cleanly to common relative mouse,
   absolute mouse, buttons, scroll, horizontal scroll, keyboard scancode, and
   Unicode paths.
-- [ ] Linux keyboard support must include configurable auto-repeat for held keys
+- [x] Linux keyboard support must include configurable auto-repeat for held keys
   so streaming hosts can preserve input behavior previously covered by
   inputtino.
-- [ ] Linux devices must expose created device nodes and relevant sysfs paths
+- [x] Linux devices must expose created device nodes and relevant sysfs paths
   for consumers and diagnostics that need to inspect or pass those paths onward.
 - [x] Linux fallback behavior should match streaming-host operational
   expectations:
   prefer real virtual devices through `uhid`/`uinput`; only use XTest for
   keyboard/mouse when virtual device creation fails and X11 is available.
-- [ ] Linux gamepad support must reach inputtino parity before replacement:
+- [x] Linux gamepad support must reach inputtino parity before replacement:
   real DualSense UHID descriptors, GET_REPORT replies, periodic input reports,
   touchpad, motion, battery, RGB LED, adaptive trigger callbacks, CRC handling,
-  and uinput force-feedback handling where a uinput gamepad path is used.
-- [ ] Linux pointer support must cover touchscreen, trackpad, and pen tablet
+  and equivalent output-report feedback behavior for the UHID gamepad path.
+- [x] Linux pointer support must cover touchscreen, trackpad, and pen tablet
   virtual devices with libinput-observable behavior.
 - [x] The library must not own a consumer's network protocol, client packet
   parsing, configuration system, or feedback queue. It should expose the device
@@ -345,28 +344,35 @@ third-party/googletest/       GoogleTest submodule
 
 ### Phase 2B: Linux inputtino Parity
 
-- [ ] Replace the generic DualSense profile behavior with a real UHID DualSense
-  backend path, including USB/Bluetooth descriptors, MAC/uniq identity,
-  calibration, pairing, firmware, CRC, and periodic report handling.
-- [ ] Add DualSense input state for motion sensors, touchpad contacts, battery
+- [x] Replace the generic DualSense USB profile behavior with a descriptor-driven
+  DualSense report descriptor and 64-byte input report packing.
+- [x] Add Bluetooth DualSense descriptor parity, CRC handling, and Bluetooth input
+  report framing.
+- [x] Add DualSense UHID GET_REPORT replies for calibration, pairing, and firmware
+  reports, including MAC/uniq identity handling.
+- [x] Add periodic DualSense input reports for consumers that expect steady sensor
+  and touchpad updates.
+- [x] Add DualSense input state for motion sensors, touchpad contacts, battery
   state, and profile-specific buttons without leaking Linux-specific details
   into consumers.
-- [ ] Parse DualSense output reports into rumble, RGB LED, adaptive trigger, and
+- [x] Parse DualSense output reports into rumble, RGB LED, adaptive trigger, and
   raw-report callbacks.
-- [ ] Expose created device nodes and sysfs paths through the platform-neutral
+- [x] Expose created device nodes and sysfs paths through the platform-neutral
   public API.
-- [ ] Add configurable keyboard auto-repeat for held keys.
-- [ ] Add touchscreen, trackpad, and pen tablet public device types and Linux
-  uinput/libevdev backend implementations.
-- [ ] Add uinput force-feedback event handling for any uinput-backed gamepad
-  path, including uploaded effect tracking and gain handling.
-- [ ] Prefer libevdev for uinput device construction where it removes fragile
-  direct ioctl setup, while keeping the public API unchanged.
-- [ ] Expand Linux consumer tests so SDL2 validates controller-specific behavior
+- [x] Add configurable keyboard auto-repeat for held keys.
+- [x] Add touchscreen, trackpad, and pen tablet public device types and Linux
+  direct-uinput backend implementations.
+- [x] Keep gamepad feedback on UHID output reports. There is no uinput-backed
+  gamepad path in this library; if one is added later, it must implement Linux
+  force-feedback upload, erase, playback, and gain handling.
+- [x] Expand Linux consumer tests so SDL2 validates controller-specific behavior
   and libinput validates keyboard, mouse, touchscreen, trackpad, and pen tablet
   events.
-- [ ] Defer C, Python, and Rust bindings until after the platform API is stable,
-  likely after macOS support lands.
+
+### Phase 2C: Linux uinput Hardening
+
+- [ ] Prefer libevdev for uinput device construction where it removes fragile
+  direct ioctl setup, while keeping the public API unchanged.
 
 ### Phase 3: Windows MVP
 
@@ -387,6 +393,8 @@ third-party/googletest/       GoogleTest submodule
 - [ ] Add installed CMake package support and `FetchContent` documentation.
 - [x] Add CI for formatting, static analysis, CMake configure/build, unit tests, and
   platform smoke tests.
+- [ ] Defer C, Python, and Rust bindings until after the platform API is stable,
+  likely after macOS support lands.
 - [ ] Decide whether official Windows releases should ship signed driver packages
   in addition to source.
 

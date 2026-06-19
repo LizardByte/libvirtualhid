@@ -66,6 +66,11 @@ namespace lvh::detail::test {
       std::vector<std::ptrdiff_t> read_results;
       std::vector<int> read_errors;
       uhid_event read_event {};
+      bool override_xtest_query = false;
+      bool xtest_query_result = true;
+      bool override_x_keycode = false;
+      std::atomic_int x_keycode_call_count = 0;
+      int fail_x_keycode_call = -1;
     };
 
     LinuxTestSyscalls *active_test_syscalls = nullptr;
@@ -206,10 +211,19 @@ int lvh_linux_test_x_close_display(Display *) {
 }
 
 Bool lvh_linux_test_xtest_query_extension(Display *, int *, int *, int *, int *) {
+  if (lvh::detail::test::active_test_syscalls != nullptr && lvh::detail::test::active_test_syscalls->override_xtest_query) {
+    return lvh::detail::test::active_test_syscalls->xtest_query_result ? True : False;
+  }
   return True;
 }
 
 KeyCode lvh_linux_test_x_keysym_to_keycode(Display *, KeySym keysym) {
+  if (lvh::detail::test::active_test_syscalls != nullptr && lvh::detail::test::active_test_syscalls->override_x_keycode) {
+    const auto call_count = ++lvh::detail::test::active_test_syscalls->x_keycode_call_count;
+    if (lvh::detail::test::active_test_syscalls->fail_x_keycode_call == call_count) {
+      return 0;
+    }
+  }
   return keysym == NoSymbol ? 0 : 1;
 }
 
@@ -360,6 +374,26 @@ namespace lvh::detail::test {
       return true;
     }
 
+    bool read_uhid_event_type(int fd, unsigned int event_type, uhid_event &event) {
+      const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds {1};
+      while (std::chrono::steady_clock::now() < deadline) {
+        if (!read_uhid_event(fd, event)) {
+          return false;
+        }
+        if (event.type == event_type) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    std::uint32_t read_u32_le(const std::uint8_t *buffer) {
+      return static_cast<std::uint32_t>(buffer[0]) |
+             (static_cast<std::uint32_t>(buffer[1]) << 8U) |
+             (static_cast<std::uint32_t>(buffer[2]) << 16U) |
+             (static_cast<std::uint32_t>(buffer[3]) << 24U);
+    }
+
     void enable_fake_device_syscalls(LinuxTestSyscalls &syscalls) {
       syscalls.override_access = true;
       syscalls.override_open = true;
@@ -447,6 +481,55 @@ namespace lvh::detail::test {
 
   int linux_legacy_scroll_steps(std::int32_t distance) {
     return legacy_scroll_steps(distance);
+  }
+
+  int linux_pen_tool(PenToolType tool) {
+    return pen_tool_to_linux(tool);
+  }
+
+  int linux_pen_button(PenButton button) {
+    return pen_button_to_linux(button);
+  }
+
+  std::string linux_dualsense_mac_address(const std::string &stable_id, DeviceId id) {
+    return format_mac_address(parse_mac_address(stable_id).value_or(generated_mac_address(id)));
+  }
+
+  bool linux_first_line_matches(const std::string &path, const std::string &expected) {
+    const auto line = read_first_line(path);
+    return line && *line == expected;
+  }
+
+  bool linux_first_line_missing(const std::string &path) {
+    return !read_first_line(path);
+  }
+
+  bool linux_hidraw_name_matches(const std::string &path, const std::string &name) {
+    return hidraw_name_matches(path, name);
+  }
+
+  std::vector<DeviceNode> linux_discover_nodes_by_name(const std::string &name) {
+    return discover_input_nodes_by_name(name);
+  }
+
+  std::vector<DeviceNode> linux_discover_nodes_by_name(
+    const std::string &name,
+    const std::string &input_root,
+    const std::string &hidraw_root
+  ) {
+    return discover_input_nodes_by_name(name, input_root, hidraw_root);
+  }
+
+  std::size_t linux_empty_device_nodes_count() {
+    UhidGamepad gamepad {-1};
+    UinputKeyboard keyboard {-1};
+    UinputMouse mouse {-1};
+    UinputTouchscreen touchscreen {-1};
+    UinputTrackpad trackpad {-1};
+    UinputPenTablet pen_tablet {-1};
+
+    return gamepad.device_nodes().size() + keyboard.device_nodes().size() + mouse.device_nodes().size() +
+           touchscreen.device_nodes().size() + trackpad.device_nodes().size() + pen_tablet.device_nodes().size();
   }
 
   std::size_t linux_uhid_descriptor_limit() {
@@ -628,6 +711,114 @@ namespace lvh::detail::test {
     return {std::move(status), std::move(records)};
   }
 
+  LinuxInputSubmissionResult linux_uinput_trackpad_multi_contact_pipe() {
+    int descriptors[2] {-1, -1};
+    if (::pipe(descriptors) != 0) {
+      return {system_error_status(ErrorCode::backend_failure, "failed to create pipe", errno), {}};
+    }
+
+    UinputTrackpad trackpad {descriptors[1]};
+    auto status = OperationStatus::success();
+    for (auto id = 0; id < 5 && status.ok(); ++id) {
+      status = trackpad.place_contact({
+        .id = id,
+        .x = static_cast<float>(id) / 5.0F,
+        .y = 0.5F,
+        .pressure = 0.5F,
+        .orientation = id * 10,
+      });
+    }
+    for (auto id = 4; id >= 0 && status.ok(); --id) {
+      status = trackpad.release_contact(id);
+    }
+    static_cast<void>(trackpad.close());
+    auto records = read_input_events_until_eof(descriptors[0]);
+    static_cast<void>(::close(descriptors[0]));
+    return {std::move(status), std::move(records)};
+  }
+
+  OperationStatus linux_uinput_touchscreen_invalid_contacts() {
+    int descriptors[2] {-1, -1};
+    if (::pipe(descriptors) != 0) {
+      return system_error_status(ErrorCode::backend_failure, "failed to create pipe", errno);
+    }
+
+    UinputTouchscreen touchscreen {descriptors[1]};
+    static_cast<void>(touchscreen.place_contact({.id = -1}));
+
+    auto status = OperationStatus::success();
+    for (auto id = 0; id <= touch_max_contacts && status.ok(); ++id) {
+      status = touchscreen.place_contact({
+        .id = id,
+        .x = 0.5F,
+        .y = 0.5F,
+        .pressure = 0.5F,
+        .orientation = 0,
+      });
+    }
+
+    static_cast<void>(touchscreen.close());
+    static_cast<void>(read_input_events_until_eof(descriptors[0]));
+    static_cast<void>(::close(descriptors[0]));
+    return status;
+  }
+
+  LinuxInputSubmissionResult linux_uinput_pen_tablet_transition_pipe() {
+    int descriptors[2] {-1, -1};
+    if (::pipe(descriptors) != 0) {
+      return {system_error_status(ErrorCode::backend_failure, "failed to create pipe", errno), {}};
+    }
+
+    UinputPenTablet pen_tablet {descriptors[1]};
+    auto status = OperationStatus::success();
+    const PenToolType tools[] {
+      PenToolType::pen,
+      PenToolType::eraser,
+      PenToolType::brush,
+      PenToolType::pencil,
+      PenToolType::airbrush,
+      PenToolType::touch,
+      PenToolType::unchanged,
+    };
+    for (const auto tool : tools) {
+      if (!status.ok()) {
+        break;
+      }
+      status = pen_tablet.place_tool({
+        .tool = tool,
+        .x = 0.25F,
+        .y = 0.75F,
+        .pressure = tool == PenToolType::eraser ? -1.0F : 0.25F,
+        .distance = tool == PenToolType::eraser ? 0.5F : -1.0F,
+        .tilt_x = 120.0F,
+        .tilt_y = -120.0F,
+      });
+    }
+    if (status.ok()) {
+      status = pen_tablet.button(PenButton::secondary, true);
+    }
+    if (status.ok()) {
+      status = pen_tablet.button(PenButton::secondary, false);
+    }
+    if (status.ok()) {
+      status = pen_tablet.button(PenButton::tertiary, true);
+    }
+    if (status.ok()) {
+      status = pen_tablet.button(PenButton::tertiary, false);
+    }
+    static_cast<void>(pen_tablet.close());
+    auto records = read_input_events_until_eof(descriptors[0]);
+    static_cast<void>(::close(descriptors[0]));
+    return {std::move(status), std::move(records)};
+  }
+
+  OperationStatus linux_uinput_pen_tablet_closed_status() {
+    UinputPenTablet pen_tablet {-1};
+    static_cast<void>(pen_tablet.close());
+    static_cast<void>(pen_tablet.place_tool({}));
+    return pen_tablet.button(PenButton::primary, true);
+  }
+
   LinuxUhidRoundTripResult linux_uhid_socketpair_roundtrip() {
     LinuxUhidRoundTripResult result;
     int descriptors[2] {-1, -1};
@@ -710,6 +901,137 @@ namespace lvh::detail::test {
     return result;
   }
 
+  LinuxUhidRoundTripResult linux_dualsense_uhid_socketpair_reports() {
+    LinuxUhidRoundTripResult result;
+    int descriptors[2] {-1, -1};
+    if (::socketpair(AF_UNIX, SOCK_STREAM, 0, descriptors) != 0) {
+      result.create_status = system_error_status(ErrorCode::backend_failure, "failed to create socketpair", errno);
+      result.submit_status = result.create_status;
+      result.close_status = result.create_status;
+      return result;
+    }
+
+    CreateGamepadOptions options;
+    options.profile = profiles::dualsense_usb();
+    options.metadata.stable_id = "02:03:04:05:06:07";
+
+    UhidGamepad gamepad {descriptors[0]};
+    result.create_status = gamepad.create(8, options);
+
+    uhid_event event {};
+    if (read_uhid_event_type(descriptors[1], UHID_CREATE2, event)) {
+      result.saw_create = event.u.create2.vendor == options.profile.vendor_id &&
+                          event.u.create2.product == options.profile.product_id;
+    }
+
+    event = {};
+    event.type = UHID_GET_REPORT;
+    event.u.get_report.id = 11;
+    event.u.get_report.rnum = 0x05;
+    static_cast<void>(write_uhid_event(descriptors[1], event));
+    if (read_uhid_event_type(descriptors[1], UHID_GET_REPORT_REPLY, event)) {
+      result.saw_dualsense_calibration = event.u.get_report_reply.err == 0 && event.u.get_report_reply.size > 0 &&
+                                         event.u.get_report_reply.data[0] == 0x05;
+    }
+
+    event = {};
+    event.type = UHID_GET_REPORT;
+    event.u.get_report.id = 12;
+    event.u.get_report.rnum = 0x09;
+    static_cast<void>(write_uhid_event(descriptors[1], event));
+    if (read_uhid_event_type(descriptors[1], UHID_GET_REPORT_REPLY, event)) {
+      result.saw_dualsense_pairing = event.u.get_report_reply.err == 0 && event.u.get_report_reply.size > 7 &&
+                                     event.u.get_report_reply.data[0] == 0x09 &&
+                                     event.u.get_report_reply.data[1] == 0x07 &&
+                                     event.u.get_report_reply.data[6] == 0x02;
+    }
+
+    event = {};
+    event.type = UHID_GET_REPORT;
+    event.u.get_report.id = 13;
+    event.u.get_report.rnum = 0x20;
+    static_cast<void>(write_uhid_event(descriptors[1], event));
+    if (read_uhid_event_type(descriptors[1], UHID_GET_REPORT_REPLY, event)) {
+      result.saw_dualsense_firmware = event.u.get_report_reply.err == 0 && event.u.get_report_reply.size > 0 &&
+                                      event.u.get_report_reply.data[0] == 0x20;
+    }
+
+    event = {};
+    event.type = UHID_GET_REPORT;
+    event.u.get_report.id = 15;
+    event.u.get_report.rnum = 0x7F;
+    static_cast<void>(write_uhid_event(descriptors[1], event));
+    static_cast<void>(read_uhid_event_type(descriptors[1], UHID_GET_REPORT_REPLY, event));
+
+    result.close_status = gamepad.close();
+    static_cast<void>(::close(descriptors[1]));
+    result.submit_status = OperationStatus::success();
+    return result;
+  }
+
+  LinuxUhidRoundTripResult linux_dualsense_bluetooth_uhid_socketpair_reports() {
+    LinuxUhidRoundTripResult result;
+    int descriptors[2] {-1, -1};
+    if (::socketpair(AF_UNIX, SOCK_STREAM, 0, descriptors) != 0) {
+      result.create_status = system_error_status(ErrorCode::backend_failure, "failed to create socketpair", errno);
+      result.submit_status = result.create_status;
+      result.close_status = result.create_status;
+      return result;
+    }
+
+    CreateGamepadOptions options;
+    options.profile = profiles::dualsense_bluetooth();
+    options.metadata.stable_id = "02:03:04:05:06:07";
+
+    UhidGamepad gamepad {descriptors[0]};
+    result.create_status = gamepad.create(9, options);
+
+    uhid_event event {};
+    if (read_uhid_event_type(descriptors[1], UHID_CREATE2, event)) {
+      result.saw_create = event.u.create2.vendor == options.profile.vendor_id &&
+                          event.u.create2.product == options.profile.product_id &&
+                          event.u.create2.bus == BUS_BLUETOOTH;
+    }
+
+    if (read_uhid_event_type(descriptors[1], UHID_INPUT2, event)) {
+      const auto report_size = static_cast<std::size_t>(event.u.input2.size);
+      if (report_size == options.profile.input_report_size && event.u.input2.data[0] == 0x31) {
+        const auto crc_offset = report_size - 4U;
+        const auto expected_crc = crc32(event.u.input2.data, crc_offset, dualsense_crc_seed(0xA1));
+        const auto actual_crc = read_u32_le(event.u.input2.data + crc_offset);
+        result.saw_dualsense_bluetooth_input = expected_crc == actual_crc;
+      }
+    }
+
+    event = {};
+    event.type = UHID_GET_REPORT;
+    event.u.get_report.id = 14;
+    event.u.get_report.rnum = 0x09;
+    static_cast<void>(write_uhid_event(descriptors[1], event));
+    if (read_uhid_event_type(descriptors[1], UHID_GET_REPORT_REPLY, event)) {
+      const auto report_size = static_cast<std::size_t>(event.u.get_report_reply.size);
+      result.saw_dualsense_pairing = event.u.get_report_reply.err == 0 && report_size > 7U &&
+                                     event.u.get_report_reply.data[0] == 0x09 &&
+                                     event.u.get_report_reply.data[1] == 0x07 &&
+                                     event.u.get_report_reply.data[6] == 0x02;
+      if (report_size >= 4U) {
+        const auto crc_offset = report_size - 4U;
+        const auto expected_crc = crc32(
+          event.u.get_report_reply.data,
+          crc_offset,
+          dualsense_crc_seed(dualsense_feature_crc_seed)
+        );
+        const auto actual_crc = read_u32_le(event.u.get_report_reply.data + crc_offset);
+        result.saw_dualsense_feature_crc = expected_crc == actual_crc;
+      }
+    }
+
+    result.close_status = gamepad.close();
+    static_cast<void>(::close(descriptors[1]));
+    result.submit_status = OperationStatus::success();
+    return result;
+  }
+
   LinuxBackendFakeCreationResult linux_backend_create_all_fake_success() {
     LinuxTestSyscalls syscalls;
     enable_fake_device_syscalls(syscalls);
@@ -744,6 +1066,33 @@ namespace lvh::detail::test {
     result.mouse_status = mouse.status;
     if (mouse) {
       result.mouse_close_status = mouse.mouse->close();
+    }
+
+    CreateTouchscreenOptions touchscreen_options;
+    touchscreen_options.profile = profiles::touchscreen();
+    touchscreen_options.stable_id = "fake-linux-touchscreen";
+    auto touchscreen = backend.create_touchscreen(4, touchscreen_options);
+    result.touchscreen_status = touchscreen.status;
+    if (touchscreen) {
+      result.touchscreen_close_status = touchscreen.touchscreen->close();
+    }
+
+    CreateTrackpadOptions trackpad_options;
+    trackpad_options.profile = profiles::trackpad();
+    trackpad_options.stable_id = "fake-linux-trackpad";
+    auto trackpad = backend.create_trackpad(5, trackpad_options);
+    result.trackpad_status = trackpad.status;
+    if (trackpad) {
+      result.trackpad_close_status = trackpad.trackpad->close();
+    }
+
+    CreatePenTabletOptions pen_tablet_options;
+    pen_tablet_options.profile = profiles::pen_tablet();
+    pen_tablet_options.stable_id = "fake-linux-pen-tablet";
+    auto pen_tablet = backend.create_pen_tablet(6, pen_tablet_options);
+    result.pen_tablet_status = pen_tablet.status;
+    if (pen_tablet) {
+      result.pen_tablet_close_status = pen_tablet.pen_tablet->close();
     }
 
     return result;
@@ -880,6 +1229,117 @@ namespace lvh::detail::test {
   #else
     return OperationStatus::failure(ErrorCode::backend_unavailable, "XTest fallback is not enabled");
   #endif
+  }
+
+  OperationStatus linux_backend_keyboard_fake_create_failure_without_fallback() {
+    LinuxTestSyscalls syscalls;
+    enable_fake_device_syscalls(syscalls);
+    syscalls.fail_ioctl_call = 1;
+    syscalls.override_xtest_query = true;
+    syscalls.xtest_query_result = false;
+    ScopedLinuxTestSyscalls scoped_syscalls {syscalls};
+
+    LinuxUhidBackend backend;
+
+    CreateKeyboardOptions options;
+    options.profile = profiles::keyboard();
+    return backend.create_keyboard(1, options).status;
+  }
+
+  OperationStatus linux_backend_mouse_fake_create_failure_without_fallback() {
+    LinuxTestSyscalls syscalls;
+    enable_fake_device_syscalls(syscalls);
+    syscalls.fail_ioctl_call = 1;
+    syscalls.override_xtest_query = true;
+    syscalls.xtest_query_result = false;
+    ScopedLinuxTestSyscalls scoped_syscalls {syscalls};
+
+    LinuxUhidBackend backend;
+
+    CreateMouseOptions options;
+    options.profile = profiles::mouse();
+    return backend.create_mouse(1, options).status;
+  }
+
+  OperationStatus linux_backend_touchscreen_fake_open_failure() {
+    LinuxTestSyscalls syscalls;
+    syscalls.override_access = true;
+    syscalls.override_open = true;
+    syscalls.open_result = -1;
+    ScopedLinuxTestSyscalls scoped_syscalls {syscalls};
+
+    LinuxUhidBackend backend;
+
+    CreateTouchscreenOptions options;
+    options.profile = profiles::touchscreen();
+    return backend.create_touchscreen(1, options).status;
+  }
+
+  OperationStatus linux_backend_touchscreen_fake_create_failure() {
+    LinuxTestSyscalls syscalls;
+    enable_fake_device_syscalls(syscalls);
+    syscalls.fail_ioctl_call = 1;
+    ScopedLinuxTestSyscalls scoped_syscalls {syscalls};
+
+    LinuxUhidBackend backend;
+
+    CreateTouchscreenOptions options;
+    options.profile = profiles::touchscreen();
+    return backend.create_touchscreen(1, options).status;
+  }
+
+  OperationStatus linux_backend_trackpad_fake_open_failure() {
+    LinuxTestSyscalls syscalls;
+    syscalls.override_access = true;
+    syscalls.override_open = true;
+    syscalls.open_result = -1;
+    ScopedLinuxTestSyscalls scoped_syscalls {syscalls};
+
+    LinuxUhidBackend backend;
+
+    CreateTrackpadOptions options;
+    options.profile = profiles::trackpad();
+    return backend.create_trackpad(1, options).status;
+  }
+
+  OperationStatus linux_backend_trackpad_fake_create_failure() {
+    LinuxTestSyscalls syscalls;
+    enable_fake_device_syscalls(syscalls);
+    syscalls.fail_ioctl_call = 1;
+    ScopedLinuxTestSyscalls scoped_syscalls {syscalls};
+
+    LinuxUhidBackend backend;
+
+    CreateTrackpadOptions options;
+    options.profile = profiles::trackpad();
+    return backend.create_trackpad(1, options).status;
+  }
+
+  OperationStatus linux_backend_pen_tablet_fake_open_failure() {
+    LinuxTestSyscalls syscalls;
+    syscalls.override_access = true;
+    syscalls.override_open = true;
+    syscalls.open_result = -1;
+    ScopedLinuxTestSyscalls scoped_syscalls {syscalls};
+
+    LinuxUhidBackend backend;
+
+    CreatePenTabletOptions options;
+    options.profile = profiles::pen_tablet();
+    return backend.create_pen_tablet(1, options).status;
+  }
+
+  OperationStatus linux_backend_pen_tablet_fake_create_failure() {
+    LinuxTestSyscalls syscalls;
+    enable_fake_device_syscalls(syscalls);
+    syscalls.fail_ioctl_call = 1;
+    ScopedLinuxTestSyscalls scoped_syscalls {syscalls};
+
+    LinuxUhidBackend backend;
+
+    CreatePenTabletOptions options;
+    options.profile = profiles::pen_tablet();
+    return backend.create_pen_tablet(1, options).status;
   }
 
   OperationStatus linux_uhid_submit_fake_write_failure() {
@@ -1036,12 +1496,46 @@ namespace lvh::detail::test {
     return keyboard.type_text({.text = "A"});
   }
 
+  OperationStatus linux_uinput_keyboard_type_text_fake_write_failure(int fail_write_call) {
+    LinuxTestSyscalls syscalls;
+    syscalls.override_write = true;
+    syscalls.fail_write_call = fail_write_call;
+    ScopedLinuxTestSyscalls scoped_syscalls {syscalls};
+
+    UinputKeyboard keyboard {fake_fd};
+    return keyboard.type_text({.text = "A"});
+  }
+
   OperationStatus linux_uinput_keyboard_close_fake_close_failure() {
     LinuxTestSyscalls syscalls;
     syscalls.override_ioctl = true;
     ScopedLinuxTestSyscalls scoped_syscalls {syscalls};
 
     UinputKeyboard keyboard {fake_fd};
+    return keyboard.close();
+  }
+
+  OperationStatus linux_uinput_keyboard_auto_repeat_fake_success() {
+    LinuxTestSyscalls syscalls;
+    syscalls.override_write = true;
+    syscalls.override_ioctl = true;
+    ScopedLinuxTestSyscalls scoped_syscalls {syscalls};
+
+    CreateKeyboardOptions options;
+    options.profile = profiles::keyboard();
+    options.auto_repeat_interval_ms = 1;
+
+    const auto fd = open_test_fd();
+    if (fd < 0) {
+      return system_error_status(ErrorCode::backend_failure, "failed to open test file descriptor", errno);
+    }
+
+    UinputKeyboard keyboard {fd};
+    auto status = keyboard.create(1, options);
+    if (status.ok()) {
+      status = keyboard.submit({.key_code = 0x41, .pressed = true});
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds {10});
     return keyboard.close();
   }
 
@@ -1079,6 +1573,199 @@ namespace lvh::detail::test {
 
     UinputMouse mouse {fake_fd};
     return mouse.submit(event);
+  }
+
+  OperationStatus linux_uinput_touchscreen_create_fake_ioctl_failure(int fail_ioctl_call) {
+    LinuxTestSyscalls syscalls;
+    syscalls.override_write = true;
+    syscalls.override_ioctl = true;
+    syscalls.fail_ioctl_call = fail_ioctl_call;
+    ScopedLinuxTestSyscalls scoped_syscalls {syscalls};
+
+    CreateTouchscreenOptions options;
+    options.profile = profiles::touchscreen();
+
+    UinputTouchscreen touchscreen {fake_fd};
+    return touchscreen.create(1, options);
+  }
+
+  OperationStatus linux_uinput_trackpad_create_fake_ioctl_failure(int fail_ioctl_call) {
+    LinuxTestSyscalls syscalls;
+    syscalls.override_write = true;
+    syscalls.override_ioctl = true;
+    syscalls.fail_ioctl_call = fail_ioctl_call;
+    ScopedLinuxTestSyscalls scoped_syscalls {syscalls};
+
+    CreateTrackpadOptions options;
+    options.profile = profiles::trackpad();
+
+    UinputTrackpad trackpad {fake_fd};
+    return trackpad.create(1, options);
+  }
+
+  OperationStatus linux_uinput_pen_tablet_create_fake_ioctl_failure(int fail_ioctl_call) {
+    LinuxTestSyscalls syscalls;
+    syscalls.override_write = true;
+    syscalls.override_ioctl = true;
+    syscalls.fail_ioctl_call = fail_ioctl_call;
+    ScopedLinuxTestSyscalls scoped_syscalls {syscalls};
+
+    CreatePenTabletOptions options;
+    options.profile = profiles::pen_tablet();
+
+    UinputPenTablet pen_tablet {fake_fd};
+    return pen_tablet.create(1, options);
+  }
+
+  OperationStatus linux_xtest_keyboard_submit_success() {
+  #if defined(LIBVIRTUALHID_HAVE_XTEST)
+    XTestKeyboard keyboard;
+    if (const auto status = keyboard.create(); !status.ok()) {
+      return status;
+    }
+    return keyboard.submit({.key_code = 0x41, .pressed = true});
+  #else
+    return OperationStatus::failure(ErrorCode::backend_unavailable, "XTest fallback is not enabled");
+  #endif
+  }
+
+  OperationStatus linux_xtest_keyboard_submit_invalid() {
+  #if defined(LIBVIRTUALHID_HAVE_XTEST)
+    XTestKeyboard keyboard;
+    if (const auto status = keyboard.create(); !status.ok()) {
+      return status;
+    }
+    return keyboard.submit({.key_code = 0x2C, .pressed = true});
+  #else
+    return OperationStatus::failure(ErrorCode::backend_unavailable, "XTest fallback is not enabled");
+  #endif
+  }
+
+  OperationStatus linux_xtest_keyboard_submit_closed() {
+  #if defined(LIBVIRTUALHID_HAVE_XTEST)
+    XTestKeyboard keyboard;
+    if (const auto status = keyboard.create(); !status.ok()) {
+      return status;
+    }
+    static_cast<void>(keyboard.close());
+    return keyboard.submit({.key_code = 0x41, .pressed = true});
+  #else
+    return OperationStatus::failure(ErrorCode::backend_unavailable, "XTest fallback is not enabled");
+  #endif
+  }
+
+  OperationStatus linux_xtest_keyboard_type_text_success() {
+  #if defined(LIBVIRTUALHID_HAVE_XTEST)
+    XTestKeyboard keyboard;
+    if (const auto status = keyboard.create(); !status.ok()) {
+      return status;
+    }
+    return keyboard.type_text({.text = "A"});
+  #else
+    return OperationStatus::failure(ErrorCode::backend_unavailable, "XTest fallback is not enabled");
+  #endif
+  }
+
+  OperationStatus linux_xtest_keyboard_type_text_fake_keycode_failure(int fail_keycode_call) {
+  #if defined(LIBVIRTUALHID_HAVE_XTEST)
+    LinuxTestSyscalls syscalls;
+    syscalls.override_x_keycode = true;
+    syscalls.fail_x_keycode_call = fail_keycode_call;
+    ScopedLinuxTestSyscalls scoped_syscalls {syscalls};
+
+    XTestKeyboard keyboard;
+    if (const auto status = keyboard.create(); !status.ok()) {
+      return status;
+    }
+    return keyboard.type_text({.text = "A"});
+  #else
+    static_cast<void>(fail_keycode_call);
+    return OperationStatus::failure(ErrorCode::backend_unavailable, "XTest fallback is not enabled");
+  #endif
+  }
+
+  OperationStatus linux_xtest_keyboard_create_query_failure() {
+  #if defined(LIBVIRTUALHID_HAVE_XTEST)
+    LinuxTestSyscalls syscalls;
+    syscalls.override_xtest_query = true;
+    syscalls.xtest_query_result = false;
+    ScopedLinuxTestSyscalls scoped_syscalls {syscalls};
+
+    XTestKeyboard keyboard;
+    return keyboard.create();
+  #else
+    return OperationStatus::failure(ErrorCode::backend_unavailable, "XTest fallback is not enabled");
+  #endif
+  }
+
+  OperationStatus linux_xtest_mouse_submit_success() {
+  #if defined(LIBVIRTUALHID_HAVE_XTEST)
+    XTestMouse mouse;
+    if (const auto status = mouse.create(); !status.ok()) {
+      return status;
+    }
+
+    if (const auto status = mouse.submit({.kind = MouseEventKind::relative_motion, .x = 1, .y = -1}); !status.ok()) {
+      return status;
+    }
+    if (const auto status = mouse.submit({.kind = MouseEventKind::absolute_motion, .x = 1, .y = 1, .width = 2, .height = 2}); !status.ok()) {
+      return status;
+    }
+    if (const auto status = mouse.submit({.kind = MouseEventKind::button, .button = MouseButton::extra, .pressed = true}); !status.ok()) {
+      return status;
+    }
+    if (const auto status = mouse.submit({.kind = MouseEventKind::vertical_scroll, .high_resolution_scroll = 120}); !status.ok()) {
+      return status;
+    }
+    return mouse.submit({.kind = MouseEventKind::horizontal_scroll, .high_resolution_scroll = -120});
+  #else
+    return OperationStatus::failure(ErrorCode::backend_unavailable, "XTest fallback is not enabled");
+  #endif
+  }
+
+  OperationStatus linux_xtest_mouse_submit_closed() {
+  #if defined(LIBVIRTUALHID_HAVE_XTEST)
+    XTestMouse mouse;
+    if (const auto status = mouse.create(); !status.ok()) {
+      return status;
+    }
+    static_cast<void>(mouse.close());
+    return mouse.submit({.kind = MouseEventKind::relative_motion, .x = 1, .y = 1});
+  #else
+    return OperationStatus::failure(ErrorCode::backend_unavailable, "XTest fallback is not enabled");
+  #endif
+  }
+
+  OperationStatus linux_xtest_mouse_create_query_failure() {
+  #if defined(LIBVIRTUALHID_HAVE_XTEST)
+    LinuxTestSyscalls syscalls;
+    syscalls.override_xtest_query = true;
+    syscalls.xtest_query_result = false;
+    ScopedLinuxTestSyscalls scoped_syscalls {syscalls};
+
+    XTestMouse mouse;
+    return mouse.create();
+  #else
+    return OperationStatus::failure(ErrorCode::backend_unavailable, "XTest fallback is not enabled");
+  #endif
+  }
+
+  unsigned long linux_xtest_keysym(KeyboardKeyCode key_code) {
+  #if defined(LIBVIRTUALHID_HAVE_XTEST)
+    return key_code_to_keysym(key_code);
+  #else
+    static_cast<void>(key_code);
+    return 0;
+  #endif
+  }
+
+  int linux_xtest_mouse_button(MouseButton button) {
+  #if defined(LIBVIRTUALHID_HAVE_XTEST)
+    return mouse_button_to_xtest(button);
+  #else
+    static_cast<void>(button);
+    return 1;
+  #endif
   }
 
 }  // namespace lvh::detail::test

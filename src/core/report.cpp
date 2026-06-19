@@ -23,7 +23,15 @@ namespace lvh::reports {
 
     constexpr std::uint8_t dualsense_usb_output_report_id = 0x02;
 
+    constexpr std::uint8_t dualsense_bt_input_report_id = 0x31;
+
     constexpr std::uint8_t dualsense_bt_output_report_id = 0x31;
+
+    constexpr std::uint8_t dualsense_bt_input_report_reserved = 0x00;
+
+    constexpr std::uint8_t dualsense_input_crc_seed = 0xA1;
+
+    constexpr std::uint8_t dualsense_output_crc_seed = 0xA2;
 
     constexpr std::uint8_t dualsense_flag0_rumble = 0x01;
 
@@ -49,6 +57,13 @@ namespace lvh::reports {
       report[offset + 1U] = static_cast<std::uint8_t>((value >> 8U) & 0xFFU);
     }
 
+    void write_u32(std::vector<std::uint8_t> &report, std::size_t offset, std::uint32_t value) {
+      report[offset] = static_cast<std::uint8_t>(value & 0xFFU);
+      report[offset + 1U] = static_cast<std::uint8_t>((value >> 8U) & 0xFFU);
+      report[offset + 2U] = static_cast<std::uint8_t>((value >> 16U) & 0xFFU);
+      report[offset + 3U] = static_cast<std::uint8_t>((value >> 24U) & 0xFFU);
+    }
+
     void write_i16(std::vector<std::uint8_t> &report, std::size_t offset, std::int16_t value) {
       write_u16(report, offset, static_cast<std::uint16_t>(value));
     }
@@ -57,6 +72,31 @@ namespace lvh::reports {
       const auto low = static_cast<std::uint16_t>(report[offset]);
       const auto high = static_cast<std::uint16_t>(report[offset + 1U]);
       return static_cast<std::uint16_t>(low | static_cast<std::uint16_t>(high << 8U));
+    }
+
+    std::uint32_t crc32(const std::uint8_t *buffer, std::size_t length, std::uint32_t seed = 0) {
+      auto crc = seed ^ 0xFFFFFFFFU;
+      for (std::size_t index = 0; index < length; ++index) {
+        crc ^= buffer[index];
+        for (auto bit = 0; bit < 8; ++bit) {
+          const auto mask = 0U - (crc & 1U);
+          crc = (crc >> 1U) ^ (0xEDB88320U & mask);
+        }
+      }
+      return crc ^ 0xFFFFFFFFU;
+    }
+
+    std::uint32_t dualsense_crc_seed(std::uint8_t seed) {
+      return crc32(&seed, 1U);
+    }
+
+    void write_dualsense_crc(std::vector<std::uint8_t> &report, std::uint8_t seed) {
+      if (report.size() < 4U) {
+        return;
+      }
+
+      const auto crc_offset = report.size() - 4U;
+      write_u32(report, crc_offset, crc32(report.data(), crc_offset, dualsense_crc_seed(seed)));
     }
 
     std::int16_t scale_i16(float value, float multiplier) {
@@ -131,85 +171,97 @@ namespace lvh::reports {
       report[offset + 3U] = static_cast<std::uint8_t>((y >> 4U) & 0xFFU);
     }
 
-    std::vector<std::uint8_t> pack_dualsense_usb_input_report(const DeviceProfile &profile, const GamepadState &state) {
-      if (profile.input_report_size < 64U) {
+    std::vector<std::uint8_t> pack_dualsense_input_report(const DeviceProfile &profile, const GamepadState &state) {
+      const auto is_bluetooth = profile.bus_type == BusType::bluetooth;
+      const auto payload_offset = is_bluetooth ? 2U : 1U;
+      const auto minimum_report_size = is_bluetooth ? 78U : 64U;
+      if (profile.input_report_size < minimum_report_size) {
         return {};
       }
 
       const auto normalized = normalize_state(state);
       std::vector<std::uint8_t> report(profile.input_report_size, 0);
-      report[0] = profile.report_id;
-      report[1] = normalize_dualsense_axis(normalized.left_stick.x);
-      report[2] = normalize_dualsense_axis(normalized.left_stick.y);
-      report[3] = normalize_dualsense_axis(normalized.right_stick.x);
-      report[4] = normalize_dualsense_axis(normalized.right_stick.y);
-      report[5] = normalize_trigger(normalized.left_trigger);
-      report[6] = normalize_trigger(normalized.right_trigger);
-      report[8] = hat_from_buttons(normalized.buttons);
+      report[0] = is_bluetooth ? dualsense_bt_input_report_id : profile.report_id;
+      if (is_bluetooth) {
+        report[1] = dualsense_bt_input_report_reserved;
+      }
+
+      report[payload_offset + 0U] = normalize_dualsense_axis(normalized.left_stick.x);
+      report[payload_offset + 1U] = normalize_dualsense_axis(normalized.left_stick.y);
+      report[payload_offset + 2U] = normalize_dualsense_axis(normalized.right_stick.x);
+      report[payload_offset + 3U] = normalize_dualsense_axis(normalized.right_stick.y);
+      report[payload_offset + 4U] = normalize_trigger(normalized.left_trigger);
+      report[payload_offset + 5U] = normalize_trigger(normalized.right_trigger);
+      report[payload_offset + 7U] = hat_from_buttons(normalized.buttons);
 
       if (normalized.buttons.test(GamepadButton::x)) {
-        report[8] |= 0x10;
+        report[payload_offset + 7U] |= 0x10;
       }
       if (normalized.buttons.test(GamepadButton::a)) {
-        report[8] |= 0x20;
+        report[payload_offset + 7U] |= 0x20;
       }
       if (normalized.buttons.test(GamepadButton::b)) {
-        report[8] |= 0x40;
+        report[payload_offset + 7U] |= 0x40;
       }
       if (normalized.buttons.test(GamepadButton::y)) {
-        report[8] |= 0x80;
+        report[payload_offset + 7U] |= 0x80;
       }
 
       if (normalized.buttons.test(GamepadButton::left_shoulder)) {
-        report[9] |= 0x01;
+        report[payload_offset + 8U] |= 0x01;
       }
       if (normalized.buttons.test(GamepadButton::right_shoulder)) {
-        report[9] |= 0x02;
+        report[payload_offset + 8U] |= 0x02;
       }
       if (normalized.left_trigger > 0.0F) {
-        report[9] |= 0x04;
+        report[payload_offset + 8U] |= 0x04;
       }
       if (normalized.right_trigger > 0.0F) {
-        report[9] |= 0x08;
+        report[payload_offset + 8U] |= 0x08;
       }
       if (normalized.buttons.test(GamepadButton::back)) {
-        report[9] |= 0x10;
+        report[payload_offset + 8U] |= 0x10;
       }
       if (normalized.buttons.test(GamepadButton::start)) {
-        report[9] |= 0x20;
+        report[payload_offset + 8U] |= 0x20;
       }
       if (normalized.buttons.test(GamepadButton::left_stick)) {
-        report[9] |= 0x40;
+        report[payload_offset + 8U] |= 0x40;
       }
       if (normalized.buttons.test(GamepadButton::right_stick)) {
-        report[9] |= 0x80;
+        report[payload_offset + 8U] |= 0x80;
       }
 
       if (normalized.buttons.test(GamepadButton::guide)) {
-        report[10] |= 0x01;
+        report[payload_offset + 9U] |= 0x01;
       }
       if (normalized.buttons.test(GamepadButton::misc1)) {
-        report[10] |= 0x04;
+        report[payload_offset + 9U] |= 0x04;
       }
 
       if (normalized.gyroscope) {
-        write_i16(report, 16U, scale_i16(normalized.gyroscope->x, 1145.0F));
-        write_i16(report, 18U, scale_i16(normalized.gyroscope->y, 1145.0F));
-        write_i16(report, 20U, scale_i16(normalized.gyroscope->z, 1145.0F));
+        write_i16(report, payload_offset + 15U, scale_i16(normalized.gyroscope->x, 1145.0F));
+        write_i16(report, payload_offset + 17U, scale_i16(normalized.gyroscope->y, 1145.0F));
+        write_i16(report, payload_offset + 19U, scale_i16(normalized.gyroscope->z, 1145.0F));
       }
       if (normalized.acceleration) {
-        write_i16(report, 22U, scale_i16(normalized.acceleration->x, 100.0F));
-        write_i16(report, 24U, scale_i16(normalized.acceleration->y, 100.0F));
-        write_i16(report, 26U, scale_i16(normalized.acceleration->z, 100.0F));
+        write_i16(report, payload_offset + 21U, scale_i16(normalized.acceleration->x, 100.0F));
+        write_i16(report, payload_offset + 23U, scale_i16(normalized.acceleration->y, 100.0F));
+        write_i16(report, payload_offset + 25U, scale_i16(normalized.acceleration->z, 100.0F));
       }
 
-      write_dualsense_touch_contact(report, 33U, normalized.touchpad_contacts[0]);
-      write_dualsense_touch_contact(report, 37U, normalized.touchpad_contacts[1]);
+      write_dualsense_touch_contact(report, payload_offset + 32U, normalized.touchpad_contacts[0]);
+      write_dualsense_touch_contact(report, payload_offset + 36U, normalized.touchpad_contacts[1]);
 
       const auto battery = normalized.battery.value_or(GamepadBattery {.state = GamepadBatteryState::full, .percentage = 100});
       const auto battery_charge = std::min<std::uint8_t>(10U, static_cast<std::uint8_t>(std::lround(battery.percentage / 10.0F)));
-      report[53] = static_cast<std::uint8_t>(battery_charge | (dualsense_battery_state(battery.state) << 4U));
-      report[54] = 0x0C;
+      report[payload_offset + 52U] =
+        static_cast<std::uint8_t>(battery_charge | (dualsense_battery_state(battery.state) << 4U));
+      report[payload_offset + 53U] = 0x0C;
+
+      if (is_bluetooth) {
+        write_dualsense_crc(report, dualsense_input_crc_seed);
+      }
       return report;
     }
 
@@ -218,6 +270,17 @@ namespace lvh::reports {
         return 1U;
       }
       if (report.size() >= 49U && report[0] == dualsense_bt_output_report_id) {
+        if (report.size() >= 78U) {
+          const auto expected_crc = crc32(report.data(), report.size() - 4U, dualsense_crc_seed(dualsense_output_crc_seed));
+          const auto actual_crc = static_cast<std::uint32_t>(report[report.size() - 4U]) |
+                                  (static_cast<std::uint32_t>(report[report.size() - 3U]) << 8U) |
+                                  (static_cast<std::uint32_t>(report[report.size() - 2U]) << 16U) |
+                                  (static_cast<std::uint32_t>(report[report.size() - 1U]) << 24U);
+          if (actual_crc != expected_crc) {
+            return std::nullopt;
+          }
+        }
+
         const auto enable_hid = (report[1] & 0x02U) != 0;
         if (!enable_hid && report.size() < 50U) {
           return std::nullopt;
@@ -379,7 +442,7 @@ namespace lvh::reports {
 
   std::vector<std::uint8_t> pack_input_report(const DeviceProfile &profile, const GamepadState &state) {
     if (profile.device_type == DeviceType::gamepad && profile.gamepad_kind == GamepadProfileKind::dualsense) {
-      return pack_dualsense_usb_input_report(profile, state);
+      return pack_dualsense_input_report(profile, state);
     }
 
     constexpr std::size_t common_report_size = 14;

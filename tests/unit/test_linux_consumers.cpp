@@ -436,10 +436,146 @@ TEST_F(LinuxConsumerTest, LibinputSeesUinputMouseMotionAndButtons) {
   EXPECT_EQ(libinput_event_pointer_get_button(pointer_event), BTN_LEFT);
   EXPECT_EQ(libinput_event_pointer_get_button_state(pointer_event), LIBINPUT_BUTTON_STATE_RELEASED);
 }
+
+TEST_F(LinuxConsumerTest, LibinputSeesUinputTouchscreenContacts) {
+  ASSERT_TRUE(HasReadableWritableDeviceNode("/dev/uinput"));
+
+  lvh::RuntimeOptions runtime_options;
+  runtime_options.backend = lvh::BackendKind::platform_default;
+  auto runtime = lvh::Runtime::create(runtime_options);
+  ASSERT_TRUE(runtime->capabilities().supports_touchscreen);
+
+  lvh::CreateTouchscreenOptions options;
+  options.profile = lvh::profiles::touchscreen();
+  options.profile.name = unique_device_name("libinput Touchscreen");
+  options.stable_id = "libvirtualhid-libinput-touchscreen-test";
+
+  auto created = runtime->create_touchscreen(options);
+  ASSERT_TRUE(created) << created.status.message();
+
+  const auto node = wait_for_readable_event_node(options.profile.name);
+  ASSERT_TRUE(node) << "libinput touchscreen event node was not readable for " << options.profile.name;
+
+  auto context = create_libinput_context(*node);
+  ASSERT_NE(context.get(), nullptr) << "libinput could not open " << node->string();
+
+  auto event = wait_for_libinput_event(context.get(), {LIBINPUT_EVENT_DEVICE_ADDED});
+  ASSERT_NE(event.get(), nullptr);
+  ASSERT_NE(libinput_event_get_device(event.get()), nullptr);
+  EXPECT_TRUE(libinput_device_has_capability(libinput_event_get_device(event.get()), LIBINPUT_DEVICE_CAP_TOUCH));
+
+  const lvh::TouchContact contact {.id = 1, .x = 0.25F, .y = 0.5F, .pressure = 1.0F};
+  ASSERT_TRUE(created.touchscreen->place_contact(contact).ok());
+  event = wait_for_libinput_event(context.get(), {LIBINPUT_EVENT_TOUCH_DOWN, LIBINPUT_EVENT_TOUCH_MOTION});
+  ASSERT_NE(event.get(), nullptr);
+  ASSERT_NE(libinput_event_get_touch_event(event.get()), nullptr);
+
+  ASSERT_TRUE(created.touchscreen->release_contact(contact.id).ok());
+  event = wait_for_libinput_event(context.get(), {LIBINPUT_EVENT_TOUCH_UP});
+  ASSERT_NE(event.get(), nullptr);
+  ASSERT_NE(libinput_event_get_touch_event(event.get()), nullptr);
+}
+
+TEST_F(LinuxConsumerTest, LibinputSeesUinputTrackpadButton) {
+  ASSERT_TRUE(HasReadableWritableDeviceNode("/dev/uinput"));
+
+  lvh::RuntimeOptions runtime_options;
+  runtime_options.backend = lvh::BackendKind::platform_default;
+  auto runtime = lvh::Runtime::create(runtime_options);
+  ASSERT_TRUE(runtime->capabilities().supports_trackpad);
+
+  lvh::CreateTrackpadOptions options;
+  options.profile = lvh::profiles::trackpad();
+  options.profile.name = unique_device_name("libinput Trackpad");
+  options.stable_id = "libvirtualhid-libinput-trackpad-test";
+
+  auto created = runtime->create_trackpad(options);
+  ASSERT_TRUE(created) << created.status.message();
+
+  const auto node = wait_for_readable_event_node(options.profile.name);
+  ASSERT_TRUE(node) << "libinput trackpad event node was not readable for " << options.profile.name;
+
+  auto context = create_libinput_context(*node);
+  ASSERT_NE(context.get(), nullptr) << "libinput could not open " << node->string();
+
+  auto event = wait_for_libinput_event(context.get(), {LIBINPUT_EVENT_DEVICE_ADDED});
+  ASSERT_NE(event.get(), nullptr);
+  ASSERT_NE(libinput_event_get_device(event.get()), nullptr);
+  EXPECT_TRUE(libinput_device_has_capability(libinput_event_get_device(event.get()), LIBINPUT_DEVICE_CAP_POINTER));
+
+  const lvh::TouchContact contact {.id = 2, .x = 0.5F, .y = 0.5F, .pressure = 1.0F};
+  ASSERT_TRUE(created.trackpad->place_contact(contact).ok());
+  ASSERT_TRUE(created.trackpad->button(true).ok());
+  event = wait_for_libinput_event(context.get(), {LIBINPUT_EVENT_POINTER_BUTTON});
+  ASSERT_NE(event.get(), nullptr);
+  auto *pointer_event = libinput_event_get_pointer_event(event.get());
+  ASSERT_NE(pointer_event, nullptr);
+  EXPECT_EQ(libinput_event_pointer_get_button(pointer_event), BTN_LEFT);
+  EXPECT_EQ(libinput_event_pointer_get_button_state(pointer_event), LIBINPUT_BUTTON_STATE_PRESSED);
+
+  ASSERT_TRUE(created.trackpad->button(false).ok());
+  event = wait_for_libinput_event(context.get(), {LIBINPUT_EVENT_POINTER_BUTTON});
+  ASSERT_NE(event.get(), nullptr);
+  pointer_event = libinput_event_get_pointer_event(event.get());
+  ASSERT_NE(pointer_event, nullptr);
+  EXPECT_EQ(libinput_event_pointer_get_button(pointer_event), BTN_LEFT);
+  EXPECT_EQ(libinput_event_pointer_get_button_state(pointer_event), LIBINPUT_BUTTON_STATE_RELEASED);
+}
+
+TEST_F(LinuxConsumerTest, LibinputSeesUinputPenTabletTool) {
+  ASSERT_TRUE(HasReadableWritableDeviceNode("/dev/uinput"));
+
+  lvh::RuntimeOptions runtime_options;
+  runtime_options.backend = lvh::BackendKind::platform_default;
+  auto runtime = lvh::Runtime::create(runtime_options);
+  ASSERT_TRUE(runtime->capabilities().supports_pen_tablet);
+
+  lvh::CreatePenTabletOptions options;
+  options.profile = lvh::profiles::pen_tablet();
+  options.profile.name = unique_device_name("libinput Pen Tablet");
+  options.stable_id = "libvirtualhid-libinput-pen-tablet-test";
+
+  auto created = runtime->create_pen_tablet(options);
+  ASSERT_TRUE(created) << created.status.message();
+
+  const auto node = wait_for_readable_event_node(options.profile.name);
+  ASSERT_TRUE(node) << "libinput pen tablet event node was not readable for " << options.profile.name;
+
+  auto context = create_libinput_context(*node);
+  ASSERT_NE(context.get(), nullptr) << "libinput could not open " << node->string();
+
+  auto event = wait_for_libinput_event(context.get(), {LIBINPUT_EVENT_DEVICE_ADDED});
+  ASSERT_NE(event.get(), nullptr);
+  ASSERT_NE(libinput_event_get_device(event.get()), nullptr);
+  EXPECT_TRUE(libinput_device_has_capability(libinput_event_get_device(event.get()), LIBINPUT_DEVICE_CAP_TABLET_TOOL));
+
+  const lvh::PenToolState tool {
+    .tool = lvh::PenToolType::pen,
+    .x = 0.25F,
+    .y = 0.75F,
+    .pressure = 0.5F,
+    .distance = 0.0F,
+    .tilt_x = 15.0F,
+    .tilt_y = -15.0F,
+  };
+  ASSERT_TRUE(created.pen_tablet->place_tool(tool).ok());
+  event = wait_for_libinput_event(
+    context.get(),
+    {LIBINPUT_EVENT_TABLET_TOOL_PROXIMITY, LIBINPUT_EVENT_TABLET_TOOL_AXIS, LIBINPUT_EVENT_TABLET_TOOL_TIP}
+  );
+  ASSERT_NE(event.get(), nullptr);
+  ASSERT_NE(libinput_event_get_tablet_tool_event(event.get()), nullptr);
+}
 #else
 TEST_F(LinuxConsumerTest, SdlSeesUhidGamepadButtonAndAxisInput) {}
 
 TEST_F(LinuxConsumerTest, LibinputSeesUinputKeyboardKeys) {}
 
 TEST_F(LinuxConsumerTest, LibinputSeesUinputMouseMotionAndButtons) {}
+
+TEST_F(LinuxConsumerTest, LibinputSeesUinputTouchscreenContacts) {}
+
+TEST_F(LinuxConsumerTest, LibinputSeesUinputTrackpadButton) {}
+
+TEST_F(LinuxConsumerTest, LibinputSeesUinputPenTabletTool) {}
 #endif

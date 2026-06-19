@@ -13,6 +13,31 @@
 #include <libvirtualhid/profiles.hpp>
 #include <libvirtualhid/report.hpp>
 
+namespace {
+  std::uint32_t test_crc32(const std::uint8_t *buffer, std::size_t length, std::uint32_t seed = 0) {
+    auto crc = seed ^ 0xFFFFFFFFU;
+    for (std::size_t index = 0; index < length; ++index) {
+      crc ^= buffer[index];
+      for (auto bit = 0; bit < 8; ++bit) {
+        const auto mask = 0U - (crc & 1U);
+        crc = (crc >> 1U) ^ (0xEDB88320U & mask);
+      }
+    }
+    return crc ^ 0xFFFFFFFFU;
+  }
+
+  std::uint32_t test_dualsense_crc_seed(std::uint8_t seed) {
+    return test_crc32(&seed, 1U);
+  }
+
+  std::uint32_t read_u32_le(const std::vector<std::uint8_t> &bytes, std::size_t offset) {
+    return static_cast<std::uint32_t>(bytes[offset]) |
+           (static_cast<std::uint32_t>(bytes[offset + 1U]) << 8U) |
+           (static_cast<std::uint32_t>(bytes[offset + 2U]) << 16U) |
+           (static_cast<std::uint32_t>(bytes[offset + 3U]) << 24U);
+  }
+}  // namespace
+
 TEST(ReportTest, NormalizesAxesAndTriggers) {
   EXPECT_EQ(lvh::reports::normalize_axis(-2.0F), -32768);
   EXPECT_EQ(lvh::reports::normalize_axis(-1.0F), -32768);
@@ -96,6 +121,33 @@ TEST(ReportTest, PacksDualSenseUsbReport) {
   EXPECT_EQ(report[53] >> 4, 1);
 }
 
+TEST(ReportTest, PacksDualSenseBluetoothReportWithCrc) {
+  const auto profile = lvh::profiles::dualsense_bluetooth();
+
+  lvh::GamepadState state;
+  state.buttons.set(lvh::GamepadButton::a);
+  state.left_stick = {1.0F, -1.0F};
+  state.right_trigger = 1.0F;
+  state.battery = lvh::GamepadBattery {.state = lvh::GamepadBatteryState::full, .percentage = 100};
+
+  const auto report = lvh::reports::pack_input_report(profile, state);
+
+  ASSERT_EQ(report.size(), profile.input_report_size);
+  EXPECT_EQ(report[0], 0x31);
+  EXPECT_EQ(report[1], 0x00);
+  EXPECT_EQ(report[2], 255);
+  EXPECT_EQ(report[3], 0);
+  EXPECT_EQ(report[7], 255);
+  EXPECT_EQ(report[9] & 0x20, 0x20);
+  EXPECT_EQ(report[10] & 0x08, 0x08);
+  EXPECT_EQ(report[54] & 0x0F, 10);
+  EXPECT_EQ(report[55], 0x0C);
+
+  const auto crc_offset = report.size() - 4U;
+  const auto expected_crc = test_crc32(report.data(), crc_offset, test_dualsense_crc_seed(0xA1));
+  EXPECT_EQ(read_u32_le(report, crc_offset), expected_crc);
+}
+
 TEST(ReportTest, ParsesRumbleOutputReport) {
   const auto profile = lvh::profiles::xbox_360();
   const std::vector<std::uint8_t> report {profile.report_id, 0x34, 0x12, 0xCD, 0xAB};
@@ -140,6 +192,40 @@ TEST(ReportTest, ParsesDualSenseOutputReportEvents) {
   EXPECT_EQ(outputs[2].right_trigger_effect[0], 1);
   EXPECT_EQ(outputs[2].left_trigger_effect_type, 0x21);
   EXPECT_EQ(outputs[2].left_trigger_effect[0], 2);
+}
+
+TEST(ReportTest, ParsesDualSenseBluetoothOutputReportEvents) {
+  const auto profile = lvh::profiles::dualsense_bluetooth();
+  std::vector<std::uint8_t> report(profile.output_report_size, 0);
+  report[0] = 0x31;
+  report[1] = 0x02;
+  report[2] = 0x0D;
+  report[3] = 0x04;
+  report[4] = 0x80;
+  report[5] = 0x40;
+  report[12] = 0x26;
+  report[13] = 1;
+  report[23] = 0x21;
+  report[24] = 2;
+  report[46] = 0x11;
+  report[47] = 0x22;
+  report[48] = 0x33;
+  const auto crc_offset = report.size() - 4U;
+  const auto crc = test_crc32(report.data(), crc_offset, test_dualsense_crc_seed(0xA2));
+  report[crc_offset] = static_cast<std::uint8_t>(crc & 0xFFU);
+  report[crc_offset + 1U] = static_cast<std::uint8_t>((crc >> 8U) & 0xFFU);
+  report[crc_offset + 2U] = static_cast<std::uint8_t>((crc >> 16U) & 0xFFU);
+  report[crc_offset + 3U] = static_cast<std::uint8_t>((crc >> 24U) & 0xFFU);
+
+  const auto outputs = lvh::reports::parse_output_reports(profile, report);
+
+  ASSERT_EQ(outputs.size(), 3U);
+  EXPECT_EQ(outputs[0].kind, lvh::GamepadOutputKind::rumble);
+  EXPECT_EQ(outputs[1].kind, lvh::GamepadOutputKind::rgb_led);
+  EXPECT_EQ(outputs[1].red, 0x11);
+  EXPECT_EQ(outputs[1].green, 0x22);
+  EXPECT_EQ(outputs[1].blue, 0x33);
+  EXPECT_EQ(outputs[2].kind, lvh::GamepadOutputKind::adaptive_triggers);
 }
 
 TEST(ReportTest, KeepsUnrecognizedOutputReportsRaw) {

@@ -5,6 +5,7 @@
 
 // standard includes
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cerrno>
 #include <chrono>
@@ -67,6 +68,144 @@ namespace lvh::detail {
     constexpr auto tablet_distance_max = 1024;
     constexpr auto tablet_resolution = 28;
     constexpr auto poll_timeout_ms = 100;
+    constexpr auto dualsense_calibration_report = 0x05;
+    constexpr auto dualsense_pairing_report = 0x09;
+    constexpr auto dualsense_firmware_report = 0x20;
+    constexpr auto dualsense_periodic_report_ms = 10;
+    constexpr std::uint8_t dualsense_feature_crc_seed = 0xA3;
+
+    constexpr std::uint8_t dualsense_calibration_info[] {
+      0x05,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x10,
+      0x27,
+      0xF0,
+      0xD8,
+      0x10,
+      0x27,
+      0xF0,
+      0xD8,
+      0x10,
+      0x27,
+      0xF0,
+      0xD8,
+      0xF4,
+      0x01,
+      0xF4,
+      0x01,
+      0x10,
+      0x27,
+      0xF0,
+      0xD8,
+      0x10,
+      0x27,
+      0xF0,
+      0xD8,
+      0x10,
+      0x27,
+      0xF0,
+      0xD8,
+      0x0B,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+    };
+
+    constexpr std::uint8_t dualsense_firmware_info[] {
+      0x20,
+      0x4A,
+      0x75,
+      0x6E,
+      0x20,
+      0x31,
+      0x39,
+      0x20,
+      0x32,
+      0x30,
+      0x32,
+      0x33,
+      0x31,
+      0x34,
+      0x3A,
+      0x34,
+      0x37,
+      0x3A,
+      0x33,
+      0x34,
+      0x03,
+      0x00,
+      0x44,
+      0x00,
+      0x08,
+      0x02,
+      0x00,
+      0x01,
+      0x36,
+      0x00,
+      0x00,
+      0x01,
+      0xC1,
+      0xC8,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x54,
+      0x01,
+      0x00,
+      0x00,
+      0x14,
+      0x00,
+      0x00,
+      0x00,
+      0x0B,
+      0x00,
+      0x01,
+      0x00,
+      0x06,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+    };
+
+    constexpr std::uint8_t dualsense_pairing_info[] {
+      0x09,
+      0x74,
+      0xE7,
+      0xD6,
+      0x3A,
+      0x53,
+      0x35,
+      0x08,
+      0x25,
+      0x00,
+      0x1E,
+      0x00,
+      0xEE,
+      0x74,
+      0xD0,
+      0xBC,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+    };
 
     int system_access(const char *path, int mode) {
       return ::access(path, mode);
@@ -110,6 +249,73 @@ namespace lvh::detail {
 
     bool can_access_uinput() {
       return system_access(uinput_path, R_OK | W_OK) == 0;
+    }
+
+    std::array<std::uint8_t, 6> generated_mac_address(DeviceId id) {
+      return {
+        0x02,
+        0x00,
+        static_cast<std::uint8_t>((id >> 24U) & 0xFFU),
+        static_cast<std::uint8_t>((id >> 16U) & 0xFFU),
+        static_cast<std::uint8_t>((id >> 8U) & 0xFFU),
+        static_cast<std::uint8_t>(id & 0xFFU),
+      };
+    }
+
+    std::optional<std::array<std::uint8_t, 6>> parse_mac_address(const std::string &text) {
+      std::array<std::uint8_t, 6> mac {};
+      std::istringstream stream {text};
+      for (std::size_t index = 0; index < mac.size(); ++index) {
+        unsigned int value = 0;
+        stream >> std::hex >> value;
+        if (!stream || value > 0xFFU) {
+          return std::nullopt;
+        }
+        mac[index] = static_cast<std::uint8_t>(value);
+        if (index + 1U < mac.size()) {
+          char separator = 0;
+          stream >> separator;
+          if (separator != ':') {
+            return std::nullopt;
+          }
+        }
+      }
+      return mac;
+    }
+
+    std::string format_mac_address(const std::array<std::uint8_t, 6> &mac) {
+      std::ostringstream stream;
+      stream << std::hex << std::setfill('0');
+      for (std::size_t index = 0; index < mac.size(); ++index) {
+        if (index != 0) {
+          stream << ':';
+        }
+        stream << std::setw(2) << static_cast<unsigned int>(mac[index]);
+      }
+      return stream.str();
+    }
+
+    std::uint32_t crc32(const std::uint8_t *buffer, std::size_t length, std::uint32_t seed = 0) {
+      auto crc = seed ^ 0xFFFFFFFFU;
+      for (std::size_t index = 0; index < length; ++index) {
+        crc ^= buffer[index];
+        for (auto bit = 0; bit < 8; ++bit) {
+          const auto mask = 0U - (crc & 1U);
+          crc = (crc >> 1U) ^ (0xEDB88320U & mask);
+        }
+      }
+      return crc ^ 0xFFFFFFFFU;
+    }
+
+    std::uint32_t dualsense_crc_seed(std::uint8_t seed) {
+      return crc32(&seed, 1U);
+    }
+
+    void write_u32_le(std::uint8_t *buffer, std::uint32_t value) {
+      buffer[0] = static_cast<std::uint8_t>(value & 0xFFU);
+      buffer[1] = static_cast<std::uint8_t>((value >> 8U) & 0xFFU);
+      buffer[2] = static_cast<std::uint8_t>((value >> 16U) & 0xFFU);
+      buffer[3] = static_cast<std::uint8_t>((value >> 24U) & 0xFFU);
     }
 
     std::uint16_t to_uhid_bus(BusType bus_type) {
@@ -169,14 +375,17 @@ namespace lvh::detail {
       return false;
     }
 
-    std::vector<DeviceNode> discover_input_nodes_by_name(const std::string &name) {
+    std::vector<DeviceNode> discover_input_nodes_by_name(
+      const std::string &name,
+      const std::filesystem::path &input_root,
+      const std::filesystem::path &hidraw_root
+    ) {
       std::vector<DeviceNode> nodes;
       if (name.empty()) {
         return nodes;
       }
 
       std::error_code error;
-      const std::filesystem::path input_root {"/sys/class/input"};
       if (std::filesystem::exists(input_root, error)) {
         for (std::filesystem::directory_iterator it {input_root, error}, end; !error && it != end; it.increment(error)) {
           const auto filename = it->path().filename().string();
@@ -200,7 +409,6 @@ namespace lvh::detail {
         }
       }
 
-      const std::filesystem::path hidraw_root {"/sys/class/hidraw"};
       if (std::filesystem::exists(hidraw_root, error)) {
         for (std::filesystem::directory_iterator it {hidraw_root, error}, end; !error && it != end; it.increment(error)) {
           if (!hidraw_name_matches(it->path() / "device" / "uevent", name)) {
@@ -213,6 +421,10 @@ namespace lvh::detail {
       }
 
       return nodes;
+    }
+
+    std::vector<DeviceNode> discover_input_nodes_by_name(const std::string &name) {
+      return discover_input_nodes_by_name(name, "/sys/class/input", "/sys/class/hidraw");
     }
 
     OperationStatus ioctl_status(const std::string &operation) {
@@ -656,6 +868,64 @@ namespace lvh::detail {
       }
     }
 
+    OperationStatus configure_uinput_abs_setup(
+      int fd,
+      int code,
+      int minimum,
+      int maximum,
+      int fuzz = 0,
+      int flat = 0,
+      int resolution = 0
+    ) {
+#if defined(UI_ABS_SETUP)
+      uinput_abs_setup setup {};
+      setup.code = static_cast<__u16>(code);
+      setup.absinfo.minimum = minimum;
+      setup.absinfo.maximum = maximum;
+      setup.absinfo.fuzz = fuzz;
+      setup.absinfo.flat = flat;
+      setup.absinfo.resolution = resolution;
+
+      if (system_ioctl(fd, UI_ABS_SETUP, reinterpret_cast<unsigned long>(&setup)) < 0) {
+        return ioctl_status("failed to configure uinput absolute axis " + std::to_string(code));
+      }
+#else
+      static_cast<void>(fd);
+      static_cast<void>(code);
+      static_cast<void>(minimum);
+      static_cast<void>(maximum);
+      static_cast<void>(fuzz);
+      static_cast<void>(flat);
+      static_cast<void>(resolution);
+#endif
+
+      return OperationStatus::success();
+    }
+
+    OperationStatus configure_uinput_abs_setup(int fd, DeviceType device_type) {
+      if (device_type != DeviceType::pen_tablet) {
+        return OperationStatus::success();
+      }
+
+      // libinput requires tablet coordinate and tilt axes to advertise resolution.
+      if (const auto status = configure_uinput_abs_setup(fd, ABS_X, 0, touch_axis_max_x, 1, 0, tablet_resolution); !status.ok()) {
+        return status;
+      }
+      if (const auto status = configure_uinput_abs_setup(fd, ABS_Y, 0, touch_axis_max_y, 1, 0, tablet_resolution); !status.ok()) {
+        return status;
+      }
+      if (const auto status = configure_uinput_abs_setup(fd, ABS_PRESSURE, 0, tablet_pressure_max); !status.ok()) {
+        return status;
+      }
+      if (const auto status = configure_uinput_abs_setup(fd, ABS_DISTANCE, 0, tablet_distance_max); !status.ok()) {
+        return status;
+      }
+      if (const auto status = configure_uinput_abs_setup(fd, ABS_TILT_X, -90, 90, 0, 0, tablet_resolution); !status.ok()) {
+        return status;
+      }
+      return configure_uinput_abs_setup(fd, ABS_TILT_Y, -90, 90, 0, 0, tablet_resolution);
+    }
+
     OperationStatus write_uinput_user_device(int fd, const DeviceProfile &profile, DeviceId id) {
       uinput_user_dev device {};
       copy_string(device.name, profile.name);
@@ -671,6 +941,10 @@ namespace lvh::detail {
       }
       if (static_cast<std::size_t>(result) != sizeof(device)) {
         return OperationStatus::failure(ErrorCode::backend_failure, "short write while creating uinput device");
+      }
+
+      if (const auto status = configure_uinput_abs_setup(fd, profile.device_type); !status.ok()) {
+        return status;
       }
 
       if (system_ioctl(fd, UI_DEV_CREATE) < 0) {
@@ -1858,9 +2132,15 @@ namespace lvh::detail {
         }
 
         event.type = UHID_CREATE2;
+        auto unique_id = options.metadata.stable_id.empty() ? std::to_string(id) : options.metadata.stable_id;
+        if (options.profile.gamepad_kind == GamepadProfileKind::dualsense) {
+          dualsense_mac_address_ = parse_mac_address(options.metadata.stable_id).value_or(generated_mac_address(id));
+          unique_id = format_mac_address(dualsense_mac_address_);
+        }
+
         copy_string(request.name, options.profile.name);
         copy_string(request.phys, "libvirtualhid/uhid/" + std::to_string(id));
-        copy_string(request.uniq, options.metadata.stable_id.empty() ? std::to_string(id) : options.metadata.stable_id);
+        copy_string(request.uniq, unique_id);
         request.rd_size = static_cast<std::uint16_t>(options.profile.report_descriptor.size());
         request.bus = to_uhid_bus(options.profile.bus_type);
         request.vendor = options.profile.vendor_id;
@@ -1869,6 +2149,10 @@ namespace lvh::detail {
         std::memcpy(request.rd_data, options.profile.report_descriptor.data(), options.profile.report_descriptor.size());
         profile_ = options.profile;
         device_name_ = options.profile.name;
+        {
+          std::lock_guard lock {report_mutex_};
+          last_report_ = reports::pack_input_report(profile_, {});
+        }
 
         if (const auto status = write_event(event); !status.ok()) {
           return status;
@@ -1878,6 +2162,11 @@ namespace lvh::detail {
         reader_ = std::thread {[this]() {
           read_loop();
         }};
+        if (profile_.gamepad_kind == GamepadProfileKind::dualsense) {
+          periodic_reporter_ = std::thread {[this]() {
+            periodic_report_loop();
+          }};
+        }
         return OperationStatus::success();
       }
 
@@ -1894,7 +2183,12 @@ namespace lvh::detail {
         event.type = UHID_INPUT2;
         event.u.input2.size = static_cast<std::uint16_t>(report.size());
         std::memcpy(event.u.input2.data, report.data(), report.size());
-        return write_event(event);
+        auto status = write_event(event);
+        if (status.ok()) {
+          std::lock_guard lock {report_mutex_};
+          last_report_ = report;
+        }
+        return status;
       }
 
       void set_output_callback(OutputCallback callback) override {
@@ -1920,6 +2214,9 @@ namespace lvh::detail {
           status = write_event(event);
         }
 
+        if (periodic_reporter_.joinable()) {
+          periodic_reporter_.join();
+        }
         if (reader_.joinable()) {
           reader_.join();
         }
@@ -1997,7 +2294,7 @@ namespace lvh::detail {
             dispatch_output_report(event.u.output.data, event.u.output.size);
             break;
           case UHID_GET_REPORT:
-            send_get_report_reply(event.u.get_report.id);
+            send_get_report_reply(event.u.get_report.id, event.u.get_report.rnum);
             break;
           case UHID_SET_REPORT:
             dispatch_output_report(event.u.set_report.data, event.u.set_report.size);
@@ -2005,6 +2302,24 @@ namespace lvh::detail {
             break;
           default:
             break;
+        }
+      }
+
+      void periodic_report_loop() {
+        while (running_) {
+          std::this_thread::sleep_for(std::chrono::milliseconds {dualsense_periodic_report_ms});
+          if (!running_ || !open_) {
+            break;
+          }
+
+          std::vector<std::uint8_t> report;
+          {
+            std::lock_guard lock {report_mutex_};
+            report = last_report_;
+          }
+          if (!report.empty()) {
+            static_cast<void>(submit(report));
+          }
         }
       }
 
@@ -2026,12 +2341,51 @@ namespace lvh::detail {
         }
       }
 
-      void send_get_report_reply(std::uint32_t id) {
+      void send_get_report_reply(std::uint32_t id, std::uint8_t report_number) {
         uhid_event event {};
         event.type = UHID_GET_REPORT_REPLY;
         event.u.get_report_reply.id = id;
         event.u.get_report_reply.err = EIO;
+
+        if (profile_.gamepad_kind == GamepadProfileKind::dualsense) {
+          event.u.get_report_reply.err = 0;
+          switch (report_number) {
+            case dualsense_calibration_report:
+              copy_get_report_payload(event, dualsense_calibration_info, sizeof(dualsense_calibration_info));
+              break;
+            case dualsense_pairing_report:
+              copy_get_report_payload(event, dualsense_pairing_info, sizeof(dualsense_pairing_info));
+              for (std::size_t index = 0; index < dualsense_mac_address_.size(); ++index) {
+                event.u.get_report_reply.data[1U + index] =
+                  dualsense_mac_address_[dualsense_mac_address_.size() - 1U - index];
+              }
+              break;
+            case dualsense_firmware_report:
+              copy_get_report_payload(event, dualsense_firmware_info, sizeof(dualsense_firmware_info));
+              break;
+            default:
+              event.u.get_report_reply.err = EINVAL;
+              break;
+          }
+
+          if (profile_.bus_type == BusType::bluetooth && event.u.get_report_reply.err == 0 && event.u.get_report_reply.size >= 4U) {
+            const auto crc_offset = static_cast<std::size_t>(event.u.get_report_reply.size) - 4U;
+            const auto crc = crc32(
+              event.u.get_report_reply.data,
+              crc_offset,
+              dualsense_crc_seed(dualsense_feature_crc_seed)
+            );
+            write_u32_le(event.u.get_report_reply.data + crc_offset, crc);
+          }
+        }
+
         static_cast<void>(write_event(event));
+      }
+
+      template<std::size_t Size>
+      void copy_get_report_payload(uhid_event &event, const std::uint8_t (&payload)[Size], std::size_t payload_size) {
+        event.u.get_report_reply.size = static_cast<std::uint16_t>(std::min<std::size_t>(payload_size, UHID_DATA_MAX));
+        std::memcpy(event.u.get_report_reply.data, payload, event.u.get_report_reply.size);
       }
 
       void send_set_report_reply(std::uint32_t id, std::uint16_t error) {
@@ -2045,10 +2399,14 @@ namespace lvh::detail {
       int fd_ = -1;
       DeviceProfile profile_;
       std::string device_name_;
+      std::array<std::uint8_t, 6> dualsense_mac_address_ {};
+      std::vector<std::uint8_t> last_report_;
       std::atomic_bool open_ = true;
       std::atomic_bool running_ = false;
       std::thread reader_;
+      std::thread periodic_reporter_;
       std::mutex write_mutex_;
+      std::mutex report_mutex_;
       std::mutex callback_mutex_;
       OutputCallback output_callback_;
     };

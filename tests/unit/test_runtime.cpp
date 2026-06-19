@@ -255,4 +255,29 @@ TEST_F(LinuxRuntimeTest, LinuxUinputSmokeTestRequiresPrerequisites) {
   ASSERT_TRUE(mouse) << mouse.status.message();
   EXPECT_TRUE(mouse.mouse->move_relative(1, 1).ok());
   EXPECT_TRUE(mouse.mouse->vertical_scroll(120).ok());
+
+  ASSERT_TRUE(capabilities.supports_touchscreen);
+  auto touchscreen = runtime->create_touchscreen();
+  ASSERT_TRUE(touchscreen) << touchscreen.status.message();
+  EXPECT_TRUE(touchscreen.touchscreen->place_contact({.id = 1, .x = 0.5F, .y = 0.25F, .pressure = 1.0F}).ok());
+  EXPECT_TRUE(touchscreen.touchscreen->release_contact(1).ok());
+
+  ASSERT_TRUE(capabilities.supports_trackpad);
+  auto trackpad = runtime->create_trackpad();
+  ASSERT_TRUE(trackpad) << trackpad.status.message();
+  EXPECT_TRUE(trackpad.trackpad->place_contact({.id = 1, .x = 0.5F, .y = 0.25F, .pressure = 1.0F}).ok());
+  EXPECT_TRUE(trackpad.trackpad->button(true).ok());
+  EXPECT_TRUE(trackpad.trackpad->button(false).ok());
+  EXPECT_TRUE(trackpad.trackpad->release_contact(1).ok());
+
+  ASSERT_TRUE(capabilities.supports_pen_tablet);
+  auto pen_tablet = runtime->create_pen_tablet();
+  ASSERT_TRUE(pen_tablet) << pen_tablet.status.message();
+  EXPECT_TRUE(
+    pen_tablet.pen_tablet
+      ->place_tool({.tool = lvh::PenToolType::pen, .x = 0.5F, .y = 0.25F, .pressure = 0.75F, .tilt_x = 10.0F})
+      .ok()
+  );
+  EXPECT_TRUE(pen_tablet.pen_tablet->button(lvh::PenButton::primary, true).ok());
+  EXPECT_TRUE(pen_tablet.pen_tablet->button(lvh::PenButton::primary, false).ok());
 }

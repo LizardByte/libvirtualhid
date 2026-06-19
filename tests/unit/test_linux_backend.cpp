@@ -6,12 +6,17 @@
 // standard includes
 #include <algorithm>
 #include <cstdint>
+#include <filesystem>
+#include <fstream>
 #include <string>
 #include <vector>
 
 // platform includes
 #if defined(__linux__)
   #include <linux/input.h>
+  #if defined(LIBVIRTUALHID_HAVE_XTEST)
+    #include <X11/keysym.h>
+  #endif
 #endif
 
 // lib includes
@@ -106,6 +111,18 @@ TEST_F(LinuxBackendTest, TranslatesMouseButtonsAndBusTypes) {
   EXPECT_EQ(lvh::detail::test::linux_uhid_bus(lvh::BusType::usb), BUS_USB);
   EXPECT_EQ(lvh::detail::test::linux_uhid_bus(lvh::BusType::bluetooth), BUS_BLUETOOTH);
   EXPECT_EQ(lvh::detail::test::linux_uinput_bus(lvh::BusType::bluetooth), BUS_BLUETOOTH);
+
+  EXPECT_EQ(lvh::detail::test::linux_pen_tool(lvh::PenToolType::pen), BTN_TOOL_PEN);
+  EXPECT_EQ(lvh::detail::test::linux_pen_tool(lvh::PenToolType::eraser), BTN_TOOL_RUBBER);
+  EXPECT_EQ(lvh::detail::test::linux_pen_tool(lvh::PenToolType::brush), BTN_TOOL_BRUSH);
+  EXPECT_EQ(lvh::detail::test::linux_pen_tool(lvh::PenToolType::pencil), BTN_TOOL_PENCIL);
+  EXPECT_EQ(lvh::detail::test::linux_pen_tool(lvh::PenToolType::airbrush), BTN_TOOL_AIRBRUSH);
+  EXPECT_EQ(lvh::detail::test::linux_pen_tool(lvh::PenToolType::touch), BTN_TOUCH);
+  EXPECT_EQ(lvh::detail::test::linux_pen_tool(lvh::PenToolType::unchanged), -1);
+  EXPECT_EQ(lvh::detail::test::linux_pen_tool(static_cast<lvh::PenToolType>(255)), -1);
+  EXPECT_EQ(lvh::detail::test::linux_pen_button(lvh::PenButton::primary), BTN_STYLUS);
+  EXPECT_EQ(lvh::detail::test::linux_pen_button(lvh::PenButton::secondary), BTN_STYLUS2);
+  EXPECT_EQ(lvh::detail::test::linux_pen_button(static_cast<lvh::PenButton>(255)), BTN_STYLUS);
 }
 
 TEST_F(LinuxBackendTest, ScalesAbsoluteAxesAndScrollSteps) {
@@ -146,6 +163,96 @@ TEST_F(LinuxBackendTest, DecodesTextHelpers) {
   EXPECT_EQ(lvh::detail::test::linux_hex_digit_key_code('9'), 0x39);
   EXPECT_EQ(lvh::detail::test::linux_hex_digit_key_code('A'), 0x41);
   EXPECT_EQ(lvh::detail::test::linux_hex_digit_key_code('F'), 0x46);
+}
+
+TEST_F(LinuxBackendTest, CoversLinuxDiscoveryAndIdentityHelpers) {
+  EXPECT_EQ(lvh::detail::test::linux_dualsense_mac_address("02:03:04:05:06:07", 0x1020304), "02:03:04:05:06:07");
+  EXPECT_EQ(lvh::detail::test::linux_dualsense_mac_address("02-03-04-05-06-07", 0x1020304), "02:00:01:02:03:04");
+  EXPECT_EQ(lvh::detail::test::linux_dualsense_mac_address("ff:00:100:00:00:00", 0x1020304), "02:00:01:02:03:04");
+
+  const auto temp_dir = std::filesystem::temp_directory_path();
+  const auto first_line_path = temp_dir / "libvirtualhid-linux-first-line-test.txt";
+  const auto uevent_path = temp_dir / "libvirtualhid-linux-hidraw-uevent-test.txt";
+
+  {
+    std::ofstream file {first_line_path};
+    file << "libvirtualhid first line\nsecond line\n";
+  }
+  EXPECT_TRUE(lvh::detail::test::linux_first_line_matches(first_line_path.string(), "libvirtualhid first line"));
+  EXPECT_FALSE(lvh::detail::test::linux_first_line_matches(first_line_path.string(), "other"));
+  EXPECT_TRUE(lvh::detail::test::linux_first_line_missing((temp_dir / "libvirtualhid-missing-first-line-test.txt").string()));
+
+  {
+    std::ofstream file {uevent_path};
+    file << "HID_ID=0003:0000:0000\nHID_NAME=libvirtualhid hidraw\n";
+  }
+  EXPECT_TRUE(lvh::detail::test::linux_hidraw_name_matches(uevent_path.string(), "libvirtualhid hidraw"));
+  EXPECT_FALSE(lvh::detail::test::linux_hidraw_name_matches(uevent_path.string(), "other"));
+  EXPECT_FALSE(lvh::detail::test::linux_hidraw_name_matches((temp_dir / "libvirtualhid-missing-uevent-test.txt").string(), "other"));
+  EXPECT_TRUE(lvh::detail::test::linux_discover_nodes_by_name("").empty());
+  static_cast<void>(lvh::detail::test::linux_discover_nodes_by_name("libvirtualhid missing device"));
+  EXPECT_EQ(lvh::detail::test::linux_empty_device_nodes_count(), 0U);
+
+  const auto sysfs_root = temp_dir / "libvirtualhid-linux-sysfs-test";
+  const auto input_root = sysfs_root / "input";
+  const auto hidraw_root = sysfs_root / "hidraw";
+  std::filesystem::remove_all(sysfs_root);
+  std::filesystem::create_directories(input_root / "event0" / "device");
+  std::filesystem::create_directories(input_root / "js0" / "device");
+  std::filesystem::create_directories(input_root / "mouse0" / "device");
+  std::filesystem::create_directories(input_root / "event1" / "device");
+  std::filesystem::create_directories(hidraw_root / "hidraw0" / "device");
+  std::filesystem::create_directories(hidraw_root / "hidraw1" / "device");
+  std::filesystem::create_directories(hidraw_root / "hidraw2" / "device");
+  {
+    std::ofstream file {input_root / "event0" / "device" / "name"};
+    file << "libvirtualhid device\n";
+  }
+  {
+    std::ofstream file {input_root / "js0" / "device" / "name"};
+    file << "libvirtualhid device\n";
+  }
+  {
+    std::ofstream file {input_root / "mouse0" / "device" / "name"};
+    file << "libvirtualhid device\n";
+  }
+  {
+    std::ofstream file {input_root / "event1" / "device" / "name"};
+    file << "other device\n";
+  }
+  {
+    std::ofstream file {hidraw_root / "hidraw0" / "device" / "uevent"};
+    file << "HID_NAME=libvirtualhid device\n";
+  }
+  {
+    std::ofstream file {hidraw_root / "hidraw1" / "device" / "uevent"};
+    file << "HID_NAME=other device\n";
+  }
+  {
+    std::ofstream file {hidraw_root / "hidraw2" / "device" / "uevent"};
+    file << "HID_ID=0003:0000:0000\n";
+  }
+  const auto nodes = lvh::detail::test::linux_discover_nodes_by_name(
+    "libvirtualhid device",
+    input_root.string(),
+    hidraw_root.string()
+  );
+  EXPECT_TRUE(std::any_of(nodes.begin(), nodes.end(), [](const auto &node) {
+    return node.kind == lvh::DeviceNodeKind::input_event && node.path == "/dev/input/event0";
+  }));
+  EXPECT_TRUE(std::any_of(nodes.begin(), nodes.end(), [](const auto &node) {
+    return node.kind == lvh::DeviceNodeKind::joystick && node.path == "/dev/input/js0";
+  }));
+  EXPECT_TRUE(std::any_of(nodes.begin(), nodes.end(), [](const auto &node) {
+    return node.kind == lvh::DeviceNodeKind::hidraw && node.path == "/dev/hidraw0";
+  }));
+  EXPECT_TRUE(std::any_of(nodes.begin(), nodes.end(), [sysfs_root](const auto &node) {
+    return node.kind == lvh::DeviceNodeKind::sysfs && node.path.starts_with(sysfs_root.string());
+  }));
+
+  std::filesystem::remove(first_line_path);
+  std::filesystem::remove(uevent_path);
+  std::filesystem::remove_all(sysfs_root);
 }
 
 TEST_F(LinuxBackendTest, HandlesUhidInvalidFileDescriptorPaths) {
@@ -380,6 +487,49 @@ TEST_F(LinuxBackendTest, PipeBackedUinputTouchDevicesEmitEvents) {
   EXPECT_TRUE(saw_stylus);
 }
 
+TEST_F(LinuxBackendTest, PipeBackedUinputTouchDevicesCoverStateTransitions) {
+  auto result = lvh::detail::test::linux_uinput_trackpad_multi_contact_pipe();
+  ASSERT_TRUE(result.status.ok()) << result.status.message();
+  const auto saw_doubletap = std::any_of(result.events.begin(), result.events.end(), [](const auto &event) {
+    return event.type == EV_KEY && event.code == BTN_TOOL_DOUBLETAP && event.value == 1;
+  });
+  const auto saw_tripletap = std::any_of(result.events.begin(), result.events.end(), [](const auto &event) {
+    return event.type == EV_KEY && event.code == BTN_TOOL_TRIPLETAP && event.value == 1;
+  });
+  const auto saw_quadtap = std::any_of(result.events.begin(), result.events.end(), [](const auto &event) {
+    return event.type == EV_KEY && event.code == BTN_TOOL_QUADTAP && event.value == 1;
+  });
+  const auto saw_quinttap = std::any_of(result.events.begin(), result.events.end(), [](const auto &event) {
+    return event.type == EV_KEY && event.code == BTN_TOOL_QUINTTAP && event.value == 1;
+  });
+  EXPECT_TRUE(saw_doubletap);
+  EXPECT_TRUE(saw_tripletap);
+  EXPECT_TRUE(saw_quadtap);
+  EXPECT_TRUE(saw_quinttap);
+
+  EXPECT_EQ(lvh::detail::test::linux_uinput_touchscreen_invalid_contacts().code(), lvh::ErrorCode::invalid_argument);
+
+  result = lvh::detail::test::linux_uinput_pen_tablet_transition_pipe();
+  ASSERT_TRUE(result.status.ok()) << result.status.message();
+  const auto saw_rubber = std::any_of(result.events.begin(), result.events.end(), [](const auto &event) {
+    return event.type == EV_KEY && event.code == BTN_TOOL_RUBBER && event.value == 1;
+  });
+  const auto saw_pen_release = std::any_of(result.events.begin(), result.events.end(), [](const auto &event) {
+    return event.type == EV_KEY && event.code == BTN_TOOL_PEN && event.value == 0;
+  });
+  const auto saw_distance = std::any_of(result.events.begin(), result.events.end(), [](const auto &event) {
+    return event.type == EV_ABS && event.code == ABS_DISTANCE && event.value > 0;
+  });
+  const auto saw_secondary_button = std::any_of(result.events.begin(), result.events.end(), [](const auto &event) {
+    return event.type == EV_KEY && event.code == BTN_STYLUS2 && event.value == 1;
+  });
+  EXPECT_TRUE(saw_rubber);
+  EXPECT_TRUE(saw_pen_release);
+  EXPECT_TRUE(saw_distance);
+  EXPECT_TRUE(saw_secondary_button);
+  EXPECT_EQ(lvh::detail::test::linux_uinput_pen_tablet_closed_status().code(), lvh::ErrorCode::device_closed);
+}
+
 TEST_F(LinuxBackendTest, SocketpairBackedUhidGamepadRoundTripsEvents) {
   const auto result = lvh::detail::test::linux_uhid_socketpair_roundtrip();
   EXPECT_TRUE(result.create_status.ok()) << result.create_status.message();
@@ -394,6 +544,26 @@ TEST_F(LinuxBackendTest, SocketpairBackedUhidGamepadRoundTripsEvents) {
   EXPECT_EQ(result.last_output.kind, lvh::GamepadOutputKind::rumble);
   EXPECT_EQ(result.last_output.low_frequency_rumble, 0x5678);
   EXPECT_EQ(result.last_output.high_frequency_rumble, 0x1234);
+}
+
+TEST_F(LinuxBackendTest, SocketpairBackedDualSenseRepliesToFeatureReports) {
+  const auto result = lvh::detail::test::linux_dualsense_uhid_socketpair_reports();
+  EXPECT_TRUE(result.create_status.ok()) << result.create_status.message();
+  EXPECT_TRUE(result.close_status.ok()) << result.close_status.message();
+  EXPECT_TRUE(result.saw_create);
+  EXPECT_TRUE(result.saw_dualsense_calibration);
+  EXPECT_TRUE(result.saw_dualsense_pairing);
+  EXPECT_TRUE(result.saw_dualsense_firmware);
+}
+
+TEST_F(LinuxBackendTest, SocketpairBackedDualSenseBluetoothFramesReports) {
+  const auto result = lvh::detail::test::linux_dualsense_bluetooth_uhid_socketpair_reports();
+  EXPECT_TRUE(result.create_status.ok()) << result.create_status.message();
+  EXPECT_TRUE(result.close_status.ok()) << result.close_status.message();
+  EXPECT_TRUE(result.saw_create);
+  EXPECT_TRUE(result.saw_dualsense_bluetooth_input);
+  EXPECT_TRUE(result.saw_dualsense_pairing);
+  EXPECT_TRUE(result.saw_dualsense_feature_crc);
 }
 
 TEST_F(LinuxBackendTest, FakeLinuxBackendCreatesAllDeviceTypes) {
@@ -419,6 +589,10 @@ TEST_F(LinuxBackendTest, FakeLinuxBackendCreatesAllDeviceTypes) {
 
   const auto keyboard_create_status = lvh::detail::test::linux_backend_keyboard_fake_create_failure();
   EXPECT_TRUE(keyboard_create_status.ok() || keyboard_create_status.code() == lvh::ErrorCode::backend_failure);
+  EXPECT_EQ(
+    lvh::detail::test::linux_backend_keyboard_fake_create_failure_without_fallback().code(),
+    lvh::ErrorCode::backend_failure
+  );
   const auto keyboard_fallback_status = lvh::detail::test::linux_backend_keyboard_fake_fallback_success();
   EXPECT_TRUE(keyboard_fallback_status.ok() || keyboard_fallback_status.code() == lvh::ErrorCode::backend_unavailable);
 
@@ -427,8 +601,19 @@ TEST_F(LinuxBackendTest, FakeLinuxBackendCreatesAllDeviceTypes) {
 
   const auto mouse_create_status = lvh::detail::test::linux_backend_mouse_fake_create_failure();
   EXPECT_TRUE(mouse_create_status.ok() || mouse_create_status.code() == lvh::ErrorCode::backend_failure);
+  EXPECT_EQ(
+    lvh::detail::test::linux_backend_mouse_fake_create_failure_without_fallback().code(),
+    lvh::ErrorCode::backend_failure
+  );
   const auto mouse_fallback_status = lvh::detail::test::linux_backend_mouse_fake_fallback_success();
   EXPECT_TRUE(mouse_fallback_status.ok() || mouse_fallback_status.code() == lvh::ErrorCode::backend_unavailable);
+
+  EXPECT_EQ(lvh::detail::test::linux_backend_touchscreen_fake_open_failure().code(), lvh::ErrorCode::backend_unavailable);
+  EXPECT_EQ(lvh::detail::test::linux_backend_touchscreen_fake_create_failure().code(), lvh::ErrorCode::backend_failure);
+  EXPECT_EQ(lvh::detail::test::linux_backend_trackpad_fake_open_failure().code(), lvh::ErrorCode::backend_unavailable);
+  EXPECT_EQ(lvh::detail::test::linux_backend_trackpad_fake_create_failure().code(), lvh::ErrorCode::backend_failure);
+  EXPECT_EQ(lvh::detail::test::linux_backend_pen_tablet_fake_open_failure().code(), lvh::ErrorCode::backend_unavailable);
+  EXPECT_EQ(lvh::detail::test::linux_backend_pen_tablet_fake_create_failure().code(), lvh::ErrorCode::backend_failure);
 
   const auto result = lvh::detail::test::linux_backend_create_all_fake_success();
   EXPECT_TRUE(result.capabilities.supports_virtual_hid);
@@ -445,6 +630,12 @@ TEST_F(LinuxBackendTest, FakeLinuxBackendCreatesAllDeviceTypes) {
   EXPECT_TRUE(result.keyboard_close_status.ok()) << result.keyboard_close_status.message();
   EXPECT_TRUE(result.mouse_status.ok()) << result.mouse_status.message();
   EXPECT_TRUE(result.mouse_close_status.ok()) << result.mouse_close_status.message();
+  EXPECT_TRUE(result.touchscreen_status.ok()) << result.touchscreen_status.message();
+  EXPECT_TRUE(result.touchscreen_close_status.ok()) << result.touchscreen_close_status.message();
+  EXPECT_TRUE(result.trackpad_status.ok()) << result.trackpad_status.message();
+  EXPECT_TRUE(result.trackpad_close_status.ok()) << result.trackpad_close_status.message();
+  EXPECT_TRUE(result.pen_tablet_status.ok()) << result.pen_tablet_status.message();
+  EXPECT_TRUE(result.pen_tablet_close_status.ok()) << result.pen_tablet_close_status.message();
 }
 
 TEST_F(LinuxBackendTest, FakeUhidSyscallsCoverFailureBranches) {
@@ -473,6 +664,27 @@ TEST_F(LinuxBackendTest, FakeUinputSyscallsCoverFailureBranches) {
     );
   }
 
+  for (const auto fail_call : {1, 2, 3, 12, 13, 14}) {
+    EXPECT_EQ(
+      lvh::detail::test::linux_uinput_touchscreen_create_fake_ioctl_failure(fail_call).code(),
+      lvh::ErrorCode::backend_failure
+    );
+  }
+
+  for (const auto fail_call : {1, 2, 3, 12, 13, 19, 20, 21}) {
+    EXPECT_EQ(
+      lvh::detail::test::linux_uinput_trackpad_create_fake_ioctl_failure(fail_call).code(),
+      lvh::ErrorCode::backend_failure
+    );
+  }
+
+  for (const auto fail_call : {1, 2, 3, 12, 18, 19, 20, 21, 22, 23, 24, 25, 26}) {
+    EXPECT_EQ(
+      lvh::detail::test::linux_uinput_pen_tablet_create_fake_ioctl_failure(fail_call).code(),
+      lvh::ErrorCode::backend_failure
+    );
+  }
+
   EXPECT_EQ(lvh::detail::test::linux_uinput_user_device_fake_short_write().code(), lvh::ErrorCode::backend_failure);
   EXPECT_EQ(lvh::detail::test::linux_uinput_user_device_fake_create_failure().code(), lvh::ErrorCode::backend_failure);
   EXPECT_EQ(
@@ -481,6 +693,13 @@ TEST_F(LinuxBackendTest, FakeUinputSyscallsCoverFailureBranches) {
   );
   EXPECT_EQ(lvh::detail::test::linux_uinput_keyboard_submit_fake_short_write().code(), lvh::ErrorCode::backend_failure);
   EXPECT_TRUE(lvh::detail::test::linux_uinput_keyboard_type_text_fake_success().ok());
+  for (const auto fail_call : {1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23}) {
+    EXPECT_EQ(
+      lvh::detail::test::linux_uinput_keyboard_type_text_fake_write_failure(fail_call).code(),
+      lvh::ErrorCode::backend_failure
+    );
+  }
+  EXPECT_TRUE(lvh::detail::test::linux_uinput_keyboard_auto_repeat_fake_success().ok());
   EXPECT_EQ(
     lvh::detail::test::linux_uinput_keyboard_close_fake_close_failure().code(),
     lvh::ErrorCode::backend_failure
@@ -498,6 +717,101 @@ TEST_F(LinuxBackendTest, FakeUinputSyscallsCoverFailureBranches) {
     lvh::detail::test::linux_uinput_mouse_submit_fake_short_write(event).code(),
     lvh::ErrorCode::backend_failure
   );
+}
+
+TEST_F(LinuxBackendTest, XTestFallbackCoversKeyboardAndMousePaths) {
+  const auto keyboard_status = lvh::detail::test::linux_xtest_keyboard_submit_success();
+  EXPECT_TRUE(keyboard_status.ok() || keyboard_status.code() == lvh::ErrorCode::backend_unavailable);
+
+  const auto keyboard_invalid_status = lvh::detail::test::linux_xtest_keyboard_submit_invalid();
+  EXPECT_TRUE(keyboard_invalid_status.code() == lvh::ErrorCode::invalid_argument || keyboard_invalid_status.code() == lvh::ErrorCode::backend_unavailable);
+
+  const auto keyboard_closed_status = lvh::detail::test::linux_xtest_keyboard_submit_closed();
+  EXPECT_TRUE(keyboard_closed_status.code() == lvh::ErrorCode::device_closed || keyboard_closed_status.code() == lvh::ErrorCode::backend_unavailable);
+
+  const auto keyboard_text_status = lvh::detail::test::linux_xtest_keyboard_type_text_success();
+  EXPECT_TRUE(keyboard_text_status.ok() || keyboard_text_status.code() == lvh::ErrorCode::backend_unavailable);
+
+  EXPECT_EQ(
+    lvh::detail::test::linux_xtest_keyboard_create_query_failure().code(),
+    lvh::ErrorCode::backend_unavailable
+  );
+  for (const auto fail_call : {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}) {
+    const auto status = lvh::detail::test::linux_xtest_keyboard_type_text_fake_keycode_failure(fail_call);
+    EXPECT_TRUE(status.code() == lvh::ErrorCode::invalid_argument || status.code() == lvh::ErrorCode::backend_unavailable);
+  }
+
+  const auto mouse_status = lvh::detail::test::linux_xtest_mouse_submit_success();
+  EXPECT_TRUE(mouse_status.ok() || mouse_status.code() == lvh::ErrorCode::backend_unavailable);
+
+  EXPECT_EQ(lvh::detail::test::linux_xtest_mouse_create_query_failure().code(), lvh::ErrorCode::backend_unavailable);
+
+  const auto mouse_closed_status = lvh::detail::test::linux_xtest_mouse_submit_closed();
+  EXPECT_TRUE(mouse_closed_status.code() == lvh::ErrorCode::device_closed || mouse_closed_status.code() == lvh::ErrorCode::backend_unavailable);
+
+  #if defined(LIBVIRTUALHID_HAVE_XTEST)
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x08), XK_BackSpace);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x09), XK_Tab);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x0D), XK_Return);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x10), XK_Shift_L);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x11), XK_Control_L);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x12), XK_Alt_L);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x14), XK_Caps_Lock);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x1B), XK_Escape);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x20), XK_space);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x21), XK_Page_Up);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x22), XK_Page_Down);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x23), XK_End);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x24), XK_Home);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x25), XK_Left);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x26), XK_Up);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x27), XK_Right);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x28), XK_Down);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x2D), XK_Insert);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x2E), XK_Delete);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x5B), XK_Super_L);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x5C), XK_Super_R);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x90), XK_Num_Lock);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x91), XK_Scroll_Lock);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0xA1), XK_Shift_R);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0xA3), XK_Control_R);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0xA5), XK_Alt_R);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0xBA), XK_semicolon);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0xBB), XK_equal);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0xBC), XK_comma);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0xBD), XK_minus);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0xBE), XK_period);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0xBF), XK_slash);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0xC0), XK_grave);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0xDB), XK_bracketleft);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0xDC), XK_backslash);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0xDD), XK_bracketright);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0xDE), XK_apostrophe);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x30), XK_0);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x39), XK_9);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x41), XK_a);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x5A), XK_z);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x60), XK_KP_0);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x69), XK_KP_9);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x6A), XK_KP_Multiply);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x6B), XK_KP_Add);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x6D), XK_KP_Subtract);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x6E), XK_KP_Decimal);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x6F), XK_KP_Divide);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x70), XK_F1);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x87), XK_F24);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x88), 0UL);
+
+  EXPECT_EQ(lvh::detail::test::linux_xtest_mouse_button(lvh::MouseButton::left), 1);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_mouse_button(lvh::MouseButton::middle), 2);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_mouse_button(lvh::MouseButton::right), 3);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_mouse_button(lvh::MouseButton::side), 8);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_mouse_button(lvh::MouseButton::extra), 9);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_mouse_button(static_cast<lvh::MouseButton>(255)), 1);
+  #else
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x41), 0UL);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_mouse_button(lvh::MouseButton::left), 1);
+  #endif
 }
 
 TEST_F(LinuxBackendTest, PlatformRuntimeReportsUnavailableDeviceCreationWhenNodesAreMissing) {
@@ -532,6 +846,8 @@ TEST_F(LinuxBackendTest, ScalesAbsoluteAxesAndScrollSteps) {}
 
 TEST_F(LinuxBackendTest, DecodesTextHelpers) {}
 
+TEST_F(LinuxBackendTest, CoversLinuxDiscoveryAndIdentityHelpers) {}
+
 TEST_F(LinuxBackendTest, HandlesUhidInvalidFileDescriptorPaths) {}
 
 TEST_F(LinuxBackendTest, HandlesUinputKeyboardInvalidFileDescriptorPaths) {}
@@ -544,13 +860,21 @@ TEST_F(LinuxBackendTest, PipeBackedUinputMouseEmitsEvents) {}
 
 TEST_F(LinuxBackendTest, PipeBackedUinputTouchDevicesEmitEvents) {}
 
+TEST_F(LinuxBackendTest, PipeBackedUinputTouchDevicesCoverStateTransitions) {}
+
 TEST_F(LinuxBackendTest, SocketpairBackedUhidGamepadRoundTripsEvents) {}
+
+TEST_F(LinuxBackendTest, SocketpairBackedDualSenseRepliesToFeatureReports) {}
+
+TEST_F(LinuxBackendTest, SocketpairBackedDualSenseBluetoothFramesReports) {}
 
 TEST_F(LinuxBackendTest, FakeLinuxBackendCreatesAllDeviceTypes) {}
 
 TEST_F(LinuxBackendTest, FakeUhidSyscallsCoverFailureBranches) {}
 
 TEST_F(LinuxBackendTest, FakeUinputSyscallsCoverFailureBranches) {}
+
+TEST_F(LinuxBackendTest, XTestFallbackCoversKeyboardAndMousePaths) {}
 
 TEST_F(LinuxBackendTest, PlatformRuntimeReportsUnavailableDeviceCreationWhenNodesAreMissing) {}
 #endif

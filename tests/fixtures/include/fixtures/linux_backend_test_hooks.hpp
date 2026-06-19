@@ -85,6 +85,31 @@ namespace lvh::detail::test {
     bool saw_get_report_reply = false;
 
     /**
+     * @brief Whether the peer observed a DualSense calibration reply.
+     */
+    bool saw_dualsense_calibration = false;
+
+    /**
+     * @brief Whether the peer observed a DualSense pairing reply.
+     */
+    bool saw_dualsense_pairing = false;
+
+    /**
+     * @brief Whether the peer observed a DualSense firmware reply.
+     */
+    bool saw_dualsense_firmware = false;
+
+    /**
+     * @brief Whether the peer observed a signed Bluetooth DualSense feature reply.
+     */
+    bool saw_dualsense_feature_crc = false;
+
+    /**
+     * @brief Whether the peer observed a Bluetooth-framed DualSense input report.
+     */
+    bool saw_dualsense_bluetooth_input = false;
+
+    /**
      * @brief Whether the peer observed a set-report reply.
      */
     bool saw_set_report_reply = false;
@@ -143,6 +168,36 @@ namespace lvh::detail::test {
      * @brief Mouse close status.
      */
     OperationStatus mouse_close_status;
+
+    /**
+     * @brief Touchscreen creation status.
+     */
+    OperationStatus touchscreen_status;
+
+    /**
+     * @brief Touchscreen close status.
+     */
+    OperationStatus touchscreen_close_status;
+
+    /**
+     * @brief Trackpad creation status.
+     */
+    OperationStatus trackpad_status;
+
+    /**
+     * @brief Trackpad close status.
+     */
+    OperationStatus trackpad_close_status;
+
+    /**
+     * @brief Pen tablet creation status.
+     */
+    OperationStatus pen_tablet_status;
+
+    /**
+     * @brief Pen tablet close status.
+     */
+    OperationStatus pen_tablet_close_status;
   };
 
   /**
@@ -225,6 +280,86 @@ namespace lvh::detail::test {
    * @return Legacy wheel steps.
    */
   int linux_legacy_scroll_steps(std::int32_t distance);
+
+  /**
+   * @brief Translate a pen tool to a Linux input tool code.
+   *
+   * @param tool Pen tool.
+   * @return Linux tool code, or `-1` when unchanged or unsupported.
+   */
+  int linux_pen_tool(PenToolType tool);
+
+  /**
+   * @brief Translate a pen button to a Linux input button code.
+   *
+   * @param button Pen button.
+   * @return Linux button code.
+   */
+  int linux_pen_button(PenButton button);
+
+  /**
+   * @brief Format a parsed or generated Linux DualSense MAC address.
+   *
+   * @param stable_id Optional stable id to parse as a MAC address.
+   * @param id Device id used when the stable id is not a valid MAC address.
+   * @return Formatted MAC address.
+   */
+  std::string linux_dualsense_mac_address(const std::string &stable_id, DeviceId id);
+
+  /**
+   * @brief Check whether the first line in a file matches an expected value.
+   *
+   * @param path File path to read.
+   * @param expected Expected first line.
+   * @return `true` when the first line exists and matches.
+   */
+  bool linux_first_line_matches(const std::string &path, const std::string &expected);
+
+  /**
+   * @brief Check whether reading the first line of a file fails.
+   *
+   * @param path File path to read.
+   * @return `true` when no first line could be read.
+   */
+  bool linux_first_line_missing(const std::string &path);
+
+  /**
+   * @brief Check whether a hidraw uevent file advertises the expected HID name.
+   *
+   * @param path Uevent file path.
+   * @param name Expected HID name.
+   * @return `true` when the HID name matches.
+   */
+  bool linux_hidraw_name_matches(const std::string &path, const std::string &name);
+
+  /**
+   * @brief Discover Linux input nodes for a device name.
+   *
+   * @param name Device name to discover.
+   * @return Matching device nodes.
+   */
+  std::vector<DeviceNode> linux_discover_nodes_by_name(const std::string &name);
+
+  /**
+   * @brief Discover Linux input nodes for a device name with explicit sysfs roots.
+   *
+   * @param name Device name to discover.
+   * @param input_root Test input sysfs root.
+   * @param hidraw_root Test hidraw sysfs root.
+   * @return Matching device nodes.
+   */
+  std::vector<DeviceNode> linux_discover_nodes_by_name(
+    const std::string &name,
+    const std::string &input_root,
+    const std::string &hidraw_root
+  );
+
+  /**
+   * @brief Call device-node discovery wrappers on unopened backend devices.
+   *
+   * @return Total node count.
+   */
+  std::size_t linux_empty_device_nodes_count();
 
   /**
    * @brief Get the maximum UHID report descriptor size accepted by the backend.
@@ -370,11 +505,53 @@ namespace lvh::detail::test {
   LinuxInputSubmissionResult linux_uinput_pen_tablet_tool_pipe(const PenToolState &state);
 
   /**
+   * @brief Submit multiple contacts through a pipe-backed uinput trackpad.
+   *
+   * @return Submission status and captured input events.
+   */
+  LinuxInputSubmissionResult linux_uinput_trackpad_multi_contact_pipe();
+
+  /**
+   * @brief Submit invalid touchscreen contacts through pipe-backed devices.
+   *
+   * @return Final invalid-contact status.
+   */
+  OperationStatus linux_uinput_touchscreen_invalid_contacts();
+
+  /**
+   * @brief Submit pen tablet tool transitions through a pipe-backed device.
+   *
+   * @return Submission status and captured input events.
+   */
+  LinuxInputSubmissionResult linux_uinput_pen_tablet_transition_pipe();
+
+  /**
+   * @brief Submit pen tablet events after close.
+   *
+   * @return Final closed-device status.
+   */
+  OperationStatus linux_uinput_pen_tablet_closed_status();
+
+  /**
    * @brief Exercise a UHID gamepad lifecycle over a socketpair.
    *
    * @return Round-trip result.
    */
   LinuxUhidRoundTripResult linux_uhid_socketpair_roundtrip();
+
+  /**
+   * @brief Exercise DualSense UHID feature-report replies over a socketpair.
+   *
+   * @return Round-trip result with feature-report observations.
+   */
+  LinuxUhidRoundTripResult linux_dualsense_uhid_socketpair_reports();
+
+  /**
+   * @brief Exercise Bluetooth DualSense UHID framing and signed feature replies over a socketpair.
+   *
+   * @return Round-trip result with Bluetooth framing observations.
+   */
+  LinuxUhidRoundTripResult linux_dualsense_bluetooth_uhid_socketpair_reports();
 
   /**
    * @brief Create all Linux backend device types using fake successful syscalls.
@@ -445,6 +622,62 @@ namespace lvh::detail::test {
    * @return Creation status.
    */
   OperationStatus linux_backend_mouse_fake_fallback_success();
+
+  /**
+   * @brief Try creating a Linux backend keyboard while uinput and XTest fallback both fail.
+   *
+   * @return Creation status.
+   */
+  OperationStatus linux_backend_keyboard_fake_create_failure_without_fallback();
+
+  /**
+   * @brief Try creating a Linux backend mouse while uinput and XTest fallback both fail.
+   *
+   * @return Creation status.
+   */
+  OperationStatus linux_backend_mouse_fake_create_failure_without_fallback();
+
+  /**
+   * @brief Try creating a Linux backend touchscreen while fake open fails.
+   *
+   * @return Creation status.
+   */
+  OperationStatus linux_backend_touchscreen_fake_open_failure();
+
+  /**
+   * @brief Try creating a Linux backend touchscreen while fake uinput creation fails.
+   *
+   * @return Creation status.
+   */
+  OperationStatus linux_backend_touchscreen_fake_create_failure();
+
+  /**
+   * @brief Try creating a Linux backend trackpad while fake open fails.
+   *
+   * @return Creation status.
+   */
+  OperationStatus linux_backend_trackpad_fake_open_failure();
+
+  /**
+   * @brief Try creating a Linux backend trackpad while fake uinput creation fails.
+   *
+   * @return Creation status.
+   */
+  OperationStatus linux_backend_trackpad_fake_create_failure();
+
+  /**
+   * @brief Try creating a Linux backend pen tablet while fake open fails.
+   *
+   * @return Creation status.
+   */
+  OperationStatus linux_backend_pen_tablet_fake_open_failure();
+
+  /**
+   * @brief Try creating a Linux backend pen tablet while fake uinput creation fails.
+   *
+   * @return Creation status.
+   */
+  OperationStatus linux_backend_pen_tablet_fake_create_failure();
 
   /**
    * @brief Try submitting a UHID input report while fake write fails.
@@ -546,11 +779,26 @@ namespace lvh::detail::test {
   OperationStatus linux_uinput_keyboard_type_text_fake_success();
 
   /**
+   * @brief Submit text while a fake keyboard write call fails.
+   *
+   * @param fail_write_call One-based write call to fail.
+   * @return Submit status.
+   */
+  OperationStatus linux_uinput_keyboard_type_text_fake_write_failure(int fail_write_call);
+
+  /**
    * @brief Close a uinput keyboard while fake close fails.
    *
    * @return Close status.
    */
   OperationStatus linux_uinput_keyboard_close_fake_close_failure();
+
+  /**
+   * @brief Create a fake uinput keyboard with auto repeat enabled.
+   *
+   * @return Close status after the repeat thread runs.
+   */
+  OperationStatus linux_uinput_keyboard_auto_repeat_fake_success();
 
   /**
    * @brief Try creating a uinput mouse while a fake ioctl call fails.
@@ -575,5 +823,109 @@ namespace lvh::detail::test {
    * @return Submit status.
    */
   OperationStatus linux_uinput_mouse_submit_fake_short_write(const MouseEvent &event);
+
+  /**
+   * @brief Try creating a uinput touchscreen while a fake ioctl call fails.
+   *
+   * @param fail_ioctl_call One-based ioctl call to fail.
+   * @return Creation status.
+   */
+  OperationStatus linux_uinput_touchscreen_create_fake_ioctl_failure(int fail_ioctl_call);
+
+  /**
+   * @brief Try creating a uinput trackpad while a fake ioctl call fails.
+   *
+   * @param fail_ioctl_call One-based ioctl call to fail.
+   * @return Creation status.
+   */
+  OperationStatus linux_uinput_trackpad_create_fake_ioctl_failure(int fail_ioctl_call);
+
+  /**
+   * @brief Try creating a uinput pen tablet while a fake ioctl call fails.
+   *
+   * @param fail_ioctl_call One-based ioctl call to fail.
+   * @return Creation status.
+   */
+  OperationStatus linux_uinput_pen_tablet_create_fake_ioctl_failure(int fail_ioctl_call);
+
+  /**
+   * @brief Submit keyboard input through the XTest fallback.
+   *
+   * @return Submit status.
+   */
+  OperationStatus linux_xtest_keyboard_submit_success();
+
+  /**
+   * @brief Submit unsupported keyboard input through the XTest fallback.
+   *
+   * @return Submit status.
+   */
+  OperationStatus linux_xtest_keyboard_submit_invalid();
+
+  /**
+   * @brief Submit keyboard input after closing the XTest fallback.
+   *
+   * @return Submit status.
+   */
+  OperationStatus linux_xtest_keyboard_submit_closed();
+
+  /**
+   * @brief Submit text through the XTest fallback.
+   *
+   * @return Submit status.
+   */
+  OperationStatus linux_xtest_keyboard_type_text_success();
+
+  /**
+   * @brief Submit text through XTest while a fake keycode lookup fails.
+   *
+   * @param fail_keycode_call One-based keycode lookup call to fail.
+   * @return Submit status.
+   */
+  OperationStatus linux_xtest_keyboard_type_text_fake_keycode_failure(int fail_keycode_call);
+
+  /**
+   * @brief Try creating the XTest keyboard fallback while the extension query fails.
+   *
+   * @return Creation status.
+   */
+  OperationStatus linux_xtest_keyboard_create_query_failure();
+
+  /**
+   * @brief Submit mouse input through the XTest fallback.
+   *
+   * @return Submit status.
+   */
+  OperationStatus linux_xtest_mouse_submit_success();
+
+  /**
+   * @brief Submit mouse input after closing the XTest fallback.
+   *
+   * @return Submit status.
+   */
+  OperationStatus linux_xtest_mouse_submit_closed();
+
+  /**
+   * @brief Try creating the XTest mouse fallback while the extension query fails.
+   *
+   * @return Creation status.
+   */
+  OperationStatus linux_xtest_mouse_create_query_failure();
+
+  /**
+   * @brief Translate a portable key code to an XTest keysym.
+   *
+   * @param key_code Portable keyboard key code.
+   * @return X11 keysym, or `0` when unsupported or XTest is disabled.
+   */
+  unsigned long linux_xtest_keysym(KeyboardKeyCode key_code);
+
+  /**
+   * @brief Translate a mouse button to an XTest button code.
+   *
+   * @param button Mouse button.
+   * @return XTest button code.
+   */
+  int linux_xtest_mouse_button(MouseButton button);
 
 }  // namespace lvh::detail::test

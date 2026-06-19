@@ -41,6 +41,13 @@ TEST(ProfileTest, StreamingControllerProfilesArePresent) {
   EXPECT_GT(dualsense.output_report_size, 5U);
   EXPECT_EQ(dualsense.manufacturer, "Sony Interactive Entertainment");
 
+  const auto dualsense_bluetooth = lvh::profiles::dualsense_bluetooth();
+  EXPECT_EQ(dualsense_bluetooth.bus_type, lvh::BusType::bluetooth);
+  EXPECT_EQ(dualsense_bluetooth.report_id, 0x31);
+  EXPECT_EQ(dualsense_bluetooth.input_report_size, 78U);
+  EXPECT_EQ(dualsense_bluetooth.output_report_size, 78U);
+  EXPECT_NE(dualsense_bluetooth.report_descriptor, dualsense.report_descriptor);
+
   EXPECT_EQ(switch_pro.vendor_id, 0x057E);
   EXPECT_EQ(switch_pro.product_id, 0x2009);
 }
