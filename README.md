@@ -396,7 +396,7 @@ third-party/googletest/       GoogleTest submodule
 - [ ] Defer C, Python, and Rust bindings until after the platform API is stable,
   likely after macOS support lands.
 - [ ] Decide whether official Windows releases should ship signed driver packages
-  in addition to source.
+  in addition to source. (Yes, we should ship signed driver packages/installers from this repo's releases)
 
 ### Phase 5: macOS Research and Backend
 
