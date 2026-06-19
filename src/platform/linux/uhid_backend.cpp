@@ -39,11 +39,6 @@
   #include <X11/keysym.h>
   #include <X11/Xlib.h>
   #include <X11/Xutil.h>
-
-  // Xlib defines Status as a macro, which collides with lvh::Status.
-  #if defined(Status)
-    #undef Status
-  #endif
 #endif
 
 // local includes
@@ -92,8 +87,8 @@ namespace lvh::detail {
       return std::error_code(error, std::generic_category()).message();
     }
 
-    Status system_error_status(ErrorCode code, const std::string &operation, int error) {
-      return Status::failure(code, operation + ": " + errno_message(error));
+    OperationStatus system_error_status(ErrorCode code, const std::string &operation, int error) {
+      return OperationStatus::failure(code, operation + ": " + errno_message(error));
     }
 
     bool can_access_uhid() {
@@ -129,7 +124,7 @@ namespace lvh::detail {
       destination[length] = 0;
     }
 
-    Status ioctl_status(const std::string &operation) {
+    OperationStatus ioctl_status(const std::string &operation) {
       return system_error_status(ErrorCode::backend_failure, operation, errno);
     }
 
@@ -448,21 +443,21 @@ namespace lvh::detail {
       }
 
     protected:
-      Status emit_event(std::uint16_t type, std::uint16_t code, std::int32_t value) {
+      OperationStatus emit_event(std::uint16_t type, std::uint16_t code, std::int32_t value) {
         std::lock_guard lock {write_mutex_};
         return emit_event_locked(type, code, value);
       }
 
-      Status sync() {
+      OperationStatus sync() {
         return emit_event(EV_SYN, SYN_REPORT, 0);
       }
 
-      Status close_uinput(const std::string &description) {
+      OperationStatus close_uinput(const std::string &description) {
         if (!open_.exchange(false)) {
-          return Status::success();
+          return OperationStatus::success();
         }
 
-        auto status = Status::success();
+        auto status = OperationStatus::success();
         if (fd_ >= 0) {
           if (system_ioctl(fd_, UI_DEV_DESTROY) < 0) {
             status = ioctl_status("failed to destroy " + description);
@@ -485,9 +480,9 @@ namespace lvh::detail {
       }
 
     private:
-      Status emit_event_locked(std::uint16_t type, std::uint16_t code, std::int32_t value) {
+      OperationStatus emit_event_locked(std::uint16_t type, std::uint16_t code, std::int32_t value) {
         if (fd_ < 0) {
-          return Status::failure(ErrorCode::device_closed, "uinput device is closed");
+          return OperationStatus::failure(ErrorCode::device_closed, "uinput device is closed");
         }
 
         input_event event {};
@@ -500,10 +495,10 @@ namespace lvh::detail {
           return system_error_status(ErrorCode::backend_failure, "failed to write uinput event", errno);
         }
         if (static_cast<std::size_t>(result) != sizeof(event)) {
-          return Status::failure(ErrorCode::backend_failure, "short write while sending uinput event");
+          return OperationStatus::failure(ErrorCode::backend_failure, "short write while sending uinput event");
         }
 
-        return Status::success();
+        return OperationStatus::success();
       }
 
       int fd_ = -1;
@@ -511,7 +506,7 @@ namespace lvh::detail {
       std::mutex write_mutex_;
     };
 
-    Status write_uinput_user_device(int fd, const DeviceProfile &profile, DeviceId id) {
+    OperationStatus write_uinput_user_device(int fd, const DeviceProfile &profile, DeviceId id) {
       uinput_user_dev device {};
       copy_string(device.name, profile.name);
       device.id.bustype = to_uinput_bus(profile.bus_type);
@@ -532,17 +527,17 @@ namespace lvh::detail {
         return system_error_status(ErrorCode::backend_failure, "failed to write uinput device definition", errno);
       }
       if (static_cast<std::size_t>(result) != sizeof(device)) {
-        return Status::failure(ErrorCode::backend_failure, "short write while creating uinput device");
+        return OperationStatus::failure(ErrorCode::backend_failure, "short write while creating uinput device");
       }
 
       if (system_ioctl(fd, UI_DEV_CREATE) < 0) {
         return ioctl_status("failed to create uinput device " + std::to_string(id));
       }
 
-      return Status::success();
+      return OperationStatus::success();
     }
 
-    Status enable_uinput_keyboard(int fd) {
+    OperationStatus enable_uinput_keyboard(int fd) {
       if (system_ioctl(fd, UI_SET_EVBIT, EV_KEY) < 0) {
         return ioctl_status("failed to enable uinput keyboard key events");
       }
@@ -553,10 +548,10 @@ namespace lvh::detail {
         }
       }
 
-      return Status::success();
+      return OperationStatus::success();
     }
 
-    Status enable_uinput_mouse(int fd) {
+    OperationStatus enable_uinput_mouse(int fd) {
       if (system_ioctl(fd, UI_SET_EVBIT, EV_KEY) < 0) {
         return ioctl_status("failed to enable uinput mouse button events");
       }
@@ -606,7 +601,7 @@ namespace lvh::detail {
         return ioctl_status("failed to enable uinput absolute Y axis");
       }
 
-      return Status::success();
+      return OperationStatus::success();
     }
 
     /**
@@ -621,21 +616,21 @@ namespace lvh::detail {
         static_cast<void>(close());
       }
 
-      Status create(DeviceId id, const CreateKeyboardOptions &options) {
+      OperationStatus create(DeviceId id, const CreateKeyboardOptions &options) {
         if (const auto status = enable_uinput_keyboard(file_descriptor()); !status.ok()) {
           return status;
         }
         return write_uinput_user_device(file_descriptor(), options.profile, id);
       }
 
-      Status submit(const KeyboardEvent &event) override {
+      OperationStatus submit(const KeyboardEvent &event) override {
         if (!is_open()) {
-          return Status::failure(ErrorCode::device_closed, "uinput keyboard is closed");
+          return OperationStatus::failure(ErrorCode::device_closed, "uinput keyboard is closed");
         }
 
         const auto linux_key = key_code_to_linux(event.key_code);
         if (linux_key < 0) {
-          return Status::failure(ErrorCode::invalid_argument, "keyboard key code is not supported by the Linux backend");
+          return OperationStatus::failure(ErrorCode::invalid_argument, "keyboard key code is not supported by the Linux backend");
         }
 
         if (const auto status = emit_event(EV_KEY, static_cast<std::uint16_t>(linux_key), event.pressed ? 1 : 0); !status.ok()) {
@@ -644,7 +639,7 @@ namespace lvh::detail {
         return sync();
       }
 
-      Status type_text(const KeyboardTextEvent &event) override {
+      OperationStatus type_text(const KeyboardTextEvent &event) override {
         for (const auto codepoint : decode_utf8(event.text)) {
           const auto hex = uppercase_hex(codepoint);
 
@@ -685,10 +680,10 @@ namespace lvh::detail {
           }
         }
 
-        return Status::success();
+        return OperationStatus::success();
       }
 
-      Status close() override {
+      OperationStatus close() override {
         return close_uinput("uinput keyboard");
       }
     };
@@ -705,16 +700,16 @@ namespace lvh::detail {
         static_cast<void>(close());
       }
 
-      Status create(DeviceId id, const CreateMouseOptions &options) {
+      OperationStatus create(DeviceId id, const CreateMouseOptions &options) {
         if (const auto status = enable_uinput_mouse(file_descriptor()); !status.ok()) {
           return status;
         }
         return write_uinput_user_device(file_descriptor(), options.profile, id);
       }
 
-      Status submit(const MouseEvent &event) override {
+      OperationStatus submit(const MouseEvent &event) override {
         if (!is_open()) {
-          return Status::failure(ErrorCode::device_closed, "uinput mouse is closed");
+          return OperationStatus::failure(ErrorCode::device_closed, "uinput mouse is closed");
         }
 
         switch (event.kind) {
@@ -730,15 +725,15 @@ namespace lvh::detail {
             return submit_horizontal_scroll(event.high_resolution_scroll);
         }
 
-        return Status::failure(ErrorCode::invalid_argument, "unsupported mouse event kind");
+        return OperationStatus::failure(ErrorCode::invalid_argument, "unsupported mouse event kind");
       }
 
-      Status close() override {
+      OperationStatus close() override {
         return close_uinput("uinput mouse");
       }
 
     private:
-      Status submit_relative_motion(const MouseEvent &event) {
+      OperationStatus submit_relative_motion(const MouseEvent &event) {
         if (event.x != 0) {
           if (const auto status = emit_event(EV_REL, REL_X, event.x); !status.ok()) {
             return status;
@@ -752,7 +747,7 @@ namespace lvh::detail {
         return sync();
       }
 
-      Status submit_absolute_motion(const MouseEvent &event) {
+      OperationStatus submit_absolute_motion(const MouseEvent &event) {
         if (const auto status = emit_event(EV_ABS, ABS_X, scale_absolute_axis(event.x, event.width)); !status.ok()) {
           return status;
         }
@@ -762,14 +757,14 @@ namespace lvh::detail {
         return sync();
       }
 
-      Status submit_button(const MouseEvent &event) {
+      OperationStatus submit_button(const MouseEvent &event) {
         if (const auto status = emit_event(EV_KEY, static_cast<std::uint16_t>(mouse_button_to_linux(event.button)), event.pressed ? 1 : 0); !status.ok()) {
           return status;
         }
         return sync();
       }
 
-      Status submit_vertical_scroll(std::int32_t distance) {
+      OperationStatus submit_vertical_scroll(std::int32_t distance) {
 #if defined(REL_WHEEL_HI_RES)
         if (const auto status = emit_event(EV_REL, REL_WHEEL_HI_RES, distance); !status.ok()) {
           return status;
@@ -782,7 +777,7 @@ namespace lvh::detail {
         return sync();
       }
 
-      Status submit_horizontal_scroll(std::int32_t distance) {
+      OperationStatus submit_horizontal_scroll(std::int32_t distance) {
 #if defined(REL_HWHEEL_HI_RES)
         if (const auto status = emit_event(EV_REL, REL_HWHEEL_HI_RES, distance); !status.ok()) {
           return status;
@@ -958,39 +953,39 @@ namespace lvh::detail {
         static_cast<void>(close());
       }
 
-      Status create() {
+      OperationStatus create() {
         display_ = XOpenDisplay(nullptr);
         if (display_ == nullptr) {
-          return Status::failure(ErrorCode::backend_unavailable, "failed to open X display for XTest keyboard fallback");
+          return OperationStatus::failure(ErrorCode::backend_unavailable, "failed to open X display for XTest keyboard fallback");
         }
         if (!query_xtest(display_)) {
-          return Status::failure(ErrorCode::backend_unavailable, "XTest extension is not available");
+          return OperationStatus::failure(ErrorCode::backend_unavailable, "XTest extension is not available");
         }
 
-        return Status::success();
+        return OperationStatus::success();
       }
 
-      Status submit(const KeyboardEvent &event) override {
+      OperationStatus submit(const KeyboardEvent &event) override {
         if (display_ == nullptr) {
-          return Status::failure(ErrorCode::device_closed, "XTest keyboard is closed");
+          return OperationStatus::failure(ErrorCode::device_closed, "XTest keyboard is closed");
         }
 
         const auto keysym = key_code_to_keysym(event.key_code);
         if (keysym == NoSymbol) {
-          return Status::failure(ErrorCode::invalid_argument, "keyboard key code is not supported by XTest fallback");
+          return OperationStatus::failure(ErrorCode::invalid_argument, "keyboard key code is not supported by XTest fallback");
         }
 
         const auto keycode = XKeysymToKeycode(display_, keysym);
         if (keycode == 0) {
-          return Status::failure(ErrorCode::invalid_argument, "keyboard key code has no X11 keycode");
+          return OperationStatus::failure(ErrorCode::invalid_argument, "keyboard key code has no X11 keycode");
         }
 
         XTestFakeKeyEvent(display_, keycode, event.pressed ? True : False, CurrentTime);
         XFlush(display_);
-        return Status::success();
+        return OperationStatus::success();
       }
 
-      Status type_text(const KeyboardTextEvent &event) override {
+      OperationStatus type_text(const KeyboardTextEvent &event) override {
         for (const auto codepoint : decode_utf8(event.text)) {
           const auto hex = uppercase_hex(codepoint);
 
@@ -1031,15 +1026,15 @@ namespace lvh::detail {
           }
         }
 
-        return Status::success();
+        return OperationStatus::success();
       }
 
-      Status close() override {
+      OperationStatus close() override {
         if (display_ != nullptr) {
           XCloseDisplay(display_);
           display_ = nullptr;
         }
-        return Status::success();
+        return OperationStatus::success();
       }
 
     private:
@@ -1057,21 +1052,21 @@ namespace lvh::detail {
         static_cast<void>(close());
       }
 
-      Status create() {
+      OperationStatus create() {
         display_ = XOpenDisplay(nullptr);
         if (display_ == nullptr) {
-          return Status::failure(ErrorCode::backend_unavailable, "failed to open X display for XTest mouse fallback");
+          return OperationStatus::failure(ErrorCode::backend_unavailable, "failed to open X display for XTest mouse fallback");
         }
         if (!query_xtest(display_)) {
-          return Status::failure(ErrorCode::backend_unavailable, "XTest extension is not available");
+          return OperationStatus::failure(ErrorCode::backend_unavailable, "XTest extension is not available");
         }
 
-        return Status::success();
+        return OperationStatus::success();
       }
 
-      Status submit(const MouseEvent &event) override {
+      OperationStatus submit(const MouseEvent &event) override {
         if (display_ == nullptr) {
-          return Status::failure(ErrorCode::device_closed, "XTest mouse is closed");
+          return OperationStatus::failure(ErrorCode::device_closed, "XTest mouse is closed");
         }
 
         switch (event.kind) {
@@ -1093,15 +1088,15 @@ namespace lvh::detail {
         }
 
         XFlush(display_);
-        return Status::success();
+        return OperationStatus::success();
       }
 
-      Status close() override {
+      OperationStatus close() override {
         if (display_ != nullptr) {
           XCloseDisplay(display_);
           display_ = nullptr;
         }
-        return Status::success();
+        return OperationStatus::success();
       }
 
     private:
@@ -1148,12 +1143,12 @@ namespace lvh::detail {
         static_cast<void>(close());
       }
 
-      Status create(DeviceId id, const CreateGamepadOptions &options) {
+      OperationStatus create(DeviceId id, const CreateGamepadOptions &options) {
         uhid_event event {};
         auto &request = event.u.create2;
 
         if (options.profile.report_descriptor.size() > sizeof(request.rd_data)) {
-          return Status::failure(ErrorCode::unsupported_profile, "HID report descriptor is too large for UHID");
+          return OperationStatus::failure(ErrorCode::unsupported_profile, "HID report descriptor is too large for UHID");
         }
 
         event.type = UHID_CREATE2;
@@ -1176,17 +1171,17 @@ namespace lvh::detail {
         reader_ = std::thread {[this]() {
           read_loop();
         }};
-        return Status::success();
+        return OperationStatus::success();
       }
 
-      Status submit(const std::vector<std::uint8_t> &report) override {
+      OperationStatus submit(const std::vector<std::uint8_t> &report) override {
         if (!open_) {
-          return Status::failure(ErrorCode::device_closed, "UHID gamepad is closed");
+          return OperationStatus::failure(ErrorCode::device_closed, "UHID gamepad is closed");
         }
 
         uhid_event event {};
         if (report.size() > sizeof(event.u.input2.data)) {
-          return Status::failure(ErrorCode::invalid_argument, "HID input report is too large for UHID");
+          return OperationStatus::failure(ErrorCode::invalid_argument, "HID input report is too large for UHID");
         }
 
         event.type = UHID_INPUT2;
@@ -1200,14 +1195,14 @@ namespace lvh::detail {
         output_callback_ = std::move(callback);
       }
 
-      Status close() override {
+      OperationStatus close() override {
         if (!open_.exchange(false)) {
-          return Status::success();
+          return OperationStatus::success();
         }
 
         running_ = false;
 
-        auto status = Status::success();
+        auto status = OperationStatus::success();
         if (fd_ >= 0) {
           uhid_event event {};
           event.type = UHID_DESTROY;
@@ -1229,10 +1224,10 @@ namespace lvh::detail {
       }
 
     private:
-      Status write_event(const uhid_event &event) {
+      OperationStatus write_event(const uhid_event &event) {
         std::lock_guard lock {write_mutex_};
         if (fd_ < 0) {
-          return Status::failure(ErrorCode::device_closed, "UHID file descriptor is closed");
+          return OperationStatus::failure(ErrorCode::device_closed, "UHID file descriptor is closed");
         }
 
         const auto result = system_write(fd_, &event, sizeof(event));
@@ -1240,10 +1235,10 @@ namespace lvh::detail {
           return system_error_status(ErrorCode::backend_failure, "failed to write UHID event", errno);
         }
         if (static_cast<std::size_t>(result) != sizeof(event)) {
-          return Status::failure(ErrorCode::backend_failure, "short write while sending UHID event");
+          return OperationStatus::failure(ErrorCode::backend_failure, "short write while sending UHID event");
         }
 
-        return Status::success();
+        return OperationStatus::success();
       }
 
       void read_loop() {
@@ -1379,7 +1374,7 @@ namespace lvh::detail {
           return {status, nullptr};
         }
 
-        return {Status::success(), std::move(gamepad)};
+        return {OperationStatus::success(), std::move(gamepad)};
       }
 
       BackendKeyboardCreationResult create_keyboard(DeviceId id, const CreateKeyboardOptions &options) override {
@@ -1398,7 +1393,7 @@ namespace lvh::detail {
           return {status, nullptr};
         }
 
-        return {Status::success(), std::move(keyboard)};
+        return {OperationStatus::success(), std::move(keyboard)};
       }
 
       BackendMouseCreationResult create_mouse(DeviceId id, const CreateMouseOptions &options) override {
@@ -1417,7 +1412,7 @@ namespace lvh::detail {
           return {status, nullptr};
         }
 
-        return {Status::success(), std::move(mouse)};
+        return {OperationStatus::success(), std::move(mouse)};
       }
 
     private:
@@ -1427,9 +1422,9 @@ namespace lvh::detail {
         if (const auto status = keyboard->create(); !status.ok()) {
           return {status, nullptr};
         }
-        return {Status::success(), std::move(keyboard)};
+        return {OperationStatus::success(), std::move(keyboard)};
 #else
-        return {Status::failure(ErrorCode::backend_unavailable, "failed to open /dev/uinput"), nullptr};
+        return {OperationStatus::failure(ErrorCode::backend_unavailable, "failed to open /dev/uinput"), nullptr};
 #endif
       }
 
@@ -1439,9 +1434,9 @@ namespace lvh::detail {
         if (const auto status = mouse->create(); !status.ok()) {
           return {status, nullptr};
         }
-        return {Status::success(), std::move(mouse)};
+        return {OperationStatus::success(), std::move(mouse)};
 #else
-        return {Status::failure(ErrorCode::backend_unavailable, "failed to open /dev/uinput"), nullptr};
+        return {OperationStatus::failure(ErrorCode::backend_unavailable, "failed to open /dev/uinput"), nullptr};
 #endif
       }
 

@@ -96,62 +96,62 @@ namespace lvh::detail {
 namespace lvh {
   namespace {
 
-    Status validate_gamepad_options(const CreateGamepadOptions &options) {
+    OperationStatus validate_gamepad_options(const CreateGamepadOptions &options) {
       if (options.profile.device_type != DeviceType::gamepad) {
-        return Status::failure(ErrorCode::unsupported_profile, "device profile is not a gamepad");
+        return OperationStatus::failure(ErrorCode::unsupported_profile, "device profile is not a gamepad");
       }
       if (options.profile.name.empty()) {
-        return Status::failure(ErrorCode::invalid_argument, "device profile name must not be empty");
+        return OperationStatus::failure(ErrorCode::invalid_argument, "device profile name must not be empty");
       }
       if (options.profile.report_descriptor.empty()) {
-        return Status::failure(ErrorCode::invalid_argument, "device profile report descriptor must not be empty");
+        return OperationStatus::failure(ErrorCode::invalid_argument, "device profile report descriptor must not be empty");
       }
       if (options.profile.report_id == 0) {
-        return Status::failure(ErrorCode::invalid_argument, "device profile report id must not be zero");
+        return OperationStatus::failure(ErrorCode::invalid_argument, "device profile report id must not be zero");
       }
       if (options.profile.input_report_size == 0) {
-        return Status::failure(ErrorCode::invalid_argument, "device profile input report size must not be zero");
+        return OperationStatus::failure(ErrorCode::invalid_argument, "device profile input report size must not be zero");
       }
 
-      return Status::success();
+      return OperationStatus::success();
     }
 
-    Status validate_keyboard_options(const CreateKeyboardOptions &options) {
+    OperationStatus validate_keyboard_options(const CreateKeyboardOptions &options) {
       if (options.profile.device_type != DeviceType::keyboard) {
-        return Status::failure(ErrorCode::unsupported_profile, "device profile is not a keyboard");
+        return OperationStatus::failure(ErrorCode::unsupported_profile, "device profile is not a keyboard");
       }
       if (options.profile.name.empty()) {
-        return Status::failure(ErrorCode::invalid_argument, "device profile name must not be empty");
+        return OperationStatus::failure(ErrorCode::invalid_argument, "device profile name must not be empty");
       }
 
-      return Status::success();
+      return OperationStatus::success();
     }
 
-    Status validate_mouse_options(const CreateMouseOptions &options) {
+    OperationStatus validate_mouse_options(const CreateMouseOptions &options) {
       if (options.profile.device_type != DeviceType::mouse) {
-        return Status::failure(ErrorCode::unsupported_profile, "device profile is not a mouse");
+        return OperationStatus::failure(ErrorCode::unsupported_profile, "device profile is not a mouse");
       }
       if (options.profile.name.empty()) {
-        return Status::failure(ErrorCode::invalid_argument, "device profile name must not be empty");
+        return OperationStatus::failure(ErrorCode::invalid_argument, "device profile name must not be empty");
       }
 
-      return Status::success();
+      return OperationStatus::success();
     }
 
-    Status validate_keyboard_event(const KeyboardEvent &event) {
+    OperationStatus validate_keyboard_event(const KeyboardEvent &event) {
       if (event.key_code == 0) {
-        return Status::failure(ErrorCode::invalid_argument, "keyboard key code must not be zero");
+        return OperationStatus::failure(ErrorCode::invalid_argument, "keyboard key code must not be zero");
       }
 
-      return Status::success();
+      return OperationStatus::success();
     }
 
-    Status validate_mouse_event(const MouseEvent &event) {
+    OperationStatus validate_mouse_event(const MouseEvent &event) {
       if (event.kind == MouseEventKind::absolute_motion && (event.width <= 0 || event.height <= 0)) {
-        return Status::failure(ErrorCode::invalid_argument, "absolute mouse movement requires positive dimensions");
+        return OperationStatus::failure(ErrorCode::invalid_argument, "absolute mouse movement requires positive dimensions");
       }
 
-      return Status::success();
+      return OperationStatus::success();
     }
 
     template<class Func>
@@ -213,13 +213,13 @@ namespace lvh {
     });
   }
 
-  Status Gamepad::close() {
+  OperationStatus Gamepad::close() {
     return with_device(device_, [](auto &device) {
       if (!device.open) {
-        return Status::success();
+        return OperationStatus::success();
       }
 
-      auto status = Status::success();
+      auto status = OperationStatus::success();
       if (device.backend) {
         status = device.backend->close();
       }
@@ -229,15 +229,15 @@ namespace lvh {
     });
   }
 
-  Status Gamepad::submit(const GamepadState &state) {
+  OperationStatus Gamepad::submit(const GamepadState &state) {
     return with_device(device_, [&state](auto &device) {
       if (!device.open) {
-        return Status::failure(ErrorCode::device_closed, "gamepad is closed");
+        return OperationStatus::failure(ErrorCode::device_closed, "gamepad is closed");
       }
 
       auto report = reports::pack_input_report(device.options.profile, state);
       if (report.empty()) {
-        return Status::failure(ErrorCode::backend_failure, "failed to pack gamepad input report");
+        return OperationStatus::failure(ErrorCode::backend_failure, "failed to pack gamepad input report");
       }
 
       if (device.backend) {
@@ -249,7 +249,7 @@ namespace lvh {
       device.last_state = reports::normalize_state(state);
       device.last_report = std::move(report);
       ++device.submitted_reports;
-      return Status::success();
+      return OperationStatus::success();
     });
   }
 
@@ -263,14 +263,14 @@ namespace lvh {
     });
   }
 
-  Status Gamepad::dispatch_output(const GamepadOutput &output) {
+  OperationStatus Gamepad::dispatch_output(const GamepadOutput &output) {
     OutputCallback callback;
     const auto status = with_device(device_, [&callback](auto &device) {
       if (!device.open) {
-        return Status::failure(ErrorCode::device_closed, "gamepad is closed");
+        return OperationStatus::failure(ErrorCode::device_closed, "gamepad is closed");
       }
       callback = device.output_callback;
-      return Status::success();
+      return OperationStatus::success();
     });
 
     if (!status.ok()) {
@@ -279,7 +279,7 @@ namespace lvh {
     if (callback) {
       callback(output);
     }
-    return Status::success();
+    return OperationStatus::success();
   }
 
   GamepadState Gamepad::last_submitted_state() const {
@@ -321,13 +321,13 @@ namespace lvh {
     });
   }
 
-  Status Keyboard::close() {
+  OperationStatus Keyboard::close() {
     return with_device(device_, [](auto &device) {
       if (!device.open) {
-        return Status::success();
+        return OperationStatus::success();
       }
 
-      auto status = Status::success();
+      auto status = OperationStatus::success();
       if (device.backend) {
         status = device.backend->close();
       }
@@ -337,14 +337,14 @@ namespace lvh {
     });
   }
 
-  Status Keyboard::submit(const KeyboardEvent &event) {
+  OperationStatus Keyboard::submit(const KeyboardEvent &event) {
     if (const auto validation = validate_keyboard_event(event); !validation.ok()) {
       return validation;
     }
 
     return with_device(device_, [&event](auto &device) {
       if (!device.open) {
-        return Status::failure(ErrorCode::device_closed, "keyboard is closed");
+        return OperationStatus::failure(ErrorCode::device_closed, "keyboard is closed");
       }
 
       if (device.backend) {
@@ -355,22 +355,22 @@ namespace lvh {
 
       device.last_event = event;
       ++device.submitted_events;
-      return Status::success();
+      return OperationStatus::success();
     });
   }
 
-  Status Keyboard::press(KeyboardKeyCode key_code) {
+  OperationStatus Keyboard::press(KeyboardKeyCode key_code) {
     return submit({.key_code = key_code, .pressed = true});
   }
 
-  Status Keyboard::release(KeyboardKeyCode key_code) {
+  OperationStatus Keyboard::release(KeyboardKeyCode key_code) {
     return submit({.key_code = key_code, .pressed = false});
   }
 
-  Status Keyboard::type_text(const KeyboardTextEvent &event) {
+  OperationStatus Keyboard::type_text(const KeyboardTextEvent &event) {
     return with_device(device_, [&event](auto &device) {
       if (!device.open) {
-        return Status::failure(ErrorCode::device_closed, "keyboard is closed");
+        return OperationStatus::failure(ErrorCode::device_closed, "keyboard is closed");
       }
 
       if (device.backend) {
@@ -381,7 +381,7 @@ namespace lvh {
 
       device.last_text_event = event;
       ++device.submitted_events;
-      return Status::success();
+      return OperationStatus::success();
     });
   }
 
@@ -418,13 +418,13 @@ namespace lvh {
     });
   }
 
-  Status Mouse::close() {
+  OperationStatus Mouse::close() {
     return with_device(device_, [](auto &device) {
       if (!device.open) {
-        return Status::success();
+        return OperationStatus::success();
       }
 
-      auto status = Status::success();
+      auto status = OperationStatus::success();
       if (device.backend) {
         status = device.backend->close();
       }
@@ -434,14 +434,14 @@ namespace lvh {
     });
   }
 
-  Status Mouse::submit(const MouseEvent &event) {
+  OperationStatus Mouse::submit(const MouseEvent &event) {
     if (const auto validation = validate_mouse_event(event); !validation.ok()) {
       return validation;
     }
 
     return with_device(device_, [&event](auto &device) {
       if (!device.open) {
-        return Status::failure(ErrorCode::device_closed, "mouse is closed");
+        return OperationStatus::failure(ErrorCode::device_closed, "mouse is closed");
       }
 
       if (device.backend) {
@@ -452,19 +452,19 @@ namespace lvh {
 
       device.last_event = event;
       ++device.submitted_events;
-      return Status::success();
+      return OperationStatus::success();
     });
   }
 
-  Status Mouse::move_relative(std::int32_t delta_x, std::int32_t delta_y) {
+  OperationStatus Mouse::move_relative(std::int32_t delta_x, std::int32_t delta_y) {
     return submit({.kind = MouseEventKind::relative_motion, .x = delta_x, .y = delta_y});
   }
 
-  Status Mouse::move_absolute(std::int32_t x, std::int32_t y, std::int32_t width, std::int32_t height) {
+  OperationStatus Mouse::move_absolute(std::int32_t x, std::int32_t y, std::int32_t width, std::int32_t height) {
     return submit({.kind = MouseEventKind::absolute_motion, .x = x, .y = y, .width = width, .height = height});
   }
 
-  Status Mouse::button(MouseButton button, bool pressed) {
+  OperationStatus Mouse::button(MouseButton button, bool pressed) {
     MouseEvent event;
     event.kind = MouseEventKind::button;
     event.button = button;
@@ -472,14 +472,14 @@ namespace lvh {
     return submit(event);
   }
 
-  Status Mouse::vertical_scroll(std::int32_t distance) {
+  OperationStatus Mouse::vertical_scroll(std::int32_t distance) {
     MouseEvent event;
     event.kind = MouseEventKind::vertical_scroll;
     event.high_resolution_scroll = distance;
     return submit(event);
   }
 
-  Status Mouse::horizontal_scroll(std::int32_t distance) {
+  OperationStatus Mouse::horizontal_scroll(std::int32_t distance) {
     MouseEvent event;
     event.kind = MouseEventKind::horizontal_scroll;
     event.high_resolution_scroll = distance;
@@ -550,7 +550,7 @@ namespace lvh {
       state_->gamepads.emplace_back(device);
     }
 
-    return {Status::success(), std::unique_ptr<Gamepad> {new Gamepad {std::move(device)}}};
+    return {OperationStatus::success(), std::unique_ptr<Gamepad> {new Gamepad {std::move(device)}}};
   }
 
   KeyboardCreationResult Runtime::create_keyboard() {
@@ -581,7 +581,7 @@ namespace lvh {
       state_->keyboards.emplace_back(device);
     }
 
-    return {Status::success(), std::unique_ptr<Keyboard> {new Keyboard {std::move(device)}}};
+    return {OperationStatus::success(), std::unique_ptr<Keyboard> {new Keyboard {std::move(device)}}};
   }
 
   MouseCreationResult Runtime::create_mouse() {
@@ -612,7 +612,7 @@ namespace lvh {
       state_->mice.emplace_back(device);
     }
 
-    return {Status::success(), std::unique_ptr<Mouse> {new Mouse {std::move(device)}}};
+    return {OperationStatus::success(), std::unique_ptr<Mouse> {new Mouse {std::move(device)}}};
   }
 
   std::size_t Runtime::active_device_count() const {

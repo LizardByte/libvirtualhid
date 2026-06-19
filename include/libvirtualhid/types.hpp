@@ -36,12 +36,12 @@ namespace lvh {
   /**
    * @brief Result status with an error category and human-readable message.
    */
-  class Status {
+  class OperationStatus {
   public:
     /**
      * @brief Construct a successful status.
      */
-    Status();
+    OperationStatus();
 
     /**
      * @brief Construct a status with an explicit error code and message.
@@ -49,14 +49,14 @@ namespace lvh {
      * @param code Error category.
      * @param message Human-readable status message.
      */
-    Status(ErrorCode code, std::string message);
+    OperationStatus(ErrorCode code, std::string message);
 
     /**
      * @brief Create a successful status.
      *
      * @return Successful status object.
      */
-    static Status success();
+    static OperationStatus success();
 
     /**
      * @brief Create a failing status.
@@ -65,7 +65,7 @@ namespace lvh {
      * @param message Human-readable failure message.
      * @return Failing status object.
      */
-    static Status failure(ErrorCode code, std::string message);
+    static OperationStatus failure(ErrorCode code, std::string message);
 
     /**
      * @brief Check whether the operation succeeded.
@@ -84,7 +84,7 @@ namespace lvh {
     /**
      * @brief Get the human-readable status message.
      *
-     * @return Status message.
+     * @return Human-readable status message.
      */
     const std::string &message() const;
 

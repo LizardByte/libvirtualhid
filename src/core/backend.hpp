@@ -35,7 +35,7 @@ namespace lvh::detail {
      * @param report Packed HID input report.
      * @return Submit status.
      */
-    virtual Status submit(const std::vector<std::uint8_t> &report) = 0;
+    virtual OperationStatus submit(const std::vector<std::uint8_t> &report) = 0;
 
     /**
      * @brief Register a callback for backend output reports.
@@ -49,7 +49,7 @@ namespace lvh::detail {
      *
      * @return Close status.
      */
-    virtual Status close() = 0;
+    virtual OperationStatus close() = 0;
 
   protected:
     BackendGamepad() = default;
@@ -76,7 +76,7 @@ namespace lvh::detail {
      * @param event Keyboard event.
      * @return Submit status.
      */
-    virtual Status submit(const KeyboardEvent &event) = 0;
+    virtual OperationStatus submit(const KeyboardEvent &event) = 0;
 
     /**
      * @brief Submit UTF-8 text to the backend.
@@ -84,14 +84,14 @@ namespace lvh::detail {
      * @param event Text event.
      * @return Submit status.
      */
-    virtual Status type_text(const KeyboardTextEvent &event) = 0;
+    virtual OperationStatus type_text(const KeyboardTextEvent &event) = 0;
 
     /**
      * @brief Close the backend device.
      *
      * @return Close status.
      */
-    virtual Status close() = 0;
+    virtual OperationStatus close() = 0;
 
   protected:
     BackendKeyboard() = default;
@@ -118,14 +118,14 @@ namespace lvh::detail {
      * @param event Mouse event.
      * @return Submit status.
      */
-    virtual Status submit(const MouseEvent &event) = 0;
+    virtual OperationStatus submit(const MouseEvent &event) = 0;
 
     /**
      * @brief Close the backend device.
      *
      * @return Close status.
      */
-    virtual Status close() = 0;
+    virtual OperationStatus close() = 0;
 
   protected:
     BackendMouse() = default;
@@ -138,7 +138,7 @@ namespace lvh::detail {
     /**
      * @brief Creation status.
      */
-    Status status;
+    OperationStatus status;
 
     /**
      * @brief Backend device when creation succeeds.
@@ -162,7 +162,7 @@ namespace lvh::detail {
     /**
      * @brief Creation status.
      */
-    Status status;
+    OperationStatus status;
 
     /**
      * @brief Backend device when creation succeeds.
@@ -186,7 +186,7 @@ namespace lvh::detail {
     /**
      * @brief Creation status.
      */
-    Status status;
+    OperationStatus status;
 
     /**
      * @brief Backend device when creation succeeds.

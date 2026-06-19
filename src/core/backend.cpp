@@ -19,16 +19,16 @@ namespace lvh::detail {
      */
     class FakeGamepad final: public BackendGamepad {
     public:
-      Status submit(const std::vector<std::uint8_t> & /*report*/) override {
-        return Status::success();
+      OperationStatus submit(const std::vector<std::uint8_t> & /*report*/) override {
+        return OperationStatus::success();
       }
 
       void set_output_callback(OutputCallback callback) override {
         output_callback_ = std::move(callback);
       }
 
-      Status close() override {
-        return Status::success();
+      OperationStatus close() override {
+        return OperationStatus::success();
       }
 
     private:
@@ -40,16 +40,16 @@ namespace lvh::detail {
      */
     class FakeKeyboard final: public BackendKeyboard {
     public:
-      Status submit(const KeyboardEvent & /*event*/) override {
-        return Status::success();
+      OperationStatus submit(const KeyboardEvent & /*event*/) override {
+        return OperationStatus::success();
       }
 
-      Status type_text(const KeyboardTextEvent & /*event*/) override {
-        return Status::success();
+      OperationStatus type_text(const KeyboardTextEvent & /*event*/) override {
+        return OperationStatus::success();
       }
 
-      Status close() override {
-        return Status::success();
+      OperationStatus close() override {
+        return OperationStatus::success();
       }
     };
 
@@ -58,12 +58,12 @@ namespace lvh::detail {
      */
     class FakeMouse final: public BackendMouse {
     public:
-      Status submit(const MouseEvent & /*event*/) override {
-        return Status::success();
+      OperationStatus submit(const MouseEvent & /*event*/) override {
+        return OperationStatus::success();
       }
 
-      Status close() override {
-        return Status::success();
+      OperationStatus close() override {
+        return OperationStatus::success();
       }
     };
 
@@ -85,18 +85,18 @@ namespace lvh::detail {
       }
 
       BackendGamepadCreationResult create_gamepad(DeviceId /*id*/, const CreateGamepadOptions & /*options*/) override {
-        return {Status::success(), std::make_unique<FakeGamepad>()};
+        return {OperationStatus::success(), std::make_unique<FakeGamepad>()};
       }
 
       BackendKeyboardCreationResult create_keyboard(
         DeviceId /*id*/,
         const CreateKeyboardOptions & /*options*/
       ) override {
-        return {Status::success(), std::make_unique<FakeKeyboard>()};
+        return {OperationStatus::success(), std::make_unique<FakeKeyboard>()};
       }
 
       BackendMouseCreationResult create_mouse(DeviceId /*id*/, const CreateMouseOptions & /*options*/) override {
-        return {Status::success(), std::make_unique<FakeMouse>()};
+        return {OperationStatus::success(), std::make_unique<FakeMouse>()};
       }
 
     private:

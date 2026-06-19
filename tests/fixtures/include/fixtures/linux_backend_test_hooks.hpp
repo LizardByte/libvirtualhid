@@ -42,7 +42,7 @@ namespace lvh::detail::test {
     /**
      * @brief Submit operation status.
      */
-    Status status;
+    OperationStatus status;
 
     /**
      * @brief Events written to the pipe.
@@ -57,17 +57,17 @@ namespace lvh::detail::test {
     /**
      * @brief Create operation status.
      */
-    Status create_status;
+    OperationStatus create_status;
 
     /**
      * @brief Submit operation status.
      */
-    Status submit_status;
+    OperationStatus submit_status;
 
     /**
      * @brief Close operation status.
      */
-    Status close_status;
+    OperationStatus close_status;
 
     /**
      * @brief Whether the peer observed a create event.
@@ -117,32 +117,32 @@ namespace lvh::detail::test {
     /**
      * @brief Gamepad creation status.
      */
-    Status gamepad_status;
+    OperationStatus gamepad_status;
 
     /**
      * @brief Gamepad close status.
      */
-    Status gamepad_close_status;
+    OperationStatus gamepad_close_status;
 
     /**
      * @brief Keyboard creation status.
      */
-    Status keyboard_status;
+    OperationStatus keyboard_status;
 
     /**
      * @brief Keyboard close status.
      */
-    Status keyboard_close_status;
+    OperationStatus keyboard_close_status;
 
     /**
      * @brief Mouse creation status.
      */
-    Status mouse_status;
+    OperationStatus mouse_status;
 
     /**
      * @brief Mouse close status.
      */
-    Status mouse_close_status;
+    OperationStatus mouse_close_status;
   };
 
   /**
@@ -246,7 +246,7 @@ namespace lvh::detail::test {
    * @param descriptor_size Descriptor size to use.
    * @return Creation status.
    */
-  Status linux_uhid_create_with_descriptor_size(std::size_t descriptor_size);
+  OperationStatus linux_uhid_create_with_descriptor_size(std::size_t descriptor_size);
 
   /**
    * @brief Try submitting a UHID input report on an invalid file descriptor.
@@ -254,21 +254,21 @@ namespace lvh::detail::test {
    * @param report_size Input report size to use.
    * @return Submit status.
    */
-  Status linux_uhid_submit_report_size(std::size_t report_size);
+  OperationStatus linux_uhid_submit_report_size(std::size_t report_size);
 
   /**
    * @brief Try submitting a UHID input report after closing the backend device.
    *
    * @return Submit status.
    */
-  Status linux_uhid_submit_after_close();
+  OperationStatus linux_uhid_submit_after_close();
 
   /**
    * @brief Try creating a uinput keyboard on an invalid file descriptor.
    *
    * @return Creation status.
    */
-  Status linux_uinput_keyboard_create_invalid_fd();
+  OperationStatus linux_uinput_keyboard_create_invalid_fd();
 
   /**
    * @brief Submit a keyboard event to a uinput keyboard on an invalid file descriptor.
@@ -276,7 +276,7 @@ namespace lvh::detail::test {
    * @param event Keyboard event.
    * @return Submit status.
    */
-  Status linux_uinput_keyboard_submit_invalid_fd(const KeyboardEvent &event);
+  OperationStatus linux_uinput_keyboard_submit_invalid_fd(const KeyboardEvent &event);
 
   /**
    * @brief Submit text to a uinput keyboard on an invalid file descriptor.
@@ -284,14 +284,14 @@ namespace lvh::detail::test {
    * @param text UTF-8 text.
    * @return Submit status.
    */
-  Status linux_uinput_keyboard_type_text_invalid_fd(const std::string &text);
+  OperationStatus linux_uinput_keyboard_type_text_invalid_fd(const std::string &text);
 
   /**
    * @brief Try submitting a keyboard event after closing the backend device.
    *
    * @return Submit status.
    */
-  Status linux_uinput_keyboard_submit_after_close();
+  OperationStatus linux_uinput_keyboard_submit_after_close();
 
   /**
    * @brief Submit a keyboard event to a pipe-backed uinput keyboard.
@@ -306,21 +306,21 @@ namespace lvh::detail::test {
    *
    * @return Write status.
    */
-  Status linux_uinput_user_device_invalid_fd();
+  OperationStatus linux_uinput_user_device_invalid_fd();
 
   /**
    * @brief Try writing a uinput device definition to a pipe.
    *
    * @return Write status.
    */
-  Status linux_uinput_user_device_pipe();
+  OperationStatus linux_uinput_user_device_pipe();
 
   /**
    * @brief Try creating a uinput mouse on an invalid file descriptor.
    *
    * @return Creation status.
    */
-  Status linux_uinput_mouse_create_invalid_fd();
+  OperationStatus linux_uinput_mouse_create_invalid_fd();
 
   /**
    * @brief Submit a mouse event to a uinput mouse on an invalid file descriptor.
@@ -328,14 +328,14 @@ namespace lvh::detail::test {
    * @param event Mouse event.
    * @return Submit status.
    */
-  Status linux_uinput_mouse_submit_invalid_fd(const MouseEvent &event);
+  OperationStatus linux_uinput_mouse_submit_invalid_fd(const MouseEvent &event);
 
   /**
    * @brief Try submitting a mouse event after closing the backend device.
    *
    * @return Submit status.
    */
-  Status linux_uinput_mouse_submit_after_close();
+  OperationStatus linux_uinput_mouse_submit_after_close();
 
   /**
    * @brief Submit a mouse event to a pipe-backed uinput mouse.
@@ -371,112 +371,112 @@ namespace lvh::detail::test {
    *
    * @return Creation status.
    */
-  Status linux_backend_gamepad_fake_open_failure();
+  OperationStatus linux_backend_gamepad_fake_open_failure();
 
   /**
    * @brief Try creating a Linux backend gamepad while fake UHID creation fails.
    *
    * @return Creation status.
    */
-  Status linux_backend_gamepad_fake_create_failure();
+  OperationStatus linux_backend_gamepad_fake_create_failure();
 
   /**
    * @brief Try creating a Linux backend keyboard while fake open fails.
    *
    * @return Creation status.
    */
-  Status linux_backend_keyboard_fake_open_failure();
+  OperationStatus linux_backend_keyboard_fake_open_failure();
 
   /**
    * @brief Try creating a Linux backend keyboard while fake uinput creation fails.
    *
    * @return Creation status.
    */
-  Status linux_backend_keyboard_fake_create_failure();
+  OperationStatus linux_backend_keyboard_fake_create_failure();
 
   /**
    * @brief Create a Linux backend keyboard through a fake successful fallback after uinput creation fails.
    *
    * @return Creation status.
    */
-  Status linux_backend_keyboard_fake_fallback_success();
+  OperationStatus linux_backend_keyboard_fake_fallback_success();
 
   /**
    * @brief Try creating a Linux backend mouse while fake open fails.
    *
    * @return Creation status.
    */
-  Status linux_backend_mouse_fake_open_failure();
+  OperationStatus linux_backend_mouse_fake_open_failure();
 
   /**
    * @brief Try creating a Linux backend mouse while fake uinput creation fails.
    *
    * @return Creation status.
    */
-  Status linux_backend_mouse_fake_create_failure();
+  OperationStatus linux_backend_mouse_fake_create_failure();
 
   /**
    * @brief Create a Linux backend mouse through a fake successful fallback after uinput creation fails.
    *
    * @return Creation status.
    */
-  Status linux_backend_mouse_fake_fallback_success();
+  OperationStatus linux_backend_mouse_fake_fallback_success();
 
   /**
    * @brief Try submitting a UHID input report while fake write fails.
    *
    * @return Submit status.
    */
-  Status linux_uhid_submit_fake_write_failure();
+  OperationStatus linux_uhid_submit_fake_write_failure();
 
   /**
    * @brief Try submitting a UHID input report while fake write is short.
    *
    * @return Submit status.
    */
-  Status linux_uhid_submit_fake_short_write();
+  OperationStatus linux_uhid_submit_fake_short_write();
 
   /**
    * @brief Try closing a UHID gamepad while fake destroy write fails.
    *
    * @return Close status.
    */
-  Status linux_uhid_close_fake_write_failure();
+  OperationStatus linux_uhid_close_fake_write_failure();
 
   /**
    * @brief Try closing a UHID gamepad while fake close fails.
    *
    * @return Close status.
    */
-  Status linux_uhid_close_fake_close_failure();
+  OperationStatus linux_uhid_close_fake_close_failure();
 
   /**
    * @brief Exercise UHID read-loop timeout and retry branches using fake poll/read syscalls.
    *
    * @return Close status after the scripted read loop exits.
    */
-  Status linux_uhid_read_loop_fake_retry_branches();
+  OperationStatus linux_uhid_read_loop_fake_retry_branches();
 
   /**
    * @brief Exercise UHID read-loop poll error branches using fake poll syscalls.
    *
    * @return Close status after the scripted read loop exits.
    */
-  Status linux_uhid_read_loop_fake_poll_errors();
+  OperationStatus linux_uhid_read_loop_fake_poll_errors();
 
   /**
    * @brief Exercise UHID read-loop read error branches using fake read syscalls.
    *
    * @return Close status after the scripted read loop exits.
    */
-  Status linux_uhid_read_loop_fake_read_error();
+  OperationStatus linux_uhid_read_loop_fake_read_error();
 
   /**
    * @brief Exercise UHID read-loop output handling when no callback is registered.
    *
    * @return Close status after the scripted read loop exits.
    */
-  Status linux_uhid_read_loop_fake_output_without_callback();
+  OperationStatus linux_uhid_read_loop_fake_output_without_callback();
 
   /**
    * @brief Try creating a uinput keyboard while a fake ioctl call fails.
@@ -484,49 +484,49 @@ namespace lvh::detail::test {
    * @param fail_ioctl_call One-based ioctl call to fail.
    * @return Creation status.
    */
-  Status linux_uinput_keyboard_create_fake_ioctl_failure(int fail_ioctl_call);
+  OperationStatus linux_uinput_keyboard_create_fake_ioctl_failure(int fail_ioctl_call);
 
   /**
    * @brief Try writing a uinput device definition while fake write is short.
    *
    * @return Write status.
    */
-  Status linux_uinput_user_device_fake_short_write();
+  OperationStatus linux_uinput_user_device_fake_short_write();
 
   /**
    * @brief Try writing a uinput device definition while fake device creation ioctl fails.
    *
    * @return Write status.
    */
-  Status linux_uinput_user_device_fake_create_failure();
+  OperationStatus linux_uinput_user_device_fake_create_failure();
 
   /**
    * @brief Submit a keyboard event while fake write fails.
    *
    * @return Submit status.
    */
-  Status linux_uinput_keyboard_submit_fake_write_failure();
+  OperationStatus linux_uinput_keyboard_submit_fake_write_failure();
 
   /**
    * @brief Submit a keyboard event while fake write is short.
    *
    * @return Submit status.
    */
-  Status linux_uinput_keyboard_submit_fake_short_write();
+  OperationStatus linux_uinput_keyboard_submit_fake_short_write();
 
   /**
    * @brief Submit text through a fake successful uinput keyboard.
    *
    * @return Submit status.
    */
-  Status linux_uinput_keyboard_type_text_fake_success();
+  OperationStatus linux_uinput_keyboard_type_text_fake_success();
 
   /**
    * @brief Close a uinput keyboard while fake close fails.
    *
    * @return Close status.
    */
-  Status linux_uinput_keyboard_close_fake_close_failure();
+  OperationStatus linux_uinput_keyboard_close_fake_close_failure();
 
   /**
    * @brief Try creating a uinput mouse while a fake ioctl call fails.
@@ -534,7 +534,7 @@ namespace lvh::detail::test {
    * @param fail_ioctl_call One-based ioctl call to fail.
    * @return Creation status.
    */
-  Status linux_uinput_mouse_create_fake_ioctl_failure(int fail_ioctl_call);
+  OperationStatus linux_uinput_mouse_create_fake_ioctl_failure(int fail_ioctl_call);
 
   /**
    * @brief Submit a mouse event while fake write fails.
@@ -542,7 +542,7 @@ namespace lvh::detail::test {
    * @param event Mouse event to submit.
    * @return Submit status.
    */
-  Status linux_uinput_mouse_submit_fake_write_failure(const MouseEvent &event);
+  OperationStatus linux_uinput_mouse_submit_fake_write_failure(const MouseEvent &event);
 
   /**
    * @brief Submit a mouse event while fake write is short.
@@ -550,6 +550,6 @@ namespace lvh::detail::test {
    * @param event Mouse event to submit.
    * @return Submit status.
    */
-  Status linux_uinput_mouse_submit_fake_short_write(const MouseEvent &event);
+  OperationStatus linux_uinput_mouse_submit_fake_short_write(const MouseEvent &event);
 
 }  // namespace lvh::detail::test

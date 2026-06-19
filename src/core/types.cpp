@@ -11,34 +11,34 @@
 
 namespace lvh {
 
-  Status::Status():
+  OperationStatus::OperationStatus():
       code_ {ErrorCode::ok},
       message_ {} {}
 
-  Status::Status(ErrorCode code, std::string message):
+  OperationStatus::OperationStatus(ErrorCode code, std::string message):
       code_ {code},
       message_ {std::move(message)} {}
 
-  Status Status::success() {
+  OperationStatus OperationStatus::success() {
     return {};
   }
 
-  Status Status::failure(ErrorCode code, std::string message) {
+  OperationStatus OperationStatus::failure(ErrorCode code, std::string message) {
     if (code == ErrorCode::ok) {
       return {};
     }
     return {code, std::move(message)};
   }
 
-  bool Status::ok() const {
+  bool OperationStatus::ok() const {
     return code_ == ErrorCode::ok;
   }
 
-  ErrorCode Status::code() const {
+  ErrorCode OperationStatus::code() const {
     return code_;
   }
 
-  const std::string &Status::message() const {
+  const std::string &OperationStatus::message() const {
     return message_;
   }
 

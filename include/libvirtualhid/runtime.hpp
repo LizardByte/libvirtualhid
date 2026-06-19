@@ -57,7 +57,7 @@ namespace lvh {
      *
      * @return Close operation status.
      */
-    virtual Status close() = 0;
+    virtual OperationStatus close() = 0;
   };
 
   /**
@@ -122,7 +122,7 @@ namespace lvh {
     /**
      * @copydoc VirtualDevice::close
      */
-    Status close() override;
+    OperationStatus close() override;
 
     /**
      * @brief Submit the latest gamepad input state.
@@ -130,7 +130,7 @@ namespace lvh {
      * @param state Gamepad input state.
      * @return Submit operation status.
      */
-    Status submit(const GamepadState &state);
+    OperationStatus submit(const GamepadState &state);
 
     /**
      * @brief Register a callback for backend output events.
@@ -145,7 +145,7 @@ namespace lvh {
      * @param output Output event.
      * @return Dispatch operation status.
      */
-    Status dispatch_output(const GamepadOutput &output);
+    OperationStatus dispatch_output(const GamepadOutput &output);
 
     /**
      * @brief Get the most recently submitted gamepad state.
@@ -231,7 +231,7 @@ namespace lvh {
     /**
      * @copydoc VirtualDevice::close
      */
-    Status close() override;
+    OperationStatus close() override;
 
     /**
      * @brief Submit a keyboard key transition.
@@ -239,7 +239,7 @@ namespace lvh {
      * @param event Keyboard event.
      * @return Submit operation status.
      */
-    Status submit(const KeyboardEvent &event);
+    OperationStatus submit(const KeyboardEvent &event);
 
     /**
      * @brief Press a keyboard key.
@@ -247,7 +247,7 @@ namespace lvh {
      * @param key_code Portable key code.
      * @return Submit operation status.
      */
-    Status press(KeyboardKeyCode key_code);
+    OperationStatus press(KeyboardKeyCode key_code);
 
     /**
      * @brief Release a keyboard key.
@@ -255,7 +255,7 @@ namespace lvh {
      * @param key_code Portable key code.
      * @return Submit operation status.
      */
-    Status release(KeyboardKeyCode key_code);
+    OperationStatus release(KeyboardKeyCode key_code);
 
     /**
      * @brief Type UTF-8 text.
@@ -263,7 +263,7 @@ namespace lvh {
      * @param event Text event.
      * @return Submit operation status.
      */
-    Status type_text(const KeyboardTextEvent &event);
+    OperationStatus type_text(const KeyboardTextEvent &event);
 
     /**
      * @brief Get the most recently submitted keyboard event.
@@ -342,7 +342,7 @@ namespace lvh {
     /**
      * @copydoc VirtualDevice::close
      */
-    Status close() override;
+    OperationStatus close() override;
 
     /**
      * @brief Submit a mouse event.
@@ -350,7 +350,7 @@ namespace lvh {
      * @param event Mouse event.
      * @return Submit operation status.
      */
-    Status submit(const MouseEvent &event);
+    OperationStatus submit(const MouseEvent &event);
 
     /**
      * @brief Submit relative pointer movement.
@@ -359,7 +359,7 @@ namespace lvh {
      * @param delta_y Vertical delta.
      * @return Submit operation status.
      */
-    Status move_relative(std::int32_t delta_x, std::int32_t delta_y);
+    OperationStatus move_relative(std::int32_t delta_x, std::int32_t delta_y);
 
     /**
      * @brief Submit absolute pointer movement.
@@ -370,7 +370,7 @@ namespace lvh {
      * @param height Height of the absolute coordinate space.
      * @return Submit operation status.
      */
-    Status move_absolute(std::int32_t x, std::int32_t y, std::int32_t width, std::int32_t height);
+    OperationStatus move_absolute(std::int32_t x, std::int32_t y, std::int32_t width, std::int32_t height);
 
     /**
      * @brief Submit a mouse button transition.
@@ -379,7 +379,7 @@ namespace lvh {
      * @param pressed Whether the button is pressed.
      * @return Submit operation status.
      */
-    Status button(MouseButton button, bool pressed);
+    OperationStatus button(MouseButton button, bool pressed);
 
     /**
      * @brief Submit high-resolution vertical scroll.
@@ -387,7 +387,7 @@ namespace lvh {
      * @param distance High-resolution scroll distance.
      * @return Submit operation status.
      */
-    Status vertical_scroll(std::int32_t distance);
+    OperationStatus vertical_scroll(std::int32_t distance);
 
     /**
      * @brief Submit high-resolution horizontal scroll.
@@ -395,7 +395,7 @@ namespace lvh {
      * @param distance High-resolution scroll distance.
      * @return Submit operation status.
      */
-    Status horizontal_scroll(std::int32_t distance);
+    OperationStatus horizontal_scroll(std::int32_t distance);
 
     /**
      * @brief Get the most recently submitted mouse event.
@@ -426,7 +426,7 @@ namespace lvh {
     /**
      * @brief Creation status.
      */
-    Status status;
+    OperationStatus status;
 
     /**
      * @brief Created gamepad handle when creation succeeds.
@@ -450,7 +450,7 @@ namespace lvh {
     /**
      * @brief Creation status.
      */
-    Status status;
+    OperationStatus status;
 
     /**
      * @brief Created keyboard handle when creation succeeds.
@@ -474,7 +474,7 @@ namespace lvh {
     /**
      * @brief Creation status.
      */
-    Status status;
+    OperationStatus status;
 
     /**
      * @brief Created mouse handle when creation succeeds.

@@ -30,12 +30,9 @@
 
   #if defined(LIBVIRTUALHID_HAVE_XTEST)
     #include <X11/extensions/XTest.h>
+    #include <X11/keysym.h>
     #include <X11/Xlib.h>
-
-    // Xlib defines Status as a macro, which collides with lvh::Status declarations.
-    #if defined(Status)
-      #undef Status
-    #endif
+    #include <X11/Xutil.h>
   #endif
 #endif
 
@@ -257,6 +254,16 @@ int lvh_linux_test_xtest_fake_relative_motion_event(Display *, int, int, unsigne
   #define write lvh_linux_test_write
 
   #if defined(LIBVIRTUALHID_HAVE_XTEST)
+    #if defined(DefaultScreen)
+      #undef DefaultScreen
+    #endif
+    #if defined(DisplayHeight)
+      #undef DisplayHeight
+    #endif
+    #if defined(DisplayWidth)
+      #undef DisplayWidth
+    #endif
+
     #define DefaultScreen lvh_linux_test_default_screen
     #define DisplayHeight lvh_linux_test_display_height
     #define DisplayWidth lvh_linux_test_display_width
@@ -372,7 +379,7 @@ namespace lvh::detail::test {
       return false;
     }
 
-    Status run_fake_uhid_read_loop(LinuxTestSyscalls &syscalls, int expected_poll_calls) {
+    OperationStatus run_fake_uhid_read_loop(LinuxTestSyscalls &syscalls, int expected_poll_calls) {
       syscalls.override_write = true;
 
       ScopedLinuxTestSyscalls scoped_syscalls {syscalls};
@@ -393,7 +400,7 @@ namespace lvh::detail::test {
       const auto saw_expected_polls = wait_for_poll_calls(syscalls, expected_poll_calls);
       const auto close_status = gamepad.close();
       if (!saw_expected_polls) {
-        return Status::failure(ErrorCode::backend_failure, "fake UHID read loop did not consume the scripted poll calls");
+        return OperationStatus::failure(ErrorCode::backend_failure, "fake UHID read loop did not consume the scripted poll calls");
       }
       return close_status;
     }
@@ -452,7 +459,7 @@ namespace lvh::detail::test {
     return sizeof(event.u.input2.data);
   }
 
-  Status linux_uhid_create_with_descriptor_size(std::size_t descriptor_size) {
+  OperationStatus linux_uhid_create_with_descriptor_size(std::size_t descriptor_size) {
     auto profile = profiles::generic_gamepad();
     profile.report_descriptor.assign(descriptor_size, 0);
 
@@ -463,18 +470,18 @@ namespace lvh::detail::test {
     return gamepad.create(1, options);
   }
 
-  Status linux_uhid_submit_report_size(std::size_t report_size) {
+  OperationStatus linux_uhid_submit_report_size(std::size_t report_size) {
     UhidGamepad gamepad {-1};
     return gamepad.submit(std::vector<std::uint8_t>(report_size, 0));
   }
 
-  Status linux_uhid_submit_after_close() {
+  OperationStatus linux_uhid_submit_after_close() {
     UhidGamepad gamepad {-1};
     static_cast<void>(gamepad.close());
     return gamepad.submit({0});
   }
 
-  Status linux_uinput_keyboard_create_invalid_fd() {
+  OperationStatus linux_uinput_keyboard_create_invalid_fd() {
     CreateKeyboardOptions options;
     options.profile = profiles::keyboard();
 
@@ -482,17 +489,17 @@ namespace lvh::detail::test {
     return keyboard.create(1, options);
   }
 
-  Status linux_uinput_keyboard_submit_invalid_fd(const KeyboardEvent &event) {
+  OperationStatus linux_uinput_keyboard_submit_invalid_fd(const KeyboardEvent &event) {
     UinputKeyboard keyboard {-1};
     return keyboard.submit(event);
   }
 
-  Status linux_uinput_keyboard_type_text_invalid_fd(const std::string &text) {
+  OperationStatus linux_uinput_keyboard_type_text_invalid_fd(const std::string &text) {
     UinputKeyboard keyboard {-1};
     return keyboard.type_text({.text = text});
   }
 
-  Status linux_uinput_keyboard_submit_after_close() {
+  OperationStatus linux_uinput_keyboard_submit_after_close() {
     UinputKeyboard keyboard {-1};
     static_cast<void>(keyboard.close());
     return keyboard.submit({.key_code = 0x41, .pressed = true});
@@ -512,11 +519,11 @@ namespace lvh::detail::test {
     return {std::move(status), std::move(records)};
   }
 
-  Status linux_uinput_user_device_invalid_fd() {
+  OperationStatus linux_uinput_user_device_invalid_fd() {
     return write_uinput_user_device(-1, profiles::mouse(), 1);
   }
 
-  Status linux_uinput_user_device_pipe() {
+  OperationStatus linux_uinput_user_device_pipe() {
     int descriptors[2] {-1, -1};
     if (::pipe(descriptors) != 0) {
       return system_error_status(ErrorCode::backend_failure, "failed to create pipe", errno);
@@ -528,7 +535,7 @@ namespace lvh::detail::test {
     return status;
   }
 
-  Status linux_uinput_mouse_create_invalid_fd() {
+  OperationStatus linux_uinput_mouse_create_invalid_fd() {
     CreateMouseOptions options;
     options.profile = profiles::mouse();
 
@@ -536,12 +543,12 @@ namespace lvh::detail::test {
     return mouse.create(1, options);
   }
 
-  Status linux_uinput_mouse_submit_invalid_fd(const MouseEvent &event) {
+  OperationStatus linux_uinput_mouse_submit_invalid_fd(const MouseEvent &event) {
     UinputMouse mouse {-1};
     return mouse.submit(event);
   }
 
-  Status linux_uinput_mouse_submit_after_close() {
+  OperationStatus linux_uinput_mouse_submit_after_close() {
     UinputMouse mouse {-1};
     static_cast<void>(mouse.close());
     return mouse.submit({.kind = MouseEventKind::relative_motion, .x = 1, .y = 1});
@@ -692,7 +699,7 @@ namespace lvh::detail::test {
     return backend.capabilities();
   }
 
-  Status linux_backend_gamepad_fake_open_failure() {
+  OperationStatus linux_backend_gamepad_fake_open_failure() {
     LinuxTestSyscalls syscalls;
     syscalls.override_access = true;
     syscalls.override_open = true;
@@ -706,7 +713,7 @@ namespace lvh::detail::test {
     return backend.create_gamepad(1, options).status;
   }
 
-  Status linux_backend_gamepad_fake_create_failure() {
+  OperationStatus linux_backend_gamepad_fake_create_failure() {
     LinuxTestSyscalls syscalls;
     enable_fake_device_syscalls(syscalls);
     syscalls.fail_write_call = 1;
@@ -719,7 +726,7 @@ namespace lvh::detail::test {
     return backend.create_gamepad(1, options).status;
   }
 
-  Status linux_backend_keyboard_fake_open_failure() {
+  OperationStatus linux_backend_keyboard_fake_open_failure() {
     LinuxTestSyscalls syscalls;
     syscalls.override_access = true;
     syscalls.override_open = true;
@@ -733,7 +740,7 @@ namespace lvh::detail::test {
     return backend.create_keyboard(1, options).status;
   }
 
-  Status linux_backend_keyboard_fake_create_failure() {
+  OperationStatus linux_backend_keyboard_fake_create_failure() {
     LinuxTestSyscalls syscalls;
     enable_fake_device_syscalls(syscalls);
     syscalls.fail_ioctl_call = 1;
@@ -746,7 +753,7 @@ namespace lvh::detail::test {
     return backend.create_keyboard(1, options).status;
   }
 
-  Status linux_backend_keyboard_fake_fallback_success() {
+  OperationStatus linux_backend_keyboard_fake_fallback_success() {
   #if defined(LIBVIRTUALHID_HAVE_XTEST)
     LinuxTestSyscalls syscalls;
     enable_fake_device_syscalls(syscalls);
@@ -763,11 +770,11 @@ namespace lvh::detail::test {
     }
     return keyboard.keyboard->close();
   #else
-    return Status::failure(ErrorCode::backend_unavailable, "XTest fallback is not enabled");
+    return OperationStatus::failure(ErrorCode::backend_unavailable, "XTest fallback is not enabled");
   #endif
   }
 
-  Status linux_backend_mouse_fake_open_failure() {
+  OperationStatus linux_backend_mouse_fake_open_failure() {
     LinuxTestSyscalls syscalls;
     syscalls.override_access = true;
     syscalls.override_open = true;
@@ -781,7 +788,7 @@ namespace lvh::detail::test {
     return backend.create_mouse(1, options).status;
   }
 
-  Status linux_backend_mouse_fake_create_failure() {
+  OperationStatus linux_backend_mouse_fake_create_failure() {
     LinuxTestSyscalls syscalls;
     enable_fake_device_syscalls(syscalls);
     syscalls.fail_ioctl_call = 1;
@@ -794,7 +801,7 @@ namespace lvh::detail::test {
     return backend.create_mouse(1, options).status;
   }
 
-  Status linux_backend_mouse_fake_fallback_success() {
+  OperationStatus linux_backend_mouse_fake_fallback_success() {
   #if defined(LIBVIRTUALHID_HAVE_XTEST)
     LinuxTestSyscalls syscalls;
     enable_fake_device_syscalls(syscalls);
@@ -811,11 +818,11 @@ namespace lvh::detail::test {
     }
     return mouse.mouse->close();
   #else
-    return Status::failure(ErrorCode::backend_unavailable, "XTest fallback is not enabled");
+    return OperationStatus::failure(ErrorCode::backend_unavailable, "XTest fallback is not enabled");
   #endif
   }
 
-  Status linux_uhid_submit_fake_write_failure() {
+  OperationStatus linux_uhid_submit_fake_write_failure() {
     LinuxTestSyscalls syscalls;
     syscalls.override_write = true;
     syscalls.fail_write_call = 1;
@@ -825,7 +832,7 @@ namespace lvh::detail::test {
     return gamepad.submit({0});
   }
 
-  Status linux_uhid_submit_fake_short_write() {
+  OperationStatus linux_uhid_submit_fake_short_write() {
     LinuxTestSyscalls syscalls;
     syscalls.override_write = true;
     syscalls.short_write_call = 1;
@@ -835,7 +842,7 @@ namespace lvh::detail::test {
     return gamepad.submit({0});
   }
 
-  Status linux_uhid_close_fake_write_failure() {
+  OperationStatus linux_uhid_close_fake_write_failure() {
     LinuxTestSyscalls syscalls;
     syscalls.override_write = true;
     syscalls.fail_write_call = 1;
@@ -845,7 +852,7 @@ namespace lvh::detail::test {
     return gamepad.close();
   }
 
-  Status linux_uhid_close_fake_close_failure() {
+  OperationStatus linux_uhid_close_fake_close_failure() {
     LinuxTestSyscalls syscalls;
     syscalls.override_write = true;
     ScopedLinuxTestSyscalls scoped_syscalls {syscalls};
@@ -854,7 +861,7 @@ namespace lvh::detail::test {
     return gamepad.close();
   }
 
-  Status linux_uhid_read_loop_fake_retry_branches() {
+  OperationStatus linux_uhid_read_loop_fake_retry_branches() {
     LinuxTestSyscalls syscalls;
     syscalls.override_poll = true;
     syscalls.poll_results = {-1, 0, 1, 1, 1};
@@ -866,7 +873,7 @@ namespace lvh::detail::test {
     return run_fake_uhid_read_loop(syscalls, 5);
   }
 
-  Status linux_uhid_read_loop_fake_poll_errors() {
+  OperationStatus linux_uhid_read_loop_fake_poll_errors() {
     LinuxTestSyscalls syscall_failure;
     syscall_failure.override_poll = true;
     syscall_failure.poll_results = {-1};
@@ -882,7 +889,7 @@ namespace lvh::detail::test {
     return run_fake_uhid_read_loop(event_failure, 1);
   }
 
-  Status linux_uhid_read_loop_fake_read_error() {
+  OperationStatus linux_uhid_read_loop_fake_read_error() {
     LinuxTestSyscalls syscalls;
     syscalls.override_poll = true;
     syscalls.poll_results = {1};
@@ -893,7 +900,7 @@ namespace lvh::detail::test {
     return run_fake_uhid_read_loop(syscalls, 1);
   }
 
-  Status linux_uhid_read_loop_fake_output_without_callback() {
+  OperationStatus linux_uhid_read_loop_fake_output_without_callback() {
     LinuxTestSyscalls syscalls;
     syscalls.override_poll = true;
     syscalls.poll_results = {1, 1};
@@ -904,7 +911,7 @@ namespace lvh::detail::test {
     return run_fake_uhid_read_loop(syscalls, 2);
   }
 
-  Status linux_uinput_keyboard_create_fake_ioctl_failure(int fail_ioctl_call) {
+  OperationStatus linux_uinput_keyboard_create_fake_ioctl_failure(int fail_ioctl_call) {
     LinuxTestSyscalls syscalls;
     syscalls.override_write = true;
     syscalls.override_ioctl = true;
@@ -918,7 +925,7 @@ namespace lvh::detail::test {
     return keyboard.create(1, options);
   }
 
-  Status linux_uinput_user_device_fake_short_write() {
+  OperationStatus linux_uinput_user_device_fake_short_write() {
     LinuxTestSyscalls syscalls;
     syscalls.override_write = true;
     syscalls.short_write_call = 1;
@@ -927,7 +934,7 @@ namespace lvh::detail::test {
     return write_uinput_user_device(fake_fd, profiles::mouse(), 1);
   }
 
-  Status linux_uinput_user_device_fake_create_failure() {
+  OperationStatus linux_uinput_user_device_fake_create_failure() {
     LinuxTestSyscalls syscalls;
     syscalls.override_write = true;
     syscalls.override_ioctl = true;
@@ -937,7 +944,7 @@ namespace lvh::detail::test {
     return write_uinput_user_device(fake_fd, profiles::mouse(), 1);
   }
 
-  Status linux_uinput_keyboard_submit_fake_write_failure() {
+  OperationStatus linux_uinput_keyboard_submit_fake_write_failure() {
     LinuxTestSyscalls syscalls;
     syscalls.override_write = true;
     syscalls.fail_write_call = 1;
@@ -948,7 +955,7 @@ namespace lvh::detail::test {
     return keyboard.submit({.key_code = 0x41, .pressed = true});
   }
 
-  Status linux_uinput_keyboard_submit_fake_short_write() {
+  OperationStatus linux_uinput_keyboard_submit_fake_short_write() {
     LinuxTestSyscalls syscalls;
     syscalls.override_write = true;
     syscalls.short_write_call = 1;
@@ -959,7 +966,7 @@ namespace lvh::detail::test {
     return keyboard.submit({.key_code = 0x41, .pressed = true});
   }
 
-  Status linux_uinput_keyboard_type_text_fake_success() {
+  OperationStatus linux_uinput_keyboard_type_text_fake_success() {
     LinuxTestSyscalls syscalls;
     syscalls.override_write = true;
     syscalls.override_ioctl = true;
@@ -969,7 +976,7 @@ namespace lvh::detail::test {
     return keyboard.type_text({.text = "A"});
   }
 
-  Status linux_uinput_keyboard_close_fake_close_failure() {
+  OperationStatus linux_uinput_keyboard_close_fake_close_failure() {
     LinuxTestSyscalls syscalls;
     syscalls.override_ioctl = true;
     ScopedLinuxTestSyscalls scoped_syscalls {syscalls};
@@ -978,7 +985,7 @@ namespace lvh::detail::test {
     return keyboard.close();
   }
 
-  Status linux_uinput_mouse_create_fake_ioctl_failure(int fail_ioctl_call) {
+  OperationStatus linux_uinput_mouse_create_fake_ioctl_failure(int fail_ioctl_call) {
     LinuxTestSyscalls syscalls;
     syscalls.override_write = true;
     syscalls.override_ioctl = true;
@@ -992,7 +999,7 @@ namespace lvh::detail::test {
     return mouse.create(1, options);
   }
 
-  Status linux_uinput_mouse_submit_fake_write_failure(const MouseEvent &event) {
+  OperationStatus linux_uinput_mouse_submit_fake_write_failure(const MouseEvent &event) {
     LinuxTestSyscalls syscalls;
     syscalls.override_write = true;
     syscalls.fail_write_call = 1;
@@ -1003,7 +1010,7 @@ namespace lvh::detail::test {
     return mouse.submit(event);
   }
 
-  Status linux_uinput_mouse_submit_fake_short_write(const MouseEvent &event) {
+  OperationStatus linux_uinput_mouse_submit_fake_short_write(const MouseEvent &event) {
     LinuxTestSyscalls syscalls;
     syscalls.override_write = true;
     syscalls.short_write_call = 1;

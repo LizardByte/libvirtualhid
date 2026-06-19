@@ -98,7 +98,8 @@ jobs:
           sudo udevadm control --reload-rules
           for module in uhid uinput; do
             if ! sudo modprobe "${module}"; then
-              message="Unable to load ${module}; tests requiring /dev/${module} will fail unless the device already exists."
+              message="Unable to load ${module}; tests requiring /dev/${module}"
+              message="${message} will fail unless the device already exists."
               echo "::warning::${message}"
             fi
           done
