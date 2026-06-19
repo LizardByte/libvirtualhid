@@ -44,9 +44,23 @@ namespace lvh::profiles {
   /**
    * @brief Create the PlayStation DualSense-compatible gamepad profile.
    *
-   * @return DualSense-compatible device profile.
+   * @return Default DualSense-compatible device profile.
    */
   DeviceProfile dualsense();
+
+  /**
+   * @brief Create the USB PlayStation DualSense-compatible gamepad profile.
+   *
+   * @return USB DualSense-compatible device profile.
+   */
+  DeviceProfile dualsense_usb();
+
+  /**
+   * @brief Create the Bluetooth PlayStation DualSense-compatible gamepad profile.
+   *
+   * @return Bluetooth DualSense-compatible device profile.
+   */
+  DeviceProfile dualsense_bluetooth();
 
   /**
    * @brief Create the Nintendo Switch Pro-compatible gamepad profile.
@@ -68,6 +82,27 @@ namespace lvh::profiles {
    * @return Generic mouse device profile.
    */
   DeviceProfile mouse();
+
+  /**
+   * @brief Create the generic touchscreen profile.
+   *
+   * @return Generic touchscreen device profile.
+   */
+  DeviceProfile touchscreen();
+
+  /**
+   * @brief Create the generic trackpad profile.
+   *
+   * @return Generic trackpad device profile.
+   */
+  DeviceProfile trackpad();
+
+  /**
+   * @brief Create the generic pen tablet profile.
+   *
+   * @return Generic pen tablet device profile.
+   */
+  DeviceProfile pen_tablet();
 
   /**
    * @brief Look up a built-in gamepad profile by kind.

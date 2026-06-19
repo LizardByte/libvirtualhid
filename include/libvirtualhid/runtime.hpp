@@ -18,6 +18,9 @@ namespace lvh {
     struct GamepadDevice;
     struct KeyboardDevice;
     struct MouseDevice;
+    struct TouchscreenDevice;
+    struct TrackpadDevice;
+    struct PenTabletDevice;
     class RuntimeState;
   }  // namespace detail
 
@@ -51,6 +54,13 @@ namespace lvh {
      * @return `true` when the device can accept operations.
      */
     virtual bool is_open() const = 0;
+
+    /**
+     * @brief Get platform-visible nodes associated with the device.
+     *
+     * @return Device nodes and diagnostic paths currently known to the backend.
+     */
+    virtual std::vector<DeviceNode> device_nodes() const = 0;
 
     /**
      * @brief Close the virtual device.
@@ -118,6 +128,11 @@ namespace lvh {
      * @copydoc VirtualDevice::is_open
      */
     bool is_open() const override;
+
+    /**
+     * @copydoc VirtualDevice::device_nodes
+     */
+    std::vector<DeviceNode> device_nodes() const override;
 
     /**
      * @copydoc VirtualDevice::close
@@ -227,6 +242,11 @@ namespace lvh {
      * @copydoc VirtualDevice::is_open
      */
     bool is_open() const override;
+
+    /**
+     * @copydoc VirtualDevice::device_nodes
+     */
+    std::vector<DeviceNode> device_nodes() const override;
 
     /**
      * @copydoc VirtualDevice::close
@@ -340,6 +360,11 @@ namespace lvh {
     bool is_open() const override;
 
     /**
+     * @copydoc VirtualDevice::device_nodes
+     */
+    std::vector<DeviceNode> device_nodes() const override;
+
+    /**
      * @copydoc VirtualDevice::close
      */
     OperationStatus close() override;
@@ -420,6 +445,315 @@ namespace lvh {
   };
 
   /**
+   * @brief Virtual touchscreen device handle.
+   */
+  class Touchscreen final: public VirtualDevice {
+  public:
+    /**
+     * @brief Copy construction is disabled because the handle owns device lifetime.
+     */
+    Touchscreen(const Touchscreen &) = delete;
+
+    /**
+     * @brief Copy assignment is disabled because the handle owns device lifetime.
+     *
+     * @return This touchscreen handle.
+     */
+    Touchscreen &operator=(const Touchscreen &) = delete;
+
+    /**
+     * @brief Move construct a touchscreen handle.
+     *
+     * @param other Handle to move from.
+     */
+    Touchscreen(Touchscreen &&other) noexcept;
+
+    /**
+     * @brief Move assign a touchscreen handle.
+     *
+     * @param other Handle to move from.
+     * @return This touchscreen handle.
+     */
+    Touchscreen &operator=(Touchscreen &&other) noexcept;
+
+    /**
+     * @brief Destroy the touchscreen handle.
+     */
+    ~Touchscreen() override;
+
+    /**
+     * @copydoc VirtualDevice::device_id
+     */
+    DeviceId device_id() const override;
+
+    /**
+     * @copydoc VirtualDevice::profile
+     */
+    const DeviceProfile &profile() const override;
+
+    /**
+     * @copydoc VirtualDevice::is_open
+     */
+    bool is_open() const override;
+
+    /**
+     * @copydoc VirtualDevice::device_nodes
+     */
+    std::vector<DeviceNode> device_nodes() const override;
+
+    /**
+     * @copydoc VirtualDevice::close
+     */
+    OperationStatus close() override;
+
+    /**
+     * @brief Place or move a touch contact.
+     *
+     * @param contact Touch contact state.
+     * @return Submit operation status.
+     */
+    OperationStatus place_contact(const TouchContact &contact);
+
+    /**
+     * @brief Release a touch contact.
+     *
+     * @param contact_id Consumer-stable contact identifier.
+     * @return Submit operation status.
+     */
+    OperationStatus release_contact(std::int32_t contact_id);
+
+    /**
+     * @brief Get the most recently submitted touch contact.
+     *
+     * @return Last submitted touch contact.
+     */
+    TouchContact last_submitted_contact() const;
+
+    /**
+     * @brief Get the number of successful submit operations.
+     *
+     * @return Submit count.
+     */
+    std::size_t submit_count() const;
+
+  private:
+    friend class Runtime;
+
+    explicit Touchscreen(std::shared_ptr<detail::TouchscreenDevice> device);
+
+    std::shared_ptr<detail::TouchscreenDevice> device_;
+  };
+
+  /**
+   * @brief Virtual trackpad device handle.
+   */
+  class Trackpad final: public VirtualDevice {
+  public:
+    /**
+     * @brief Copy construction is disabled because the handle owns device lifetime.
+     */
+    Trackpad(const Trackpad &) = delete;
+
+    /**
+     * @brief Copy assignment is disabled because the handle owns device lifetime.
+     *
+     * @return This trackpad handle.
+     */
+    Trackpad &operator=(const Trackpad &) = delete;
+
+    /**
+     * @brief Move construct a trackpad handle.
+     *
+     * @param other Handle to move from.
+     */
+    Trackpad(Trackpad &&other) noexcept;
+
+    /**
+     * @brief Move assign a trackpad handle.
+     *
+     * @param other Handle to move from.
+     * @return This trackpad handle.
+     */
+    Trackpad &operator=(Trackpad &&other) noexcept;
+
+    /**
+     * @brief Destroy the trackpad handle.
+     */
+    ~Trackpad() override;
+
+    /**
+     * @copydoc VirtualDevice::device_id
+     */
+    DeviceId device_id() const override;
+
+    /**
+     * @copydoc VirtualDevice::profile
+     */
+    const DeviceProfile &profile() const override;
+
+    /**
+     * @copydoc VirtualDevice::is_open
+     */
+    bool is_open() const override;
+
+    /**
+     * @copydoc VirtualDevice::device_nodes
+     */
+    std::vector<DeviceNode> device_nodes() const override;
+
+    /**
+     * @copydoc VirtualDevice::close
+     */
+    OperationStatus close() override;
+
+    /**
+     * @brief Place or move a trackpad contact.
+     *
+     * @param contact Touch contact state.
+     * @return Submit operation status.
+     */
+    OperationStatus place_contact(const TouchContact &contact);
+
+    /**
+     * @brief Release a trackpad contact.
+     *
+     * @param contact_id Consumer-stable contact identifier.
+     * @return Submit operation status.
+     */
+    OperationStatus release_contact(std::int32_t contact_id);
+
+    /**
+     * @brief Submit a physical trackpad button transition.
+     *
+     * @param pressed Whether the primary trackpad button is pressed.
+     * @return Submit operation status.
+     */
+    OperationStatus button(bool pressed);
+
+    /**
+     * @brief Get the most recently submitted touch contact.
+     *
+     * @return Last submitted touch contact.
+     */
+    TouchContact last_submitted_contact() const;
+
+    /**
+     * @brief Get the number of successful submit operations.
+     *
+     * @return Submit count.
+     */
+    std::size_t submit_count() const;
+
+  private:
+    friend class Runtime;
+
+    explicit Trackpad(std::shared_ptr<detail::TrackpadDevice> device);
+
+    std::shared_ptr<detail::TrackpadDevice> device_;
+  };
+
+  /**
+   * @brief Virtual pen tablet device handle.
+   */
+  class PenTablet final: public VirtualDevice {
+  public:
+    /**
+     * @brief Copy construction is disabled because the handle owns device lifetime.
+     */
+    PenTablet(const PenTablet &) = delete;
+
+    /**
+     * @brief Copy assignment is disabled because the handle owns device lifetime.
+     *
+     * @return This pen tablet handle.
+     */
+    PenTablet &operator=(const PenTablet &) = delete;
+
+    /**
+     * @brief Move construct a pen tablet handle.
+     *
+     * @param other Handle to move from.
+     */
+    PenTablet(PenTablet &&other) noexcept;
+
+    /**
+     * @brief Move assign a pen tablet handle.
+     *
+     * @param other Handle to move from.
+     * @return This pen tablet handle.
+     */
+    PenTablet &operator=(PenTablet &&other) noexcept;
+
+    /**
+     * @brief Destroy the pen tablet handle.
+     */
+    ~PenTablet() override;
+
+    /**
+     * @copydoc VirtualDevice::device_id
+     */
+    DeviceId device_id() const override;
+
+    /**
+     * @copydoc VirtualDevice::profile
+     */
+    const DeviceProfile &profile() const override;
+
+    /**
+     * @copydoc VirtualDevice::is_open
+     */
+    bool is_open() const override;
+
+    /**
+     * @copydoc VirtualDevice::device_nodes
+     */
+    std::vector<DeviceNode> device_nodes() const override;
+
+    /**
+     * @copydoc VirtualDevice::close
+     */
+    OperationStatus close() override;
+
+    /**
+     * @brief Place or move the active tablet tool.
+     *
+     * @param state Tool state.
+     * @return Submit operation status.
+     */
+    OperationStatus place_tool(const PenToolState &state);
+
+    /**
+     * @brief Submit a tablet button transition.
+     *
+     * @param button Button to update.
+     * @param pressed Whether the button is pressed.
+     * @return Submit operation status.
+     */
+    OperationStatus button(PenButton button, bool pressed);
+
+    /**
+     * @brief Get the most recently submitted tool state.
+     *
+     * @return Last submitted tool state.
+     */
+    PenToolState last_submitted_tool() const;
+
+    /**
+     * @brief Get the number of successful submit operations.
+     *
+     * @return Submit count.
+     */
+    std::size_t submit_count() const;
+
+  private:
+    friend class Runtime;
+
+    explicit PenTablet(std::shared_ptr<detail::PenTabletDevice> device);
+
+    std::shared_ptr<detail::PenTabletDevice> device_;
+  };
+
+  /**
    * @brief Result returned by gamepad creation.
    */
   struct GamepadCreationResult {
@@ -488,6 +822,78 @@ namespace lvh {
      */
     explicit operator bool() const {
       return status.ok() && mouse != nullptr;
+    }
+  };
+
+  /**
+   * @brief Result returned by touchscreen creation.
+   */
+  struct TouchscreenCreationResult {
+    /**
+     * @brief Creation status.
+     */
+    OperationStatus status;
+
+    /**
+     * @brief Created touchscreen handle when creation succeeds.
+     */
+    std::unique_ptr<Touchscreen> touchscreen;
+
+    /**
+     * @brief Check whether creation succeeded and produced a handle.
+     *
+     * @return `true` when creation succeeded.
+     */
+    explicit operator bool() const {
+      return status.ok() && touchscreen != nullptr;
+    }
+  };
+
+  /**
+   * @brief Result returned by trackpad creation.
+   */
+  struct TrackpadCreationResult {
+    /**
+     * @brief Creation status.
+     */
+    OperationStatus status;
+
+    /**
+     * @brief Created trackpad handle when creation succeeds.
+     */
+    std::unique_ptr<Trackpad> trackpad;
+
+    /**
+     * @brief Check whether creation succeeded and produced a handle.
+     *
+     * @return `true` when creation succeeded.
+     */
+    explicit operator bool() const {
+      return status.ok() && trackpad != nullptr;
+    }
+  };
+
+  /**
+   * @brief Result returned by pen tablet creation.
+   */
+  struct PenTabletCreationResult {
+    /**
+     * @brief Creation status.
+     */
+    OperationStatus status;
+
+    /**
+     * @brief Created pen tablet handle when creation succeeds.
+     */
+    std::unique_ptr<PenTablet> pen_tablet;
+
+    /**
+     * @brief Check whether creation succeeded and produced a handle.
+     *
+     * @return `true` when creation succeeded.
+     */
+    explicit operator bool() const {
+      return status.ok() && pen_tablet != nullptr;
     }
   };
 
@@ -595,6 +1001,51 @@ namespace lvh {
      * @return Mouse creation result.
      */
     MouseCreationResult create_mouse(const CreateMouseOptions &options);
+
+    /**
+     * @brief Create a touchscreen with the built-in touchscreen profile.
+     *
+     * @return Touchscreen creation result.
+     */
+    TouchscreenCreationResult create_touchscreen();
+
+    /**
+     * @brief Create a touchscreen from full creation options.
+     *
+     * @param options Touchscreen creation options.
+     * @return Touchscreen creation result.
+     */
+    TouchscreenCreationResult create_touchscreen(const CreateTouchscreenOptions &options);
+
+    /**
+     * @brief Create a trackpad with the built-in trackpad profile.
+     *
+     * @return Trackpad creation result.
+     */
+    TrackpadCreationResult create_trackpad();
+
+    /**
+     * @brief Create a trackpad from full creation options.
+     *
+     * @param options Trackpad creation options.
+     * @return Trackpad creation result.
+     */
+    TrackpadCreationResult create_trackpad(const CreateTrackpadOptions &options);
+
+    /**
+     * @brief Create a pen tablet with the built-in pen tablet profile.
+     *
+     * @return Pen tablet creation result.
+     */
+    PenTabletCreationResult create_pen_tablet();
+
+    /**
+     * @brief Create a pen tablet from full creation options.
+     *
+     * @param options Pen tablet creation options.
+     * @return Pen tablet creation result.
+     */
+    PenTabletCreationResult create_pen_tablet(const CreatePenTabletOptions &options);
 
     /**
      * @brief Get the number of open devices owned by the runtime.

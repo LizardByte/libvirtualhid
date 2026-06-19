@@ -5,9 +5,11 @@
 #pragma once
 
 // standard includes
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -141,6 +143,21 @@ namespace lvh {
     bool supports_mouse = false;
 
     /**
+     * @brief Whether the backend can create touchscreen devices.
+     */
+    bool supports_touchscreen = false;
+
+    /**
+     * @brief Whether the backend can create trackpad devices.
+     */
+    bool supports_trackpad = false;
+
+    /**
+     * @brief Whether the backend can create pen tablet devices.
+     */
+    bool supports_pen_tablet = false;
+
+    /**
      * @brief Whether the backend can deliver output reports to callers.
      */
     bool supports_output_reports = false;
@@ -157,12 +174,41 @@ namespace lvh {
   };
 
   /**
+   * @brief Platform device-node categories reported by virtual devices.
+   */
+  enum class DeviceNodeKind {
+    input_event,  ///< Linux `/dev/input/event*` node or equivalent.
+    joystick,  ///< Linux `/dev/input/js*` node or equivalent.
+    hidraw,  ///< Linux `/dev/hidraw*` node or equivalent.
+    sysfs,  ///< Linux sysfs path or equivalent diagnostic path.
+    other,  ///< Other platform-specific device path.
+  };
+
+  /**
+   * @brief Platform-visible node or path associated with a virtual device.
+   */
+  struct DeviceNode {
+    /**
+     * @brief Node category.
+     */
+    DeviceNodeKind kind = DeviceNodeKind::other;
+
+    /**
+     * @brief Platform path for this node.
+     */
+    std::string path;
+  };
+
+  /**
    * @brief Device categories supported by the public profile model.
    */
   enum class DeviceType {
     gamepad,  ///< Game controller device.
     keyboard,  ///< Keyboard device.
     mouse,  ///< Mouse or pointer device.
+    touchscreen,  ///< Direct touch display device.
+    trackpad,  ///< Indirect touchpad device.
+    pen_tablet,  ///< Pen tablet device.
   };
 
   /**
@@ -371,6 +417,11 @@ namespace lvh {
     DeviceProfile profile;
 
     /**
+     * @brief Held-key repeat interval in milliseconds, or `0` to disable repeat.
+     */
+    std::uint32_t auto_repeat_interval_ms = 50;
+
+    /**
      * @brief Consumer-defined stable identity string.
      */
     std::string stable_id;
@@ -380,6 +431,51 @@ namespace lvh {
    * @brief Full mouse creation request.
    */
   struct CreateMouseOptions {
+    /**
+     * @brief Device profile to instantiate.
+     */
+    DeviceProfile profile;
+
+    /**
+     * @brief Consumer-defined stable identity string.
+     */
+    std::string stable_id;
+  };
+
+  /**
+   * @brief Full touchscreen creation request.
+   */
+  struct CreateTouchscreenOptions {
+    /**
+     * @brief Device profile to instantiate.
+     */
+    DeviceProfile profile;
+
+    /**
+     * @brief Consumer-defined stable identity string.
+     */
+    std::string stable_id;
+  };
+
+  /**
+   * @brief Full trackpad creation request.
+   */
+  struct CreateTrackpadOptions {
+    /**
+     * @brief Device profile to instantiate.
+     */
+    DeviceProfile profile;
+
+    /**
+     * @brief Consumer-defined stable identity string.
+     */
+    std::string stable_id;
+  };
+
+  /**
+   * @brief Full pen tablet creation request.
+   */
+  struct CreatePenTabletOptions {
     /**
      * @brief Device profile to instantiate.
      */
@@ -473,6 +569,79 @@ namespace lvh {
   };
 
   /**
+   * @brief Normalized three-axis sensor state.
+   */
+  struct Vector3 {
+    /**
+     * @brief X-axis value.
+     */
+    float x = 0.0F;
+
+    /**
+     * @brief Y-axis value.
+     */
+    float y = 0.0F;
+
+    /**
+     * @brief Z-axis value.
+     */
+    float z = 0.0F;
+  };
+
+  /**
+   * @brief Common gamepad battery states.
+   */
+  enum class GamepadBatteryState : std::uint8_t {
+    unknown,  ///< Battery state is unknown.
+    discharging,  ///< Battery is discharging.
+    charging,  ///< Battery is charging.
+    full,  ///< Battery is fully charged.
+    voltage_or_temperature_error,  ///< Battery reports voltage or temperature outside the supported range.
+    temperature_error,  ///< Battery reports a temperature error.
+    charging_error,  ///< Battery reports a charging error.
+  };
+
+  /**
+   * @brief Gamepad battery charge metadata.
+   */
+  struct GamepadBattery {
+    /**
+     * @brief Current battery state.
+     */
+    GamepadBatteryState state = GamepadBatteryState::unknown;
+
+    /**
+     * @brief Battery percentage in the inclusive range `[0, 100]`.
+     */
+    std::uint8_t percentage = 100;
+  };
+
+  /**
+   * @brief Touchpad contact carried by a gamepad report.
+   */
+  struct GamepadTouchContact {
+    /**
+     * @brief Consumer-stable contact identifier.
+     */
+    std::uint8_t id = 0;
+
+    /**
+     * @brief Whether this contact is active.
+     */
+    bool active = false;
+
+    /**
+     * @brief Normalized X coordinate in the inclusive range `[0.0, 1.0]`.
+     */
+    float x = 0.0F;
+
+    /**
+     * @brief Normalized Y coordinate in the inclusive range `[0.0, 1.0]`.
+     */
+    float y = 0.0F;
+  };
+
+  /**
    * @brief Common gamepad input state accepted by libvirtualhid.
    */
   struct GamepadState {
@@ -500,6 +669,26 @@ namespace lvh {
      * @brief Right trigger value in the inclusive range `[0.0, 1.0]`.
      */
     float right_trigger = 0.0F;
+
+    /**
+     * @brief Accelerometer data in meters per second squared, when available.
+     */
+    std::optional<Vector3> acceleration;
+
+    /**
+     * @brief Gyroscope data in degrees per second, when available.
+     */
+    std::optional<Vector3> gyroscope;
+
+    /**
+     * @brief Battery metadata, when available.
+     */
+    std::optional<GamepadBattery> battery;
+
+    /**
+     * @brief Gamepad touchpad contacts.
+     */
+    std::array<GamepadTouchContact, 2> touchpad_contacts {};
   };
 
   /**
@@ -604,6 +793,98 @@ namespace lvh {
   };
 
   /**
+   * @brief Touch contact event for touchscreen and trackpad devices.
+   */
+  struct TouchContact {
+    /**
+     * @brief Consumer-stable contact identifier.
+     */
+    std::int32_t id = 0;
+
+    /**
+     * @brief Normalized X coordinate in the inclusive range `[0.0, 1.0]`.
+     */
+    float x = 0.0F;
+
+    /**
+     * @brief Normalized Y coordinate in the inclusive range `[0.0, 1.0]`.
+     */
+    float y = 0.0F;
+
+    /**
+     * @brief Normalized pressure in the inclusive range `[0.0, 1.0]`.
+     */
+    float pressure = 0.0F;
+
+    /**
+     * @brief Contact orientation in degrees, typically in the inclusive range `[-90, 90]`.
+     */
+    std::int32_t orientation = 0;
+  };
+
+  /**
+   * @brief Pen tablet tool categories.
+   */
+  enum class PenToolType : std::uint8_t {
+    pen,  ///< Pen tool.
+    eraser,  ///< Eraser tool.
+    brush,  ///< Brush tool.
+    pencil,  ///< Pencil tool.
+    airbrush,  ///< Airbrush tool.
+    touch,  ///< Direct touch tool.
+    unchanged,  ///< Keep the previously selected tool.
+  };
+
+  /**
+   * @brief Pen tablet buttons.
+   */
+  enum class PenButton : std::uint8_t {
+    primary,  ///< Primary stylus button.
+    secondary,  ///< Secondary stylus button.
+    tertiary,  ///< Tertiary stylus button.
+  };
+
+  /**
+   * @brief Pen tablet tool position and analog state.
+   */
+  struct PenToolState {
+    /**
+     * @brief Tool category.
+     */
+    PenToolType tool = PenToolType::pen;
+
+    /**
+     * @brief Normalized X coordinate in the inclusive range `[0.0, 1.0]`.
+     */
+    float x = 0.0F;
+
+    /**
+     * @brief Normalized Y coordinate in the inclusive range `[0.0, 1.0]`.
+     */
+    float y = 0.0F;
+
+    /**
+     * @brief Normalized pressure in the inclusive range `[0.0, 1.0]`, or negative to leave pressure unchanged.
+     */
+    float pressure = -1.0F;
+
+    /**
+     * @brief Normalized distance in the inclusive range `[0.0, 1.0]`, or negative to leave distance unchanged.
+     */
+    float distance = -1.0F;
+
+    /**
+     * @brief X-axis tilt in degrees.
+     */
+    float tilt_x = 0.0F;
+
+    /**
+     * @brief Y-axis tilt in degrees.
+     */
+    float tilt_y = 0.0F;
+  };
+
+  /**
    * @brief Output report categories delivered by a gamepad backend.
    */
   enum class GamepadOutputKind {
@@ -646,6 +927,31 @@ namespace lvh {
      * @brief Blue LED channel value.
      */
     std::uint8_t blue = 0;
+
+    /**
+     * @brief Adaptive trigger event flags from a profile-specific output report.
+     */
+    std::uint8_t adaptive_trigger_flags = 0;
+
+    /**
+     * @brief Profile-specific left trigger effect type.
+     */
+    std::uint8_t left_trigger_effect_type = 0;
+
+    /**
+     * @brief Profile-specific right trigger effect type.
+     */
+    std::uint8_t right_trigger_effect_type = 0;
+
+    /**
+     * @brief Profile-specific left trigger effect payload.
+     */
+    std::array<std::uint8_t, 10> left_trigger_effect {};
+
+    /**
+     * @brief Profile-specific right trigger effect payload.
+     */
+    std::array<std::uint8_t, 10> right_trigger_effect {};
 
     /**
      * @brief Raw output report payload.

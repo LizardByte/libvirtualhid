@@ -22,6 +22,9 @@ TEST(RuntimeTest, FakeBackendReportsCapabilities) {
   EXPECT_TRUE(runtime->capabilities().supports_gamepad);
   EXPECT_TRUE(runtime->capabilities().supports_keyboard);
   EXPECT_TRUE(runtime->capabilities().supports_mouse);
+  EXPECT_TRUE(runtime->capabilities().supports_touchscreen);
+  EXPECT_TRUE(runtime->capabilities().supports_trackpad);
+  EXPECT_TRUE(runtime->capabilities().supports_pen_tablet);
   EXPECT_TRUE(runtime->capabilities().supports_output_reports);
   EXPECT_FALSE(runtime->capabilities().requires_installed_driver);
 }
@@ -53,6 +56,7 @@ TEST(RuntimeTest, CreatesSubmitsAndClosesGamepad) {
   ASSERT_TRUE(created);
   ASSERT_NE(created.gamepad, nullptr);
   EXPECT_TRUE(created.gamepad->is_open());
+  EXPECT_TRUE(created.gamepad->device_nodes().empty());
   EXPECT_EQ(runtime->active_device_count(), 1U);
 
   lvh::GamepadState state;
@@ -103,6 +107,7 @@ TEST(RuntimeTest, CreatesSubmitsAndClosesKeyboard) {
   ASSERT_TRUE(created);
   ASSERT_NE(created.keyboard, nullptr);
   EXPECT_TRUE(created.keyboard->is_open());
+  EXPECT_TRUE(created.keyboard->device_nodes().empty());
   EXPECT_EQ(created.keyboard->profile().device_type, lvh::DeviceType::keyboard);
   EXPECT_EQ(runtime->active_device_count(), 1U);
 
@@ -129,6 +134,7 @@ TEST(RuntimeTest, CreatesSubmitsAndClosesMouse) {
   ASSERT_TRUE(created);
   ASSERT_NE(created.mouse, nullptr);
   EXPECT_TRUE(created.mouse->is_open());
+  EXPECT_TRUE(created.mouse->device_nodes().empty());
   EXPECT_EQ(created.mouse->profile().device_type, lvh::DeviceType::mouse);
   EXPECT_EQ(runtime->active_device_count(), 1U);
 
@@ -149,6 +155,65 @@ TEST(RuntimeTest, CreatesSubmitsAndClosesMouse) {
   EXPECT_FALSE(created.mouse->is_open());
   EXPECT_EQ(runtime->active_device_count(), 0U);
   EXPECT_EQ(created.mouse->move_relative(1, 1).code(), lvh::ErrorCode::device_closed);
+}
+
+TEST(RuntimeTest, CreatesSubmitsAndClosesTouchDevices) {
+  auto runtime = lvh::Runtime::create();
+
+  auto touchscreen = runtime->create_touchscreen();
+  ASSERT_TRUE(touchscreen);
+  ASSERT_NE(touchscreen.touchscreen, nullptr);
+  EXPECT_EQ(touchscreen.touchscreen->profile().device_type, lvh::DeviceType::touchscreen);
+
+  lvh::TouchContact contact {
+    .id = 1,
+    .x = 0.5F,
+    .y = 0.25F,
+    .pressure = 1.0F,
+    .orientation = 10,
+  };
+  EXPECT_TRUE(touchscreen.touchscreen->place_contact(contact).ok());
+  EXPECT_TRUE(touchscreen.touchscreen->release_contact(contact.id).ok());
+  EXPECT_EQ(touchscreen.touchscreen->submit_count(), 2U);
+  EXPECT_TRUE(touchscreen.touchscreen->close().ok());
+  EXPECT_EQ(touchscreen.touchscreen->place_contact(contact).code(), lvh::ErrorCode::device_closed);
+
+  auto trackpad = runtime->create_trackpad();
+  ASSERT_TRUE(trackpad);
+  ASSERT_NE(trackpad.trackpad, nullptr);
+  EXPECT_EQ(trackpad.trackpad->profile().device_type, lvh::DeviceType::trackpad);
+  EXPECT_TRUE(trackpad.trackpad->place_contact(contact).ok());
+  EXPECT_TRUE(trackpad.trackpad->button(true).ok());
+  EXPECT_TRUE(trackpad.trackpad->release_contact(contact.id).ok());
+  EXPECT_EQ(trackpad.trackpad->submit_count(), 3U);
+  EXPECT_TRUE(trackpad.trackpad->close().ok());
+  EXPECT_EQ(trackpad.trackpad->button(false).code(), lvh::ErrorCode::device_closed);
+}
+
+TEST(RuntimeTest, CreatesSubmitsAndClosesPenTablet) {
+  auto runtime = lvh::Runtime::create();
+  auto created = runtime->create_pen_tablet();
+
+  ASSERT_TRUE(created);
+  ASSERT_NE(created.pen_tablet, nullptr);
+  EXPECT_EQ(created.pen_tablet->profile().device_type, lvh::DeviceType::pen_tablet);
+
+  lvh::PenToolState tool {
+    .tool = lvh::PenToolType::pen,
+    .x = 0.25F,
+    .y = 0.5F,
+    .pressure = 0.75F,
+    .distance = -1.0F,
+    .tilt_x = 45.0F,
+    .tilt_y = -45.0F,
+  };
+
+  EXPECT_TRUE(created.pen_tablet->place_tool(tool).ok());
+  EXPECT_TRUE(created.pen_tablet->button(lvh::PenButton::primary, true).ok());
+  EXPECT_EQ(created.pen_tablet->submit_count(), 2U);
+  EXPECT_EQ(created.pen_tablet->last_submitted_tool().tool, lvh::PenToolType::pen);
+  EXPECT_TRUE(created.pen_tablet->close().ok());
+  EXPECT_EQ(created.pen_tablet->button(lvh::PenButton::primary, false).code(), lvh::ErrorCode::device_closed);
 }
 
 TEST_F(LinuxRuntimeTest, LinuxUhidSmokeTestRequiresPrerequisites) {

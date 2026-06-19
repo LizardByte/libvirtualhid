@@ -37,6 +37,9 @@ TEST(ProfileTest, StreamingControllerProfilesArePresent) {
   EXPECT_TRUE(dualsense.capabilities.supports_touchpad);
   EXPECT_TRUE(dualsense.capabilities.supports_rgb_led);
   EXPECT_TRUE(dualsense.capabilities.supports_adaptive_triggers);
+  EXPECT_GT(dualsense.input_report_size, 14U);
+  EXPECT_GT(dualsense.output_report_size, 5U);
+  EXPECT_EQ(dualsense.manufacturer, "Sony Interactive Entertainment");
 
   EXPECT_EQ(switch_pro.vendor_id, 0x057E);
   EXPECT_EQ(switch_pro.product_id, 0x2009);
@@ -64,9 +67,12 @@ TEST(ProfileTest, CanFindProfileByKind) {
   EXPECT_EQ(profile->gamepad_kind, lvh::GamepadProfileKind::xbox_series);
 }
 
-TEST(ProfileTest, KeyboardAndMouseProfilesArePresent) {
+TEST(ProfileTest, PointerProfilesArePresent) {
   const auto keyboard = lvh::profiles::keyboard();
   const auto mouse = lvh::profiles::mouse();
+  const auto touchscreen = lvh::profiles::touchscreen();
+  const auto trackpad = lvh::profiles::trackpad();
+  const auto pen_tablet = lvh::profiles::pen_tablet();
 
   EXPECT_EQ(keyboard.device_type, lvh::DeviceType::keyboard);
   EXPECT_FALSE(keyboard.name.empty());
@@ -77,4 +83,16 @@ TEST(ProfileTest, KeyboardAndMouseProfilesArePresent) {
   EXPECT_FALSE(mouse.name.empty());
   EXPECT_NE(mouse.vendor_id, 0);
   EXPECT_NE(mouse.product_id, 0);
+
+  EXPECT_EQ(touchscreen.device_type, lvh::DeviceType::touchscreen);
+  EXPECT_FALSE(touchscreen.name.empty());
+  EXPECT_NE(touchscreen.product_id, 0);
+
+  EXPECT_EQ(trackpad.device_type, lvh::DeviceType::trackpad);
+  EXPECT_FALSE(trackpad.name.empty());
+  EXPECT_NE(trackpad.product_id, 0);
+
+  EXPECT_EQ(pen_tablet.device_type, lvh::DeviceType::pen_tablet);
+  EXPECT_FALSE(pen_tablet.name.empty());
+  EXPECT_NE(pen_tablet.product_id, 0);
 }

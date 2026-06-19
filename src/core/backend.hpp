@@ -38,6 +38,15 @@ namespace lvh::detail {
     virtual OperationStatus submit(const std::vector<std::uint8_t> &report) = 0;
 
     /**
+     * @brief Get platform-visible nodes associated with this backend device.
+     *
+     * @return Device nodes and diagnostic paths.
+     */
+    virtual std::vector<DeviceNode> device_nodes() const {
+      return {};
+    }
+
+    /**
      * @brief Register a callback for backend output reports.
      *
      * @param callback Output callback.
@@ -87,6 +96,15 @@ namespace lvh::detail {
     virtual OperationStatus type_text(const KeyboardTextEvent &event) = 0;
 
     /**
+     * @brief Get platform-visible nodes associated with this backend device.
+     *
+     * @return Device nodes and diagnostic paths.
+     */
+    virtual std::vector<DeviceNode> device_nodes() const {
+      return {};
+    }
+
+    /**
      * @brief Close the backend device.
      *
      * @return Close status.
@@ -121,6 +139,15 @@ namespace lvh::detail {
     virtual OperationStatus submit(const MouseEvent &event) = 0;
 
     /**
+     * @brief Get platform-visible nodes associated with this backend device.
+     *
+     * @return Device nodes and diagnostic paths.
+     */
+    virtual std::vector<DeviceNode> device_nodes() const {
+      return {};
+    }
+
+    /**
      * @brief Close the backend device.
      *
      * @return Close status.
@@ -129,6 +156,168 @@ namespace lvh::detail {
 
   protected:
     BackendMouse() = default;
+  };
+
+  /**
+   * @brief Backend-owned touchscreen device implementation.
+   */
+  class BackendTouchscreen {
+  public:
+    BackendTouchscreen(const BackendTouchscreen &) = delete;
+    BackendTouchscreen &operator=(const BackendTouchscreen &) = delete;
+    BackendTouchscreen(BackendTouchscreen &&) noexcept = delete;
+    BackendTouchscreen &operator=(BackendTouchscreen &&) noexcept = delete;
+
+    /**
+     * @brief Destroy the backend touchscreen.
+     */
+    virtual ~BackendTouchscreen() = default;
+
+    /**
+     * @brief Place or move a touch contact.
+     *
+     * @param contact Touch contact state.
+     * @return Submit status.
+     */
+    virtual OperationStatus place_contact(const TouchContact &contact) = 0;
+
+    /**
+     * @brief Release a touch contact.
+     *
+     * @param contact_id Consumer-stable contact identifier.
+     * @return Submit status.
+     */
+    virtual OperationStatus release_contact(std::int32_t contact_id) = 0;
+
+    /**
+     * @brief Get platform-visible nodes associated with this backend device.
+     *
+     * @return Device nodes and diagnostic paths.
+     */
+    virtual std::vector<DeviceNode> device_nodes() const {
+      return {};
+    }
+
+    /**
+     * @brief Close the backend device.
+     *
+     * @return Close status.
+     */
+    virtual OperationStatus close() = 0;
+
+  protected:
+    BackendTouchscreen() = default;
+  };
+
+  /**
+   * @brief Backend-owned trackpad device implementation.
+   */
+  class BackendTrackpad {
+  public:
+    BackendTrackpad(const BackendTrackpad &) = delete;
+    BackendTrackpad &operator=(const BackendTrackpad &) = delete;
+    BackendTrackpad(BackendTrackpad &&) noexcept = delete;
+    BackendTrackpad &operator=(BackendTrackpad &&) noexcept = delete;
+
+    /**
+     * @brief Destroy the backend trackpad.
+     */
+    virtual ~BackendTrackpad() = default;
+
+    /**
+     * @brief Place or move a trackpad contact.
+     *
+     * @param contact Touch contact state.
+     * @return Submit status.
+     */
+    virtual OperationStatus place_contact(const TouchContact &contact) = 0;
+
+    /**
+     * @brief Release a trackpad contact.
+     *
+     * @param contact_id Consumer-stable contact identifier.
+     * @return Submit status.
+     */
+    virtual OperationStatus release_contact(std::int32_t contact_id) = 0;
+
+    /**
+     * @brief Submit a trackpad button transition.
+     *
+     * @param pressed Whether the primary trackpad button is pressed.
+     * @return Submit status.
+     */
+    virtual OperationStatus button(bool pressed) = 0;
+
+    /**
+     * @brief Get platform-visible nodes associated with this backend device.
+     *
+     * @return Device nodes and diagnostic paths.
+     */
+    virtual std::vector<DeviceNode> device_nodes() const {
+      return {};
+    }
+
+    /**
+     * @brief Close the backend device.
+     *
+     * @return Close status.
+     */
+    virtual OperationStatus close() = 0;
+
+  protected:
+    BackendTrackpad() = default;
+  };
+
+  /**
+   * @brief Backend-owned pen tablet device implementation.
+   */
+  class BackendPenTablet {
+  public:
+    BackendPenTablet(const BackendPenTablet &) = delete;
+    BackendPenTablet &operator=(const BackendPenTablet &) = delete;
+    BackendPenTablet(BackendPenTablet &&) noexcept = delete;
+    BackendPenTablet &operator=(BackendPenTablet &&) noexcept = delete;
+
+    /**
+     * @brief Destroy the backend pen tablet.
+     */
+    virtual ~BackendPenTablet() = default;
+
+    /**
+     * @brief Place or move the active tablet tool.
+     *
+     * @param state Tool state.
+     * @return Submit status.
+     */
+    virtual OperationStatus place_tool(const PenToolState &state) = 0;
+
+    /**
+     * @brief Submit a tablet button transition.
+     *
+     * @param button Button to update.
+     * @param pressed Whether the button is pressed.
+     * @return Submit status.
+     */
+    virtual OperationStatus button(PenButton button, bool pressed) = 0;
+
+    /**
+     * @brief Get platform-visible nodes associated with this backend device.
+     *
+     * @return Device nodes and diagnostic paths.
+     */
+    virtual std::vector<DeviceNode> device_nodes() const {
+      return {};
+    }
+
+    /**
+     * @brief Close the backend device.
+     *
+     * @return Close status.
+     */
+    virtual OperationStatus close() = 0;
+
+  protected:
+    BackendPenTablet() = default;
   };
 
   /**
@@ -204,6 +393,78 @@ namespace lvh::detail {
   };
 
   /**
+   * @brief Result returned by an internal backend touchscreen creation request.
+   */
+  struct BackendTouchscreenCreationResult {
+    /**
+     * @brief Creation status.
+     */
+    OperationStatus status;
+
+    /**
+     * @brief Backend device when creation succeeds.
+     */
+    std::unique_ptr<BackendTouchscreen> touchscreen;
+
+    /**
+     * @brief Check whether creation succeeded.
+     *
+     * @return `true` when creation succeeded.
+     */
+    explicit operator bool() const {
+      return status.ok() && touchscreen != nullptr;
+    }
+  };
+
+  /**
+   * @brief Result returned by an internal backend trackpad creation request.
+   */
+  struct BackendTrackpadCreationResult {
+    /**
+     * @brief Creation status.
+     */
+    OperationStatus status;
+
+    /**
+     * @brief Backend device when creation succeeds.
+     */
+    std::unique_ptr<BackendTrackpad> trackpad;
+
+    /**
+     * @brief Check whether creation succeeded.
+     *
+     * @return `true` when creation succeeded.
+     */
+    explicit operator bool() const {
+      return status.ok() && trackpad != nullptr;
+    }
+  };
+
+  /**
+   * @brief Result returned by an internal backend pen tablet creation request.
+   */
+  struct BackendPenTabletCreationResult {
+    /**
+     * @brief Creation status.
+     */
+    OperationStatus status;
+
+    /**
+     * @brief Backend device when creation succeeds.
+     */
+    std::unique_ptr<BackendPenTablet> pen_tablet;
+
+    /**
+     * @brief Check whether creation succeeded.
+     *
+     * @return `true` when creation succeeded.
+     */
+    explicit operator bool() const {
+      return status.ok() && pen_tablet != nullptr;
+    }
+  };
+
+  /**
    * @brief Runtime-selected backend implementation.
    */
   class Backend {
@@ -251,6 +512,33 @@ namespace lvh::detail {
      * @return Backend mouse creation result.
      */
     virtual BackendMouseCreationResult create_mouse(DeviceId id, const CreateMouseOptions &options) = 0;
+
+    /**
+     * @brief Create a backend touchscreen device.
+     *
+     * @param id Runtime-assigned device id.
+     * @param options Touchscreen creation options.
+     * @return Backend touchscreen creation result.
+     */
+    virtual BackendTouchscreenCreationResult create_touchscreen(DeviceId id, const CreateTouchscreenOptions &options) = 0;
+
+    /**
+     * @brief Create a backend trackpad device.
+     *
+     * @param id Runtime-assigned device id.
+     * @param options Trackpad creation options.
+     * @return Backend trackpad creation result.
+     */
+    virtual BackendTrackpadCreationResult create_trackpad(DeviceId id, const CreateTrackpadOptions &options) = 0;
+
+    /**
+     * @brief Create a backend pen tablet device.
+     *
+     * @param id Runtime-assigned device id.
+     * @param options Pen tablet creation options.
+     * @return Backend pen tablet creation result.
+     */
+    virtual BackendPenTabletCreationResult create_pen_tablet(DeviceId id, const CreatePenTabletOptions &options) = 0;
 
   protected:
     Backend() = default;

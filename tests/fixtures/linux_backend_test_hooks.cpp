@@ -568,6 +568,66 @@ namespace lvh::detail::test {
     return {std::move(status), std::move(records)};
   }
 
+  LinuxInputSubmissionResult linux_uinput_touchscreen_contact_pipe(const TouchContact &contact) {
+    int descriptors[2] {-1, -1};
+    if (::pipe(descriptors) != 0) {
+      return {system_error_status(ErrorCode::backend_failure, "failed to create pipe", errno), {}};
+    }
+
+    UinputTouchscreen touchscreen {descriptors[1]};
+    auto status = touchscreen.place_contact(contact);
+    if (status.ok()) {
+      status = touchscreen.release_contact(contact.id);
+    }
+    static_cast<void>(touchscreen.close());
+    auto records = read_input_events_until_eof(descriptors[0]);
+    static_cast<void>(::close(descriptors[0]));
+    return {std::move(status), std::move(records)};
+  }
+
+  LinuxInputSubmissionResult linux_uinput_trackpad_contact_pipe(const TouchContact &contact) {
+    int descriptors[2] {-1, -1};
+    if (::pipe(descriptors) != 0) {
+      return {system_error_status(ErrorCode::backend_failure, "failed to create pipe", errno), {}};
+    }
+
+    UinputTrackpad trackpad {descriptors[1]};
+    auto status = trackpad.place_contact(contact);
+    if (status.ok()) {
+      status = trackpad.button(true);
+    }
+    if (status.ok()) {
+      status = trackpad.button(false);
+    }
+    if (status.ok()) {
+      status = trackpad.release_contact(contact.id);
+    }
+    static_cast<void>(trackpad.close());
+    auto records = read_input_events_until_eof(descriptors[0]);
+    static_cast<void>(::close(descriptors[0]));
+    return {std::move(status), std::move(records)};
+  }
+
+  LinuxInputSubmissionResult linux_uinput_pen_tablet_tool_pipe(const PenToolState &state) {
+    int descriptors[2] {-1, -1};
+    if (::pipe(descriptors) != 0) {
+      return {system_error_status(ErrorCode::backend_failure, "failed to create pipe", errno), {}};
+    }
+
+    UinputPenTablet pen_tablet {descriptors[1]};
+    auto status = pen_tablet.place_tool(state);
+    if (status.ok()) {
+      status = pen_tablet.button(PenButton::primary, true);
+    }
+    if (status.ok()) {
+      status = pen_tablet.button(PenButton::primary, false);
+    }
+    static_cast<void>(pen_tablet.close());
+    auto records = read_input_events_until_eof(descriptors[0]);
+    static_cast<void>(::close(descriptors[0]));
+    return {std::move(status), std::move(records)};
+  }
+
   LinuxUhidRoundTripResult linux_uhid_socketpair_roundtrip() {
     LinuxUhidRoundTripResult result;
     int descriptors[2] {-1, -1};

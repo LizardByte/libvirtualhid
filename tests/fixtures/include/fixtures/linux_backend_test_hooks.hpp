@@ -346,6 +346,30 @@ namespace lvh::detail::test {
   LinuxInputSubmissionResult linux_uinput_mouse_submit_pipe(const MouseEvent &event);
 
   /**
+   * @brief Place and release a contact through a pipe-backed uinput touchscreen.
+   *
+   * @param contact Touch contact to place.
+   * @return Submission status and captured input events.
+   */
+  LinuxInputSubmissionResult linux_uinput_touchscreen_contact_pipe(const TouchContact &contact);
+
+  /**
+   * @brief Place, click, and release a contact through a pipe-backed uinput trackpad.
+   *
+   * @param contact Touch contact to place.
+   * @return Submission status and captured input events.
+   */
+  LinuxInputSubmissionResult linux_uinput_trackpad_contact_pipe(const TouchContact &contact);
+
+  /**
+   * @brief Submit a tool and button through a pipe-backed uinput pen tablet.
+   *
+   * @param state Pen tool state to place.
+   * @return Submission status and captured input events.
+   */
+  LinuxInputSubmissionResult linux_uinput_pen_tablet_tool_pipe(const PenToolState &state);
+
+  /**
    * @brief Exercise a UHID gamepad lifecycle over a socketpair.
    *
    * @return Round-trip result.

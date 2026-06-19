@@ -6,6 +6,7 @@
 // standard includes
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 // local includes
@@ -17,6 +18,10 @@ namespace lvh::profiles {
     constexpr std::size_t common_report_size = 14;
 
     constexpr std::size_t common_output_report_size = 5;
+
+    constexpr std::size_t dualsense_usb_input_report_size = 64;
+
+    constexpr std::size_t dualsense_usb_output_report_size = 48;
 
     std::vector<std::uint8_t> make_gamepad_report_descriptor(std::uint8_t report_id, bool supports_rumble) {
       std::vector<std::uint8_t> descriptor {
@@ -142,6 +147,285 @@ namespace lvh::profiles {
       return descriptor;
     }
 
+    std::vector<std::uint8_t> make_dualsense_usb_report_descriptor() {
+      // DualSense USB descriptor data is derived from the public reverse-engineered descriptor used by inputtino.
+      return {
+        0x05,
+        0x01,
+        0x09,
+        0x05,
+        0xA1,
+        0x01,
+        0x85,
+        0x01,
+        0x09,
+        0x30,
+        0x09,
+        0x31,
+        0x09,
+        0x32,
+        0x09,
+        0x35,
+        0x09,
+        0x33,
+        0x09,
+        0x34,
+        0x15,
+        0x00,
+        0x26,
+        0xFF,
+        0x00,
+        0x75,
+        0x08,
+        0x95,
+        0x06,
+        0x81,
+        0x02,
+        0x06,
+        0x00,
+        0xFF,
+        0x09,
+        0x20,
+        0x95,
+        0x01,
+        0x81,
+        0x02,
+        0x05,
+        0x01,
+        0x09,
+        0x39,
+        0x15,
+        0x00,
+        0x25,
+        0x07,
+        0x35,
+        0x00,
+        0x46,
+        0x3B,
+        0x01,
+        0x65,
+        0x14,
+        0x75,
+        0x04,
+        0x95,
+        0x01,
+        0x81,
+        0x42,
+        0x65,
+        0x00,
+        0x05,
+        0x09,
+        0x19,
+        0x01,
+        0x29,
+        0x0F,
+        0x15,
+        0x00,
+        0x25,
+        0x01,
+        0x75,
+        0x01,
+        0x95,
+        0x0F,
+        0x81,
+        0x02,
+        0x06,
+        0x00,
+        0xFF,
+        0x09,
+        0x21,
+        0x95,
+        0x0D,
+        0x81,
+        0x02,
+        0x06,
+        0x00,
+        0xFF,
+        0x09,
+        0x22,
+        0x15,
+        0x00,
+        0x26,
+        0xFF,
+        0x00,
+        0x75,
+        0x08,
+        0x95,
+        0x34,
+        0x81,
+        0x02,
+        0x85,
+        0x02,
+        0x09,
+        0x23,
+        0x95,
+        0x2F,
+        0x91,
+        0x02,
+        0x85,
+        0x05,
+        0x09,
+        0x33,
+        0x95,
+        0x28,
+        0xB1,
+        0x02,
+        0x85,
+        0x08,
+        0x09,
+        0x34,
+        0x95,
+        0x2F,
+        0xB1,
+        0x02,
+        0x85,
+        0x09,
+        0x09,
+        0x24,
+        0x95,
+        0x13,
+        0xB1,
+        0x02,
+        0x85,
+        0x0A,
+        0x09,
+        0x25,
+        0x95,
+        0x1A,
+        0xB1,
+        0x02,
+        0x85,
+        0x20,
+        0x09,
+        0x26,
+        0x95,
+        0x3F,
+        0xB1,
+        0x02,
+        0x85,
+        0x21,
+        0x09,
+        0x27,
+        0x95,
+        0x04,
+        0xB1,
+        0x02,
+        0x85,
+        0x22,
+        0x09,
+        0x40,
+        0x95,
+        0x3F,
+        0xB1,
+        0x02,
+        0x85,
+        0x80,
+        0x09,
+        0x28,
+        0x95,
+        0x3F,
+        0xB1,
+        0x02,
+        0x85,
+        0x81,
+        0x09,
+        0x29,
+        0x95,
+        0x3F,
+        0xB1,
+        0x02,
+        0x85,
+        0x82,
+        0x09,
+        0x2A,
+        0x95,
+        0x09,
+        0xB1,
+        0x02,
+        0x85,
+        0x83,
+        0x09,
+        0x2B,
+        0x95,
+        0x3F,
+        0xB1,
+        0x02,
+        0x85,
+        0x84,
+        0x09,
+        0x2C,
+        0x95,
+        0x3F,
+        0xB1,
+        0x02,
+        0x85,
+        0x85,
+        0x09,
+        0x2D,
+        0x95,
+        0x02,
+        0xB1,
+        0x02,
+        0x85,
+        0xA0,
+        0x09,
+        0x2E,
+        0x95,
+        0x01,
+        0xB1,
+        0x02,
+        0x85,
+        0xE0,
+        0x09,
+        0x2F,
+        0x95,
+        0x3F,
+        0xB1,
+        0x02,
+        0x85,
+        0xF0,
+        0x09,
+        0x30,
+        0x95,
+        0x3F,
+        0xB1,
+        0x02,
+        0x85,
+        0xF1,
+        0x09,
+        0x31,
+        0x95,
+        0x3F,
+        0xB1,
+        0x02,
+        0x85,
+        0xF2,
+        0x09,
+        0x32,
+        0x95,
+        0x0F,
+        0xB1,
+        0x02,
+        0x85,
+        0xF4,
+        0x09,
+        0x35,
+        0x95,
+        0x3F,
+        0xB1,
+        0x02,
+        0x85,
+        0xF5,
+        0x09,
+        0x36,
+        0x95,
+        0x03,
+        0xB1,
+        0x02,
+        0xC0,
+      };
+    }
+
     DeviceProfile make_gamepad_profile(
       GamepadProfileKind kind,
       std::string name,
@@ -166,6 +450,31 @@ namespace lvh::profiles {
       profile.manufacturer = "LizardByte";
       profile.capabilities = capabilities;
       profile.report_descriptor = make_gamepad_report_descriptor(profile.report_id, profile.capabilities.supports_rumble);
+      return profile;
+    }
+
+    DeviceProfile make_dualsense_profile(BusType bus_type) {
+      DeviceProfile profile;
+      profile.device_type = DeviceType::gamepad;
+      profile.gamepad_kind = GamepadProfileKind::dualsense;
+      profile.bus_type = bus_type;
+      profile.vendor_id = 0x054C;
+      profile.product_id = 0x0CE6;
+      profile.version = 0x8111;
+      profile.report_id = 1;
+      profile.input_report_size = dualsense_usb_input_report_size;
+      profile.output_report_size = dualsense_usb_output_report_size;
+      profile.name = "DualSense Wireless Controller";
+      profile.manufacturer = "Sony Interactive Entertainment";
+      profile.capabilities = {
+        .supports_rumble = true,
+        .supports_motion = true,
+        .supports_touchpad = true,
+        .supports_rgb_led = true,
+        .supports_battery = true,
+        .supports_adaptive_triggers = true,
+      };
+      profile.report_descriptor = make_dualsense_usb_report_descriptor();
       return profile;
     }
 
@@ -228,21 +537,17 @@ namespace lvh::profiles {
   }
 
   DeviceProfile dualsense() {
-    return make_gamepad_profile(
-      GamepadProfileKind::dualsense,
-      "DualSense Wireless Controller",
-      0x054C,
-      0x0CE6,
-      0x8111,
-      {
-        .supports_rumble = true,
-        .supports_motion = true,
-        .supports_touchpad = true,
-        .supports_rgb_led = true,
-        .supports_battery = true,
-        .supports_adaptive_triggers = true,
-      }
-    );
+    return dualsense_usb();
+  }
+
+  DeviceProfile dualsense_usb() {
+    return make_dualsense_profile(BusType::usb);
+  }
+
+  DeviceProfile dualsense_bluetooth() {
+    auto profile = make_dualsense_profile(BusType::bluetooth);
+    profile.name = "DualSense Wireless Controller";
+    return profile;
   }
 
   DeviceProfile switch_pro() {
@@ -262,6 +567,18 @@ namespace lvh::profiles {
 
   DeviceProfile mouse() {
     return make_simple_profile(DeviceType::mouse, "libvirtualhid Mouse", 0x0003);
+  }
+
+  DeviceProfile touchscreen() {
+    return make_simple_profile(DeviceType::touchscreen, "libvirtualhid Touchscreen", 0x0004);
+  }
+
+  DeviceProfile trackpad() {
+    return make_simple_profile(DeviceType::trackpad, "libvirtualhid Trackpad", 0x0005);
+  }
+
+  DeviceProfile pen_tablet() {
+    return make_simple_profile(DeviceType::pen_tablet, "libvirtualhid Pen Tablet", 0x0006);
   }
 
   std::optional<DeviceProfile> gamepad_profile(GamepadProfileKind kind) {

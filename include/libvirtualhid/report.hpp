@@ -79,4 +79,13 @@ namespace lvh::reports {
    */
   GamepadOutput parse_output_report(const DeviceProfile &profile, const std::vector<std::uint8_t> &report);
 
+  /**
+   * @brief Parse a backend output report into zero or more profile-neutral output events.
+   *
+   * @param profile Device profile used for report identity and capabilities.
+   * @param report Raw HID output report bytes.
+   * @return Parsed gamepad outputs. Unrecognized reports are returned as one raw-report event.
+   */
+  std::vector<GamepadOutput> parse_output_reports(const DeviceProfile &profile, const std::vector<std::uint8_t> &report);
+
 }  // namespace lvh::reports

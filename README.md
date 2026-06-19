@@ -212,8 +212,13 @@ Expected core types:
 - `Keyboard`: key press/release and UTF-8 text submission.
 - `Mouse`: relative motion, absolute motion, button, vertical scroll, and
   horizontal scroll submission.
+- `Touchscreen`: direct multi-touch contacts for touch displays.
+- `Trackpad`: indirect multi-touch contacts and click state for touchpads.
+- `PenTablet`: tablet tool, pressure, distance, tilt, and pen button state.
 - `DeviceProfile`: VID/PID, product strings, bus type, HID descriptor, report
   layout, and platform capability metadata.
+- `DeviceNode`: platform-reported device nodes and sysfs paths for consumers
+  that must hand created devices to SDL, libinput, HIDAPI, or diagnostics.
 - `GamepadState`: normalized buttons, axes, triggers, hats, motion sensors, and
   optional touchpad data.
 - `GamepadOutput`: normalized rumble, haptics, LEDs, adaptive triggers, and raw
@@ -247,10 +252,21 @@ the requirements expressed in terms that apply to other consumers:
 - [x] Keyboard and mouse APIs should map cleanly to common relative mouse,
   absolute mouse, buttons, scroll, horizontal scroll, keyboard scancode, and
   Unicode paths.
+- [ ] Linux keyboard support must include configurable auto-repeat for held keys
+  so streaming hosts can preserve input behavior previously covered by
+  inputtino.
+- [ ] Linux devices must expose created device nodes and relevant sysfs paths
+  for consumers and diagnostics that need to inspect or pass those paths onward.
 - [x] Linux fallback behavior should match streaming-host operational
   expectations:
   prefer real virtual devices through `uhid`/`uinput`; only use XTest for
   keyboard/mouse when virtual device creation fails and X11 is available.
+- [ ] Linux gamepad support must reach inputtino parity before replacement:
+  real DualSense UHID descriptors, GET_REPORT replies, periodic input reports,
+  touchpad, motion, battery, RGB LED, adaptive trigger callbacks, CRC handling,
+  and uinput force-feedback handling where a uinput gamepad path is used.
+- [ ] Linux pointer support must cover touchscreen, trackpad, and pen tablet
+  virtual devices with libinput-observable behavior.
 - [x] The library must not own a consumer's network protocol, client packet
   parsing, configuration system, or feedback queue. It should expose the device
   primitives consumers need to keep that ownership in their applications.
@@ -326,6 +342,31 @@ third-party/googletest/       GoogleTest submodule
 - [x] Add examples and integration tests that validate virtual device visibility
   through SDL2 for gamepads and libinput for keyboard/mouse.
 - [x] Document required Linux permissions and sample udev rules.
+
+### Phase 2B: Linux inputtino Parity
+
+- [ ] Replace the generic DualSense profile behavior with a real UHID DualSense
+  backend path, including USB/Bluetooth descriptors, MAC/uniq identity,
+  calibration, pairing, firmware, CRC, and periodic report handling.
+- [ ] Add DualSense input state for motion sensors, touchpad contacts, battery
+  state, and profile-specific buttons without leaking Linux-specific details
+  into consumers.
+- [ ] Parse DualSense output reports into rumble, RGB LED, adaptive trigger, and
+  raw-report callbacks.
+- [ ] Expose created device nodes and sysfs paths through the platform-neutral
+  public API.
+- [ ] Add configurable keyboard auto-repeat for held keys.
+- [ ] Add touchscreen, trackpad, and pen tablet public device types and Linux
+  uinput/libevdev backend implementations.
+- [ ] Add uinput force-feedback event handling for any uinput-backed gamepad
+  path, including uploaded effect tracking and gain handling.
+- [ ] Prefer libevdev for uinput device construction where it removes fragile
+  direct ioctl setup, while keeping the public API unchanged.
+- [ ] Expand Linux consumer tests so SDL2 validates controller-specific behavior
+  and libinput validates keyboard, mouse, touchscreen, trackpad, and pen tablet
+  events.
+- [ ] Defer C, Python, and Rust bindings until after the platform API is stable,
+  likely after macOS support lands.
 
 ### Phase 3: Windows MVP
 

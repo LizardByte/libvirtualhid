@@ -68,6 +68,64 @@ namespace lvh::detail {
     };
 
     /**
+     * @brief In-memory touchscreen backend used for portable tests.
+     */
+    class FakeTouchscreen final: public BackendTouchscreen {
+    public:
+      OperationStatus place_contact(const TouchContact & /*contact*/) override {
+        return OperationStatus::success();
+      }
+
+      OperationStatus release_contact(std::int32_t /*contact_id*/) override {
+        return OperationStatus::success();
+      }
+
+      OperationStatus close() override {
+        return OperationStatus::success();
+      }
+    };
+
+    /**
+     * @brief In-memory trackpad backend used for portable tests.
+     */
+    class FakeTrackpad final: public BackendTrackpad {
+    public:
+      OperationStatus place_contact(const TouchContact & /*contact*/) override {
+        return OperationStatus::success();
+      }
+
+      OperationStatus release_contact(std::int32_t /*contact_id*/) override {
+        return OperationStatus::success();
+      }
+
+      OperationStatus button(bool /*pressed*/) override {
+        return OperationStatus::success();
+      }
+
+      OperationStatus close() override {
+        return OperationStatus::success();
+      }
+    };
+
+    /**
+     * @brief In-memory pen tablet backend used for portable tests.
+     */
+    class FakePenTablet final: public BackendPenTablet {
+    public:
+      OperationStatus place_tool(const PenToolState & /*state*/) override {
+        return OperationStatus::success();
+      }
+
+      OperationStatus button(PenButton /*button*/, bool /*pressed*/) override {
+        return OperationStatus::success();
+      }
+
+      OperationStatus close() override {
+        return OperationStatus::success();
+      }
+    };
+
+    /**
      * @brief In-memory backend used by default for API validation.
      */
     class FakeBackend final: public Backend {
@@ -77,6 +135,9 @@ namespace lvh::detail {
         capabilities_.supports_gamepad = true;
         capabilities_.supports_keyboard = true;
         capabilities_.supports_mouse = true;
+        capabilities_.supports_touchscreen = true;
+        capabilities_.supports_trackpad = true;
+        capabilities_.supports_pen_tablet = true;
         capabilities_.supports_output_reports = true;
       }
 
@@ -97,6 +158,24 @@ namespace lvh::detail {
 
       BackendMouseCreationResult create_mouse(DeviceId /*id*/, const CreateMouseOptions & /*options*/) override {
         return {OperationStatus::success(), std::make_unique<FakeMouse>()};
+      }
+
+      BackendTouchscreenCreationResult create_touchscreen(
+        DeviceId /*id*/,
+        const CreateTouchscreenOptions & /*options*/
+      ) override {
+        return {OperationStatus::success(), std::make_unique<FakeTouchscreen>()};
+      }
+
+      BackendTrackpadCreationResult create_trackpad(DeviceId /*id*/, const CreateTrackpadOptions & /*options*/) override {
+        return {OperationStatus::success(), std::make_unique<FakeTrackpad>()};
+      }
+
+      BackendPenTabletCreationResult create_pen_tablet(
+        DeviceId /*id*/,
+        const CreatePenTabletOptions & /*options*/
+      ) override {
+        return {OperationStatus::success(), std::make_unique<FakePenTablet>()};
       }
 
     private:

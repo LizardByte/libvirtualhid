@@ -12,9 +12,15 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <iomanip>
+#include <map>
 #include <memory>
 #include <mutex>
+#include <numbers>
+#include <optional>
+#include <set>
 #include <sstream>
 #include <string>
 #include <system_error>
@@ -53,6 +59,13 @@ namespace lvh::detail {
     constexpr auto uhid_path = "/dev/uhid";
     constexpr auto uinput_path = "/dev/uinput";
     constexpr auto absolute_axis_max = 65535;
+    constexpr auto touch_axis_max_x = 19200;
+    constexpr auto touch_axis_max_y = 10800;
+    constexpr auto touch_max_contacts = 16;
+    constexpr auto touch_pressure_max = 253;
+    constexpr auto tablet_pressure_max = 4096;
+    constexpr auto tablet_distance_max = 1024;
+    constexpr auto tablet_resolution = 28;
     constexpr auto poll_timeout_ms = 100;
 
     int system_access(const char *path, int mode) {
@@ -122,6 +135,84 @@ namespace lvh::detail {
       const auto length = std::min(source.size(), Size - 1);
       std::memcpy(destination, source.data(), length);
       destination[length] = 0;
+    }
+
+    std::optional<std::string> read_first_line(const std::filesystem::path &path) {
+      std::ifstream file {path};
+      if (!file) {
+        return std::nullopt;
+      }
+
+      std::string line;
+      std::getline(file, line);
+      return line;
+    }
+
+    void append_node(std::vector<DeviceNode> &nodes, DeviceNodeKind kind, const std::filesystem::path &path) {
+      nodes.push_back({.kind = kind, .path = path.string()});
+    }
+
+    bool hidraw_name_matches(const std::filesystem::path &uevent_path, const std::string &name) {
+      std::ifstream file {uevent_path};
+      if (!file) {
+        return false;
+      }
+
+      std::string line;
+      while (std::getline(file, line)) {
+        constexpr auto key = "HID_NAME=";
+        if (line.starts_with(key)) {
+          return line.substr(std::char_traits<char>::length(key)) == name;
+        }
+      }
+
+      return false;
+    }
+
+    std::vector<DeviceNode> discover_input_nodes_by_name(const std::string &name) {
+      std::vector<DeviceNode> nodes;
+      if (name.empty()) {
+        return nodes;
+      }
+
+      std::error_code error;
+      const std::filesystem::path input_root {"/sys/class/input"};
+      if (std::filesystem::exists(input_root, error)) {
+        for (std::filesystem::directory_iterator it {input_root, error}, end; !error && it != end; it.increment(error)) {
+          const auto filename = it->path().filename().string();
+          const auto is_event_node = filename.starts_with("event");
+          const auto is_joystick_node = filename.starts_with("js");
+          if (!is_event_node && !is_joystick_node) {
+            continue;
+          }
+
+          const auto sysfs_name = read_first_line(it->path() / "device" / "name");
+          if (!sysfs_name || *sysfs_name != name) {
+            continue;
+          }
+
+          append_node(
+            nodes,
+            is_event_node ? DeviceNodeKind::input_event : DeviceNodeKind::joystick,
+            std::filesystem::path {"/dev/input"} / it->path().filename()
+          );
+          append_node(nodes, DeviceNodeKind::sysfs, it->path());
+        }
+      }
+
+      const std::filesystem::path hidraw_root {"/sys/class/hidraw"};
+      if (std::filesystem::exists(hidraw_root, error)) {
+        for (std::filesystem::directory_iterator it {hidraw_root, error}, end; !error && it != end; it.increment(error)) {
+          if (!hidraw_name_matches(it->path() / "device" / "uevent", name)) {
+            continue;
+          }
+
+          append_node(nodes, DeviceNodeKind::hidraw, std::filesystem::path {"/dev"} / it->path().filename());
+          append_node(nodes, DeviceNodeKind::sysfs, it->path());
+        }
+      }
+
+      return nodes;
     }
 
     OperationStatus ioctl_status(const std::string &operation) {
@@ -351,6 +442,19 @@ namespace lvh::detail {
       return static_cast<int>(numerator / limit);
     }
 
+    int scale_normalized_axis(float value, int maximum) {
+      return static_cast<int>(std::lround(std::clamp(value, 0.0F, 1.0F) * static_cast<float>(maximum)));
+    }
+
+    int clamp_degrees(std::int32_t value) {
+      return std::clamp(value, -90, 90);
+    }
+
+    int tablet_tilt_units(float degrees) {
+      const auto radians = std::clamp(degrees, -90.0F, 90.0F) * static_cast<float>(std::numbers::pi) / 180.0F;
+      return static_cast<int>(std::lround(radians * tablet_resolution));
+    }
+
     std::vector<std::uint32_t> decode_utf8(const std::string &text) {
       std::vector<std::uint32_t> codepoints;
       for (std::size_t i = 0; i < text.size();) {
@@ -506,6 +610,52 @@ namespace lvh::detail {
       std::mutex write_mutex_;
     };
 
+    void configure_absinfo(
+      uinput_user_dev &device,
+      int code,
+      int minimum,
+      int maximum,
+      int fuzz = 0,
+      int flat = 0
+    ) {
+      device.absmin[code] = minimum;
+      device.absmax[code] = maximum;
+      device.absfuzz[code] = fuzz;
+      device.absflat[code] = flat;
+    }
+
+    void configure_uinput_absinfo(uinput_user_dev &device, DeviceType device_type) {
+      switch (device_type) {
+        case DeviceType::mouse:
+          configure_absinfo(device, ABS_X, 0, absolute_axis_max);
+          configure_absinfo(device, ABS_Y, 0, absolute_axis_max);
+          break;
+        case DeviceType::touchscreen:
+        case DeviceType::trackpad:
+          configure_absinfo(device, ABS_MT_SLOT, 0, touch_max_contacts - 1);
+          configure_absinfo(device, ABS_X, 0, touch_axis_max_x);
+          configure_absinfo(device, ABS_Y, 0, touch_axis_max_y);
+          configure_absinfo(device, ABS_MT_POSITION_X, 0, touch_axis_max_x);
+          configure_absinfo(device, ABS_MT_POSITION_Y, 0, touch_axis_max_y);
+          configure_absinfo(device, ABS_MT_TRACKING_ID, 0, 65535);
+          configure_absinfo(device, ABS_PRESSURE, 0, touch_pressure_max);
+          configure_absinfo(device, ABS_MT_PRESSURE, 0, touch_pressure_max);
+          configure_absinfo(device, ABS_MT_ORIENTATION, -90, 90);
+          break;
+        case DeviceType::pen_tablet:
+          configure_absinfo(device, ABS_X, 0, touch_axis_max_x, 1);
+          configure_absinfo(device, ABS_Y, 0, touch_axis_max_y, 1);
+          configure_absinfo(device, ABS_PRESSURE, 0, tablet_pressure_max);
+          configure_absinfo(device, ABS_DISTANCE, 0, tablet_distance_max);
+          configure_absinfo(device, ABS_TILT_X, -90, 90);
+          configure_absinfo(device, ABS_TILT_Y, -90, 90);
+          break;
+        case DeviceType::gamepad:
+        case DeviceType::keyboard:
+          break;
+      }
+    }
+
     OperationStatus write_uinput_user_device(int fd, const DeviceProfile &profile, DeviceId id) {
       uinput_user_dev device {};
       copy_string(device.name, profile.name);
@@ -513,14 +663,7 @@ namespace lvh::detail {
       device.id.vendor = profile.vendor_id;
       device.id.product = profile.product_id;
       device.id.version = profile.version;
-      device.absmin[ABS_X] = 0;
-      device.absmax[ABS_X] = absolute_axis_max;
-      device.absmin[ABS_Y] = 0;
-      device.absmax[ABS_Y] = absolute_axis_max;
-      device.absfuzz[ABS_X] = 0;
-      device.absfuzz[ABS_Y] = 0;
-      device.absflat[ABS_X] = 0;
-      device.absflat[ABS_Y] = 0;
+      configure_uinput_absinfo(device, profile.device_type);
 
       const auto result = system_write(fd, &device, sizeof(device));
       if (result < 0) {
@@ -604,6 +747,95 @@ namespace lvh::detail {
       return OperationStatus::success();
     }
 
+    OperationStatus enable_uinput_property(int fd, int property, const std::string &description) {
+#if defined(UI_SET_PROPBIT)
+      if (system_ioctl(fd, UI_SET_PROPBIT, static_cast<unsigned long>(property)) < 0) {
+        return ioctl_status("failed to enable uinput property " + description);
+      }
+#else
+      static_cast<void>(fd);
+      static_cast<void>(property);
+      static_cast<void>(description);
+#endif
+
+      return OperationStatus::success();
+    }
+
+    OperationStatus enable_uinput_touch_axes(int fd) {
+      if (system_ioctl(fd, UI_SET_EVBIT, EV_KEY) < 0) {
+        return ioctl_status("failed to enable uinput touch key events");
+      }
+      if (system_ioctl(fd, UI_SET_EVBIT, EV_ABS) < 0) {
+        return ioctl_status("failed to enable uinput touch absolute events");
+      }
+
+      for (const auto code : {ABS_MT_SLOT, ABS_X, ABS_Y, ABS_MT_POSITION_X, ABS_MT_POSITION_Y, ABS_MT_TRACKING_ID, ABS_PRESSURE, ABS_MT_PRESSURE, ABS_MT_ORIENTATION}) {
+        if (system_ioctl(fd, UI_SET_ABSBIT, code) < 0) {
+          return ioctl_status("failed to enable uinput touch absolute axis " + std::to_string(code));
+        }
+      }
+
+      if (system_ioctl(fd, UI_SET_KEYBIT, BTN_TOUCH) < 0) {
+        return ioctl_status("failed to enable uinput touch button");
+      }
+
+      return OperationStatus::success();
+    }
+
+    OperationStatus enable_uinput_touchscreen(int fd) {
+      if (const auto status = enable_uinput_touch_axes(fd); !status.ok()) {
+        return status;
+      }
+      return enable_uinput_property(fd, INPUT_PROP_DIRECT, "direct touch");
+    }
+
+    OperationStatus enable_uinput_trackpad(int fd) {
+      if (const auto status = enable_uinput_touch_axes(fd); !status.ok()) {
+        return status;
+      }
+
+      for (const auto button : {BTN_LEFT, BTN_TOOL_FINGER, BTN_TOOL_DOUBLETAP, BTN_TOOL_TRIPLETAP, BTN_TOOL_QUADTAP, BTN_TOOL_QUINTTAP}) {
+        if (system_ioctl(fd, UI_SET_KEYBIT, button) < 0) {
+          return ioctl_status("failed to enable uinput trackpad button " + std::to_string(button));
+        }
+      }
+
+      if (const auto status = enable_uinput_property(fd, INPUT_PROP_POINTER, "pointer"); !status.ok()) {
+        return status;
+      }
+      return enable_uinput_property(fd, INPUT_PROP_BUTTONPAD, "buttonpad");
+    }
+
+    OperationStatus enable_uinput_pen_tablet(int fd) {
+      if (system_ioctl(fd, UI_SET_EVBIT, EV_KEY) < 0) {
+        return ioctl_status("failed to enable uinput pen tablet key events");
+      }
+      if (system_ioctl(fd, UI_SET_EVBIT, EV_ABS) < 0) {
+        return ioctl_status("failed to enable uinput pen tablet absolute events");
+      }
+
+      std::vector<int> buttons {BTN_TOUCH, BTN_STYLUS, BTN_STYLUS2, BTN_TOOL_PEN, BTN_TOOL_RUBBER, BTN_TOOL_BRUSH, BTN_TOOL_PENCIL, BTN_TOOL_AIRBRUSH};
+#if defined(BTN_STYLUS3)
+      buttons.push_back(BTN_STYLUS3);
+#endif
+      for (const auto button : buttons) {
+        if (system_ioctl(fd, UI_SET_KEYBIT, button) < 0) {
+          return ioctl_status("failed to enable uinput pen tablet button " + std::to_string(button));
+        }
+      }
+
+      for (const auto code : {ABS_X, ABS_Y, ABS_PRESSURE, ABS_DISTANCE, ABS_TILT_X, ABS_TILT_Y}) {
+        if (system_ioctl(fd, UI_SET_ABSBIT, code) < 0) {
+          return ioctl_status("failed to enable uinput pen tablet absolute axis " + std::to_string(code));
+        }
+      }
+
+      if (const auto status = enable_uinput_property(fd, INPUT_PROP_POINTER, "tablet pointer"); !status.ok()) {
+        return status;
+      }
+      return enable_uinput_property(fd, INPUT_PROP_DIRECT, "tablet direct");
+    }
+
     /**
      * @brief Backend keyboard backed by one Linux uinput file descriptor.
      */
@@ -620,7 +852,12 @@ namespace lvh::detail {
         if (const auto status = enable_uinput_keyboard(file_descriptor()); !status.ok()) {
           return status;
         }
-        return write_uinput_user_device(file_descriptor(), options.profile, id);
+        device_name_ = options.profile.name;
+        auto status = write_uinput_user_device(file_descriptor(), options.profile, id);
+        if (status.ok() && options.auto_repeat_interval_ms > 0) {
+          start_repeat_thread(options.auto_repeat_interval_ms);
+        }
+        return status;
       }
 
       OperationStatus submit(const KeyboardEvent &event) override {
@@ -628,15 +865,11 @@ namespace lvh::detail {
           return OperationStatus::failure(ErrorCode::device_closed, "uinput keyboard is closed");
         }
 
-        const auto linux_key = key_code_to_linux(event.key_code);
-        if (linux_key < 0) {
-          return OperationStatus::failure(ErrorCode::invalid_argument, "keyboard key code is not supported by the Linux backend");
+        auto status = emit_keyboard_event(event);
+        if (status.ok()) {
+          update_pressed_keys(event);
         }
-
-        if (const auto status = emit_event(EV_KEY, static_cast<std::uint16_t>(linux_key), event.pressed ? 1 : 0); !status.ok()) {
-          return status;
-        }
-        return sync();
+        return status;
       }
 
       OperationStatus type_text(const KeyboardTextEvent &event) override {
@@ -684,8 +917,72 @@ namespace lvh::detail {
       }
 
       OperationStatus close() override {
+        stop_repeat_thread();
         return close_uinput("uinput keyboard");
       }
+
+      std::vector<DeviceNode> device_nodes() const override {
+        return discover_input_nodes_by_name(device_name_);
+      }
+
+    private:
+      OperationStatus emit_keyboard_event(const KeyboardEvent &event) {
+        const auto linux_key = key_code_to_linux(event.key_code);
+        if (linux_key < 0) {
+          return OperationStatus::failure(ErrorCode::invalid_argument, "keyboard key code is not supported by the Linux backend");
+        }
+
+        if (const auto status = emit_event(EV_KEY, static_cast<std::uint16_t>(linux_key), event.pressed ? 1 : 0); !status.ok()) {
+          return status;
+        }
+        return sync();
+      }
+
+      void update_pressed_keys(const KeyboardEvent &event) {
+        std::lock_guard lock {pressed_keys_mutex_};
+        if (event.pressed) {
+          pressed_keys_.insert(event.key_code);
+        } else {
+          pressed_keys_.erase(event.key_code);
+        }
+      }
+
+      std::vector<KeyboardKeyCode> pressed_keys_snapshot() const {
+        std::lock_guard lock {pressed_keys_mutex_};
+        return {pressed_keys_.begin(), pressed_keys_.end()};
+      }
+
+      void start_repeat_thread(std::uint32_t interval_ms) {
+        repeat_running_ = true;
+        repeat_thread_ = std::thread {[this, interval_ms]() {
+          while (repeat_running_) {
+            std::this_thread::sleep_for(std::chrono::milliseconds {interval_ms});
+            if (!repeat_running_ || !is_open()) {
+              break;
+            }
+
+            for (const auto key_code : pressed_keys_snapshot()) {
+              if (!repeat_running_ || !is_open()) {
+                break;
+              }
+              static_cast<void>(emit_keyboard_event({.key_code = key_code, .pressed = true}));
+            }
+          }
+        }};
+      }
+
+      void stop_repeat_thread() {
+        repeat_running_ = false;
+        if (repeat_thread_.joinable()) {
+          repeat_thread_.join();
+        }
+      }
+
+      std::string device_name_;
+      std::atomic_bool repeat_running_ = false;
+      std::thread repeat_thread_;
+      mutable std::mutex pressed_keys_mutex_;
+      std::set<KeyboardKeyCode> pressed_keys_;
     };
 
     /**
@@ -704,6 +1001,7 @@ namespace lvh::detail {
         if (const auto status = enable_uinput_mouse(file_descriptor()); !status.ok()) {
           return status;
         }
+        device_name_ = options.profile.name;
         return write_uinput_user_device(file_descriptor(), options.profile, id);
       }
 
@@ -732,7 +1030,13 @@ namespace lvh::detail {
         return close_uinput("uinput mouse");
       }
 
+      std::vector<DeviceNode> device_nodes() const override {
+        return discover_input_nodes_by_name(device_name_);
+      }
+
     private:
+      std::string device_name_;
+
       OperationStatus submit_relative_motion(const MouseEvent &event) {
         if (event.x != 0) {
           if (const auto status = emit_event(EV_REL, REL_X, event.x); !status.ok()) {
@@ -789,6 +1093,408 @@ namespace lvh::detail {
 #endif
         return sync();
       }
+    };
+
+    /**
+     * @brief Shared stateful multitouch uinput device.
+     */
+    class UinputTouchDevice: private UinputDevice {
+    public:
+      explicit UinputTouchDevice(int file_descriptor):
+          UinputDevice {file_descriptor} {}
+
+      UinputTouchDevice(const UinputTouchDevice &) = delete;
+      UinputTouchDevice &operator=(const UinputTouchDevice &) = delete;
+      UinputTouchDevice(UinputTouchDevice &&) noexcept = delete;
+      UinputTouchDevice &operator=(UinputTouchDevice &&) noexcept = delete;
+
+      virtual ~UinputTouchDevice() = default;
+
+      OperationStatus close_touch_device(const std::string &description) {
+        return close_uinput(description);
+      }
+
+      std::vector<DeviceNode> touch_device_nodes() const {
+        return discover_input_nodes_by_name(device_name_);
+      }
+
+    protected:
+      int touch_file_descriptor() const {
+        return file_descriptor();
+      }
+
+      OperationStatus create_touch_device(DeviceId id, const DeviceProfile &profile) {
+        device_name_ = profile.name;
+        return write_uinput_user_device(file_descriptor(), profile, id);
+      }
+
+      OperationStatus place_touch_contact(const TouchContact &contact, bool update_trackpad_buttons) {
+        if (!is_open()) {
+          return OperationStatus::failure(ErrorCode::device_closed, "uinput touch device is closed");
+        }
+        if (contact.id < 0) {
+          return OperationStatus::failure(ErrorCode::invalid_argument, "touch contact id must not be negative");
+        }
+
+        const auto slot = slot_for_contact(contact.id);
+        if (!slot) {
+          return OperationStatus::failure(ErrorCode::invalid_argument, "too many active touch contacts");
+        }
+
+        if (const auto status = select_slot(*slot); !status.ok()) {
+          return status;
+        }
+        if (new_slot_) {
+          if (const auto status = emit_event(EV_ABS, ABS_MT_TRACKING_ID, *slot); !status.ok()) {
+            return status;
+          }
+          new_slot_ = false;
+          if (update_trackpad_buttons) {
+            if (const auto status = emit_trackpad_tool_buttons(); !status.ok()) {
+              return status;
+            }
+          } else {
+            if (const auto status = emit_event(EV_KEY, BTN_TOUCH, 1); !status.ok()) {
+              return status;
+            }
+          }
+        }
+
+        const auto x = scale_normalized_axis(contact.x, touch_axis_max_x);
+        const auto y = scale_normalized_axis(contact.y, touch_axis_max_y);
+        const auto pressure = scale_normalized_axis(contact.pressure, touch_pressure_max);
+        if (const auto status = emit_event(EV_ABS, ABS_X, x); !status.ok()) {
+          return status;
+        }
+        if (const auto status = emit_event(EV_ABS, ABS_MT_POSITION_X, x); !status.ok()) {
+          return status;
+        }
+        if (const auto status = emit_event(EV_ABS, ABS_Y, y); !status.ok()) {
+          return status;
+        }
+        if (const auto status = emit_event(EV_ABS, ABS_MT_POSITION_Y, y); !status.ok()) {
+          return status;
+        }
+        if (const auto status = emit_event(EV_ABS, ABS_PRESSURE, pressure); !status.ok()) {
+          return status;
+        }
+        if (const auto status = emit_event(EV_ABS, ABS_MT_PRESSURE, pressure); !status.ok()) {
+          return status;
+        }
+        if (const auto status = emit_event(EV_ABS, ABS_MT_ORIENTATION, clamp_degrees(contact.orientation)); !status.ok()) {
+          return status;
+        }
+        return sync();
+      }
+
+      OperationStatus release_touch_contact(std::int32_t contact_id, bool update_trackpad_buttons) {
+        if (!is_open()) {
+          return OperationStatus::failure(ErrorCode::device_closed, "uinput touch device is closed");
+        }
+        const auto slot_it = contacts_.find(contact_id);
+        if (slot_it == contacts_.end()) {
+          return OperationStatus::success();
+        }
+
+        if (const auto status = select_slot(slot_it->second); !status.ok()) {
+          return status;
+        }
+        contacts_.erase(slot_it);
+        if (const auto status = emit_event(EV_ABS, ABS_MT_TRACKING_ID, -1); !status.ok()) {
+          return status;
+        }
+
+        if (update_trackpad_buttons) {
+          if (const auto status = emit_trackpad_tool_buttons(); !status.ok()) {
+            return status;
+          }
+        } else if (contacts_.empty()) {
+          if (const auto status = emit_event(EV_KEY, BTN_TOUCH, 0); !status.ok()) {
+            return status;
+          }
+        }
+
+        return sync();
+      }
+
+      OperationStatus emit_touch_button(bool pressed) {
+        if (!is_open()) {
+          return OperationStatus::failure(ErrorCode::device_closed, "uinput touch device is closed");
+        }
+        if (const auto status = emit_event(EV_KEY, BTN_LEFT, pressed ? 1 : 0); !status.ok()) {
+          return status;
+        }
+        return sync();
+      }
+
+    private:
+      std::optional<int> slot_for_contact(std::int32_t contact_id) {
+        if (const auto it = contacts_.find(contact_id); it != contacts_.end()) {
+          new_slot_ = false;
+          return it->second;
+        }
+
+        for (auto slot = 0; slot < touch_max_contacts; ++slot) {
+          const auto used = std::any_of(contacts_.begin(), contacts_.end(), [slot](const auto &entry) {
+            return entry.second == slot;
+          });
+          if (!used) {
+            contacts_.emplace(contact_id, slot);
+            new_slot_ = true;
+            return slot;
+          }
+        }
+
+        return std::nullopt;
+      }
+
+      OperationStatus select_slot(int slot) {
+        if (current_slot_ == slot) {
+          return OperationStatus::success();
+        }
+        current_slot_ = slot;
+        return emit_event(EV_ABS, ABS_MT_SLOT, slot);
+      }
+
+      OperationStatus emit_trackpad_tool_buttons() {
+        const auto count = contacts_.size();
+        if (const auto status = emit_event(EV_KEY, BTN_TOUCH, count == 0 ? 0 : 1); !status.ok()) {
+          return status;
+        }
+        if (const auto status = emit_event(EV_KEY, BTN_TOOL_FINGER, count == 1 ? 1 : 0); !status.ok()) {
+          return status;
+        }
+        if (const auto status = emit_event(EV_KEY, BTN_TOOL_DOUBLETAP, count == 2 ? 1 : 0); !status.ok()) {
+          return status;
+        }
+        if (const auto status = emit_event(EV_KEY, BTN_TOOL_TRIPLETAP, count == 3 ? 1 : 0); !status.ok()) {
+          return status;
+        }
+        if (const auto status = emit_event(EV_KEY, BTN_TOOL_QUADTAP, count == 4 ? 1 : 0); !status.ok()) {
+          return status;
+        }
+        return emit_event(EV_KEY, BTN_TOOL_QUINTTAP, count >= 5 ? 1 : 0);
+      }
+
+      std::string device_name_;
+      std::map<std::int32_t, int> contacts_;
+      int current_slot_ = -1;
+      bool new_slot_ = false;
+    };
+
+    /**
+     * @brief Backend touchscreen backed by one Linux uinput file descriptor.
+     */
+    class UinputTouchscreen final: public BackendTouchscreen, private UinputTouchDevice {
+    public:
+      explicit UinputTouchscreen(int file_descriptor):
+          UinputTouchDevice {file_descriptor} {}
+
+      ~UinputTouchscreen() override {
+        static_cast<void>(close());
+      }
+
+      OperationStatus create(DeviceId id, const CreateTouchscreenOptions &options) {
+        if (const auto status = enable_uinput_touchscreen(touch_file_descriptor()); !status.ok()) {
+          return status;
+        }
+        return create_touch_device(id, options.profile);
+      }
+
+      OperationStatus place_contact(const TouchContact &contact) override {
+        return place_touch_contact(contact, false);
+      }
+
+      OperationStatus release_contact(std::int32_t contact_id) override {
+        return release_touch_contact(contact_id, false);
+      }
+
+      OperationStatus close() override {
+        return close_touch_device("uinput touchscreen");
+      }
+
+      std::vector<DeviceNode> device_nodes() const override {
+        return touch_device_nodes();
+      }
+    };
+
+    /**
+     * @brief Backend trackpad backed by one Linux uinput file descriptor.
+     */
+    class UinputTrackpad final: public BackendTrackpad, private UinputTouchDevice {
+    public:
+      explicit UinputTrackpad(int file_descriptor):
+          UinputTouchDevice {file_descriptor} {}
+
+      ~UinputTrackpad() override {
+        static_cast<void>(close());
+      }
+
+      OperationStatus create(DeviceId id, const CreateTrackpadOptions &options) {
+        if (const auto status = enable_uinput_trackpad(touch_file_descriptor()); !status.ok()) {
+          return status;
+        }
+        return create_touch_device(id, options.profile);
+      }
+
+      OperationStatus place_contact(const TouchContact &contact) override {
+        return place_touch_contact(contact, true);
+      }
+
+      OperationStatus release_contact(std::int32_t contact_id) override {
+        return release_touch_contact(contact_id, true);
+      }
+
+      OperationStatus button(bool pressed) override {
+        return emit_touch_button(pressed);
+      }
+
+      OperationStatus close() override {
+        return close_touch_device("uinput trackpad");
+      }
+
+      std::vector<DeviceNode> device_nodes() const override {
+        return touch_device_nodes();
+      }
+    };
+
+    int pen_tool_to_linux(PenToolType tool) {
+      switch (tool) {
+        case PenToolType::pen:
+          return BTN_TOOL_PEN;
+        case PenToolType::eraser:
+          return BTN_TOOL_RUBBER;
+        case PenToolType::brush:
+          return BTN_TOOL_BRUSH;
+        case PenToolType::pencil:
+          return BTN_TOOL_PENCIL;
+        case PenToolType::airbrush:
+          return BTN_TOOL_AIRBRUSH;
+        case PenToolType::touch:
+          return BTN_TOUCH;
+        case PenToolType::unchanged:
+          return -1;
+      }
+
+      return -1;
+    }
+
+    int pen_button_to_linux(PenButton button) {
+      switch (button) {
+        case PenButton::primary:
+          return BTN_STYLUS;
+        case PenButton::secondary:
+          return BTN_STYLUS2;
+        case PenButton::tertiary:
+#if defined(BTN_STYLUS3)
+          return BTN_STYLUS3;
+#else
+          return BTN_STYLUS2;
+#endif
+      }
+
+      return BTN_STYLUS;
+    }
+
+    /**
+     * @brief Backend pen tablet backed by one Linux uinput file descriptor.
+     */
+    class UinputPenTablet final: public BackendPenTablet, private UinputDevice {
+    public:
+      explicit UinputPenTablet(int file_descriptor):
+          UinputDevice {file_descriptor} {}
+
+      ~UinputPenTablet() override {
+        static_cast<void>(close());
+      }
+
+      OperationStatus create(DeviceId id, const CreatePenTabletOptions &options) {
+        if (const auto status = enable_uinput_pen_tablet(file_descriptor()); !status.ok()) {
+          return status;
+        }
+        device_name_ = options.profile.name;
+        return write_uinput_user_device(file_descriptor(), options.profile, id);
+      }
+
+      OperationStatus place_tool(const PenToolState &state) override {
+        if (!is_open()) {
+          return OperationStatus::failure(ErrorCode::device_closed, "uinput pen tablet is closed");
+        }
+
+        if (state.tool != PenToolType::unchanged && state.tool != last_tool_) {
+          const auto tool_code = pen_tool_to_linux(state.tool);
+          if (tool_code >= 0) {
+            if (const auto status = emit_event(EV_KEY, static_cast<std::uint16_t>(tool_code), 1); !status.ok()) {
+              return status;
+            }
+          }
+          const auto last_tool_code = pen_tool_to_linux(last_tool_);
+          if (last_tool_code >= 0) {
+            if (const auto status = emit_event(EV_KEY, static_cast<std::uint16_t>(last_tool_code), 0); !status.ok()) {
+              return status;
+            }
+          }
+          last_tool_ = state.tool;
+        }
+
+        if (const auto status = emit_event(EV_ABS, ABS_X, scale_normalized_axis(state.x, touch_axis_max_x)); !status.ok()) {
+          return status;
+        }
+        if (const auto status = emit_event(EV_ABS, ABS_Y, scale_normalized_axis(state.y, touch_axis_max_y)); !status.ok()) {
+          return status;
+        }
+        if (state.pressure >= 0.0F) {
+          if (const auto status = emit_event(EV_ABS, ABS_PRESSURE, scale_normalized_axis(state.pressure, tablet_pressure_max)); !status.ok()) {
+            return status;
+          }
+          if (const auto status = emit_event(EV_ABS, ABS_DISTANCE, 0); !status.ok()) {
+            return status;
+          }
+          if (const auto status = emit_event(EV_KEY, BTN_TOUCH, state.pressure > 0.0F ? 1 : 0); !status.ok()) {
+            return status;
+          }
+        }
+        if (state.distance >= 0.0F) {
+          if (const auto status = emit_event(EV_ABS, ABS_DISTANCE, scale_normalized_axis(state.distance, tablet_distance_max)); !status.ok()) {
+            return status;
+          }
+          if (const auto status = emit_event(EV_ABS, ABS_PRESSURE, 0); !status.ok()) {
+            return status;
+          }
+          if (const auto status = emit_event(EV_KEY, BTN_TOUCH, 0); !status.ok()) {
+            return status;
+          }
+        }
+        if (const auto status = emit_event(EV_ABS, ABS_TILT_X, tablet_tilt_units(state.tilt_x)); !status.ok()) {
+          return status;
+        }
+        if (const auto status = emit_event(EV_ABS, ABS_TILT_Y, tablet_tilt_units(state.tilt_y)); !status.ok()) {
+          return status;
+        }
+        return sync();
+      }
+
+      OperationStatus button(PenButton button, bool pressed) override {
+        if (!is_open()) {
+          return OperationStatus::failure(ErrorCode::device_closed, "uinput pen tablet is closed");
+        }
+        if (const auto status = emit_event(EV_KEY, static_cast<std::uint16_t>(pen_button_to_linux(button)), pressed ? 1 : 0); !status.ok()) {
+          return status;
+        }
+        return sync();
+      }
+
+      OperationStatus close() override {
+        return close_uinput("uinput pen tablet");
+      }
+
+      std::vector<DeviceNode> device_nodes() const override {
+        return discover_input_nodes_by_name(device_name_);
+      }
+
+    private:
+      std::string device_name_;
+      PenToolType last_tool_ = PenToolType::unchanged;
     };
 
 #if defined(LIBVIRTUALHID_HAVE_XTEST)
@@ -1162,6 +1868,7 @@ namespace lvh::detail {
         request.version = options.profile.version;
         std::memcpy(request.rd_data, options.profile.report_descriptor.data(), options.profile.report_descriptor.size());
         profile_ = options.profile;
+        device_name_ = options.profile.name;
 
         if (const auto status = write_event(event); !status.ok()) {
           return status;
@@ -1193,6 +1900,10 @@ namespace lvh::detail {
       void set_output_callback(OutputCallback callback) override {
         std::lock_guard lock {callback_mutex_};
         output_callback_ = std::move(callback);
+      }
+
+      std::vector<DeviceNode> device_nodes() const override {
+        return discover_input_nodes_by_name(device_name_);
       }
 
       OperationStatus close() override {
@@ -1310,8 +2021,9 @@ namespace lvh::detail {
 
         const auto size = std::min<std::size_t>(report_size, UHID_DATA_MAX);
         std::vector<std::uint8_t> report(data, data + size);
-        auto output = reports::parse_output_report(profile_, report);
-        callback(output);
+        for (const auto &output : reports::parse_output_reports(profile_, report)) {
+          callback(output);
+        }
       }
 
       void send_get_report_reply(std::uint32_t id) {
@@ -1332,6 +2044,7 @@ namespace lvh::detail {
 
       int fd_ = -1;
       DeviceProfile profile_;
+      std::string device_name_;
       std::atomic_bool open_ = true;
       std::atomic_bool running_ = false;
       std::thread reader_;
@@ -1354,6 +2067,9 @@ namespace lvh::detail {
         capabilities_.supports_gamepad = uhid_accessible;
         capabilities_.supports_keyboard = uinput_accessible || xtest_accessible;
         capabilities_.supports_mouse = uinput_accessible || xtest_accessible;
+        capabilities_.supports_touchscreen = uinput_accessible;
+        capabilities_.supports_trackpad = uinput_accessible;
+        capabilities_.supports_pen_tablet = uinput_accessible;
         capabilities_.supports_output_reports = uhid_accessible;
         capabilities_.supports_xtest_fallback = xtest_accessible;
       }
@@ -1413,6 +2129,54 @@ namespace lvh::detail {
         }
 
         return {OperationStatus::success(), std::move(mouse)};
+      }
+
+      BackendTouchscreenCreationResult create_touchscreen(
+        DeviceId id,
+        const CreateTouchscreenOptions &options
+      ) override {
+        const auto fd = system_open(uinput_path, O_RDWR | O_CLOEXEC | O_NONBLOCK);
+        if (fd < 0) {
+          return {system_error_status(ErrorCode::backend_unavailable, "failed to open /dev/uinput", errno), nullptr};
+        }
+
+        auto touchscreen = std::make_unique<UinputTouchscreen>(fd);
+        if (const auto status = touchscreen->create(id, options); !status.ok()) {
+          static_cast<void>(touchscreen->close());
+          return {status, nullptr};
+        }
+
+        return {OperationStatus::success(), std::move(touchscreen)};
+      }
+
+      BackendTrackpadCreationResult create_trackpad(DeviceId id, const CreateTrackpadOptions &options) override {
+        const auto fd = system_open(uinput_path, O_RDWR | O_CLOEXEC | O_NONBLOCK);
+        if (fd < 0) {
+          return {system_error_status(ErrorCode::backend_unavailable, "failed to open /dev/uinput", errno), nullptr};
+        }
+
+        auto trackpad = std::make_unique<UinputTrackpad>(fd);
+        if (const auto status = trackpad->create(id, options); !status.ok()) {
+          static_cast<void>(trackpad->close());
+          return {status, nullptr};
+        }
+
+        return {OperationStatus::success(), std::move(trackpad)};
+      }
+
+      BackendPenTabletCreationResult create_pen_tablet(DeviceId id, const CreatePenTabletOptions &options) override {
+        const auto fd = system_open(uinput_path, O_RDWR | O_CLOEXEC | O_NONBLOCK);
+        if (fd < 0) {
+          return {system_error_status(ErrorCode::backend_unavailable, "failed to open /dev/uinput", errno), nullptr};
+        }
+
+        auto pen_tablet = std::make_unique<UinputPenTablet>(fd);
+        if (const auto status = pen_tablet->create(id, options); !status.ok()) {
+          static_cast<void>(pen_tablet->close());
+          return {status, nullptr};
+        }
+
+        return {OperationStatus::success(), std::move(pen_tablet)};
       }
 
     private:

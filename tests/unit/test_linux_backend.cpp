@@ -4,6 +4,7 @@
  */
 
 // standard includes
+#include <algorithm>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -319,6 +320,66 @@ TEST_F(LinuxBackendTest, PipeBackedUinputMouseEmitsEvents) {
   EXPECT_EQ(result.events[1].type, EV_SYN);
 }
 
+TEST_F(LinuxBackendTest, PipeBackedUinputTouchDevicesEmitEvents) {
+  const lvh::TouchContact contact {
+    .id = 7,
+    .x = 0.5F,
+    .y = 0.25F,
+    .pressure = 0.75F,
+    .orientation = 45,
+  };
+
+  auto result = lvh::detail::test::linux_uinput_touchscreen_contact_pipe(contact);
+  ASSERT_TRUE(result.status.ok()) << result.status.message();
+  ASSERT_GE(result.events.size(), 10U);
+  EXPECT_EQ(result.events[0].type, EV_ABS);
+  EXPECT_EQ(result.events[0].code, ABS_MT_SLOT);
+  EXPECT_EQ(result.events[1].type, EV_ABS);
+  EXPECT_EQ(result.events[1].code, ABS_MT_TRACKING_ID);
+  EXPECT_EQ(result.events[2].type, EV_KEY);
+  EXPECT_EQ(result.events[2].code, BTN_TOUCH);
+  EXPECT_EQ(result.events[2].value, 1);
+  EXPECT_EQ(result.events[3].type, EV_ABS);
+  EXPECT_EQ(result.events[3].code, ABS_X);
+  EXPECT_EQ(result.events[4].type, EV_ABS);
+  EXPECT_EQ(result.events[4].code, ABS_MT_POSITION_X);
+
+  result = lvh::detail::test::linux_uinput_trackpad_contact_pipe(contact);
+  ASSERT_TRUE(result.status.ok()) << result.status.message();
+  const auto saw_left_button = std::any_of(result.events.begin(), result.events.end(), [](const auto &event) {
+    return event.type == EV_KEY && event.code == BTN_LEFT && event.value == 1;
+  });
+  const auto saw_finger_tool = std::any_of(result.events.begin(), result.events.end(), [](const auto &event) {
+    return event.type == EV_KEY && event.code == BTN_TOOL_FINGER && event.value == 1;
+  });
+  EXPECT_TRUE(saw_left_button);
+  EXPECT_TRUE(saw_finger_tool);
+
+  const lvh::PenToolState tool {
+    .tool = lvh::PenToolType::pen,
+    .x = 0.25F,
+    .y = 0.5F,
+    .pressure = 0.5F,
+    .distance = -1.0F,
+    .tilt_x = 45.0F,
+    .tilt_y = -45.0F,
+  };
+  result = lvh::detail::test::linux_uinput_pen_tablet_tool_pipe(tool);
+  ASSERT_TRUE(result.status.ok()) << result.status.message();
+  const auto saw_pen_tool = std::any_of(result.events.begin(), result.events.end(), [](const auto &event) {
+    return event.type == EV_KEY && event.code == BTN_TOOL_PEN && event.value == 1;
+  });
+  const auto saw_pressure = std::any_of(result.events.begin(), result.events.end(), [](const auto &event) {
+    return event.type == EV_ABS && event.code == ABS_PRESSURE && event.value > 0;
+  });
+  const auto saw_stylus = std::any_of(result.events.begin(), result.events.end(), [](const auto &event) {
+    return event.type == EV_KEY && event.code == BTN_STYLUS && event.value == 1;
+  });
+  EXPECT_TRUE(saw_pen_tool);
+  EXPECT_TRUE(saw_pressure);
+  EXPECT_TRUE(saw_stylus);
+}
+
 TEST_F(LinuxBackendTest, SocketpairBackedUhidGamepadRoundTripsEvents) {
   const auto result = lvh::detail::test::linux_uhid_socketpair_roundtrip();
   EXPECT_TRUE(result.create_status.ok()) << result.create_status.message();
@@ -374,6 +435,9 @@ TEST_F(LinuxBackendTest, FakeLinuxBackendCreatesAllDeviceTypes) {
   EXPECT_TRUE(result.capabilities.supports_gamepad);
   EXPECT_TRUE(result.capabilities.supports_keyboard);
   EXPECT_TRUE(result.capabilities.supports_mouse);
+  EXPECT_TRUE(result.capabilities.supports_touchscreen);
+  EXPECT_TRUE(result.capabilities.supports_trackpad);
+  EXPECT_TRUE(result.capabilities.supports_pen_tablet);
   EXPECT_TRUE(result.capabilities.supports_output_reports);
   EXPECT_TRUE(result.gamepad_status.ok()) << result.gamepad_status.message();
   EXPECT_TRUE(result.gamepad_close_status.ok()) << result.gamepad_close_status.message();
@@ -477,6 +541,8 @@ TEST_F(LinuxBackendTest, PipeBackedUinputKeyboardEmitsEvents) {}
 TEST_F(LinuxBackendTest, HandlesUinputMouseInvalidFileDescriptorPaths) {}
 
 TEST_F(LinuxBackendTest, PipeBackedUinputMouseEmitsEvents) {}
+
+TEST_F(LinuxBackendTest, PipeBackedUinputTouchDevicesEmitEvents) {}
 
 TEST_F(LinuxBackendTest, SocketpairBackedUhidGamepadRoundTripsEvents) {}
 

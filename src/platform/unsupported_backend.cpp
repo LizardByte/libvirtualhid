@@ -40,6 +40,24 @@ namespace lvh::detail {
         return {OperationStatus::failure(ErrorCode::backend_unavailable, "platform backend is not implemented yet"), nullptr};
       }
 
+      BackendTouchscreenCreationResult create_touchscreen(
+        DeviceId /*id*/,
+        const CreateTouchscreenOptions & /*options*/
+      ) override {
+        return {OperationStatus::failure(ErrorCode::backend_unavailable, "platform backend is not implemented yet"), nullptr};
+      }
+
+      BackendTrackpadCreationResult create_trackpad(DeviceId /*id*/, const CreateTrackpadOptions & /*options*/) override {
+        return {OperationStatus::failure(ErrorCode::backend_unavailable, "platform backend is not implemented yet"), nullptr};
+      }
+
+      BackendPenTabletCreationResult create_pen_tablet(
+        DeviceId /*id*/,
+        const CreatePenTabletOptions & /*options*/
+      ) override {
+        return {OperationStatus::failure(ErrorCode::backend_unavailable, "platform backend is not implemented yet"), nullptr};
+      }
+
     private:
       BackendCapabilities capabilities_;
     };
