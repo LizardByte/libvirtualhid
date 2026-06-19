@@ -339,9 +339,16 @@ TEST_F(LinuxBackendTest, FakeLinuxBackendCreatesAllDeviceTypes) {
   const auto unavailable = lvh::detail::test::linux_backend_fake_unavailable_capabilities();
   EXPECT_FALSE(unavailable.supports_virtual_hid);
   EXPECT_FALSE(unavailable.supports_gamepad);
+  EXPECT_FALSE(unavailable.supports_output_reports);
+  #if defined(LIBVIRTUALHID_HAVE_XTEST)
+  EXPECT_TRUE(unavailable.supports_keyboard);
+  EXPECT_TRUE(unavailable.supports_mouse);
+  EXPECT_TRUE(unavailable.supports_xtest_fallback);
+  #else
   EXPECT_FALSE(unavailable.supports_keyboard);
   EXPECT_FALSE(unavailable.supports_mouse);
-  EXPECT_FALSE(unavailable.supports_output_reports);
+  EXPECT_FALSE(unavailable.supports_xtest_fallback);
+  #endif
 
   EXPECT_EQ(lvh::detail::test::linux_backend_gamepad_fake_open_failure().code(), lvh::ErrorCode::backend_unavailable);
   EXPECT_EQ(lvh::detail::test::linux_backend_gamepad_fake_create_failure().code(), lvh::ErrorCode::backend_failure);
