@@ -201,6 +201,111 @@ namespace lvh::detail::test {
   };
 
   /**
+   * @brief Event code recorded from a fake libevdev device definition.
+   */
+  struct LinuxLibevdevEventCode {
+    /**
+     * @brief Linux input event type.
+     */
+    std::uint32_t type = 0;
+
+    /**
+     * @brief Linux input event code.
+     */
+    std::uint32_t code = 0;
+
+    /**
+     * @brief Whether absolute axis metadata was supplied.
+     */
+    bool has_absinfo = false;
+
+    /**
+     * @brief Absolute axis minimum.
+     */
+    std::int32_t minimum = 0;
+
+    /**
+     * @brief Absolute axis maximum.
+     */
+    std::int32_t maximum = 0;
+
+    /**
+     * @brief Absolute axis fuzz.
+     */
+    std::int32_t fuzz = 0;
+
+    /**
+     * @brief Absolute axis flat.
+     */
+    std::int32_t flat = 0;
+
+    /**
+     * @brief Absolute axis resolution.
+     */
+    std::int32_t resolution = 0;
+  };
+
+  /**
+   * @brief Result from a fake libevdev uinput construction.
+   */
+  struct LinuxLibevdevCreationResult {
+    /**
+     * @brief Creation status.
+     */
+    OperationStatus status;
+
+    /**
+     * @brief Close status when creation succeeded.
+     */
+    OperationStatus close_status;
+
+    /**
+     * @brief Configured device name.
+     */
+    std::string name;
+
+    /**
+     * @brief Configured bus type.
+     */
+    std::uint16_t bustype = 0;
+
+    /**
+     * @brief Configured vendor id.
+     */
+    std::uint16_t vendor = 0;
+
+    /**
+     * @brief Configured product id.
+     */
+    std::uint16_t product = 0;
+
+    /**
+     * @brief Configured version.
+     */
+    std::uint16_t version = 0;
+
+    /**
+     * @brief Enabled Linux input event types.
+     */
+    std::vector<std::uint32_t> event_types;
+
+    /**
+     * @brief Enabled Linux input event codes.
+     */
+    std::vector<LinuxLibevdevEventCode> event_codes;
+
+    /**
+     * @brief Enabled Linux input properties.
+     */
+    std::vector<std::uint32_t> properties;
+
+    /**
+     * @brief Number of fake libevdev uinput handles destroyed.
+     */
+    std::size_t destroy_count = 0;
+  };
+
+  /**
    * @brief Copy into a fixed-size Linux char buffer using the backend string helper.
    *
    * @param source Source string.
@@ -437,16 +542,16 @@ namespace lvh::detail::test {
   LinuxInputSubmissionResult linux_uinput_keyboard_submit_pipe(const KeyboardEvent &event);
 
   /**
-   * @brief Try writing a uinput device definition to an invalid file descriptor.
+   * @brief Try creating a libevdev uinput mouse on an invalid file descriptor.
    *
-   * @return Write status.
+   * @return Creation status.
    */
   OperationStatus linux_uinput_user_device_invalid_fd();
 
   /**
-   * @brief Try writing a uinput device definition to a pipe.
+   * @brief Try creating a libevdev uinput mouse on a pipe.
    *
-   * @return Write status.
+   * @return Creation status.
    */
   OperationStatus linux_uinput_user_device_pipe();
 
@@ -736,26 +841,52 @@ namespace lvh::detail::test {
   OperationStatus linux_uhid_read_loop_fake_output_without_callback();
 
   /**
-   * @brief Try creating a uinput keyboard while a fake ioctl call fails.
+   * @brief Create a uinput device through the fake libevdev recorder.
    *
-   * @param fail_ioctl_call One-based ioctl call to fail.
+   * @param device_type Device type to create.
+   * @return Recorded fake libevdev construction result.
+   */
+  LinuxLibevdevCreationResult linux_uinput_create_fake_libevdev_device(DeviceType device_type);
+
+  /**
+   * @brief Try creating a uinput device while fake libevdev allocation fails.
+   *
+   * @param device_type Device type to create.
    * @return Creation status.
    */
-  OperationStatus linux_uinput_keyboard_create_fake_ioctl_failure(int fail_ioctl_call);
+  OperationStatus linux_uinput_create_fake_libevdev_allocation_failure(DeviceType device_type);
 
   /**
-   * @brief Try writing a uinput device definition while fake write is short.
+   * @brief Try creating a uinput device while fake libevdev event-type enablement fails.
    *
-   * @return Write status.
+   * @param device_type Device type to create.
+   * @return Creation status.
    */
-  OperationStatus linux_uinput_user_device_fake_short_write();
+  OperationStatus linux_uinput_create_fake_libevdev_event_type_failure(DeviceType device_type);
 
   /**
-   * @brief Try writing a uinput device definition while fake device creation ioctl fails.
+   * @brief Try creating a uinput device while fake libevdev event-code enablement fails.
    *
-   * @return Write status.
+   * @param device_type Device type to create.
+   * @return Creation status.
    */
-  OperationStatus linux_uinput_user_device_fake_create_failure();
+  OperationStatus linux_uinput_create_fake_libevdev_event_code_failure(DeviceType device_type);
+
+  /**
+   * @brief Try creating a uinput device while fake libevdev property enablement fails.
+   *
+   * @param device_type Device type to create.
+   * @return Creation status.
+   */
+  OperationStatus linux_uinput_create_fake_libevdev_property_failure(DeviceType device_type);
+
+  /**
+   * @brief Try creating a uinput device while fake libevdev uinput creation fails.
+   *
+   * @param device_type Device type to create.
+   * @return Creation status.
+   */
+  OperationStatus linux_uinput_create_fake_libevdev_create_failure(DeviceType device_type);
 
   /**
    * @brief Submit a keyboard event while fake write fails.
@@ -801,14 +932,6 @@ namespace lvh::detail::test {
   OperationStatus linux_uinput_keyboard_auto_repeat_fake_success();
 
   /**
-   * @brief Try creating a uinput mouse while a fake ioctl call fails.
-   *
-   * @param fail_ioctl_call One-based ioctl call to fail.
-   * @return Creation status.
-   */
-  OperationStatus linux_uinput_mouse_create_fake_ioctl_failure(int fail_ioctl_call);
-
-  /**
    * @brief Submit a mouse event while fake write fails.
    *
    * @param event Mouse event to submit.
@@ -823,30 +946,6 @@ namespace lvh::detail::test {
    * @return Submit status.
    */
   OperationStatus linux_uinput_mouse_submit_fake_short_write(const MouseEvent &event);
-
-  /**
-   * @brief Try creating a uinput touchscreen while a fake ioctl call fails.
-   *
-   * @param fail_ioctl_call One-based ioctl call to fail.
-   * @return Creation status.
-   */
-  OperationStatus linux_uinput_touchscreen_create_fake_ioctl_failure(int fail_ioctl_call);
-
-  /**
-   * @brief Try creating a uinput trackpad while a fake ioctl call fails.
-   *
-   * @param fail_ioctl_call One-based ioctl call to fail.
-   * @return Creation status.
-   */
-  OperationStatus linux_uinput_trackpad_create_fake_ioctl_failure(int fail_ioctl_call);
-
-  /**
-   * @brief Try creating a uinput pen tablet while a fake ioctl call fails.
-   *
-   * @param fail_ioctl_call One-based ioctl call to fail.
-   * @return Creation status.
-   */
-  OperationStatus linux_uinput_pen_tablet_create_fake_ioctl_failure(int fail_ioctl_call);
 
   /**
    * @brief Submit keyboard input through the XTest fallback.

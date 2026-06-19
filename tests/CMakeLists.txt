@@ -25,6 +25,7 @@ set(LIBVIRTUALHID_TEST_SOURCES
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     find_package(PkgConfig REQUIRED)
+    pkg_check_modules(LIBEVDEV REQUIRED IMPORTED_TARGET libevdev)
     pkg_check_modules(LIBINPUT REQUIRED IMPORTED_TARGET libinput)
     pkg_check_modules(SDL2 REQUIRED IMPORTED_TARGET sdl2)
 
@@ -52,6 +53,7 @@ target_link_libraries(${TEST_BINARY}
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_libraries(${TEST_BINARY}
       PRIVATE
+      PkgConfig::LIBEVDEV
       PkgConfig::LIBINPUT
       PkgConfig::SDL2)
 endif()

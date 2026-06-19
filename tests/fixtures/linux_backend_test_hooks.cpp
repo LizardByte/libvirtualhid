@@ -21,6 +21,7 @@
   #ifndef __user
     #define __user
   #endif
+  #include <linux/input.h>
   #include <linux/uhid.h>
   #include <linux/uinput.h>
   #include <poll.h>
@@ -36,12 +37,33 @@
   #endif
 #endif
 
+// lib includes
+#if defined(__linux__)
+  #include <libevdev/libevdev-uinput.h>
+  #include <libevdev/libevdev.h>
+#endif
+
 // local includes
 #include "fixtures/linux_backend_test_hooks.hpp"
 
 #if defined(__linux__)
 namespace lvh::detail::test {
   namespace {
+
+    struct FakeLibevdevDevice {
+      std::string name;
+      std::uint16_t bustype = 0;
+      std::uint16_t vendor = 0;
+      std::uint16_t product = 0;
+      std::uint16_t version = 0;
+      std::vector<std::uint32_t> event_types;
+      std::vector<LinuxLibevdevEventCode> event_codes;
+      std::vector<std::uint32_t> properties;
+    };
+
+    struct FakeLibevdevUinput {
+      FakeLibevdevDevice device;
+    };
 
     struct LinuxTestSyscalls {
       bool override_access = false;
@@ -71,6 +93,14 @@ namespace lvh::detail::test {
       bool override_x_keycode = false;
       std::atomic_int x_keycode_call_count = 0;
       int fail_x_keycode_call = -1;
+      bool override_libevdev = false;
+      bool libevdev_new_returns_null = false;
+      bool fail_libevdev_event_type = false;
+      bool fail_libevdev_event_code = false;
+      bool fail_libevdev_property = false;
+      bool fail_libevdev_create = false;
+      std::vector<FakeLibevdevDevice> libevdev_devices;
+      std::size_t libevdev_destroy_count = 0;
     };
 
     LinuxTestSyscalls *active_test_syscalls = nullptr;
@@ -260,12 +290,161 @@ int lvh_linux_test_xtest_fake_relative_motion_event(Display *, int, int, unsigne
 }
   #endif
 
+extern "C" libevdev *lvh_linux_test_libevdev_new() {
+  if (lvh::detail::test::active_test_syscalls != nullptr && lvh::detail::test::active_test_syscalls->override_libevdev) {
+    if (lvh::detail::test::active_test_syscalls->libevdev_new_returns_null) {
+      return nullptr;
+    }
+    return reinterpret_cast<libevdev *>(new lvh::detail::test::FakeLibevdevDevice);
+  }
+  return ::libevdev_new();
+}
+
+extern "C" void lvh_linux_test_libevdev_free(libevdev *device) {
+  if (lvh::detail::test::active_test_syscalls != nullptr && lvh::detail::test::active_test_syscalls->override_libevdev) {
+    delete reinterpret_cast<lvh::detail::test::FakeLibevdevDevice *>(device);
+    return;
+  }
+  ::libevdev_free(device);
+}
+
+extern "C" void lvh_linux_test_libevdev_set_name(libevdev *device, const char *name) {
+  if (lvh::detail::test::active_test_syscalls != nullptr && lvh::detail::test::active_test_syscalls->override_libevdev) {
+    reinterpret_cast<lvh::detail::test::FakeLibevdevDevice *>(device)->name = name == nullptr ? "" : name;
+    return;
+  }
+  ::libevdev_set_name(device, name);
+}
+
+extern "C" void lvh_linux_test_libevdev_set_id_bustype(libevdev *device, int bustype) {
+  if (lvh::detail::test::active_test_syscalls != nullptr && lvh::detail::test::active_test_syscalls->override_libevdev) {
+    reinterpret_cast<lvh::detail::test::FakeLibevdevDevice *>(device)->bustype = static_cast<std::uint16_t>(bustype);
+    return;
+  }
+  ::libevdev_set_id_bustype(device, bustype);
+}
+
+extern "C" void lvh_linux_test_libevdev_set_id_vendor(libevdev *device, int vendor) {
+  if (lvh::detail::test::active_test_syscalls != nullptr && lvh::detail::test::active_test_syscalls->override_libevdev) {
+    reinterpret_cast<lvh::detail::test::FakeLibevdevDevice *>(device)->vendor = static_cast<std::uint16_t>(vendor);
+    return;
+  }
+  ::libevdev_set_id_vendor(device, vendor);
+}
+
+extern "C" void lvh_linux_test_libevdev_set_id_product(libevdev *device, int product) {
+  if (lvh::detail::test::active_test_syscalls != nullptr && lvh::detail::test::active_test_syscalls->override_libevdev) {
+    reinterpret_cast<lvh::detail::test::FakeLibevdevDevice *>(device)->product = static_cast<std::uint16_t>(product);
+    return;
+  }
+  ::libevdev_set_id_product(device, product);
+}
+
+extern "C" void lvh_linux_test_libevdev_set_id_version(libevdev *device, int version) {
+  if (lvh::detail::test::active_test_syscalls != nullptr && lvh::detail::test::active_test_syscalls->override_libevdev) {
+    reinterpret_cast<lvh::detail::test::FakeLibevdevDevice *>(device)->version = static_cast<std::uint16_t>(version);
+    return;
+  }
+  ::libevdev_set_id_version(device, version);
+}
+
+extern "C" int lvh_linux_test_libevdev_enable_event_type(libevdev *device, unsigned int type) {
+  if (lvh::detail::test::active_test_syscalls != nullptr && lvh::detail::test::active_test_syscalls->override_libevdev) {
+    if (lvh::detail::test::active_test_syscalls->fail_libevdev_event_type) {
+      return -EIO;
+    }
+    reinterpret_cast<lvh::detail::test::FakeLibevdevDevice *>(device)->event_types.push_back(type);
+    return 0;
+  }
+  return ::libevdev_enable_event_type(device, type);
+}
+
+extern "C" int lvh_linux_test_libevdev_enable_event_code(
+  libevdev *device,
+  unsigned int type,
+  unsigned int code,
+  const void *data
+) {
+  if (lvh::detail::test::active_test_syscalls != nullptr && lvh::detail::test::active_test_syscalls->override_libevdev) {
+    if (lvh::detail::test::active_test_syscalls->fail_libevdev_event_code) {
+      return -EIO;
+    }
+
+    lvh::detail::test::LinuxLibevdevEventCode event_code {
+      .type = type,
+      .code = code,
+    };
+    if (type == EV_ABS && data != nullptr) {
+      const auto *absinfo = static_cast<const input_absinfo *>(data);
+      event_code.has_absinfo = true;
+      event_code.minimum = absinfo->minimum;
+      event_code.maximum = absinfo->maximum;
+      event_code.fuzz = absinfo->fuzz;
+      event_code.flat = absinfo->flat;
+      event_code.resolution = absinfo->resolution;
+    }
+    reinterpret_cast<lvh::detail::test::FakeLibevdevDevice *>(device)->event_codes.push_back(event_code);
+    return 0;
+  }
+  return ::libevdev_enable_event_code(device, type, code, data);
+}
+
+extern "C" int lvh_linux_test_libevdev_enable_property(libevdev *device, unsigned int property) {
+  if (lvh::detail::test::active_test_syscalls != nullptr && lvh::detail::test::active_test_syscalls->override_libevdev) {
+    if (lvh::detail::test::active_test_syscalls->fail_libevdev_property) {
+      return -EIO;
+    }
+    reinterpret_cast<lvh::detail::test::FakeLibevdevDevice *>(device)->properties.push_back(property);
+    return 0;
+  }
+  return ::libevdev_enable_property(device, property);
+}
+
+extern "C" int lvh_linux_test_libevdev_uinput_create_from_device(
+  const libevdev *device,
+  int uinput_fd,
+  libevdev_uinput **uinput_device
+) {
+  if (lvh::detail::test::active_test_syscalls != nullptr && lvh::detail::test::active_test_syscalls->override_libevdev) {
+    if (lvh::detail::test::active_test_syscalls->fail_libevdev_create || uinput_fd < 0) {
+      return -EIO;
+    }
+
+    const auto &fake_device = *reinterpret_cast<const lvh::detail::test::FakeLibevdevDevice *>(device);
+    lvh::detail::test::active_test_syscalls->libevdev_devices.push_back(fake_device);
+    *uinput_device = reinterpret_cast<libevdev_uinput *>(new lvh::detail::test::FakeLibevdevUinput {fake_device});
+    return 0;
+  }
+  return ::libevdev_uinput_create_from_device(device, uinput_fd, uinput_device);
+}
+
+extern "C" void lvh_linux_test_libevdev_uinput_destroy(libevdev_uinput *uinput_device) {
+  if (lvh::detail::test::active_test_syscalls != nullptr && lvh::detail::test::active_test_syscalls->override_libevdev) {
+    ++lvh::detail::test::active_test_syscalls->libevdev_destroy_count;
+    delete reinterpret_cast<lvh::detail::test::FakeLibevdevUinput *>(uinput_device);
+    return;
+  }
+  ::libevdev_uinput_destroy(uinput_device);
+}
+
   #define access lvh_linux_test_access
   #define ioctl lvh_linux_test_ioctl
   #define open lvh_linux_test_open
   #define poll lvh_linux_test_poll
   #define read lvh_linux_test_read
   #define write lvh_linux_test_write
+  #define libevdev_enable_event_code lvh_linux_test_libevdev_enable_event_code
+  #define libevdev_enable_event_type lvh_linux_test_libevdev_enable_event_type
+  #define libevdev_enable_property lvh_linux_test_libevdev_enable_property
+  #define libevdev_free lvh_linux_test_libevdev_free
+  #define libevdev_new lvh_linux_test_libevdev_new
+  #define libevdev_set_id_bustype lvh_linux_test_libevdev_set_id_bustype
+  #define libevdev_set_id_product lvh_linux_test_libevdev_set_id_product
+  #define libevdev_set_id_vendor lvh_linux_test_libevdev_set_id_vendor
+  #define libevdev_set_id_version lvh_linux_test_libevdev_set_id_version
+  #define libevdev_set_name lvh_linux_test_libevdev_set_name
+  #define libevdev_uinput_create_from_device lvh_linux_test_libevdev_uinput_create_from_device
+  #define libevdev_uinput_destroy lvh_linux_test_libevdev_uinput_destroy
 
   #if defined(LIBVIRTUALHID_HAVE_XTEST)
     #if defined(DefaultScreen)
@@ -317,6 +496,18 @@ int lvh_linux_test_xtest_fake_relative_motion_event(Display *, int, int, unsigne
   #undef open
   #undef ioctl
   #undef access
+  #undef libevdev_uinput_destroy
+  #undef libevdev_uinput_create_from_device
+  #undef libevdev_set_name
+  #undef libevdev_set_id_version
+  #undef libevdev_set_id_vendor
+  #undef libevdev_set_id_product
+  #undef libevdev_set_id_bustype
+  #undef libevdev_new
+  #undef libevdev_free
+  #undef libevdev_enable_property
+  #undef libevdev_enable_event_type
+  #undef libevdev_enable_event_code
 
 namespace lvh::detail::test {
   namespace {
@@ -399,6 +590,7 @@ namespace lvh::detail::test {
       syscalls.override_open = true;
       syscalls.override_write = true;
       syscalls.override_ioctl = true;
+      syscalls.override_libevdev = true;
     }
 
     bool wait_for_poll_calls(const LinuxTestSyscalls &syscalls, int expected_calls) {
@@ -437,6 +629,110 @@ namespace lvh::detail::test {
         return OperationStatus::failure(ErrorCode::backend_failure, "fake UHID read loop did not consume the scripted poll calls");
       }
       return close_status;
+    }
+
+    DeviceProfile profile_for_uinput_device_type(DeviceType device_type) {
+      switch (device_type) {
+        case DeviceType::keyboard:
+          return profiles::keyboard();
+        case DeviceType::mouse:
+          return profiles::mouse();
+        case DeviceType::touchscreen:
+          return profiles::touchscreen();
+        case DeviceType::trackpad:
+          return profiles::trackpad();
+        case DeviceType::pen_tablet:
+          return profiles::pen_tablet();
+        case DeviceType::gamepad:
+          return profiles::generic_gamepad();
+      }
+
+      return profiles::mouse();
+    }
+
+    OperationStatus create_uinput_device_by_type(int fd, DeviceType device_type) {
+      switch (device_type) {
+        case DeviceType::keyboard:
+          {
+            CreateKeyboardOptions options;
+            options.profile = profile_for_uinput_device_type(device_type);
+            UinputKeyboard keyboard {fd};
+            return keyboard.create(1, options);
+          }
+        case DeviceType::mouse:
+          {
+            CreateMouseOptions options;
+            options.profile = profile_for_uinput_device_type(device_type);
+            UinputMouse mouse {fd};
+            return mouse.create(1, options);
+          }
+        case DeviceType::touchscreen:
+          {
+            CreateTouchscreenOptions options;
+            options.profile = profile_for_uinput_device_type(device_type);
+            UinputTouchscreen touchscreen {fd};
+            return touchscreen.create(1, options);
+          }
+        case DeviceType::trackpad:
+          {
+            CreateTrackpadOptions options;
+            options.profile = profile_for_uinput_device_type(device_type);
+            UinputTrackpad trackpad {fd};
+            return trackpad.create(1, options);
+          }
+        case DeviceType::pen_tablet:
+          {
+            CreatePenTabletOptions options;
+            options.profile = profile_for_uinput_device_type(device_type);
+            UinputPenTablet pen_tablet {fd};
+            return pen_tablet.create(1, options);
+          }
+        case DeviceType::gamepad:
+          {
+            auto status = create_libevdev_uinput_device(fd, profile_for_uinput_device_type(device_type), 1).status;
+            static_cast<void>(system_close(fd));
+            return status;
+          }
+      }
+
+      return OperationStatus::failure(ErrorCode::unsupported_profile, "unsupported fake uinput device type");
+    }
+
+    LinuxLibevdevCreationResult create_fake_libevdev_device(
+      DeviceType device_type,
+      void (*configure_failure)(LinuxTestSyscalls &) = nullptr
+    ) {
+      LinuxTestSyscalls syscalls;
+      syscalls.override_libevdev = true;
+      if (configure_failure != nullptr) {
+        configure_failure(syscalls);
+      }
+      ScopedLinuxTestSyscalls scoped_syscalls {syscalls};
+
+      LinuxLibevdevCreationResult result;
+      const auto fd = open_test_fd();
+      if (fd < 0) {
+        result.status = system_error_status(ErrorCode::backend_failure, "failed to open test file descriptor", errno);
+        return result;
+      }
+
+      result.status = create_uinput_device_by_type(fd, device_type);
+      if (!syscalls.libevdev_devices.empty()) {
+        const auto &device = syscalls.libevdev_devices.back();
+        result.name = device.name;
+        result.bustype = device.bustype;
+        result.vendor = device.vendor;
+        result.product = device.product;
+        result.version = device.version;
+        result.event_types = device.event_types;
+        result.event_codes = device.event_codes;
+        result.properties = device.properties;
+      }
+      result.destroy_count = syscalls.libevdev_destroy_count;
+      if (result.status.ok()) {
+        result.close_status = OperationStatus::success();
+      }
+      return result;
     }
 
   }  // namespace
@@ -603,7 +899,7 @@ namespace lvh::detail::test {
   }
 
   OperationStatus linux_uinput_user_device_invalid_fd() {
-    return write_uinput_user_device(-1, profiles::mouse(), 1);
+    return create_libevdev_uinput_device(-1, profiles::mouse(), 1).status;
   }
 
   OperationStatus linux_uinput_user_device_pipe() {
@@ -612,7 +908,7 @@ namespace lvh::detail::test {
       return system_error_status(ErrorCode::backend_failure, "failed to create pipe", errno);
     }
 
-    auto status = write_uinput_user_device(descriptors[1], profiles::mouse(), 1);
+    auto status = create_libevdev_uinput_device(descriptors[1], profiles::mouse(), 1).status;
     static_cast<void>(::close(descriptors[0]));
     static_cast<void>(::close(descriptors[1]));
     return status;
@@ -1152,7 +1448,7 @@ namespace lvh::detail::test {
   OperationStatus linux_backend_keyboard_fake_create_failure() {
     LinuxTestSyscalls syscalls;
     enable_fake_device_syscalls(syscalls);
-    syscalls.fail_ioctl_call = 1;
+    syscalls.fail_libevdev_create = true;
     ScopedLinuxTestSyscalls scoped_syscalls {syscalls};
 
     LinuxUhidBackend backend;
@@ -1166,7 +1462,7 @@ namespace lvh::detail::test {
   #if defined(LIBVIRTUALHID_HAVE_XTEST)
     LinuxTestSyscalls syscalls;
     enable_fake_device_syscalls(syscalls);
-    syscalls.fail_ioctl_call = 1;
+    syscalls.fail_libevdev_create = true;
     ScopedLinuxTestSyscalls scoped_syscalls {syscalls};
 
     LinuxUhidBackend backend;
@@ -1200,7 +1496,7 @@ namespace lvh::detail::test {
   OperationStatus linux_backend_mouse_fake_create_failure() {
     LinuxTestSyscalls syscalls;
     enable_fake_device_syscalls(syscalls);
-    syscalls.fail_ioctl_call = 1;
+    syscalls.fail_libevdev_create = true;
     ScopedLinuxTestSyscalls scoped_syscalls {syscalls};
 
     LinuxUhidBackend backend;
@@ -1214,7 +1510,7 @@ namespace lvh::detail::test {
   #if defined(LIBVIRTUALHID_HAVE_XTEST)
     LinuxTestSyscalls syscalls;
     enable_fake_device_syscalls(syscalls);
-    syscalls.fail_ioctl_call = 1;
+    syscalls.fail_libevdev_create = true;
     ScopedLinuxTestSyscalls scoped_syscalls {syscalls};
 
     LinuxUhidBackend backend;
@@ -1234,7 +1530,7 @@ namespace lvh::detail::test {
   OperationStatus linux_backend_keyboard_fake_create_failure_without_fallback() {
     LinuxTestSyscalls syscalls;
     enable_fake_device_syscalls(syscalls);
-    syscalls.fail_ioctl_call = 1;
+    syscalls.fail_libevdev_create = true;
     syscalls.override_xtest_query = true;
     syscalls.xtest_query_result = false;
     ScopedLinuxTestSyscalls scoped_syscalls {syscalls};
@@ -1249,7 +1545,7 @@ namespace lvh::detail::test {
   OperationStatus linux_backend_mouse_fake_create_failure_without_fallback() {
     LinuxTestSyscalls syscalls;
     enable_fake_device_syscalls(syscalls);
-    syscalls.fail_ioctl_call = 1;
+    syscalls.fail_libevdev_create = true;
     syscalls.override_xtest_query = true;
     syscalls.xtest_query_result = false;
     ScopedLinuxTestSyscalls scoped_syscalls {syscalls};
@@ -1278,7 +1574,7 @@ namespace lvh::detail::test {
   OperationStatus linux_backend_touchscreen_fake_create_failure() {
     LinuxTestSyscalls syscalls;
     enable_fake_device_syscalls(syscalls);
-    syscalls.fail_ioctl_call = 1;
+    syscalls.fail_libevdev_create = true;
     ScopedLinuxTestSyscalls scoped_syscalls {syscalls};
 
     LinuxUhidBackend backend;
@@ -1305,7 +1601,7 @@ namespace lvh::detail::test {
   OperationStatus linux_backend_trackpad_fake_create_failure() {
     LinuxTestSyscalls syscalls;
     enable_fake_device_syscalls(syscalls);
-    syscalls.fail_ioctl_call = 1;
+    syscalls.fail_libevdev_create = true;
     ScopedLinuxTestSyscalls scoped_syscalls {syscalls};
 
     LinuxUhidBackend backend;
@@ -1332,7 +1628,7 @@ namespace lvh::detail::test {
   OperationStatus linux_backend_pen_tablet_fake_create_failure() {
     LinuxTestSyscalls syscalls;
     enable_fake_device_syscalls(syscalls);
-    syscalls.fail_ioctl_call = 1;
+    syscalls.fail_libevdev_create = true;
     ScopedLinuxTestSyscalls scoped_syscalls {syscalls};
 
     LinuxUhidBackend backend;
@@ -1431,37 +1727,43 @@ namespace lvh::detail::test {
     return run_fake_uhid_read_loop(syscalls, 2);
   }
 
-  OperationStatus linux_uinput_keyboard_create_fake_ioctl_failure(int fail_ioctl_call) {
-    LinuxTestSyscalls syscalls;
-    syscalls.override_write = true;
-    syscalls.override_ioctl = true;
-    syscalls.fail_ioctl_call = fail_ioctl_call;
-    ScopedLinuxTestSyscalls scoped_syscalls {syscalls};
-
-    CreateKeyboardOptions options;
-    options.profile = profiles::keyboard();
-
-    UinputKeyboard keyboard {fake_fd};
-    return keyboard.create(1, options);
+  LinuxLibevdevCreationResult linux_uinput_create_fake_libevdev_device(DeviceType device_type) {
+    return create_fake_libevdev_device(device_type);
   }
 
-  OperationStatus linux_uinput_user_device_fake_short_write() {
-    LinuxTestSyscalls syscalls;
-    syscalls.override_write = true;
-    syscalls.short_write_call = 1;
-    ScopedLinuxTestSyscalls scoped_syscalls {syscalls};
-
-    return write_uinput_user_device(fake_fd, profiles::mouse(), 1);
+  OperationStatus linux_uinput_create_fake_libevdev_allocation_failure(DeviceType device_type) {
+    return create_fake_libevdev_device(device_type, [](LinuxTestSyscalls &syscalls) {
+             syscalls.libevdev_new_returns_null = true;
+           })
+      .status;
   }
 
-  OperationStatus linux_uinput_user_device_fake_create_failure() {
-    LinuxTestSyscalls syscalls;
-    syscalls.override_write = true;
-    syscalls.override_ioctl = true;
-    syscalls.fail_ioctl_call = 1;
-    ScopedLinuxTestSyscalls scoped_syscalls {syscalls};
+  OperationStatus linux_uinput_create_fake_libevdev_event_type_failure(DeviceType device_type) {
+    return create_fake_libevdev_device(device_type, [](LinuxTestSyscalls &syscalls) {
+             syscalls.fail_libevdev_event_type = true;
+           })
+      .status;
+  }
 
-    return write_uinput_user_device(fake_fd, profiles::mouse(), 1);
+  OperationStatus linux_uinput_create_fake_libevdev_event_code_failure(DeviceType device_type) {
+    return create_fake_libevdev_device(device_type, [](LinuxTestSyscalls &syscalls) {
+             syscalls.fail_libevdev_event_code = true;
+           })
+      .status;
+  }
+
+  OperationStatus linux_uinput_create_fake_libevdev_property_failure(DeviceType device_type) {
+    return create_fake_libevdev_device(device_type, [](LinuxTestSyscalls &syscalls) {
+             syscalls.fail_libevdev_property = true;
+           })
+      .status;
+  }
+
+  OperationStatus linux_uinput_create_fake_libevdev_create_failure(DeviceType device_type) {
+    return create_fake_libevdev_device(device_type, [](LinuxTestSyscalls &syscalls) {
+             syscalls.fail_libevdev_create = true;
+           })
+      .status;
   }
 
   OperationStatus linux_uinput_keyboard_submit_fake_write_failure() {
@@ -1539,20 +1841,6 @@ namespace lvh::detail::test {
     return keyboard.close();
   }
 
-  OperationStatus linux_uinput_mouse_create_fake_ioctl_failure(int fail_ioctl_call) {
-    LinuxTestSyscalls syscalls;
-    syscalls.override_write = true;
-    syscalls.override_ioctl = true;
-    syscalls.fail_ioctl_call = fail_ioctl_call;
-    ScopedLinuxTestSyscalls scoped_syscalls {syscalls};
-
-    CreateMouseOptions options;
-    options.profile = profiles::mouse();
-
-    UinputMouse mouse {fake_fd};
-    return mouse.create(1, options);
-  }
-
   OperationStatus linux_uinput_mouse_submit_fake_write_failure(const MouseEvent &event) {
     LinuxTestSyscalls syscalls;
     syscalls.override_write = true;
@@ -1573,48 +1861,6 @@ namespace lvh::detail::test {
 
     UinputMouse mouse {fake_fd};
     return mouse.submit(event);
-  }
-
-  OperationStatus linux_uinput_touchscreen_create_fake_ioctl_failure(int fail_ioctl_call) {
-    LinuxTestSyscalls syscalls;
-    syscalls.override_write = true;
-    syscalls.override_ioctl = true;
-    syscalls.fail_ioctl_call = fail_ioctl_call;
-    ScopedLinuxTestSyscalls scoped_syscalls {syscalls};
-
-    CreateTouchscreenOptions options;
-    options.profile = profiles::touchscreen();
-
-    UinputTouchscreen touchscreen {fake_fd};
-    return touchscreen.create(1, options);
-  }
-
-  OperationStatus linux_uinput_trackpad_create_fake_ioctl_failure(int fail_ioctl_call) {
-    LinuxTestSyscalls syscalls;
-    syscalls.override_write = true;
-    syscalls.override_ioctl = true;
-    syscalls.fail_ioctl_call = fail_ioctl_call;
-    ScopedLinuxTestSyscalls scoped_syscalls {syscalls};
-
-    CreateTrackpadOptions options;
-    options.profile = profiles::trackpad();
-
-    UinputTrackpad trackpad {fake_fd};
-    return trackpad.create(1, options);
-  }
-
-  OperationStatus linux_uinput_pen_tablet_create_fake_ioctl_failure(int fail_ioctl_call) {
-    LinuxTestSyscalls syscalls;
-    syscalls.override_write = true;
-    syscalls.override_ioctl = true;
-    syscalls.fail_ioctl_call = fail_ioctl_call;
-    ScopedLinuxTestSyscalls scoped_syscalls {syscalls};
-
-    CreatePenTabletOptions options;
-    options.profile = profiles::pen_tablet();
-
-    UinputPenTablet pen_tablet {fake_fd};
-    return pen_tablet.create(1, options);
   }
 
   OperationStatus linux_xtest_keyboard_submit_success() {

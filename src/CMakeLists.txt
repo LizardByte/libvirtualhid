@@ -11,6 +11,8 @@ target_sources(${PROJECT_NAME}
 
 if(LIBVIRTUALHID_USES_THREADS)
     find_package(Threads REQUIRED)
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(LIBEVDEV REQUIRED IMPORTED_TARGET libevdev)
     if(LIBVIRTUALHID_ENABLE_XTEST)
         find_package(X11 QUIET)
     endif()
@@ -20,7 +22,9 @@ if(LIBVIRTUALHID_USES_THREADS)
       "${CMAKE_CURRENT_SOURCE_DIR}/platform/linux/uhid_backend.cpp")
     target_link_libraries(${PROJECT_NAME}
       PUBLIC
-      Threads::Threads)
+      Threads::Threads
+      PRIVATE
+      PkgConfig::LIBEVDEV)
     if(LIBVIRTUALHID_ENABLE_XTEST AND X11_FOUND AND X11_XTest_FOUND)
         target_compile_definitions(${PROJECT_NAME}
           PRIVATE

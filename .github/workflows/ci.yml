@@ -78,6 +78,7 @@ jobs:
             build-essential \
             clang \
             cmake \
+            libevdev-dev \
             libinput-dev \
             libsdl2-dev \
             libx11-dev \

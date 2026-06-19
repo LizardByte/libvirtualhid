@@ -4,6 +4,8 @@ include(CMakeFindDependencyMacro)
 
 if(@LIBVIRTUALHID_USES_THREADS@)
     find_dependency(Threads)
+    find_dependency(PkgConfig)
+    pkg_check_modules(LIBEVDEV REQUIRED IMPORTED_TARGET libevdev)
 endif()
 
 include("${CMAKE_CURRENT_LIST_DIR}/libvirtualhid-targets.cmake")

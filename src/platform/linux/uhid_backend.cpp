@@ -34,6 +34,7 @@
 #ifndef __user
   #define __user
 #endif
+#include <linux/input.h>
 #include <linux/uhid.h>
 #include <linux/uinput.h>
 #include <poll.h>
@@ -47,6 +48,10 @@
   #include <X11/Xlib.h>
   #include <X11/Xutil.h>
 #endif
+
+// lib includes
+#include <libevdev/libevdev-uinput.h>
+#include <libevdev/libevdev.h>
 
 // local includes
 #include "core/backend.hpp"
@@ -729,7 +734,7 @@ namespace lvh::detail {
       return static_cast<KeyboardKeyCode>(0x41 + (digit - 'A'));
     }
 
-    int legacy_scroll_steps(std::int32_t distance) {
+    [[maybe_unused]] int legacy_scroll_steps(std::int32_t distance) {
       if (distance == 0) {
         return 0;
       }
@@ -759,6 +764,8 @@ namespace lvh::detail {
       }
 
     protected:
+      OperationStatus create_uinput_device(const DeviceProfile &profile, DeviceId id);
+
       OperationStatus emit_event(std::uint16_t type, std::uint16_t code, std::int32_t value) {
         std::lock_guard lock {write_mutex_};
         return emit_event_locked(type, code, value);
@@ -775,7 +782,10 @@ namespace lvh::detail {
 
         auto status = OperationStatus::success();
         if (fd_ >= 0) {
-          if (system_ioctl(fd_, UI_DEV_DESTROY) < 0) {
+          if (uinput_device_ != nullptr) {
+            libevdev_uinput_destroy(uinput_device_);
+            uinput_device_ = nullptr;
+          } else if (system_ioctl(fd_, UI_DEV_DESTROY) < 0) {
             status = ioctl_status("failed to destroy " + description);
           }
           if (system_close(fd_) != 0 && status.ok()) {
@@ -818,274 +828,214 @@ namespace lvh::detail {
       }
 
       int fd_ = -1;
+      libevdev_uinput *uinput_device_ = nullptr;
       std::atomic_bool open_ = true;
       std::mutex write_mutex_;
     };
 
-    void configure_absinfo(
-      uinput_user_dev &device,
-      int code,
-      int minimum,
-      int maximum,
-      int fuzz = 0,
-      int flat = 0
-    ) {
-      device.absmin[code] = minimum;
-      device.absmax[code] = maximum;
-      device.absfuzz[code] = fuzz;
-      device.absflat[code] = flat;
-    }
-
-    void configure_uinput_absinfo(uinput_user_dev &device, DeviceType device_type) {
-      switch (device_type) {
-        case DeviceType::mouse:
-          configure_absinfo(device, ABS_X, 0, absolute_axis_max);
-          configure_absinfo(device, ABS_Y, 0, absolute_axis_max);
-          break;
-        case DeviceType::touchscreen:
-        case DeviceType::trackpad:
-          configure_absinfo(device, ABS_MT_SLOT, 0, touch_max_contacts - 1);
-          configure_absinfo(device, ABS_X, 0, touch_axis_max_x);
-          configure_absinfo(device, ABS_Y, 0, touch_axis_max_y);
-          configure_absinfo(device, ABS_MT_POSITION_X, 0, touch_axis_max_x);
-          configure_absinfo(device, ABS_MT_POSITION_Y, 0, touch_axis_max_y);
-          configure_absinfo(device, ABS_MT_TRACKING_ID, 0, 65535);
-          configure_absinfo(device, ABS_PRESSURE, 0, touch_pressure_max);
-          configure_absinfo(device, ABS_MT_PRESSURE, 0, touch_pressure_max);
-          configure_absinfo(device, ABS_MT_ORIENTATION, -90, 90);
-          break;
-        case DeviceType::pen_tablet:
-          configure_absinfo(device, ABS_X, 0, touch_axis_max_x, 1);
-          configure_absinfo(device, ABS_Y, 0, touch_axis_max_y, 1);
-          configure_absinfo(device, ABS_PRESSURE, 0, tablet_pressure_max);
-          configure_absinfo(device, ABS_DISTANCE, 0, tablet_distance_max);
-          configure_absinfo(device, ABS_TILT_X, -90, 90);
-          configure_absinfo(device, ABS_TILT_Y, -90, 90);
-          break;
-        case DeviceType::gamepad:
-        case DeviceType::keyboard:
-          break;
+    struct LibevdevDeviceDeleter {
+      void operator()(libevdev *device) const {
+        libevdev_free(device);
       }
-    }
+    };
 
-    OperationStatus configure_uinput_abs_setup(
-      int fd,
-      int code,
+    using LibevdevDevice = std::unique_ptr<libevdev, LibevdevDeviceDeleter>;
+
+    struct UinputCreationResult {
+      OperationStatus status;
+      libevdev_uinput *device = nullptr;
+    };
+
+    input_absinfo make_absinfo(
       int minimum,
       int maximum,
       int fuzz = 0,
       int flat = 0,
       int resolution = 0
     ) {
-#if defined(UI_ABS_SETUP)
-      uinput_abs_setup setup {};
-      setup.code = static_cast<__u16>(code);
-      setup.absinfo.minimum = minimum;
-      setup.absinfo.maximum = maximum;
-      setup.absinfo.fuzz = fuzz;
-      setup.absinfo.flat = flat;
-      setup.absinfo.resolution = resolution;
-
-      if (system_ioctl(fd, UI_ABS_SETUP, reinterpret_cast<unsigned long>(&setup)) < 0) {
-        return ioctl_status("failed to configure uinput absolute axis " + std::to_string(code));
-      }
-#else
-      static_cast<void>(fd);
-      static_cast<void>(code);
-      static_cast<void>(minimum);
-      static_cast<void>(maximum);
-      static_cast<void>(fuzz);
-      static_cast<void>(flat);
-      static_cast<void>(resolution);
-#endif
-
-      return OperationStatus::success();
+      input_absinfo info {};
+      info.minimum = minimum;
+      info.maximum = maximum;
+      info.fuzz = fuzz;
+      info.flat = flat;
+      info.resolution = resolution;
+      return info;
     }
 
-    OperationStatus configure_uinput_abs_setup(int fd, DeviceType device_type) {
-      if (device_type != DeviceType::pen_tablet) {
+    OperationStatus libevdev_status(int result, const std::string &operation) {
+      if (result >= 0) {
         return OperationStatus::success();
       }
-
-      // libinput requires tablet coordinate and tilt axes to advertise resolution.
-      if (const auto status = configure_uinput_abs_setup(fd, ABS_X, 0, touch_axis_max_x, 1, 0, tablet_resolution); !status.ok()) {
-        return status;
-      }
-      if (const auto status = configure_uinput_abs_setup(fd, ABS_Y, 0, touch_axis_max_y, 1, 0, tablet_resolution); !status.ok()) {
-        return status;
-      }
-      if (const auto status = configure_uinput_abs_setup(fd, ABS_PRESSURE, 0, tablet_pressure_max); !status.ok()) {
-        return status;
-      }
-      if (const auto status = configure_uinput_abs_setup(fd, ABS_DISTANCE, 0, tablet_distance_max); !status.ok()) {
-        return status;
-      }
-      if (const auto status = configure_uinput_abs_setup(fd, ABS_TILT_X, -90, 90, 0, 0, tablet_resolution); !status.ok()) {
-        return status;
-      }
-      return configure_uinput_abs_setup(fd, ABS_TILT_Y, -90, 90, 0, 0, tablet_resolution);
+      return OperationStatus::failure(ErrorCode::backend_failure, operation + ": " + errno_message(-result));
     }
 
-    OperationStatus write_uinput_user_device(int fd, const DeviceProfile &profile, DeviceId id) {
-      uinput_user_dev device {};
-      copy_string(device.name, profile.name);
-      device.id.bustype = to_uinput_bus(profile.bus_type);
-      device.id.vendor = profile.vendor_id;
-      device.id.product = profile.product_id;
-      device.id.version = profile.version;
-      configure_uinput_absinfo(device, profile.device_type);
-
-      const auto result = system_write(fd, &device, sizeof(device));
-      if (result < 0) {
-        return system_error_status(ErrorCode::backend_failure, "failed to write uinput device definition", errno);
-      }
-      if (static_cast<std::size_t>(result) != sizeof(device)) {
-        return OperationStatus::failure(ErrorCode::backend_failure, "short write while creating uinput device");
-      }
-
-      if (const auto status = configure_uinput_abs_setup(fd, profile.device_type); !status.ok()) {
-        return status;
-      }
-
-      if (system_ioctl(fd, UI_DEV_CREATE) < 0) {
-        return ioctl_status("failed to create uinput device " + std::to_string(id));
-      }
-
-      return OperationStatus::success();
+    OperationStatus enable_evdev_type(libevdev *device, unsigned int type, const std::string &description) {
+      return libevdev_status(libevdev_enable_event_type(device, type), "failed to enable " + description);
     }
 
-    OperationStatus enable_uinput_keyboard(int fd) {
-      if (system_ioctl(fd, UI_SET_EVBIT, EV_KEY) < 0) {
-        return ioctl_status("failed to enable uinput keyboard key events");
+    OperationStatus enable_evdev_code(
+      libevdev *device,
+      unsigned int type,
+      unsigned int code,
+      const std::string &description,
+      const input_absinfo *absinfo = nullptr
+    ) {
+      return libevdev_status(
+        libevdev_enable_event_code(device, type, code, absinfo),
+        "failed to enable " + description + " " + std::to_string(code)
+      );
+    }
+
+    OperationStatus enable_evdev_property(libevdev *device, unsigned int property, const std::string &description) {
+      return libevdev_status(
+        libevdev_enable_property(device, property),
+        "failed to enable " + description + " property"
+      );
+    }
+
+    OperationStatus configure_evdev_keyboard(libevdev *device) {
+      if (const auto status = enable_evdev_type(device, EV_KEY, "keyboard key events"); !status.ok()) {
+        return status;
       }
 
       for (auto code = 1; code < KEY_MAX; ++code) {
-        if (system_ioctl(fd, UI_SET_KEYBIT, code) < 0) {
-          return ioctl_status("failed to enable uinput keyboard key " + std::to_string(code));
+        if (const auto status = enable_evdev_code(device, EV_KEY, code, "keyboard key"); !status.ok()) {
+          return status;
         }
       }
 
       return OperationStatus::success();
     }
 
-    OperationStatus enable_uinput_mouse(int fd) {
-      if (system_ioctl(fd, UI_SET_EVBIT, EV_KEY) < 0) {
-        return ioctl_status("failed to enable uinput mouse button events");
+    OperationStatus configure_evdev_mouse(libevdev *device) {
+      if (const auto status = enable_evdev_type(device, EV_KEY, "mouse button events"); !status.ok()) {
+        return status;
       }
-      if (system_ioctl(fd, UI_SET_EVBIT, EV_REL) < 0) {
-        return ioctl_status("failed to enable uinput relative mouse events");
+      if (const auto status = enable_evdev_type(device, EV_REL, "relative mouse events"); !status.ok()) {
+        return status;
       }
-      if (system_ioctl(fd, UI_SET_EVBIT, EV_ABS) < 0) {
-        return ioctl_status("failed to enable uinput absolute mouse events");
+      if (const auto status = enable_evdev_type(device, EV_ABS, "absolute mouse events"); !status.ok()) {
+        return status;
       }
 
       for (const auto button : {BTN_LEFT, BTN_RIGHT, BTN_MIDDLE, BTN_SIDE, BTN_EXTRA}) {
-        if (system_ioctl(fd, UI_SET_KEYBIT, button) < 0) {
-          return ioctl_status("failed to enable uinput mouse button " + std::to_string(button));
+        if (const auto status = enable_evdev_code(device, EV_KEY, button, "mouse button"); !status.ok()) {
+          return status;
         }
       }
 
       for (const auto code : {REL_X, REL_Y}) {
-        if (system_ioctl(fd, UI_SET_RELBIT, code) < 0) {
-          return ioctl_status("failed to enable uinput relative axis " + std::to_string(code));
+        if (const auto status = enable_evdev_code(device, EV_REL, code, "relative mouse axis"); !status.ok()) {
+          return status;
         }
       }
 
 #if defined(REL_WHEEL_HI_RES)
-      if (system_ioctl(fd, UI_SET_RELBIT, REL_WHEEL_HI_RES) < 0) {
-        return ioctl_status("failed to enable uinput high-resolution vertical scroll");
+      if (const auto status = enable_evdev_code(device, EV_REL, REL_WHEEL_HI_RES, "high-resolution vertical scroll"); !status.ok()) {
+        return status;
       }
 #else
-      if (system_ioctl(fd, UI_SET_RELBIT, REL_WHEEL) < 0) {
-        return ioctl_status("failed to enable uinput vertical scroll");
+      if (const auto status = enable_evdev_code(device, EV_REL, REL_WHEEL, "vertical scroll"); !status.ok()) {
+        return status;
       }
 #endif
 
 #if defined(REL_HWHEEL_HI_RES)
-      if (system_ioctl(fd, UI_SET_RELBIT, REL_HWHEEL_HI_RES) < 0) {
-        return ioctl_status("failed to enable uinput high-resolution horizontal scroll");
-      }
-#else
-      if (system_ioctl(fd, UI_SET_RELBIT, REL_HWHEEL) < 0) {
-        return ioctl_status("failed to enable uinput horizontal scroll");
-      }
-#endif
-
-      if (system_ioctl(fd, UI_SET_ABSBIT, ABS_X) < 0) {
-        return ioctl_status("failed to enable uinput absolute X axis");
-      }
-      if (system_ioctl(fd, UI_SET_ABSBIT, ABS_Y) < 0) {
-        return ioctl_status("failed to enable uinput absolute Y axis");
-      }
-
-      return OperationStatus::success();
-    }
-
-    OperationStatus enable_uinput_property(int fd, int property, const std::string &description) {
-#if defined(UI_SET_PROPBIT)
-      if (system_ioctl(fd, UI_SET_PROPBIT, static_cast<unsigned long>(property)) < 0) {
-        return ioctl_status("failed to enable uinput property " + description);
-      }
-#else
-      static_cast<void>(fd);
-      static_cast<void>(property);
-      static_cast<void>(description);
-#endif
-
-      return OperationStatus::success();
-    }
-
-    OperationStatus enable_uinput_touch_axes(int fd) {
-      if (system_ioctl(fd, UI_SET_EVBIT, EV_KEY) < 0) {
-        return ioctl_status("failed to enable uinput touch key events");
-      }
-      if (system_ioctl(fd, UI_SET_EVBIT, EV_ABS) < 0) {
-        return ioctl_status("failed to enable uinput touch absolute events");
-      }
-
-      for (const auto code : {ABS_MT_SLOT, ABS_X, ABS_Y, ABS_MT_POSITION_X, ABS_MT_POSITION_Y, ABS_MT_TRACKING_ID, ABS_PRESSURE, ABS_MT_PRESSURE, ABS_MT_ORIENTATION}) {
-        if (system_ioctl(fd, UI_SET_ABSBIT, code) < 0) {
-          return ioctl_status("failed to enable uinput touch absolute axis " + std::to_string(code));
-        }
-      }
-
-      if (system_ioctl(fd, UI_SET_KEYBIT, BTN_TOUCH) < 0) {
-        return ioctl_status("failed to enable uinput touch button");
-      }
-
-      return OperationStatus::success();
-    }
-
-    OperationStatus enable_uinput_touchscreen(int fd) {
-      if (const auto status = enable_uinput_touch_axes(fd); !status.ok()) {
+      if (const auto status = enable_evdev_code(device, EV_REL, REL_HWHEEL_HI_RES, "high-resolution horizontal scroll"); !status.ok()) {
         return status;
       }
-      return enable_uinput_property(fd, INPUT_PROP_DIRECT, "direct touch");
+#else
+      if (const auto status = enable_evdev_code(device, EV_REL, REL_HWHEEL, "horizontal scroll"); !status.ok()) {
+        return status;
+      }
+#endif
+
+      auto x = make_absinfo(0, absolute_axis_max);
+      if (const auto status = enable_evdev_code(device, EV_ABS, ABS_X, "absolute mouse axis", &x); !status.ok()) {
+        return status;
+      }
+      auto y = make_absinfo(0, absolute_axis_max);
+      return enable_evdev_code(device, EV_ABS, ABS_Y, "absolute mouse axis", &y);
     }
 
-    OperationStatus enable_uinput_trackpad(int fd) {
-      if (const auto status = enable_uinput_touch_axes(fd); !status.ok()) {
+    OperationStatus configure_evdev_touch_axes(libevdev *device) {
+      if (const auto status = enable_evdev_type(device, EV_KEY, "touch key events"); !status.ok()) {
+        return status;
+      }
+      if (const auto status = enable_evdev_type(device, EV_ABS, "touch absolute events"); !status.ok()) {
+        return status;
+      }
+
+      auto slot = make_absinfo(0, touch_max_contacts - 1);
+      if (const auto status = enable_evdev_code(device, EV_ABS, ABS_MT_SLOT, "touch absolute axis", &slot); !status.ok()) {
+        return status;
+      }
+      auto x = make_absinfo(0, touch_axis_max_x);
+      if (const auto status = enable_evdev_code(device, EV_ABS, ABS_X, "touch absolute axis", &x); !status.ok()) {
+        return status;
+      }
+      auto y = make_absinfo(0, touch_axis_max_y);
+      if (const auto status = enable_evdev_code(device, EV_ABS, ABS_Y, "touch absolute axis", &y); !status.ok()) {
+        return status;
+      }
+      auto mt_x = make_absinfo(0, touch_axis_max_x);
+      if (const auto status = enable_evdev_code(device, EV_ABS, ABS_MT_POSITION_X, "touch absolute axis", &mt_x); !status.ok()) {
+        return status;
+      }
+      auto mt_y = make_absinfo(0, touch_axis_max_y);
+      if (const auto status = enable_evdev_code(device, EV_ABS, ABS_MT_POSITION_Y, "touch absolute axis", &mt_y); !status.ok()) {
+        return status;
+      }
+      auto tracking = make_absinfo(0, 65535);
+      if (const auto status = enable_evdev_code(device, EV_ABS, ABS_MT_TRACKING_ID, "touch absolute axis", &tracking); !status.ok()) {
+        return status;
+      }
+      auto pressure = make_absinfo(0, touch_pressure_max);
+      if (const auto status = enable_evdev_code(device, EV_ABS, ABS_PRESSURE, "touch absolute axis", &pressure); !status.ok()) {
+        return status;
+      }
+      auto mt_pressure = make_absinfo(0, touch_pressure_max);
+      if (const auto status = enable_evdev_code(device, EV_ABS, ABS_MT_PRESSURE, "touch absolute axis", &mt_pressure); !status.ok()) {
+        return status;
+      }
+      auto orientation = make_absinfo(-90, 90);
+      if (const auto status = enable_evdev_code(device, EV_ABS, ABS_MT_ORIENTATION, "touch absolute axis", &orientation); !status.ok()) {
+        return status;
+      }
+
+      return enable_evdev_code(device, EV_KEY, BTN_TOUCH, "touch button");
+    }
+
+    OperationStatus configure_evdev_touchscreen(libevdev *device) {
+      if (const auto status = configure_evdev_touch_axes(device); !status.ok()) {
+        return status;
+      }
+      return enable_evdev_property(device, INPUT_PROP_DIRECT, "direct touch");
+    }
+
+    OperationStatus configure_evdev_trackpad(libevdev *device) {
+      if (const auto status = configure_evdev_touch_axes(device); !status.ok()) {
         return status;
       }
 
       for (const auto button : {BTN_LEFT, BTN_TOOL_FINGER, BTN_TOOL_DOUBLETAP, BTN_TOOL_TRIPLETAP, BTN_TOOL_QUADTAP, BTN_TOOL_QUINTTAP}) {
-        if (system_ioctl(fd, UI_SET_KEYBIT, button) < 0) {
-          return ioctl_status("failed to enable uinput trackpad button " + std::to_string(button));
+        if (const auto status = enable_evdev_code(device, EV_KEY, button, "trackpad button"); !status.ok()) {
+          return status;
         }
       }
 
-      if (const auto status = enable_uinput_property(fd, INPUT_PROP_POINTER, "pointer"); !status.ok()) {
+      if (const auto status = enable_evdev_property(device, INPUT_PROP_POINTER, "pointer"); !status.ok()) {
         return status;
       }
-      return enable_uinput_property(fd, INPUT_PROP_BUTTONPAD, "buttonpad");
+      return enable_evdev_property(device, INPUT_PROP_BUTTONPAD, "buttonpad");
     }
 
-    OperationStatus enable_uinput_pen_tablet(int fd) {
-      if (system_ioctl(fd, UI_SET_EVBIT, EV_KEY) < 0) {
-        return ioctl_status("failed to enable uinput pen tablet key events");
+    OperationStatus configure_evdev_pen_tablet(libevdev *device) {
+      if (const auto status = enable_evdev_type(device, EV_KEY, "pen tablet key events"); !status.ok()) {
+        return status;
       }
-      if (system_ioctl(fd, UI_SET_EVBIT, EV_ABS) < 0) {
-        return ioctl_status("failed to enable uinput pen tablet absolute events");
+      if (const auto status = enable_evdev_type(device, EV_ABS, "pen tablet absolute events"); !status.ok()) {
+        return status;
       }
 
       std::vector<int> buttons {BTN_TOUCH, BTN_STYLUS, BTN_STYLUS2, BTN_TOOL_PEN, BTN_TOOL_RUBBER, BTN_TOOL_BRUSH, BTN_TOOL_PENCIL, BTN_TOOL_AIRBRUSH};
@@ -1093,21 +1043,104 @@ namespace lvh::detail {
       buttons.push_back(BTN_STYLUS3);
 #endif
       for (const auto button : buttons) {
-        if (system_ioctl(fd, UI_SET_KEYBIT, button) < 0) {
-          return ioctl_status("failed to enable uinput pen tablet button " + std::to_string(button));
+        if (const auto status = enable_evdev_code(device, EV_KEY, button, "pen tablet button"); !status.ok()) {
+          return status;
         }
       }
 
-      for (const auto code : {ABS_X, ABS_Y, ABS_PRESSURE, ABS_DISTANCE, ABS_TILT_X, ABS_TILT_Y}) {
-        if (system_ioctl(fd, UI_SET_ABSBIT, code) < 0) {
-          return ioctl_status("failed to enable uinput pen tablet absolute axis " + std::to_string(code));
-        }
-      }
-
-      if (const auto status = enable_uinput_property(fd, INPUT_PROP_POINTER, "tablet pointer"); !status.ok()) {
+      // libinput requires tablet coordinate and tilt axes to advertise resolution.
+      auto x = make_absinfo(0, touch_axis_max_x, 1, 0, tablet_resolution);
+      if (const auto status = enable_evdev_code(device, EV_ABS, ABS_X, "pen tablet absolute axis", &x); !status.ok()) {
         return status;
       }
-      return enable_uinput_property(fd, INPUT_PROP_DIRECT, "tablet direct");
+      auto y = make_absinfo(0, touch_axis_max_y, 1, 0, tablet_resolution);
+      if (const auto status = enable_evdev_code(device, EV_ABS, ABS_Y, "pen tablet absolute axis", &y); !status.ok()) {
+        return status;
+      }
+      auto pressure = make_absinfo(0, tablet_pressure_max);
+      if (const auto status = enable_evdev_code(device, EV_ABS, ABS_PRESSURE, "pen tablet absolute axis", &pressure); !status.ok()) {
+        return status;
+      }
+      auto distance = make_absinfo(0, tablet_distance_max);
+      if (const auto status = enable_evdev_code(device, EV_ABS, ABS_DISTANCE, "pen tablet absolute axis", &distance); !status.ok()) {
+        return status;
+      }
+      auto tilt_x = make_absinfo(-90, 90, 0, 0, tablet_resolution);
+      if (const auto status = enable_evdev_code(device, EV_ABS, ABS_TILT_X, "pen tablet absolute axis", &tilt_x); !status.ok()) {
+        return status;
+      }
+      auto tilt_y = make_absinfo(-90, 90, 0, 0, tablet_resolution);
+      if (const auto status = enable_evdev_code(device, EV_ABS, ABS_TILT_Y, "pen tablet absolute axis", &tilt_y); !status.ok()) {
+        return status;
+      }
+
+      if (const auto status = enable_evdev_property(device, INPUT_PROP_POINTER, "tablet pointer"); !status.ok()) {
+        return status;
+      }
+      return enable_evdev_property(device, INPUT_PROP_DIRECT, "tablet direct");
+    }
+
+    OperationStatus configure_evdev_device(libevdev *device, DeviceType device_type) {
+      switch (device_type) {
+        case DeviceType::keyboard:
+          return configure_evdev_keyboard(device);
+        case DeviceType::mouse:
+          return configure_evdev_mouse(device);
+        case DeviceType::touchscreen:
+          return configure_evdev_touchscreen(device);
+        case DeviceType::trackpad:
+          return configure_evdev_trackpad(device);
+        case DeviceType::pen_tablet:
+          return configure_evdev_pen_tablet(device);
+        case DeviceType::gamepad:
+          return OperationStatus::failure(ErrorCode::unsupported_profile, "gamepads are created through UHID, not uinput");
+      }
+
+      return OperationStatus::failure(ErrorCode::unsupported_profile, "unsupported uinput device type");
+    }
+
+    UinputCreationResult create_libevdev_uinput_device(int fd, const DeviceProfile &profile, DeviceId id) {
+      if (fd < 0) {
+        return {OperationStatus::failure(ErrorCode::backend_failure, "uinput file descriptor is closed"), nullptr};
+      }
+
+      LibevdevDevice device {libevdev_new()};
+      if (!device) {
+        return {OperationStatus::failure(ErrorCode::backend_failure, "failed to allocate libevdev device"), nullptr};
+      }
+
+      libevdev_set_name(device.get(), profile.name.c_str());
+      libevdev_set_id_bustype(device.get(), to_uinput_bus(profile.bus_type));
+      libevdev_set_id_vendor(device.get(), profile.vendor_id);
+      libevdev_set_id_product(device.get(), profile.product_id);
+      libevdev_set_id_version(device.get(), profile.version);
+
+      if (const auto status = configure_evdev_device(device.get(), profile.device_type); !status.ok()) {
+        return {status, nullptr};
+      }
+
+      libevdev_uinput *uinput_device = nullptr;
+      if (const auto result = libevdev_uinput_create_from_device(device.get(), fd, &uinput_device); result < 0) {
+        return {
+          OperationStatus::failure(
+            ErrorCode::backend_failure,
+            "failed to create uinput device " + std::to_string(id) + ": " + errno_message(-result)
+          ),
+          nullptr,
+        };
+      }
+
+      return {OperationStatus::success(), uinput_device};
+    }
+
+    OperationStatus UinputDevice::create_uinput_device(const DeviceProfile &profile, DeviceId id) {
+      auto result = create_libevdev_uinput_device(fd_, profile, id);
+      if (!result.status.ok()) {
+        return result.status;
+      }
+
+      uinput_device_ = result.device;
+      return OperationStatus::success();
     }
 
     /**
@@ -1123,11 +1156,8 @@ namespace lvh::detail {
       }
 
       OperationStatus create(DeviceId id, const CreateKeyboardOptions &options) {
-        if (const auto status = enable_uinput_keyboard(file_descriptor()); !status.ok()) {
-          return status;
-        }
         device_name_ = options.profile.name;
-        auto status = write_uinput_user_device(file_descriptor(), options.profile, id);
+        auto status = create_uinput_device(options.profile, id);
         if (status.ok() && options.auto_repeat_interval_ms > 0) {
           start_repeat_thread(options.auto_repeat_interval_ms);
         }
@@ -1272,11 +1302,8 @@ namespace lvh::detail {
       }
 
       OperationStatus create(DeviceId id, const CreateMouseOptions &options) {
-        if (const auto status = enable_uinput_mouse(file_descriptor()); !status.ok()) {
-          return status;
-        }
         device_name_ = options.profile.name;
-        return write_uinput_user_device(file_descriptor(), options.profile, id);
+        return create_uinput_device(options.profile, id);
       }
 
       OperationStatus submit(const MouseEvent &event) override {
@@ -1393,13 +1420,9 @@ namespace lvh::detail {
       }
 
     protected:
-      int touch_file_descriptor() const {
-        return file_descriptor();
-      }
-
       OperationStatus create_touch_device(DeviceId id, const DeviceProfile &profile) {
         device_name_ = profile.name;
-        return write_uinput_user_device(file_descriptor(), profile, id);
+        return create_uinput_device(profile, id);
       }
 
       OperationStatus place_touch_contact(const TouchContact &contact, bool update_trackpad_buttons) {
@@ -1569,9 +1592,6 @@ namespace lvh::detail {
       }
 
       OperationStatus create(DeviceId id, const CreateTouchscreenOptions &options) {
-        if (const auto status = enable_uinput_touchscreen(touch_file_descriptor()); !status.ok()) {
-          return status;
-        }
         return create_touch_device(id, options.profile);
       }
 
@@ -1605,9 +1625,6 @@ namespace lvh::detail {
       }
 
       OperationStatus create(DeviceId id, const CreateTrackpadOptions &options) {
-        if (const auto status = enable_uinput_trackpad(touch_file_descriptor()); !status.ok()) {
-          return status;
-        }
         return create_touch_device(id, options.profile);
       }
 
@@ -1683,11 +1700,8 @@ namespace lvh::detail {
       }
 
       OperationStatus create(DeviceId id, const CreatePenTabletOptions &options) {
-        if (const auto status = enable_uinput_pen_tablet(file_descriptor()); !status.ok()) {
-          return status;
-        }
         device_name_ = options.profile.name;
-        return write_uinput_user_device(file_descriptor(), options.profile, id);
+        return create_uinput_device(options.profile, id);
       }
 
       OperationStatus place_tool(const PenToolState &state) override {

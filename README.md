@@ -87,7 +87,8 @@ user-space interfaces:
 - `uhid` for descriptor-driven HID gamepads where the raw HID identity and
   output reports matter.
 - `uinput` for keyboard, mouse, and simpler evdev-style devices.
-- `evdev` or `libevdev` where it meaningfully reduces direct ioctl handling.
+- `libevdev` for uinput device construction where it reduces direct ioctl
+  handling and preserves the same public API.
 - X11/XTest as a last-resort keyboard and mouse fallback when `uinput` cannot
   be opened and an X11 session is available.
 
@@ -102,6 +103,11 @@ readable and writable, it reports keyboard and mouse support. When a required
 node is missing or permission is denied, the same backend remains selectable
 but reports the affected capability as unavailable and returns
 `backend_unavailable` from that device creation path.
+
+The Linux backend uses `libevdev` internally to construct uinput keyboard,
+mouse, touchscreen, trackpad, and pen tablet devices. Consumers still use the
+same platform-neutral C++ API; `libevdev` is a Linux build dependency, not a
+public API dependency.
 
 The Linux packaging model needs `/dev/uinput` and `/dev/uhid` access. Install a udev rules file such
 as `/etc/udev/rules.d/60-libvirtualhid.rules` with:
@@ -371,7 +377,7 @@ third-party/googletest/       GoogleTest submodule
 
 ### Phase 2C: Linux uinput Hardening
 
-- [ ] Prefer libevdev for uinput device construction where it removes fragile
+- [x] Prefer libevdev for uinput device construction where it removes fragile
   direct ioctl setup, while keeping the public API unchanged.
 
 ### Phase 3: Windows MVP

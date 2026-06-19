@@ -649,44 +649,101 @@ TEST_F(LinuxBackendTest, FakeUhidSyscallsCoverFailureBranches) {
   EXPECT_TRUE(lvh::detail::test::linux_uhid_read_loop_fake_output_without_callback().ok());
 }
 
-TEST_F(LinuxBackendTest, FakeUinputSyscallsCoverFailureBranches) {
-  for (const auto fail_call : {1, 2}) {
-    EXPECT_EQ(
-      lvh::detail::test::linux_uinput_keyboard_create_fake_ioctl_failure(fail_call).code(),
-      lvh::ErrorCode::backend_failure
-    );
-  }
+TEST_F(LinuxBackendTest, FakeUinputConstructionCoversCapabilitiesAndFailureBranches) {
+  const auto has_type = [](const lvh::detail::test::LinuxLibevdevCreationResult &result, std::uint32_t type) {
+    return std::find(result.event_types.begin(), result.event_types.end(), type) != result.event_types.end();
+  };
+  const auto has_property = [](const lvh::detail::test::LinuxLibevdevCreationResult &result, std::uint32_t property) {
+    return std::find(result.properties.begin(), result.properties.end(), property) != result.properties.end();
+  };
+  const auto find_code = [](const lvh::detail::test::LinuxLibevdevCreationResult &result, std::uint32_t type, std::uint32_t code) {
+    const auto it = std::find_if(result.event_codes.begin(), result.event_codes.end(), [type, code](const auto &event_code) {
+      return event_code.type == type && event_code.code == code;
+    });
+    return it == result.event_codes.end() ? nullptr : &(*it);
+  };
 
-  for (const auto fail_call : {1, 2, 3, 4, 9, 11, 12, 13, 14}) {
-    EXPECT_EQ(
-      lvh::detail::test::linux_uinput_mouse_create_fake_ioctl_failure(fail_call).code(),
-      lvh::ErrorCode::backend_failure
-    );
-  }
+  const auto keyboard = lvh::detail::test::linux_uinput_create_fake_libevdev_device(lvh::DeviceType::keyboard);
+  ASSERT_TRUE(keyboard.status.ok()) << keyboard.status.message();
+  EXPECT_EQ(keyboard.name, lvh::profiles::keyboard().name);
+  EXPECT_EQ(keyboard.bustype, BUS_USB);
+  EXPECT_TRUE(has_type(keyboard, EV_KEY));
+  EXPECT_NE(find_code(keyboard, EV_KEY, KEY_A), nullptr);
+  EXPECT_EQ(keyboard.destroy_count, 1U);
 
-  for (const auto fail_call : {1, 2, 3, 12, 13, 14}) {
-    EXPECT_EQ(
-      lvh::detail::test::linux_uinput_touchscreen_create_fake_ioctl_failure(fail_call).code(),
-      lvh::ErrorCode::backend_failure
-    );
-  }
+  const auto mouse = lvh::detail::test::linux_uinput_create_fake_libevdev_device(lvh::DeviceType::mouse);
+  ASSERT_TRUE(mouse.status.ok()) << mouse.status.message();
+  EXPECT_TRUE(has_type(mouse, EV_KEY));
+  EXPECT_TRUE(has_type(mouse, EV_REL));
+  EXPECT_TRUE(has_type(mouse, EV_ABS));
+  EXPECT_NE(find_code(mouse, EV_KEY, BTN_LEFT), nullptr);
+  EXPECT_NE(find_code(mouse, EV_REL, REL_X), nullptr);
+  const auto *mouse_x = find_code(mouse, EV_ABS, ABS_X);
+  ASSERT_NE(mouse_x, nullptr);
+  EXPECT_TRUE(mouse_x->has_absinfo);
+  EXPECT_EQ(mouse_x->maximum, 65535);
 
-  for (const auto fail_call : {1, 2, 3, 12, 13, 19, 20, 21}) {
-    EXPECT_EQ(
-      lvh::detail::test::linux_uinput_trackpad_create_fake_ioctl_failure(fail_call).code(),
-      lvh::ErrorCode::backend_failure
-    );
-  }
+  const auto touchscreen = lvh::detail::test::linux_uinput_create_fake_libevdev_device(lvh::DeviceType::touchscreen);
+  ASSERT_TRUE(touchscreen.status.ok()) << touchscreen.status.message();
+  EXPECT_TRUE(has_property(touchscreen, INPUT_PROP_DIRECT));
+  EXPECT_NE(find_code(touchscreen, EV_KEY, BTN_TOUCH), nullptr);
+  const auto *touch_slot = find_code(touchscreen, EV_ABS, ABS_MT_SLOT);
+  ASSERT_NE(touch_slot, nullptr);
+  EXPECT_TRUE(touch_slot->has_absinfo);
+  EXPECT_EQ(touch_slot->maximum, 15);
 
-  for (const auto fail_call : {1, 2, 3, 12, 18, 19, 20, 21, 22, 23, 24, 25, 26}) {
-    EXPECT_EQ(
-      lvh::detail::test::linux_uinput_pen_tablet_create_fake_ioctl_failure(fail_call).code(),
-      lvh::ErrorCode::backend_failure
-    );
-  }
+  const auto trackpad = lvh::detail::test::linux_uinput_create_fake_libevdev_device(lvh::DeviceType::trackpad);
+  ASSERT_TRUE(trackpad.status.ok()) << trackpad.status.message();
+  EXPECT_TRUE(has_property(trackpad, INPUT_PROP_POINTER));
+  EXPECT_TRUE(has_property(trackpad, INPUT_PROP_BUTTONPAD));
+  EXPECT_NE(find_code(trackpad, EV_KEY, BTN_LEFT), nullptr);
+  EXPECT_NE(find_code(trackpad, EV_KEY, BTN_TOOL_DOUBLETAP), nullptr);
 
-  EXPECT_EQ(lvh::detail::test::linux_uinput_user_device_fake_short_write().code(), lvh::ErrorCode::backend_failure);
-  EXPECT_EQ(lvh::detail::test::linux_uinput_user_device_fake_create_failure().code(), lvh::ErrorCode::backend_failure);
+  const auto pen_tablet = lvh::detail::test::linux_uinput_create_fake_libevdev_device(lvh::DeviceType::pen_tablet);
+  ASSERT_TRUE(pen_tablet.status.ok()) << pen_tablet.status.message();
+  EXPECT_TRUE(has_property(pen_tablet, INPUT_PROP_POINTER));
+  EXPECT_TRUE(has_property(pen_tablet, INPUT_PROP_DIRECT));
+  EXPECT_NE(find_code(pen_tablet, EV_KEY, BTN_TOOL_PEN), nullptr);
+  const auto *pen_x = find_code(pen_tablet, EV_ABS, ABS_X);
+  ASSERT_NE(pen_x, nullptr);
+  EXPECT_TRUE(pen_x->has_absinfo);
+  EXPECT_EQ(pen_x->maximum, 19200);
+  EXPECT_EQ(pen_x->fuzz, 1);
+  EXPECT_EQ(pen_x->resolution, 28);
+  const auto *pen_pressure = find_code(pen_tablet, EV_ABS, ABS_PRESSURE);
+  ASSERT_NE(pen_pressure, nullptr);
+  EXPECT_EQ(pen_pressure->maximum, 4096);
+  const auto *pen_tilt = find_code(pen_tablet, EV_ABS, ABS_TILT_X);
+  ASSERT_NE(pen_tilt, nullptr);
+  EXPECT_EQ(pen_tilt->minimum, -90);
+  EXPECT_EQ(pen_tilt->maximum, 90);
+  EXPECT_EQ(pen_tilt->resolution, 28);
+
+  EXPECT_EQ(
+    lvh::detail::test::linux_uinput_create_fake_libevdev_allocation_failure(lvh::DeviceType::mouse).code(),
+    lvh::ErrorCode::backend_failure
+  );
+  EXPECT_EQ(
+    lvh::detail::test::linux_uinput_create_fake_libevdev_event_type_failure(lvh::DeviceType::keyboard).code(),
+    lvh::ErrorCode::backend_failure
+  );
+  EXPECT_EQ(
+    lvh::detail::test::linux_uinput_create_fake_libevdev_event_code_failure(lvh::DeviceType::mouse).code(),
+    lvh::ErrorCode::backend_failure
+  );
+  EXPECT_EQ(
+    lvh::detail::test::linux_uinput_create_fake_libevdev_property_failure(lvh::DeviceType::trackpad).code(),
+    lvh::ErrorCode::backend_failure
+  );
+  EXPECT_EQ(
+    lvh::detail::test::linux_uinput_create_fake_libevdev_create_failure(lvh::DeviceType::pen_tablet).code(),
+    lvh::ErrorCode::backend_failure
+  );
+  EXPECT_EQ(
+    lvh::detail::test::linux_uinput_create_fake_libevdev_device(lvh::DeviceType::gamepad).status.code(),
+    lvh::ErrorCode::unsupported_profile
+  );
+
   EXPECT_EQ(
     lvh::detail::test::linux_uinput_keyboard_submit_fake_write_failure().code(),
     lvh::ErrorCode::backend_failure
@@ -872,7 +929,7 @@ TEST_F(LinuxBackendTest, FakeLinuxBackendCreatesAllDeviceTypes) {}
 
 TEST_F(LinuxBackendTest, FakeUhidSyscallsCoverFailureBranches) {}
 
-TEST_F(LinuxBackendTest, FakeUinputSyscallsCoverFailureBranches) {}
+TEST_F(LinuxBackendTest, FakeUinputConstructionCoversCapabilitiesAndFailureBranches) {}
 
 TEST_F(LinuxBackendTest, XTestFallbackCoversKeyboardAndMousePaths) {}
 
