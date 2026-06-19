@@ -1,5 +1,5 @@
 /**
- * @file src/platform/linux/uhid_backend_test_hooks.hpp
+ * @file tests/fixtures/include/fixtures/linux_backend_test_hooks.hpp
  * @brief Test-only hooks for Linux UHID backend internals.
  */
 #pragma once

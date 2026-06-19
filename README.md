@@ -147,20 +147,15 @@ the `input` group, then log out and back in:
 sudo usermod -aG input $USER
 ```
 
-The Linux UHID smoke test is opt-in because it creates a real virtual gamepad.
-Run it with `LIBVIRTUALHID_ENABLE_UHID_INTEGRATION_TESTS=1` on a Linux host
-where the current user can open `/dev/uhid`.
+The Linux UHID smoke test creates a real virtual gamepad and fails when the
+current user cannot open `/dev/uhid`.
 
-The Linux uinput smoke test is opt-in because it creates real keyboard and
-mouse devices. Run it with `LIBVIRTUALHID_ENABLE_UINPUT_INTEGRATION_TESTS=1` on
-a Linux host where the current user can open `/dev/uinput`.
+The Linux uinput smoke test creates real keyboard and mouse devices and fails
+when the current user cannot open `/dev/uinput`.
 
-The Linux discovery integration test is opt-in because it creates a real UHID
-gamepad and probes external input discovery tools. Run it with
-`LIBVIRTUALHID_ENABLE_DISCOVERY_INTEGRATION_TESTS=1` on a Linux host where the
-current user can open `/dev/uhid`. The test uses `sdl2-jstest` and
-`hidapitester` when either tool is installed, and skips cleanly when no
-discovery tool is available.
+The Linux discovery integration test creates a real UHID gamepad and probes
+external input discovery tools. It fails when `/dev/uhid` is unavailable, or
+when neither `sdl2-jstest` nor `hidapitester` is installed.
 
 When `BUILD_EXAMPLES` is enabled on Linux, the `linux_discovery_probe` example
 creates a generic UHID gamepad and performs the same SDL/HIDAPI discovery probe

@@ -31,6 +31,47 @@ private:
   std::streambuf *cout_streambuf_ {nullptr};
 };
 
+/**
+ * @brief Base class for Linux-only tests.
+ */
+class LinuxTest: public BaseTest {
+protected:
+  /**
+   * @brief Set up the test.
+   */
+  void SetUp() override;
+
+  /**
+   * @brief Check that a Linux device node is readable and writable.
+   *
+   * @param path Device node path.
+   * @return GoogleTest assertion result.
+   */
+  static ::testing::AssertionResult HasReadableWritableDeviceNode(const char *path);
+};
+
+/**
+ * @brief Base class for macOS-only tests.
+ */
+class MacOSTest: public BaseTest {
+protected:
+  /**
+   * @brief Set up the test.
+   */
+  void SetUp() override;
+};
+
+/**
+ * @brief Base class for Windows-only tests.
+ */
+class WindowsTest: public BaseTest {
+protected:
+  /**
+   * @brief Set up the test.
+   */
+  void SetUp() override;
+};
+
 // Undefine the original TEST macro.
 #undef TEST  // NOSONAR(cpp:S959): Tests intentionally wrap TEST to use BaseTest.
 

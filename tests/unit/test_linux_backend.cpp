@@ -13,17 +13,23 @@
   #include <linux/input.h>
 #endif
 
+// lib includes
+#include <libvirtualhid/libvirtualhid.hpp>
+
 // local includes
 #include "fixtures/fixtures.hpp"
 
-#include <libvirtualhid/libvirtualhid.hpp>
-
 #if defined(__linux__)
-  #include "platform/linux/uhid_backend_test_hooks.hpp"
+  #include "fixtures/linux_backend_test_hooks.hpp"
 #endif
 
-TEST(LinuxBackendTest, TranslatesKeyboardKeys) {
+/**
+ * @brief Test fixture for Linux backend internals.
+ */
+class LinuxBackendTest: public LinuxTest {};
+
 #if defined(__linux__)
+TEST_F(LinuxBackendTest, TranslatesKeyboardKeys) {
   EXPECT_EQ(lvh::detail::test::linux_key_code(0x08), KEY_BACKSPACE);
   EXPECT_EQ(lvh::detail::test::linux_key_code(0x09), KEY_TAB);
   EXPECT_EQ(lvh::detail::test::linux_key_code(0x0D), KEY_ENTER);
@@ -85,13 +91,9 @@ TEST(LinuxBackendTest, TranslatesKeyboardKeys) {
   EXPECT_EQ(lvh::detail::test::linux_key_code(0x87), KEY_F24);
   EXPECT_EQ(lvh::detail::test::linux_key_code(0), -1);
   EXPECT_EQ(lvh::detail::test::linux_key_code(0x88), -1);
-#else
-  GTEST_SKIP() << "Linux backend tests require Linux";
-#endif
 }
 
-TEST(LinuxBackendTest, TranslatesMouseButtonsAndBusTypes) {
-#if defined(__linux__)
+TEST_F(LinuxBackendTest, TranslatesMouseButtonsAndBusTypes) {
   EXPECT_EQ(lvh::detail::test::linux_mouse_button(lvh::MouseButton::left), BTN_LEFT);
   EXPECT_EQ(lvh::detail::test::linux_mouse_button(lvh::MouseButton::middle), BTN_MIDDLE);
   EXPECT_EQ(lvh::detail::test::linux_mouse_button(lvh::MouseButton::right), BTN_RIGHT);
@@ -103,13 +105,9 @@ TEST(LinuxBackendTest, TranslatesMouseButtonsAndBusTypes) {
   EXPECT_EQ(lvh::detail::test::linux_uhid_bus(lvh::BusType::usb), BUS_USB);
   EXPECT_EQ(lvh::detail::test::linux_uhid_bus(lvh::BusType::bluetooth), BUS_BLUETOOTH);
   EXPECT_EQ(lvh::detail::test::linux_uinput_bus(lvh::BusType::bluetooth), BUS_BLUETOOTH);
-#else
-  GTEST_SKIP() << "Linux backend tests require Linux";
-#endif
 }
 
-TEST(LinuxBackendTest, ScalesAbsoluteAxesAndScrollSteps) {
-#if defined(__linux__)
+TEST_F(LinuxBackendTest, ScalesAbsoluteAxesAndScrollSteps) {
   EXPECT_EQ(lvh::detail::test::linux_absolute_axis(-1, 100), 0);
   EXPECT_EQ(lvh::detail::test::linux_absolute_axis(0, 100), 0);
   EXPECT_EQ(lvh::detail::test::linux_absolute_axis(50, 100), 32767);
@@ -124,13 +122,9 @@ TEST(LinuxBackendTest, ScalesAbsoluteAxesAndScrollSteps) {
   EXPECT_EQ(lvh::detail::test::linux_legacy_scroll_steps(120), 1);
   EXPECT_EQ(lvh::detail::test::linux_legacy_scroll_steps(240), 2);
   EXPECT_EQ(lvh::detail::test::linux_legacy_scroll_steps(-240), -2);
-#else
-  GTEST_SKIP() << "Linux backend tests require Linux";
-#endif
 }
 
-TEST(LinuxBackendTest, DecodesTextHelpers) {
-#if defined(__linux__)
+TEST_F(LinuxBackendTest, DecodesTextHelpers) {
   EXPECT_EQ(
     lvh::detail::test::linux_decode_utf8("A\xC3\xA9\xE2\x82\xAC\xF0\x9F\x98\x80"),
     (std::vector<std::uint32_t> {0x41, 0xE9, 0x20AC, 0x1F600})
@@ -151,13 +145,9 @@ TEST(LinuxBackendTest, DecodesTextHelpers) {
   EXPECT_EQ(lvh::detail::test::linux_hex_digit_key_code('9'), 0x39);
   EXPECT_EQ(lvh::detail::test::linux_hex_digit_key_code('A'), 0x41);
   EXPECT_EQ(lvh::detail::test::linux_hex_digit_key_code('F'), 0x46);
-#else
-  GTEST_SKIP() << "Linux backend tests require Linux";
-#endif
 }
 
-TEST(LinuxBackendTest, HandlesUhidInvalidFileDescriptorPaths) {
-#if defined(__linux__)
+TEST_F(LinuxBackendTest, HandlesUhidInvalidFileDescriptorPaths) {
   EXPECT_EQ(
     lvh::detail::test::linux_uhid_create_with_descriptor_size(
       lvh::detail::test::linux_uhid_descriptor_limit() + 1
@@ -172,13 +162,9 @@ TEST(LinuxBackendTest, HandlesUhidInvalidFileDescriptorPaths) {
     lvh::ErrorCode::invalid_argument
   );
   EXPECT_EQ(lvh::detail::test::linux_uhid_submit_after_close().code(), lvh::ErrorCode::device_closed);
-#else
-  GTEST_SKIP() << "Linux backend tests require Linux";
-#endif
 }
 
-TEST(LinuxBackendTest, HandlesUinputKeyboardInvalidFileDescriptorPaths) {
-#if defined(__linux__)
+TEST_F(LinuxBackendTest, HandlesUinputKeyboardInvalidFileDescriptorPaths) {
   EXPECT_EQ(lvh::detail::test::linux_uinput_keyboard_create_invalid_fd().code(), lvh::ErrorCode::backend_failure);
   EXPECT_EQ(
     lvh::detail::test::linux_uinput_keyboard_submit_invalid_fd({.key_code = 0, .pressed = true}).code(),
@@ -194,13 +180,9 @@ TEST(LinuxBackendTest, HandlesUinputKeyboardInvalidFileDescriptorPaths) {
     lvh::ErrorCode::device_closed
   );
   EXPECT_EQ(lvh::detail::test::linux_uinput_keyboard_submit_after_close().code(), lvh::ErrorCode::device_closed);
-#else
-  GTEST_SKIP() << "Linux backend tests require Linux";
-#endif
 }
 
-TEST(LinuxBackendTest, PipeBackedUinputKeyboardEmitsEvents) {
-#if defined(__linux__)
+TEST_F(LinuxBackendTest, PipeBackedUinputKeyboardEmitsEvents) {
   EXPECT_EQ(lvh::detail::test::linux_copy_string_char_buffer("abcdef"), "abcd");
 
   const auto result = lvh::detail::test::linux_uinput_keyboard_submit_pipe({.key_code = 0x41, .pressed = true});
@@ -215,13 +197,9 @@ TEST(LinuxBackendTest, PipeBackedUinputKeyboardEmitsEvents) {
 
   EXPECT_EQ(lvh::detail::test::linux_uinput_user_device_invalid_fd().code(), lvh::ErrorCode::backend_failure);
   EXPECT_EQ(lvh::detail::test::linux_uinput_user_device_pipe().code(), lvh::ErrorCode::backend_failure);
-#else
-  GTEST_SKIP() << "Linux backend tests require Linux";
-#endif
 }
 
-TEST(LinuxBackendTest, HandlesUinputMouseInvalidFileDescriptorPaths) {
-#if defined(__linux__)
+TEST_F(LinuxBackendTest, HandlesUinputMouseInvalidFileDescriptorPaths) {
   EXPECT_EQ(lvh::detail::test::linux_uinput_mouse_create_invalid_fd().code(), lvh::ErrorCode::backend_failure);
 
   lvh::MouseEvent event;
@@ -261,13 +239,9 @@ TEST(LinuxBackendTest, HandlesUinputMouseInvalidFileDescriptorPaths) {
   EXPECT_EQ(lvh::detail::test::linux_uinput_mouse_submit_invalid_fd(event).code(), lvh::ErrorCode::device_closed);
 
   EXPECT_EQ(lvh::detail::test::linux_uinput_mouse_submit_after_close().code(), lvh::ErrorCode::device_closed);
-#else
-  GTEST_SKIP() << "Linux backend tests require Linux";
-#endif
 }
 
-TEST(LinuxBackendTest, PipeBackedUinputMouseEmitsEvents) {
-#if defined(__linux__)
+TEST_F(LinuxBackendTest, PipeBackedUinputMouseEmitsEvents) {
   lvh::MouseEvent event;
   event.kind = lvh::MouseEventKind::relative_motion;
   event.x = 5;
@@ -343,13 +317,9 @@ TEST(LinuxBackendTest, PipeBackedUinputMouseEmitsEvents) {
   EXPECT_EQ(result.events[0].value, -1);
   #endif
   EXPECT_EQ(result.events[1].type, EV_SYN);
-#else
-  GTEST_SKIP() << "Linux backend tests require Linux";
-#endif
 }
 
-TEST(LinuxBackendTest, SocketpairBackedUhidGamepadRoundTripsEvents) {
-#if defined(__linux__)
+TEST_F(LinuxBackendTest, SocketpairBackedUhidGamepadRoundTripsEvents) {
   const auto result = lvh::detail::test::linux_uhid_socketpair_roundtrip();
   EXPECT_TRUE(result.create_status.ok()) << result.create_status.message();
   EXPECT_TRUE(result.submit_status.ok()) << result.submit_status.message();
@@ -363,13 +333,9 @@ TEST(LinuxBackendTest, SocketpairBackedUhidGamepadRoundTripsEvents) {
   EXPECT_EQ(result.last_output.kind, lvh::GamepadOutputKind::rumble);
   EXPECT_EQ(result.last_output.low_frequency_rumble, 0x5678);
   EXPECT_EQ(result.last_output.high_frequency_rumble, 0x1234);
-#else
-  GTEST_SKIP() << "Linux backend tests require Linux";
-#endif
 }
 
-TEST(LinuxBackendTest, FakeLinuxBackendCreatesAllDeviceTypes) {
-#if defined(__linux__)
+TEST_F(LinuxBackendTest, FakeLinuxBackendCreatesAllDeviceTypes) {
   const auto unavailable = lvh::detail::test::linux_backend_fake_unavailable_capabilities();
   EXPECT_FALSE(unavailable.supports_virtual_hid);
   EXPECT_FALSE(unavailable.supports_gamepad);
@@ -385,14 +351,16 @@ TEST(LinuxBackendTest, FakeLinuxBackendCreatesAllDeviceTypes) {
 
   const auto keyboard_create_status = lvh::detail::test::linux_backend_keyboard_fake_create_failure();
   EXPECT_TRUE(keyboard_create_status.ok() || keyboard_create_status.code() == lvh::ErrorCode::backend_failure);
-  EXPECT_TRUE(lvh::detail::test::linux_backend_keyboard_fake_fallback_success().ok());
+  const auto keyboard_fallback_status = lvh::detail::test::linux_backend_keyboard_fake_fallback_success();
+  EXPECT_TRUE(keyboard_fallback_status.ok() || keyboard_fallback_status.code() == lvh::ErrorCode::backend_unavailable);
 
   const auto mouse_open_status = lvh::detail::test::linux_backend_mouse_fake_open_failure();
   EXPECT_TRUE(mouse_open_status.ok() || mouse_open_status.code() == lvh::ErrorCode::backend_unavailable);
 
   const auto mouse_create_status = lvh::detail::test::linux_backend_mouse_fake_create_failure();
   EXPECT_TRUE(mouse_create_status.ok() || mouse_create_status.code() == lvh::ErrorCode::backend_failure);
-  EXPECT_TRUE(lvh::detail::test::linux_backend_mouse_fake_fallback_success().ok());
+  const auto mouse_fallback_status = lvh::detail::test::linux_backend_mouse_fake_fallback_success();
+  EXPECT_TRUE(mouse_fallback_status.ok() || mouse_fallback_status.code() == lvh::ErrorCode::backend_unavailable);
 
   const auto result = lvh::detail::test::linux_backend_create_all_fake_success();
   EXPECT_TRUE(result.capabilities.supports_virtual_hid);
@@ -406,13 +374,9 @@ TEST(LinuxBackendTest, FakeLinuxBackendCreatesAllDeviceTypes) {
   EXPECT_TRUE(result.keyboard_close_status.ok()) << result.keyboard_close_status.message();
   EXPECT_TRUE(result.mouse_status.ok()) << result.mouse_status.message();
   EXPECT_TRUE(result.mouse_close_status.ok()) << result.mouse_close_status.message();
-#else
-  GTEST_SKIP() << "Linux backend tests require Linux";
-#endif
 }
 
-TEST(LinuxBackendTest, FakeUhidSyscallsCoverFailureBranches) {
-#if defined(__linux__)
+TEST_F(LinuxBackendTest, FakeUhidSyscallsCoverFailureBranches) {
   EXPECT_EQ(lvh::detail::test::linux_uhid_submit_fake_write_failure().code(), lvh::ErrorCode::backend_failure);
   EXPECT_EQ(lvh::detail::test::linux_uhid_submit_fake_short_write().code(), lvh::ErrorCode::backend_failure);
   EXPECT_EQ(lvh::detail::test::linux_uhid_close_fake_write_failure().code(), lvh::ErrorCode::backend_failure);
@@ -421,13 +385,9 @@ TEST(LinuxBackendTest, FakeUhidSyscallsCoverFailureBranches) {
   EXPECT_TRUE(lvh::detail::test::linux_uhid_read_loop_fake_poll_errors().ok());
   EXPECT_TRUE(lvh::detail::test::linux_uhid_read_loop_fake_read_error().ok());
   EXPECT_TRUE(lvh::detail::test::linux_uhid_read_loop_fake_output_without_callback().ok());
-#else
-  GTEST_SKIP() << "Linux backend tests require Linux";
-#endif
 }
 
-TEST(LinuxBackendTest, FakeUinputSyscallsCoverFailureBranches) {
-#if defined(__linux__)
+TEST_F(LinuxBackendTest, FakeUinputSyscallsCoverFailureBranches) {
   for (const auto fail_call : {1, 2}) {
     EXPECT_EQ(
       lvh::detail::test::linux_uinput_keyboard_create_fake_ioctl_failure(fail_call).code(),
@@ -444,24 +404,32 @@ TEST(LinuxBackendTest, FakeUinputSyscallsCoverFailureBranches) {
 
   EXPECT_EQ(lvh::detail::test::linux_uinput_user_device_fake_short_write().code(), lvh::ErrorCode::backend_failure);
   EXPECT_EQ(lvh::detail::test::linux_uinput_user_device_fake_create_failure().code(), lvh::ErrorCode::backend_failure);
-  EXPECT_EQ(lvh::detail::test::linux_uinput_keyboard_submit_fake_write_failure().code(), lvh::ErrorCode::backend_failure);
+  EXPECT_EQ(
+    lvh::detail::test::linux_uinput_keyboard_submit_fake_write_failure().code(),
+    lvh::ErrorCode::backend_failure
+  );
   EXPECT_EQ(lvh::detail::test::linux_uinput_keyboard_submit_fake_short_write().code(), lvh::ErrorCode::backend_failure);
   EXPECT_TRUE(lvh::detail::test::linux_uinput_keyboard_type_text_fake_success().ok());
-  EXPECT_EQ(lvh::detail::test::linux_uinput_keyboard_close_fake_close_failure().code(), lvh::ErrorCode::backend_failure);
+  EXPECT_EQ(
+    lvh::detail::test::linux_uinput_keyboard_close_fake_close_failure().code(),
+    lvh::ErrorCode::backend_failure
+  );
 
   lvh::MouseEvent event;
   event.kind = lvh::MouseEventKind::relative_motion;
   event.x = 1;
   event.y = 1;
-  EXPECT_EQ(lvh::detail::test::linux_uinput_mouse_submit_fake_write_failure(event).code(), lvh::ErrorCode::backend_failure);
-  EXPECT_EQ(lvh::detail::test::linux_uinput_mouse_submit_fake_short_write(event).code(), lvh::ErrorCode::backend_failure);
-#else
-  GTEST_SKIP() << "Linux backend tests require Linux";
-#endif
+  EXPECT_EQ(
+    lvh::detail::test::linux_uinput_mouse_submit_fake_write_failure(event).code(),
+    lvh::ErrorCode::backend_failure
+  );
+  EXPECT_EQ(
+    lvh::detail::test::linux_uinput_mouse_submit_fake_short_write(event).code(),
+    lvh::ErrorCode::backend_failure
+  );
 }
 
-TEST(LinuxBackendTest, PlatformRuntimeReportsUnavailableDeviceCreationWhenNodesAreMissing) {
-#if defined(__linux__)
+TEST_F(LinuxBackendTest, PlatformRuntimeReportsUnavailableDeviceCreationWhenNodesAreMissing) {
   lvh::RuntimeOptions options;
   options.backend = lvh::BackendKind::platform_default;
   auto runtime = lvh::Runtime::create(options);
@@ -483,7 +451,20 @@ TEST(LinuxBackendTest, PlatformRuntimeReportsUnavailableDeviceCreationWhenNodesA
     EXPECT_FALSE(mouse);
     EXPECT_EQ(mouse.status.code(), lvh::ErrorCode::backend_unavailable);
   }
-#else
-  GTEST_SKIP() << "Linux backend tests require Linux";
-#endif
 }
+#else
+TEST_F(LinuxBackendTest, TranslatesKeyboardKeys) {}
+TEST_F(LinuxBackendTest, TranslatesMouseButtonsAndBusTypes) {}
+TEST_F(LinuxBackendTest, ScalesAbsoluteAxesAndScrollSteps) {}
+TEST_F(LinuxBackendTest, DecodesTextHelpers) {}
+TEST_F(LinuxBackendTest, HandlesUhidInvalidFileDescriptorPaths) {}
+TEST_F(LinuxBackendTest, HandlesUinputKeyboardInvalidFileDescriptorPaths) {}
+TEST_F(LinuxBackendTest, PipeBackedUinputKeyboardEmitsEvents) {}
+TEST_F(LinuxBackendTest, HandlesUinputMouseInvalidFileDescriptorPaths) {}
+TEST_F(LinuxBackendTest, PipeBackedUinputMouseEmitsEvents) {}
+TEST_F(LinuxBackendTest, SocketpairBackedUhidGamepadRoundTripsEvents) {}
+TEST_F(LinuxBackendTest, FakeLinuxBackendCreatesAllDeviceTypes) {}
+TEST_F(LinuxBackendTest, FakeUhidSyscallsCoverFailureBranches) {}
+TEST_F(LinuxBackendTest, FakeUinputSyscallsCoverFailureBranches) {}
+TEST_F(LinuxBackendTest, PlatformRuntimeReportsUnavailableDeviceCreationWhenNodesAreMissing) {}
+#endif

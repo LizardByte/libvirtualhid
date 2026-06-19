@@ -21,19 +21,19 @@
 #include <thread>
 #include <vector>
 
-// platform includes
-#if defined(__linux__)
-  #include <unistd.h>
-#endif
+// lib includes
+#include <libvirtualhid/libvirtualhid.hpp>
 
 // local includes
 #include "fixtures/fixtures.hpp"
 
-#include <libvirtualhid/libvirtualhid.hpp>
+/**
+ * @brief Test fixture for Linux virtual device discovery.
+ */
+class LinuxDiscoveryTest: public LinuxTest {};
 
 namespace {
 
-#if defined(__linux__)
   struct DiscoveryProbe {
     std::string name;
     std::string executable;
@@ -66,8 +66,7 @@ namespace {
 
   CommandResult run_command(const DiscoveryProbe &probe, std::size_t index) {
     const auto output_path = std::filesystem::temp_directory_path() /
-                             ("libvirtualhid-discovery-test-" + std::to_string(::getpid()) + "-" +
-                              std::to_string(index) + ".txt");
+                             ("libvirtualhid-discovery-test-" + std::to_string(index) + ".txt");
     const auto command = probe.command + " > \"" + output_path.string() + "\" 2>&1";
     CommandResult result;
     result.exit_code = std::system(command.c_str());
@@ -117,23 +116,30 @@ namespace {
               << result.output << '\n';
     return false;
   }
-#endif
 
 }  // namespace
 
-TEST(LinuxDiscoveryTest, SdlOrHidapiCanDiscoverUhidGamepadWhenAvailable) {
-#if defined(__linux__)
-  const auto *enabled = std::getenv("LIBVIRTUALHID_ENABLE_DISCOVERY_INTEGRATION_TESTS");
-  if (enabled == nullptr || std::string_view {enabled} != "1") {
-    GTEST_SKIP() << "set LIBVIRTUALHID_ENABLE_DISCOVERY_INTEGRATION_TESTS=1 to validate SDL/HIDAPI discovery";
+TEST_F(LinuxDiscoveryTest, SdlOrHidapiDiscoveryRequiresPrerequisites) {
+  ASSERT_TRUE(HasReadableWritableDeviceNode("/dev/uhid"));
+
+  const auto probes = discovery_probes();
+  std::vector<std::size_t> available_probe_indices;
+  for (std::size_t index = 0; index < probes.size(); ++index) {
+    const auto &probe = probes[index];
+    if (!command_available(probe.executable)) {
+      std::cout << probe.executable << " is not installed; " << probe.name << " is unavailable" << '\n';
+      continue;
+    }
+
+    available_probe_indices.push_back(index);
   }
+
+  ASSERT_FALSE(available_probe_indices.empty()) << "install sdl2-jstest or hidapitester to validate external discovery";
 
   lvh::RuntimeOptions runtime_options;
   runtime_options.backend = lvh::BackendKind::platform_default;
   auto runtime = lvh::Runtime::create(runtime_options);
-  if (!runtime->capabilities().supports_gamepad) {
-    GTEST_SKIP() << "/dev/uhid is not accessible";
-  }
+  ASSERT_TRUE(runtime->capabilities().supports_gamepad);
 
   lvh::CreateGamepadOptions options;
   options.profile = lvh::profiles::generic_gamepad();
@@ -147,23 +153,8 @@ TEST(LinuxDiscoveryTest, SdlOrHidapiCanDiscoverUhidGamepadWhenAvailable) {
   state.left_stick = {0.25F, -0.25F};
   ASSERT_TRUE(created.gamepad->submit(state).ok());
 
-  std::size_t available_probe_count = 0;
-  const auto probes = discovery_probes();
-  for (std::size_t index = 0; index < probes.size(); ++index) {
+  for (const auto index : available_probe_indices) {
     const auto &probe = probes[index];
-    if (!command_available(probe.executable)) {
-      std::cout << probe.executable << " is not installed; skipping " << probe.name << '\n';
-      continue;
-    }
-
-    ++available_probe_count;
     EXPECT_TRUE(wait_for_probe(probe, options.profile, index));
   }
-
-  if (available_probe_count == 0) {
-    GTEST_SKIP() << "install sdl2-jstest or hidapitester to validate external discovery";
-  }
-#else
-  GTEST_SKIP() << "SDL/HIDAPI discovery validation requires Linux UHID";
-#endif
 }

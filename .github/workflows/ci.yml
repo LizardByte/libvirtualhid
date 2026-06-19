@@ -78,8 +78,14 @@ jobs:
             build-essential \
             clang \
             cmake \
+            libx11-dev \
+            libxtst-dev \
             llvm \
-            ninja-build
+            ninja-build \
+            sdl2-jstest
+          sudo modprobe uhid
+          sudo modprobe uinput
+          sudo chmod a+rw /dev/uhid /dev/uinput
 
       - name: Setup Dependencies macOS
         if: runner.os == 'macOS'

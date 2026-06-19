@@ -6,6 +6,11 @@
 // standard includes
 #include <iostream>
 
+// platform includes
+#if defined(__linux__)
+  #include <unistd.h>
+#endif
+
 // local includes
 #include "fixtures/fixtures.hpp"
 
@@ -30,4 +35,38 @@ void BaseTest::TearDown() {
               << "Captured cout:" << std::endl
               << cout_buffer_.str() << std::endl;
   }
+}
+
+void LinuxTest::SetUp() {
+#if !defined(__linux__)
+  GTEST_SKIP() << "Skipping, this test is for Linux only.";
+#endif
+  BaseTest::SetUp();
+}
+
+::testing::AssertionResult LinuxTest::HasReadableWritableDeviceNode(const char *path) {
+#if defined(__linux__)
+  if (::access(path, R_OK | W_OK) == 0) {
+    return ::testing::AssertionSuccess();
+  }
+
+  return ::testing::AssertionFailure() << path << " must be readable and writable";
+#else
+  static_cast<void>(path);
+  return ::testing::AssertionSuccess();
+#endif
+}
+
+void MacOSTest::SetUp() {
+#if !defined(__APPLE__) || !defined(__MACH__)
+  GTEST_SKIP() << "Skipping, this test is for macOS only.";
+#endif
+  BaseTest::SetUp();
+}
+
+void WindowsTest::SetUp() {
+#if !defined(_WIN32)
+  GTEST_SKIP() << "Skipping, this test is for Windows only.";
+#endif
+  BaseTest::SetUp();
 }

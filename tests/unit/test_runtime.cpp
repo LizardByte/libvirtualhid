@@ -3,14 +3,16 @@
  * @brief Unit tests for runtime and virtual gamepad handles.
  */
 
-// standard includes
-#include <cstdlib>
-#include <string_view>
+// lib includes
+#include <libvirtualhid/libvirtualhid.hpp>
 
 // local includes
 #include "fixtures/fixtures.hpp"
 
-#include <libvirtualhid/libvirtualhid.hpp>
+/**
+ * @brief Test fixture for Linux runtime integration tests.
+ */
+class LinuxRuntimeTest: public LinuxTest {};
 
 TEST(RuntimeTest, FakeBackendReportsCapabilities) {
   auto runtime = lvh::Runtime::create();
@@ -149,19 +151,13 @@ TEST(RuntimeTest, CreatesSubmitsAndClosesMouse) {
   EXPECT_EQ(created.mouse->move_relative(1, 1).code(), lvh::ErrorCode::device_closed);
 }
 
-TEST(RuntimeTest, LinuxUhidSmokeTestWhenExplicitlyEnabled) {
-#if defined(__linux__)
-  const auto *enabled = std::getenv("LIBVIRTUALHID_ENABLE_UHID_INTEGRATION_TESTS");
-  if (enabled == nullptr || std::string_view {enabled} != "1") {
-    GTEST_SKIP() << "set LIBVIRTUALHID_ENABLE_UHID_INTEGRATION_TESTS=1 to exercise /dev/uhid";
-  }
+TEST_F(LinuxRuntimeTest, LinuxUhidSmokeTestRequiresPrerequisites) {
+  ASSERT_TRUE(HasReadableWritableDeviceNode("/dev/uhid"));
 
   lvh::RuntimeOptions options;
   options.backend = lvh::BackendKind::platform_default;
   auto runtime = lvh::Runtime::create(options);
-  if (!runtime->capabilities().supports_gamepad) {
-    GTEST_SKIP() << "/dev/uhid is not accessible";
-  }
+  ASSERT_TRUE(runtime->capabilities().supports_gamepad);
 
   auto created = runtime->create_gamepad(lvh::profiles::xbox_360());
   ASSERT_TRUE(created) << created.status.message();
@@ -173,35 +169,25 @@ TEST(RuntimeTest, LinuxUhidSmokeTestWhenExplicitlyEnabled) {
 
   EXPECT_TRUE(created.gamepad->submit(state).ok());
   EXPECT_TRUE(created.gamepad->close().ok());
-#else
-  GTEST_SKIP() << "UHID is only available on Linux";
-#endif
 }
 
-TEST(RuntimeTest, LinuxUinputSmokeTestWhenExplicitlyEnabled) {
-#if defined(__linux__)
-  const auto *enabled = std::getenv("LIBVIRTUALHID_ENABLE_UINPUT_INTEGRATION_TESTS");
-  if (enabled == nullptr || std::string_view {enabled} != "1") {
-    GTEST_SKIP() << "set LIBVIRTUALHID_ENABLE_UINPUT_INTEGRATION_TESTS=1 to exercise /dev/uinput";
-  }
+TEST_F(LinuxRuntimeTest, LinuxUinputSmokeTestRequiresPrerequisites) {
+  ASSERT_TRUE(HasReadableWritableDeviceNode("/dev/uinput"));
 
   lvh::RuntimeOptions options;
   options.backend = lvh::BackendKind::platform_default;
   auto runtime = lvh::Runtime::create(options);
-  if (!runtime->capabilities().supports_keyboard || !runtime->capabilities().supports_mouse) {
-    GTEST_SKIP() << "/dev/uinput or XTest fallback is not accessible";
-  }
+  const auto &capabilities = runtime->capabilities();
 
+  ASSERT_TRUE(capabilities.supports_keyboard);
   auto keyboard = runtime->create_keyboard();
   ASSERT_TRUE(keyboard) << keyboard.status.message();
   EXPECT_TRUE(keyboard.keyboard->press(0x41).ok());
   EXPECT_TRUE(keyboard.keyboard->release(0x41).ok());
 
+  ASSERT_TRUE(capabilities.supports_mouse);
   auto mouse = runtime->create_mouse();
   ASSERT_TRUE(mouse) << mouse.status.message();
   EXPECT_TRUE(mouse.mouse->move_relative(1, 1).ok());
   EXPECT_TRUE(mouse.mouse->vertical_scroll(120).ok());
-#else
-  GTEST_SKIP() << "uinput is only available on Linux";
-#endif
 }
