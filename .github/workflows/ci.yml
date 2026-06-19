@@ -78,11 +78,16 @@ jobs:
             build-essential \
             clang \
             cmake \
+            joystick \
             libx11-dev \
             libxtst-dev \
             llvm \
-            ninja-build \
-            sdl2-jstest
+            ninja-build
+          sudo tee /etc/udev/rules.d/99-libvirtualhid-ci.rules >/dev/null <<'EOF'
+          KERNEL=="hidraw*", ATTRS{name}=="libvirtualhid*", MODE="0666", TAG+="uaccess"
+          SUBSYSTEMS=="input", ATTRS{name}=="libvirtualhid*", MODE="0666", TAG+="uaccess"
+          EOF
+          sudo udevadm control --reload-rules
           sudo modprobe uhid
           sudo modprobe uinput
           sudo chmod a+rw /dev/uhid /dev/uinput

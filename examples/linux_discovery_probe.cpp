@@ -42,7 +42,7 @@ namespace {
 
   std::vector<Probe> discovery_probes() {
     return {
-      {"SDL2 joystick list", "sdl2-jstest", "sdl2-jstest --list"},
+      {"evdev joystick list", "evdev-joystick", "evdev-joystick --listdevs"},
       {"HIDAPI device list", "hidapitester", "hidapitester --list"},
     };
   }
@@ -160,7 +160,7 @@ int main() {
   }
 
   if (available_probe_count == 0) {
-    std::cout << "Install sdl2-jstest or hidapitester to validate external discovery." << '\n';
+    std::cout << "Install joystick or hidapitester to validate external discovery." << '\n';
     return 0;
   }
 

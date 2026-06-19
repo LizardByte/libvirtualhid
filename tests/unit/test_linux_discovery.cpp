@@ -47,7 +47,7 @@ namespace {
 
   std::vector<DiscoveryProbe> discovery_probes() {
     return {
-      {"SDL2 joystick list", "sdl2-jstest", "sdl2-jstest --list"},
+      {"evdev joystick list", "evdev-joystick", "evdev-joystick --listdevs"},
       {"HIDAPI device list", "hidapitester", "hidapitester --list"},
     };
   }
@@ -119,7 +119,7 @@ namespace {
 
 }  // namespace
 
-TEST_F(LinuxDiscoveryTest, SdlOrHidapiDiscoveryRequiresPrerequisites) {
+TEST_F(LinuxDiscoveryTest, ExternalDiscoveryRequiresPrerequisites) {
   ASSERT_TRUE(HasReadableWritableDeviceNode("/dev/uhid"));
 
   const auto probes = discovery_probes();
@@ -134,7 +134,8 @@ TEST_F(LinuxDiscoveryTest, SdlOrHidapiDiscoveryRequiresPrerequisites) {
     available_probe_indices.push_back(index);
   }
 
-  ASSERT_FALSE(available_probe_indices.empty()) << "install sdl2-jstest or hidapitester to validate external discovery";
+  ASSERT_FALSE(available_probe_indices.empty())
+    << "install joystick or hidapitester to validate external discovery";
 
   lvh::RuntimeOptions runtime_options;
   runtime_options.backend = lvh::BackendKind::platform_default;

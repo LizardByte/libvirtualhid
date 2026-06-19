@@ -155,10 +155,11 @@ when the current user cannot open `/dev/uinput`.
 
 The Linux discovery integration test creates a real UHID gamepad and probes
 external input discovery tools. It fails when `/dev/uhid` is unavailable, or
-when neither `sdl2-jstest` nor `hidapitester` is installed.
+when neither `evdev-joystick` from the `joystick` package nor `hidapitester` is
+installed.
 
 When `BUILD_EXAMPLES` is enabled on Linux, the `linux_discovery_probe` example
-creates a generic UHID gamepad and performs the same SDL/HIDAPI discovery probe
+creates a generic UHID gamepad and performs the same external discovery probe
 outside the test runner.
 
 The XTest fallback should not be treated as a gamepad backend. It can cover
@@ -325,8 +326,8 @@ third-party/googletest/       GoogleTest submodule
 - [x] Add `uinput` support for keyboard and mouse once the gamepad path is stable.
 - [x] Support output report callbacks for rumble and profile-specific feedback.
 - [x] Add X11/XTest fallback support for keyboard and mouse only.
-- [x] Add examples and integration tests that validate SDL/HIDAPI discovery where
-  available.
+- [x] Add examples and integration tests that validate external gamepad
+  discovery where available.
 - [x] Document required Linux permissions and sample udev rules.
 
 ### Phase 3: Windows MVP
