@@ -1,5 +1,9 @@
 # libvirtualhid
 
+[![GitHub Workflow Status (CI)](https://img.shields.io/github/actions/workflow/status/lizardbyte/libvirtualhid/ci.yml.svg?branch=master&label=CI%20build&logo=github&style=for-the-badge)](https://github.com/LizardByte/libvirtualhid/actions/workflows/ci.yml?query=branch%3Amaster)
+[![Codecov](https://img.shields.io/codecov/c/gh/LizardByte/libvirtualhid?token=2MeMpktxpv&style=for-the-badge&logo=codecov&label=codecov)](https://codecov.io/gh/LizardByte/libvirtualhid)
+[![GitHub stars](https://img.shields.io/github/stars/lizardbyte/libvirtualhid.svg?logo=github&style=for-the-badge)](https://github.com/LizardByte/libvirtualhid)
+
 `libvirtualhid` is a planned cross-platform C++ library for creating virtual HID
 input devices for remote streaming hosts and similar low-latency input
 applications.
@@ -345,7 +349,8 @@ third-party/googletest/       GoogleTest submodule
 - [x] Support output report callbacks for rumble and profile-specific feedback.
 - [x] Add X11/XTest fallback support for keyboard and mouse only.
 - [x] Add examples and integration tests that validate virtual device visibility
-  through SDL2 for gamepads and libinput for keyboard/mouse.
+  through SDL2 for generic gamepad input, DualSense USB input, and DualSense
+  Bluetooth controller discovery, plus libinput for keyboard/mouse.
 - [x] Document required Linux permissions and sample udev rules.
 
 ### Phase 2B: Linux inputtino Parity
@@ -371,7 +376,8 @@ third-party/googletest/       GoogleTest submodule
 - [x] Keep gamepad feedback on UHID output reports. There is no uinput-backed
   gamepad path in this library; if one is added later, it must implement Linux
   force-feedback upload, erase, playback, and gain handling.
-- [x] Expand Linux consumer tests so SDL2 validates controller-specific behavior
+- [x] Expand Linux consumer tests so SDL2 validates generic joystick input,
+  DualSense USB controller input, and DualSense Bluetooth controller discovery,
   and libinput validates keyboard, mouse, touchscreen, trackpad, and pen tablet
   events.
 
