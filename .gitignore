@@ -1,2 +1,15 @@
 # JetBrains IDEs
 .idea/
+
+# Python
+.venv/
+
+# CMake
+build/
+cmake-build-*/
+
+# Local temp directories
+.tmp/
+
+# doxyconfig
+docs/doxyconfig*
