@@ -24,6 +24,7 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <thread>
 #include <utility>
@@ -348,6 +349,13 @@ namespace lvh::detail {
       destination[length] = 0;
     }
 
+    template<std::size_t Size>
+    void copy_string(std::array<char, Size> &destination, std::string_view source) {
+      const auto length = std::min(source.size(), Size - 1);
+      std::memcpy(destination.data(), source.data(), length);
+      destination[length] = 0;
+    }
+
     std::optional<std::string> read_first_line(const std::filesystem::path &path) {
       std::ifstream file {path};
       if (!file) {
@@ -524,7 +532,7 @@ namespace lvh::detail {
       }
 
       if (key_code >= 0x30 && key_code <= 0x39) {
-        static constexpr int digit_keys[] {
+        static constexpr std::array digit_keys {
           KEY_0,
           KEY_1,
           KEY_2,
@@ -539,7 +547,7 @@ namespace lvh::detail {
         return digit_keys[key_code - 0x30];
       }
       if (key_code >= 0x41 && key_code <= 0x5A) {
-        static constexpr int letter_keys[] {
+        static constexpr std::array letter_keys {
           KEY_A,
           KEY_B,
           KEY_C,
@@ -570,7 +578,7 @@ namespace lvh::detail {
         return letter_keys[key_code - 0x41];
       }
       if (key_code >= 0x60 && key_code <= 0x69) {
-        static constexpr int keypad_digit_keys[] {
+        static constexpr std::array keypad_digit_keys {
           KEY_KP0,
           KEY_KP1,
           KEY_KP2,
@@ -600,7 +608,7 @@ namespace lvh::detail {
         return KEY_KPSLASH;
       }
       if (key_code >= 0x70 && key_code <= 0x87) {
-        static constexpr int function_keys[] {
+        static constexpr std::array function_keys {
           KEY_F1,
           KEY_F2,
           KEY_F3,

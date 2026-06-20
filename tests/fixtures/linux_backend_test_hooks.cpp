@@ -752,9 +752,9 @@ namespace lvh::detail::test {
   }  // namespace
 
   std::string linux_copy_string_char_buffer(const std::string &source) {
-    char destination[5] {};
+    std::array<char, 5> destination {};
     copy_string(destination, source);
-    return destination;
+    return destination.data();
   }
 
   int linux_key_code(KeyboardKeyCode key_code) {
@@ -899,8 +899,8 @@ namespace lvh::detail::test {
   }
 
   LinuxInputSubmissionResult linux_uinput_keyboard_submit_pipe(const KeyboardEvent &event) {
-    int descriptors[2] {-1, -1};
-    if (::pipe(descriptors) != 0) {
+    std::array<int, 2> descriptors {-1, -1};
+    if (::pipe(descriptors.data()) != 0) {
       return {system_error_status(ErrorCode::backend_failure, "failed to create pipe", errno), {}};
     }
 
@@ -917,8 +917,8 @@ namespace lvh::detail::test {
   }
 
   OperationStatus linux_uinput_user_device_pipe() {
-    int descriptors[2] {-1, -1};
-    if (::pipe(descriptors) != 0) {
+    std::array<int, 2> descriptors {-1, -1};
+    if (::pipe(descriptors.data()) != 0) {
       return system_error_status(ErrorCode::backend_failure, "failed to create pipe", errno);
     }
 
@@ -948,8 +948,8 @@ namespace lvh::detail::test {
   }
 
   LinuxInputSubmissionResult linux_uinput_mouse_submit_pipe(const MouseEvent &event) {
-    int descriptors[2] {-1, -1};
-    if (::pipe(descriptors) != 0) {
+    std::array<int, 2> descriptors {-1, -1};
+    if (::pipe(descriptors.data()) != 0) {
       return {system_error_status(ErrorCode::backend_failure, "failed to create pipe", errno), {}};
     }
 
@@ -962,8 +962,8 @@ namespace lvh::detail::test {
   }
 
   LinuxInputSubmissionResult linux_uinput_touchscreen_contact_pipe(const TouchContact &contact) {
-    int descriptors[2] {-1, -1};
-    if (::pipe(descriptors) != 0) {
+    std::array<int, 2> descriptors {-1, -1};
+    if (::pipe(descriptors.data()) != 0) {
       return {system_error_status(ErrorCode::backend_failure, "failed to create pipe", errno), {}};
     }
 
@@ -979,8 +979,8 @@ namespace lvh::detail::test {
   }
 
   LinuxInputSubmissionResult linux_uinput_trackpad_contact_pipe(const TouchContact &contact) {
-    int descriptors[2] {-1, -1};
-    if (::pipe(descriptors) != 0) {
+    std::array<int, 2> descriptors {-1, -1};
+    if (::pipe(descriptors.data()) != 0) {
       return {system_error_status(ErrorCode::backend_failure, "failed to create pipe", errno), {}};
     }
 
@@ -1002,8 +1002,8 @@ namespace lvh::detail::test {
   }
 
   LinuxInputSubmissionResult linux_uinput_pen_tablet_tool_pipe(const PenToolState &state) {
-    int descriptors[2] {-1, -1};
-    if (::pipe(descriptors) != 0) {
+    std::array<int, 2> descriptors {-1, -1};
+    if (::pipe(descriptors.data()) != 0) {
       return {system_error_status(ErrorCode::backend_failure, "failed to create pipe", errno), {}};
     }
 
@@ -1022,8 +1022,8 @@ namespace lvh::detail::test {
   }
 
   LinuxInputSubmissionResult linux_uinput_trackpad_multi_contact_pipe() {
-    int descriptors[2] {-1, -1};
-    if (::pipe(descriptors) != 0) {
+    std::array<int, 2> descriptors {-1, -1};
+    if (::pipe(descriptors.data()) != 0) {
       return {system_error_status(ErrorCode::backend_failure, "failed to create pipe", errno), {}};
     }
 
@@ -1048,8 +1048,8 @@ namespace lvh::detail::test {
   }
 
   OperationStatus linux_uinput_touchscreen_invalid_contacts() {
-    int descriptors[2] {-1, -1};
-    if (::pipe(descriptors) != 0) {
+    std::array<int, 2> descriptors {-1, -1};
+    if (::pipe(descriptors.data()) != 0) {
       return system_error_status(ErrorCode::backend_failure, "failed to create pipe", errno);
     }
 
@@ -1074,14 +1074,14 @@ namespace lvh::detail::test {
   }
 
   LinuxInputSubmissionResult linux_uinput_pen_tablet_transition_pipe() {
-    int descriptors[2] {-1, -1};
-    if (::pipe(descriptors) != 0) {
+    std::array<int, 2> descriptors {-1, -1};
+    if (::pipe(descriptors.data()) != 0) {
       return {system_error_status(ErrorCode::backend_failure, "failed to create pipe", errno), {}};
     }
 
     UinputPenTablet pen_tablet {descriptors[1]};
     auto status = OperationStatus::success();
-    const PenToolType tools[] {
+    constexpr std::array tools {
       PenToolType::pen,
       PenToolType::eraser,
       PenToolType::brush,
@@ -1131,8 +1131,8 @@ namespace lvh::detail::test {
 
   LinuxUhidRoundTripResult linux_uhid_socketpair_roundtrip() {
     LinuxUhidRoundTripResult result;
-    int descriptors[2] {-1, -1};
-    if (::socketpair(AF_UNIX, SOCK_STREAM, 0, descriptors) != 0) {
+    std::array<int, 2> descriptors {-1, -1};
+    if (::socketpair(AF_UNIX, SOCK_STREAM, 0, descriptors.data()) != 0) {
       result.create_status = system_error_status(ErrorCode::backend_failure, "failed to create socketpair", errno);
       result.submit_status = result.create_status;
       result.close_status = result.create_status;
@@ -1213,8 +1213,8 @@ namespace lvh::detail::test {
 
   LinuxUhidRoundTripResult linux_dualsense_uhid_socketpair_reports() {
     LinuxUhidRoundTripResult result;
-    int descriptors[2] {-1, -1};
-    if (::socketpair(AF_UNIX, SOCK_STREAM, 0, descriptors) != 0) {
+    std::array<int, 2> descriptors {-1, -1};
+    if (::socketpair(AF_UNIX, SOCK_STREAM, 0, descriptors.data()) != 0) {
       result.create_status = system_error_status(ErrorCode::backend_failure, "failed to create socketpair", errno);
       result.submit_status = result.create_status;
       result.close_status = result.create_status;
@@ -1281,8 +1281,8 @@ namespace lvh::detail::test {
 
   LinuxUhidRoundTripResult linux_dualsense_bluetooth_uhid_socketpair_reports() {
     LinuxUhidRoundTripResult result;
-    int descriptors[2] {-1, -1};
-    if (::socketpair(AF_UNIX, SOCK_STREAM, 0, descriptors) != 0) {
+    std::array<int, 2> descriptors {-1, -1};
+    if (::socketpair(AF_UNIX, SOCK_STREAM, 0, descriptors.data()) != 0) {
       result.create_status = system_error_status(ErrorCode::backend_failure, "failed to create socketpair", errno);
       result.submit_status = result.create_status;
       result.close_status = result.create_status;
