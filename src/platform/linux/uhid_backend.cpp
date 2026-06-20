@@ -24,6 +24,7 @@
 #include <set>
 #include <span>
 #include <sstream>
+#include <stop_token>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -1271,15 +1272,15 @@ namespace lvh::detail {
 
       void start_repeat_thread(std::uint32_t interval_ms) {
         repeat_running_ = true;
-        repeat_thread_ = std::thread {[this, interval_ms]() {
-          while (repeat_running_) {
+        repeat_thread_ = std::jthread {[this, interval_ms](std::stop_token stop_token) {
+          while (!stop_token.stop_requested() && repeat_running_) {
             std::this_thread::sleep_for(std::chrono::milliseconds {interval_ms});
-            if (!repeat_running_ || !is_open()) {
+            if (stop_token.stop_requested() || !repeat_running_ || !is_open()) {
               break;
             }
 
             for (const auto key_code : pressed_keys_snapshot()) {
-              if (!repeat_running_ || !is_open()) {
+              if (stop_token.stop_requested() || !repeat_running_ || !is_open()) {
                 break;
               }
               static_cast<void>(emit_keyboard_event({.key_code = key_code, .pressed = true}));
@@ -1291,13 +1292,14 @@ namespace lvh::detail {
       void stop_repeat_thread() {
         repeat_running_ = false;
         if (repeat_thread_.joinable()) {
+          repeat_thread_.request_stop();
           repeat_thread_.join();
         }
       }
 
       std::string device_name_;
       std::atomic_bool repeat_running_ = false;
-      std::thread repeat_thread_;
+      std::jthread repeat_thread_;
       mutable std::mutex pressed_keys_mutex_;
       std::set<KeyboardKeyCode> pressed_keys_;
     };
@@ -2196,12 +2198,12 @@ namespace lvh::detail {
         }
 
         running_ = true;
-        reader_ = std::thread {[this]() {
-          read_loop();
+        reader_ = std::jthread {[this](std::stop_token stop_token) {
+          read_loop(stop_token);
         }};
         if (profile_.gamepad_kind == GamepadProfileKind::dualsense) {
-          periodic_reporter_ = std::thread {[this]() {
-            periodic_report_loop();
+          periodic_reporter_ = std::jthread {[this](std::stop_token stop_token) {
+            periodic_report_loop(stop_token);
           }};
         }
         return OperationStatus::success();
@@ -2243,6 +2245,12 @@ namespace lvh::detail {
         }
 
         running_ = false;
+        if (periodic_reporter_.joinable()) {
+          periodic_reporter_.request_stop();
+        }
+        if (reader_.joinable()) {
+          reader_.request_stop();
+        }
 
         auto status = OperationStatus::success();
         if (fd_ >= 0) {
@@ -2288,8 +2296,8 @@ namespace lvh::detail {
         return OperationStatus::success();
       }
 
-      void read_loop() {
-        while (running_) {
+      void read_loop(std::stop_token stop_token) {
+        while (!stop_token.stop_requested() && running_) {
           pollfd descriptor {};
           descriptor.fd = fd_;
           descriptor.events = POLLIN;
@@ -2299,13 +2307,13 @@ namespace lvh::detail {
             if (errno == EINTR) {
               continue;
             }
-            break;
+            return;
           }
           if (result == 0) {
             continue;
           }
           if ((descriptor.revents & (POLLERR | POLLHUP | POLLNVAL)) != 0) {
-            break;
+            return;
           }
           if ((descriptor.revents & POLLIN) == 0) {
             continue;
@@ -2317,10 +2325,10 @@ namespace lvh::detail {
             if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
               continue;
             }
-            break;
+            return;
           }
           if (read_result == 0) {
-            break;
+            return;
           }
 
           handle_event(event);
@@ -2344,10 +2352,10 @@ namespace lvh::detail {
         }
       }
 
-      void periodic_report_loop() {
-        while (running_) {
+      void periodic_report_loop(std::stop_token stop_token) {
+        while (!stop_token.stop_requested() && running_) {
           std::this_thread::sleep_for(std::chrono::milliseconds {dualsense_periodic_report_ms});
-          if (!running_ || !open_) {
+          if (stop_token.stop_requested() || !running_ || !open_) {
             break;
           }
 
@@ -2442,8 +2450,8 @@ namespace lvh::detail {
       std::vector<std::uint8_t> last_report_;
       std::atomic_bool open_ = true;
       std::atomic_bool running_ = false;
-      std::thread reader_;
-      std::thread periodic_reporter_;
+      std::jthread reader_;
+      std::jthread periodic_reporter_;
       std::mutex write_mutex_;
       std::mutex report_mutex_;
       std::mutex callback_mutex_;
