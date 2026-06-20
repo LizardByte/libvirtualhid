@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <vector>
 
 // local includes
@@ -418,7 +419,7 @@ namespace lvh::detail::test {
    * @param expected Expected first line.
    * @return `true` when the first line exists and matches.
    */
-  bool linux_first_line_matches(const std::string &path, const std::string &expected);
+  bool linux_first_line_matches(std::string_view path, std::string_view expected);
 
   /**
    * @brief Check whether reading the first line of a file fails.
@@ -426,7 +427,7 @@ namespace lvh::detail::test {
    * @param path File path to read.
    * @return `true` when no first line could be read.
    */
-  bool linux_first_line_missing(const std::string &path);
+  bool linux_first_line_missing(std::string_view path);
 
   /**
    * @brief Check whether a hidraw uevent file advertises the expected HID name.
@@ -435,7 +436,7 @@ namespace lvh::detail::test {
    * @param name Expected HID name.
    * @return `true` when the HID name matches.
    */
-  bool linux_hidraw_name_matches(const std::string &path, const std::string &name);
+  bool linux_hidraw_name_matches(std::string_view path, std::string_view name);
 
   /**
    * @brief Discover Linux input nodes for a device name.

@@ -374,9 +374,9 @@ namespace lvh {
     });
   }
 
-  void Gamepad::set_output_callback(OutputCallback callback) {
+  void Gamepad::set_output_callback(const OutputCallback &callback) {
     with_device(device_, [&callback](auto &device) {
-      device.output_callback = std::move(callback);
+      device.output_callback = callback;
       if (device.backend) {
         device.backend->set_output_callback(device.output_callback);
       }
@@ -999,7 +999,8 @@ namespace lvh {
       state_->gamepads.emplace_back(device);
     });
 
-    return {OperationStatus::success(), std::make_unique<Gamepad>(detail::RuntimeConstructionToken {}, std::move(device))};
+    auto gamepad = std::make_unique<Gamepad>(detail::RuntimeConstructionToken {}, std::move(device));
+    return {OperationStatus::success(), std::move(gamepad)};
   }
 
   KeyboardCreationResult Runtime::create_keyboard() {
@@ -1027,7 +1028,8 @@ namespace lvh {
       state_->keyboards.emplace_back(device);
     });
 
-    return {OperationStatus::success(), std::make_unique<Keyboard>(detail::RuntimeConstructionToken {}, std::move(device))};
+    auto keyboard = std::make_unique<Keyboard>(detail::RuntimeConstructionToken {}, std::move(device));
+    return {OperationStatus::success(), std::move(keyboard)};
   }
 
   MouseCreationResult Runtime::create_mouse() {
@@ -1055,7 +1057,8 @@ namespace lvh {
       state_->mice.emplace_back(device);
     });
 
-    return {OperationStatus::success(), std::make_unique<Mouse>(detail::RuntimeConstructionToken {}, std::move(device))};
+    auto mouse = std::make_unique<Mouse>(detail::RuntimeConstructionToken {}, std::move(device));
+    return {OperationStatus::success(), std::move(mouse)};
   }
 
   TouchscreenCreationResult Runtime::create_touchscreen() {
@@ -1083,7 +1086,8 @@ namespace lvh {
       state_->touchscreens.emplace_back(device);
     });
 
-    return {OperationStatus::success(), std::make_unique<Touchscreen>(detail::RuntimeConstructionToken {}, std::move(device))};
+    auto touchscreen = std::make_unique<Touchscreen>(detail::RuntimeConstructionToken {}, std::move(device));
+    return {OperationStatus::success(), std::move(touchscreen)};
   }
 
   TrackpadCreationResult Runtime::create_trackpad() {
@@ -1111,7 +1115,8 @@ namespace lvh {
       state_->trackpads.emplace_back(device);
     });
 
-    return {OperationStatus::success(), std::make_unique<Trackpad>(detail::RuntimeConstructionToken {}, std::move(device))};
+    auto trackpad = std::make_unique<Trackpad>(detail::RuntimeConstructionToken {}, std::move(device));
+    return {OperationStatus::success(), std::move(trackpad)};
   }
 
   PenTabletCreationResult Runtime::create_pen_tablet() {
@@ -1139,7 +1144,8 @@ namespace lvh {
       state_->pen_tablets.emplace_back(device);
     });
 
-    return {OperationStatus::success(), std::make_unique<PenTablet>(detail::RuntimeConstructionToken {}, std::move(device))};
+    auto pen_tablet = std::make_unique<PenTablet>(detail::RuntimeConstructionToken {}, std::move(device));
+    return {OperationStatus::success(), std::move(pen_tablet)};
   }
 
   std::size_t Runtime::active_device_count() const {

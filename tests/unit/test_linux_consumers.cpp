@@ -8,6 +8,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -82,8 +83,14 @@ namespace {
     /**
      * @brief Execute the cleanup function.
      */
-    ~ScopeExit() {
-      function_();
+    ~ScopeExit() noexcept {
+      try {
+        function_();
+      } catch (const std::exception &exception) {
+        ADD_FAILURE() << "Scope-exit cleanup failed: " << exception.what();
+      } catch (...) {
+        ADD_FAILURE() << "Scope-exit cleanup failed with an unknown exception.";
+      }
     }
 
     ScopeExit(const ScopeExit &) = delete;
@@ -322,9 +329,9 @@ namespace {
     SDL_SetHint("SDL_JOYSTICK_HIDAPI_PS5", "1");
   }
 
-  lvh::GamepadCreationResult create_sdl_gamepad(lvh::Runtime &runtime, SdlGamepadConsumerCase test_case) {
+  lvh::GamepadCreationResult create_sdl_gamepad(lvh::Runtime &runtime, const SdlGamepadConsumerCase &test_case) {
     lvh::CreateGamepadOptions options;
-    options.profile = std::move(test_case.profile);
+    options.profile = test_case.profile;
     options.profile.name = unique_device_name(test_case.name_suffix);
     options.metadata.stable_id = std::string {test_case.stable_id};
 
@@ -346,7 +353,7 @@ namespace {
     }
   }
 
-  void run_sdl_uhid_joystick_test(SdlGamepadConsumerCase test_case) {
+  void run_sdl_uhid_joystick_test(const SdlGamepadConsumerCase &test_case) {
     configure_sdl_hidapi_hints();
     ASSERT_EQ(SDL_Init(SDL_INIT_JOYSTICK | SDL_INIT_EVENTS), 0) << SDL_GetError();
     ScopeExit sdl_quit {[]() {
@@ -370,7 +377,7 @@ namespace {
     const auto joystick_index = wait_for_sdl_joystick(expected_profile);
     ASSERT_GE(joystick_index, 0);
 
-    SdlJoystick joystick {SDL_JoystickOpen(joystick_index), SDL_JoystickClose};
+    SdlJoystick joystick {SDL_JoystickOpen(joystick_index), &SDL_JoystickClose};
     ASSERT_NE(joystick.get(), nullptr) << SDL_GetError();
     expect_sdl_joystick_profile(
       joystick.get(),
@@ -387,7 +394,7 @@ namespace {
     EXPECT_TRUE(wait_for_sdl_gamepad_input(joystick.get())) << describe_sdl_state(joystick.get());
   }
 
-  void run_sdl_dualsense_controller_test(SdlGamepadConsumerCase test_case) {
+  void run_sdl_dualsense_controller_test(const SdlGamepadConsumerCase &test_case) {
     configure_sdl_hidapi_hints();
     ASSERT_EQ(SDL_Init(SDL_INIT_GAMECONTROLLER | SDL_INIT_JOYSTICK | SDL_INIT_EVENTS), 0) << SDL_GetError();
     ScopeExit sdl_quit {[]() {
@@ -412,7 +419,7 @@ namespace {
     ASSERT_GE(joystick_index, 0);
     ASSERT_EQ(SDL_IsGameController(joystick_index), SDL_TRUE) << SDL_GetError();
 
-    SdlGameController controller {SDL_GameControllerOpen(joystick_index), SDL_GameControllerClose};
+    SdlGameController controller {SDL_GameControllerOpen(joystick_index), &SDL_GameControllerClose};
     ASSERT_NE(controller.get(), nullptr) << SDL_GetError();
 
     auto *joystick = SDL_GameControllerGetJoystick(controller.get());

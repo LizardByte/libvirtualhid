@@ -12,8 +12,7 @@
 namespace lvh {
 
   OperationStatus::OperationStatus():
-      code_ {ErrorCode::ok},
-      message_ {} {}
+      code_ {ErrorCode::ok} {}
 
   OperationStatus::OperationStatus(ErrorCode code, std::string message):
       code_ {code},

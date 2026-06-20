@@ -37,12 +37,11 @@ void BaseTest::TearDown() {
   }
 }
 
-void LinuxTest::SetUp() {
 #if !defined(__linux__)
+void LinuxTest::SetUp() {
   GTEST_SKIP() << "Skipping, this test is for Linux only.";
-#endif
-  BaseTest::SetUp();
 }
+#endif
 
 ::testing::AssertionResult LinuxTest::HasReadableWritableDeviceNode(const char *path) {
 #if defined(__linux__)
@@ -57,16 +56,14 @@ void LinuxTest::SetUp() {
 #endif
 }
 
-void MacOSTest::SetUp() {
 #if !defined(__APPLE__) || !defined(__MACH__)
+void MacOSTest::SetUp() {
   GTEST_SKIP() << "Skipping, this test is for macOS only.";
-#endif
-  BaseTest::SetUp();
 }
+#endif
 
-void WindowsTest::SetUp() {
 #if !defined(_WIN32)
+void WindowsTest::SetUp() {
   GTEST_SKIP() << "Skipping, this test is for Windows only.";
-#endif
-  BaseTest::SetUp();
 }
+#endif

@@ -26,6 +26,7 @@
 #include <span>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <thread>
 #include <utility>
@@ -347,20 +348,20 @@ extern "C" libevdev *lvh_linux_test_libevdev_new() {
       return nullptr;
     }
     auto fake_device = std::make_unique<lvh::detail::test::FakeLibevdevDevice>();
-    auto *device = fake_device.get();
+    auto *created_device = fake_device.get();
     lvh::detail::test::active_test_syscalls->owned_libevdev_devices.push_back(std::move(fake_device));
-    return lvh::detail::test::libevdev_handle(device);
+    return lvh::detail::test::libevdev_handle(created_device);
   }
   return ::libevdev_new();
 }
 
 extern "C" void lvh_linux_test_libevdev_free(libevdev *device) {
   if (lvh::detail::test::active_test_syscalls != nullptr && lvh::detail::test::active_test_syscalls->override_libevdev) {
-    auto *fake_device = lvh::detail::test::fake_libevdev_device(device);
+    auto *fake_device_handle = lvh::detail::test::fake_libevdev_device(device);
     static_cast<void>(std::erase_if(
       lvh::detail::test::active_test_syscalls->owned_libevdev_devices,
-      [fake_device](const auto &owned_device) {
-        return owned_device.get() == fake_device;
+      [fake_device_handle](const auto &owned_device) {
+        return owned_device.get() == fake_device_handle;
       }
     ));
     return;
@@ -470,11 +471,12 @@ extern "C" int lvh_linux_test_libevdev_uinput_create_from_device(
       return -EIO;
     }
 
-    const auto &fake_device = *lvh::detail::test::fake_libevdev_device(device);
-    lvh::detail::test::active_test_syscalls->libevdev_devices.push_back(fake_device);
-    auto fake_uinput_device = std::make_unique<lvh::detail::test::FakeLibevdevUinput>(lvh::detail::test::FakeLibevdevUinput {fake_device});
-    auto *created_uinput_device = fake_uinput_device.get();
-    lvh::detail::test::active_test_syscalls->owned_libevdev_uinput_devices.push_back(std::move(fake_uinput_device));
+    const auto &source_device = *lvh::detail::test::fake_libevdev_device(device);
+    lvh::detail::test::active_test_syscalls->libevdev_devices.push_back(source_device);
+    auto owned_uinput_device =
+      std::make_unique<lvh::detail::test::FakeLibevdevUinput>(lvh::detail::test::FakeLibevdevUinput {source_device});
+    auto *created_uinput_device = owned_uinput_device.get();
+    lvh::detail::test::active_test_syscalls->owned_libevdev_uinput_devices.push_back(std::move(owned_uinput_device));
     *uinput_device = lvh::detail::test::libevdev_uinput_handle(created_uinput_device);
     return 0;
   }
@@ -484,11 +486,11 @@ extern "C" int lvh_linux_test_libevdev_uinput_create_from_device(
 extern "C" void lvh_linux_test_libevdev_uinput_destroy(libevdev_uinput *uinput_device) {
   if (lvh::detail::test::active_test_syscalls != nullptr && lvh::detail::test::active_test_syscalls->override_libevdev) {
     ++lvh::detail::test::active_test_syscalls->libevdev_destroy_count;
-    auto *fake_uinput_device = lvh::detail::test::fake_libevdev_uinput(uinput_device);
+    auto *fake_uinput_handle = lvh::detail::test::fake_libevdev_uinput(uinput_device);
     static_cast<void>(std::erase_if(
       lvh::detail::test::active_test_syscalls->owned_libevdev_uinput_devices,
-      [fake_uinput_device](const auto &owned_device) {
-        return owned_device.get() == fake_uinput_device;
+      [fake_uinput_handle](const auto &owned_device) {
+        return owned_device.get() == fake_uinput_handle;
       }
     ));
     return;
@@ -859,17 +861,17 @@ namespace lvh::detail::test {
     return format_mac_address(parse_mac_address(stable_id).value_or(generated_mac_address(id)));
   }
 
-  bool linux_first_line_matches(const std::string &path, const std::string &expected) {
-    const auto line = read_first_line(path);
+  bool linux_first_line_matches(std::string_view path, std::string_view expected) {
+    const auto line = read_first_line(std::filesystem::path {std::string {path}});
     return line && *line == expected;
   }
 
-  bool linux_first_line_missing(const std::string &path) {
-    return !read_first_line(path);
+  bool linux_first_line_missing(std::string_view path) {
+    return !read_first_line(std::filesystem::path {std::string {path}});
   }
 
-  bool linux_hidraw_name_matches(const std::string &path, const std::string &name) {
-    return hidraw_name_matches(path, name);
+  bool linux_hidraw_name_matches(std::string_view path, std::string_view name) {
+    return hidraw_name_matches(std::filesystem::path {std::string {path}}, name);
   }
 
   std::vector<DeviceNode> linux_discover_nodes_by_name(const std::string &name) {
