@@ -264,7 +264,7 @@ namespace lvh {
 
     template<class Func>
     auto with_device(const auto &device, Func &&func) {
-      return device->with_lock([&]() {
+      return device->with_lock([&device, &func]() {
         return func(*device);
       });
     }
@@ -274,7 +274,7 @@ namespace lvh {
       std::size_t count = 0;
       for (const auto &weak_device : devices) {
         if (const auto device = weak_device.lock()) {
-          if (device->with_lock([&]() {
+          if (device->with_lock([device]() {
                 return device->open;
               })) {
             ++count;
@@ -288,7 +288,7 @@ namespace lvh {
     void close_devices(DeviceList &devices) {
       for (const auto &weak_device : devices) {
         if (const auto device = weak_device.lock()) {
-          device->with_lock([&]() {
+          device->with_lock([device]() {
             if (device->backend) {
               static_cast<void>(device->backend->close());
             }
@@ -985,7 +985,7 @@ namespace lvh {
       return {validation, nullptr};
     }
 
-    const auto id = state_->with_lock([&]() {
+    const auto id = state_->with_lock([this]() {
       return state_->next_device_id++;
     });
 
@@ -995,7 +995,7 @@ namespace lvh {
     }
 
     auto device = std::make_shared<detail::GamepadDevice>(id, options, std::move(backend_result.gamepad));
-    state_->with_lock([&]() {
+    state_->with_lock([this, &device]() {
       state_->gamepads.emplace_back(device);
     });
 
@@ -1013,7 +1013,7 @@ namespace lvh {
       return {validation, nullptr};
     }
 
-    const auto id = state_->with_lock([&]() {
+    const auto id = state_->with_lock([this]() {
       return state_->next_device_id++;
     });
 
@@ -1023,7 +1023,7 @@ namespace lvh {
     }
 
     auto device = std::make_shared<detail::KeyboardDevice>(id, options, std::move(backend_result.keyboard));
-    state_->with_lock([&]() {
+    state_->with_lock([this, &device]() {
       state_->keyboards.emplace_back(device);
     });
 
@@ -1041,7 +1041,7 @@ namespace lvh {
       return {validation, nullptr};
     }
 
-    const auto id = state_->with_lock([&]() {
+    const auto id = state_->with_lock([this]() {
       return state_->next_device_id++;
     });
 
@@ -1051,7 +1051,7 @@ namespace lvh {
     }
 
     auto device = std::make_shared<detail::MouseDevice>(id, options, std::move(backend_result.mouse));
-    state_->with_lock([&]() {
+    state_->with_lock([this, &device]() {
       state_->mice.emplace_back(device);
     });
 
@@ -1069,7 +1069,7 @@ namespace lvh {
       return {validation, nullptr};
     }
 
-    const auto id = state_->with_lock([&]() {
+    const auto id = state_->with_lock([this]() {
       return state_->next_device_id++;
     });
 
@@ -1079,7 +1079,7 @@ namespace lvh {
     }
 
     auto device = std::make_shared<detail::TouchscreenDevice>(id, options, std::move(backend_result.touchscreen));
-    state_->with_lock([&]() {
+    state_->with_lock([this, &device]() {
       state_->touchscreens.emplace_back(device);
     });
 
@@ -1097,7 +1097,7 @@ namespace lvh {
       return {validation, nullptr};
     }
 
-    const auto id = state_->with_lock([&]() {
+    const auto id = state_->with_lock([this]() {
       return state_->next_device_id++;
     });
 
@@ -1107,7 +1107,7 @@ namespace lvh {
     }
 
     auto device = std::make_shared<detail::TrackpadDevice>(id, options, std::move(backend_result.trackpad));
-    state_->with_lock([&]() {
+    state_->with_lock([this, &device]() {
       state_->trackpads.emplace_back(device);
     });
 
@@ -1125,7 +1125,7 @@ namespace lvh {
       return {validation, nullptr};
     }
 
-    const auto id = state_->with_lock([&]() {
+    const auto id = state_->with_lock([this]() {
       return state_->next_device_id++;
     });
 
@@ -1135,7 +1135,7 @@ namespace lvh {
     }
 
     auto device = std::make_shared<detail::PenTabletDevice>(id, options, std::move(backend_result.pen_tablet));
-    state_->with_lock([&]() {
+    state_->with_lock([this, &device]() {
       state_->pen_tablets.emplace_back(device);
     });
 
@@ -1143,7 +1143,7 @@ namespace lvh {
   }
 
   std::size_t Runtime::active_device_count() const {
-    return state_->with_lock([&]() {
+    return state_->with_lock([this]() {
       return count_open_devices(state_->gamepads) + count_open_devices(state_->keyboards) + count_open_devices(state_->mice) +
              count_open_devices(state_->touchscreens) + count_open_devices(state_->trackpads) +
              count_open_devices(state_->pen_tablets);
@@ -1151,7 +1151,7 @@ namespace lvh {
   }
 
   void Runtime::close_all() {
-    state_->with_lock([&]() {
+    state_->with_lock([this]() {
       close_devices(state_->gamepads);
       close_devices(state_->keyboards);
       close_devices(state_->mice);
