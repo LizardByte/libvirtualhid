@@ -171,7 +171,9 @@ TEST_F(LinuxBackendTest, CoversLinuxDiscoveryAndIdentityHelpers) {
   EXPECT_EQ(lvh::detail::test::linux_dualsense_mac_address("02-03-04-05-06-07", 0x1020304), "02:00:01:02:03:04");
   EXPECT_EQ(lvh::detail::test::linux_dualsense_mac_address("ff:00:100:00:00:00", 0x1020304), "02:00:01:02:03:04");
 
-  const auto temp_dir = std::filesystem::temp_directory_path();
+  const auto temp_dir = std::filesystem::current_path() / "cmake-build-linux-backend-test-scratch";
+  std::filesystem::remove_all(temp_dir);
+  std::filesystem::create_directories(temp_dir);
   const auto first_line_path = temp_dir / "libvirtualhid-linux-first-line-test.txt";
   const auto uevent_path = temp_dir / "libvirtualhid-linux-hidraw-uevent-test.txt";
 
@@ -251,9 +253,7 @@ TEST_F(LinuxBackendTest, CoversLinuxDiscoveryAndIdentityHelpers) {
     return node.kind == lvh::DeviceNodeKind::sysfs && node.path.starts_with(sysfs_root.string());
   }));
 
-  std::filesystem::remove(first_line_path);
-  std::filesystem::remove(uevent_path);
-  std::filesystem::remove_all(sysfs_root);
+  std::filesystem::remove_all(temp_dir);
 }
 
 TEST_F(LinuxBackendTest, HandlesUhidInvalidFileDescriptorPaths) {

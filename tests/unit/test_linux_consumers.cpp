@@ -10,6 +10,7 @@
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <functional>
 #include <initializer_list>
@@ -103,7 +104,7 @@ namespace {
   };
 
   std::string unique_device_name(std::string_view suffix) {
-    return "libvirtualhid " + std::string {suffix} + " " + std::to_string(::getpid());
+    return std::format("libvirtualhid {} {}", suffix, ::getpid());
   }
 
   std::optional<std::string> read_first_line(const std::filesystem::path &path) {
@@ -464,14 +465,14 @@ namespace {
     }
   }
 
-  int open_restricted(const char *path, int flags, void *user_data) {
+  int open_restricted(const char *path, int flags, void *user_data) {  // NOSONAR(cpp:S5008): libinput_interface is a C callback ABI with void* user data.
     static_cast<void>(user_data);
 
     const auto fd = ::open(path, flags);
     return fd < 0 ? -errno : fd;
   }
 
-  void close_restricted(int fd, void *user_data) {
+  void close_restricted(int fd, void *user_data) {  // NOSONAR(cpp:S5008): libinput_interface is a C callback ABI with void* user data.
     static_cast<void>(user_data);
     ::close(fd);
   }
