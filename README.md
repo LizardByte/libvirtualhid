@@ -111,7 +111,8 @@ but reports the affected capability as unavailable and returns
 The Linux backend uses `libevdev` internally to construct uinput keyboard,
 mouse, touchscreen, trackpad, and pen tablet devices. Consumers still use the
 same platform-neutral C++ API; `libevdev` is a Linux build dependency, not a
-public API dependency.
+public API dependency. UTF-8 keyboard text submission is supported through the
+same Unicode compose sequence for both uinput keyboards and the XTest fallback.
 
 The Linux packaging model needs `/dev/uinput` and `/dev/uhid` access. Install a udev rules file such
 as `/etc/udev/rules.d/60-libvirtualhid.rules` with:

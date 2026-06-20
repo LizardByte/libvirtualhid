@@ -313,8 +313,7 @@ namespace {
       const auto controller_axis_moved = sdl_controller_has_moved_axis(controller);
       const auto joystick_button_pressed = joystick != nullptr && sdl_joystick_has_pressed_button(joystick);
 
-      if (const auto joystick_axis_moved = joystick != nullptr && sdl_joystick_has_moved_axis(joystick);
-          (controller_button_pressed || joystick_button_pressed) && (controller_axis_moved || joystick_axis_moved)) {
+      if (const auto joystick_axis_moved = joystick != nullptr && sdl_joystick_has_moved_axis(joystick); (controller_button_pressed || joystick_button_pressed) && (controller_axis_moved || joystick_axis_moved)) {
         return true;
       }
 
@@ -339,6 +338,34 @@ namespace {
     return runtime.create_gamepad(options);
   }
 
+  template<class TestBody>
+  void run_sdl_gamepad_test(const SdlGamepadConsumerCase &test_case, Uint32 init_flags, TestBody test_body) {
+    configure_sdl_hidapi_hints();
+    ASSERT_EQ(SDL_Init(init_flags), 0) << SDL_GetError();
+    ScopeExit sdl_quit {[]() {
+      SDL_Quit();
+    }};
+
+    lvh::RuntimeOptions runtime_options;
+    runtime_options.backend = lvh::BackendKind::platform_default;
+    auto runtime = lvh::Runtime::create(runtime_options);
+    ASSERT_TRUE(runtime->capabilities().supports_gamepad);
+
+    const auto expected_profile = [&test_case]() {
+      auto profile = test_case.profile;
+      profile.name = unique_device_name(test_case.name_suffix);
+      return profile;
+    }();
+
+    auto created = create_sdl_gamepad(*runtime, test_case);
+    ASSERT_TRUE(created) << created.status.message();
+
+    const auto joystick_index = wait_for_sdl_joystick(expected_profile);
+    ASSERT_GE(joystick_index, 0);
+
+    test_body(expected_profile, joystick_index, *created.gamepad);
+  }
+
   void expect_sdl_joystick_profile(SDL_Joystick *joystick, const lvh::DeviceProfile &profile, int minimum_buttons, int minimum_axes) {
     EXPECT_EQ(SDL_JoystickGetVendor(joystick), profile.vendor_id);
     EXPECT_EQ(SDL_JoystickGetProduct(joystick), profile.product_id);
@@ -354,70 +381,12 @@ namespace {
     }
   }
 
-  void run_sdl_uhid_joystick_test(const SdlGamepadConsumerCase &test_case) {
-    configure_sdl_hidapi_hints();
-    ASSERT_EQ(SDL_Init(SDL_INIT_JOYSTICK | SDL_INIT_EVENTS), 0) << SDL_GetError();
-    ScopeExit sdl_quit {[]() {
-      SDL_Quit();
-    }};
-
-    lvh::RuntimeOptions runtime_options;
-    runtime_options.backend = lvh::BackendKind::platform_default;
-    auto runtime = lvh::Runtime::create(runtime_options);
-    ASSERT_TRUE(runtime->capabilities().supports_gamepad);
-
-    const auto expected_profile = [&test_case]() {
-      auto profile = test_case.profile;
-      profile.name = unique_device_name(test_case.name_suffix);
-      return profile;
-    }();
-
-    auto created = create_sdl_gamepad(*runtime, test_case);
-    ASSERT_TRUE(created) << created.status.message();
-
-    const auto joystick_index = wait_for_sdl_joystick(expected_profile);
-    ASSERT_GE(joystick_index, 0);
-
-    SdlJoystick joystick {SDL_JoystickOpen(joystick_index), &SDL_JoystickClose};
-    ASSERT_NE(joystick.get(), nullptr) << SDL_GetError();
-    expect_sdl_joystick_profile(
-      joystick.get(),
-      expected_profile,
-      test_case.minimum_buttons,
-      test_case.minimum_axes
-    );
-
-    lvh::GamepadState state;
-    state.buttons.set(lvh::GamepadButton::a);
-    state.left_stick = {0.75F, -0.5F};
-    ASSERT_TRUE(created.gamepad->submit(state).ok());
-
-    EXPECT_TRUE(wait_for_sdl_gamepad_input(joystick.get())) << describe_sdl_state(joystick.get());
-  }
-
-  void run_sdl_dualsense_controller_test(const SdlGamepadConsumerCase &test_case) {
-    configure_sdl_hidapi_hints();
-    ASSERT_EQ(SDL_Init(SDL_INIT_GAMECONTROLLER | SDL_INIT_JOYSTICK | SDL_INIT_EVENTS), 0) << SDL_GetError();
-    ScopeExit sdl_quit {[]() {
-      SDL_Quit();
-    }};
-
-    lvh::RuntimeOptions runtime_options;
-    runtime_options.backend = lvh::BackendKind::platform_default;
-    auto runtime = lvh::Runtime::create(runtime_options);
-    ASSERT_TRUE(runtime->capabilities().supports_gamepad);
-
-    const auto expected_profile = [&test_case]() {
-      auto profile = test_case.profile;
-      profile.name = unique_device_name(test_case.name_suffix);
-      return profile;
-    }();
-
-    auto created = create_sdl_gamepad(*runtime, test_case);
-    ASSERT_TRUE(created) << created.status.message();
-
-    const auto joystick_index = wait_for_sdl_joystick(expected_profile);
-    ASSERT_GE(joystick_index, 0);
+  void exercise_sdl_dualsense_controller(
+    const SdlGamepadConsumerCase &test_case,
+    const lvh::DeviceProfile &expected_profile,
+    int joystick_index,
+    lvh::Gamepad &gamepad
+  ) {
     ASSERT_EQ(SDL_IsGameController(joystick_index), SDL_TRUE) << SDL_GetError();
 
     SdlGameController controller {SDL_GameControllerOpen(joystick_index), &SDL_GameControllerClose};
@@ -445,12 +414,46 @@ namespace {
     state.gyroscope = lvh::Vector3 {.x = 4.0F, .y = 5.0F, .z = 6.0F};
     state.battery = lvh::GamepadBattery {.state = lvh::GamepadBatteryState::charging, .percentage = 80};
     state.touchpad_contacts[0] = {.id = 1, .active = true, .x = 0.5F, .y = 0.25F};
-    ASSERT_TRUE(created.gamepad->submit(state).ok());
+    ASSERT_TRUE(gamepad.submit(state).ok());
 
     expect_sdl_dualsense_controller_profile(controller.get());
     if (test_case.expect_live_input) {
       EXPECT_TRUE(wait_for_sdl_controller_input(controller.get())) << describe_sdl_controller_state(controller.get());
     }
+  }
+
+  void run_sdl_uhid_joystick_test(const SdlGamepadConsumerCase &test_case) {
+    run_sdl_gamepad_test(
+      test_case,
+      SDL_INIT_JOYSTICK | SDL_INIT_EVENTS,
+      [&test_case](const auto &expected_profile, int joystick_index, lvh::Gamepad &gamepad) {
+        SdlJoystick joystick {SDL_JoystickOpen(joystick_index), &SDL_JoystickClose};
+        ASSERT_NE(joystick.get(), nullptr) << SDL_GetError();
+        expect_sdl_joystick_profile(
+          joystick.get(),
+          expected_profile,
+          test_case.minimum_buttons,
+          test_case.minimum_axes
+        );
+
+        lvh::GamepadState state;
+        state.buttons.set(lvh::GamepadButton::a);
+        state.left_stick = {0.75F, -0.5F};
+        ASSERT_TRUE(gamepad.submit(state).ok());
+
+        EXPECT_TRUE(wait_for_sdl_gamepad_input(joystick.get())) << describe_sdl_state(joystick.get());
+      }
+    );
+  }
+
+  void run_sdl_dualsense_controller_test(const SdlGamepadConsumerCase &test_case) {
+    run_sdl_gamepad_test(
+      test_case,
+      SDL_INIT_GAMECONTROLLER | SDL_INIT_JOYSTICK | SDL_INIT_EVENTS,
+      [&test_case](const auto &expected_profile, int joystick_index, lvh::Gamepad &gamepad) {
+        exercise_sdl_dualsense_controller(test_case, expected_profile, joystick_index, gamepad);
+      }
+    );
   }
 
   void destroy_libinput_event(libinput_event *event) {

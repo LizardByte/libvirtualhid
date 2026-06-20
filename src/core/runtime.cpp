@@ -269,6 +269,30 @@ namespace lvh {
       });
     }
 
+    template<class BackendAction, class DeviceUpdate>
+    OperationStatus submit_touch_event(
+      const auto &device_ptr,
+      const char *closed_message,
+      BackendAction backend_action,
+      DeviceUpdate device_update
+    ) {
+      return with_device(device_ptr, [closed_message, backend_action, device_update](auto &device) {
+        if (!device.open) {
+          return OperationStatus::failure(ErrorCode::device_closed, closed_message);
+        }
+
+        if (device.backend) {
+          if (const auto status = backend_action(*device.backend); !status.ok()) {
+            return status;
+          }
+        }
+
+        device_update(device);
+        ++device.submitted_events;
+        return OperationStatus::success();
+      });
+    }
+
     template<class DeviceList>
     std::size_t count_open_devices(const DeviceList &devices) {
       std::size_t count = 0;
@@ -707,21 +731,16 @@ namespace lvh {
       return validation;
     }
 
-    return with_device(device_, [&contact](auto &device) {
-      if (!device.open) {
-        return OperationStatus::failure(ErrorCode::device_closed, "touchscreen is closed");
+    return submit_touch_event(
+      device_,
+      "touchscreen is closed",
+      [&contact](auto &backend) {
+        return backend.place_contact(contact);
+      },
+      [&contact](auto &device) {
+        device.last_contact = contact;
       }
-
-      if (device.backend) {
-        if (const auto status = device.backend->place_contact(contact); !status.ok()) {
-          return status;
-        }
-      }
-
-      device.last_contact = contact;
-      ++device.submitted_events;
-      return OperationStatus::success();
-    });
+    );
   }
 
   OperationStatus Touchscreen::release_contact(std::int32_t contact_id) {
@@ -729,21 +748,16 @@ namespace lvh {
       return OperationStatus::failure(ErrorCode::invalid_argument, "touch contact id must not be negative");
     }
 
-    return with_device(device_, [contact_id](auto &device) {
-      if (!device.open) {
-        return OperationStatus::failure(ErrorCode::device_closed, "touchscreen is closed");
+    return submit_touch_event(
+      device_,
+      "touchscreen is closed",
+      [contact_id](auto &backend) {
+        return backend.release_contact(contact_id);
+      },
+      [contact_id](auto &device) {
+        device.last_contact.id = contact_id;
       }
-
-      if (device.backend) {
-        if (const auto status = device.backend->release_contact(contact_id); !status.ok()) {
-          return status;
-        }
-      }
-
-      device.last_contact.id = contact_id;
-      ++device.submitted_events;
-      return OperationStatus::success();
-    });
+    );
   }
 
   TouchContact Touchscreen::last_submitted_contact() const {
@@ -814,21 +828,16 @@ namespace lvh {
       return validation;
     }
 
-    return with_device(device_, [&contact](auto &device) {
-      if (!device.open) {
-        return OperationStatus::failure(ErrorCode::device_closed, "trackpad is closed");
+    return submit_touch_event(
+      device_,
+      "trackpad is closed",
+      [&contact](auto &backend) {
+        return backend.place_contact(contact);
+      },
+      [&contact](auto &device) {
+        device.last_contact = contact;
       }
-
-      if (device.backend) {
-        if (const auto status = device.backend->place_contact(contact); !status.ok()) {
-          return status;
-        }
-      }
-
-      device.last_contact = contact;
-      ++device.submitted_events;
-      return OperationStatus::success();
-    });
+    );
   }
 
   OperationStatus Trackpad::release_contact(std::int32_t contact_id) {
@@ -836,21 +845,16 @@ namespace lvh {
       return OperationStatus::failure(ErrorCode::invalid_argument, "touch contact id must not be negative");
     }
 
-    return with_device(device_, [contact_id](auto &device) {
-      if (!device.open) {
-        return OperationStatus::failure(ErrorCode::device_closed, "trackpad is closed");
+    return submit_touch_event(
+      device_,
+      "trackpad is closed",
+      [contact_id](auto &backend) {
+        return backend.release_contact(contact_id);
+      },
+      [contact_id](auto &device) {
+        device.last_contact.id = contact_id;
       }
-
-      if (device.backend) {
-        if (const auto status = device.backend->release_contact(contact_id); !status.ok()) {
-          return status;
-        }
-      }
-
-      device.last_contact.id = contact_id;
-      ++device.submitted_events;
-      return OperationStatus::success();
-    });
+    );
   }
 
   OperationStatus Trackpad::button(bool pressed) {
