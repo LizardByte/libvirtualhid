@@ -14,7 +14,19 @@
 
 namespace lvh {
 
+  class Runtime;
+
   namespace detail {
+    /**
+     * @brief Token used by Runtime to construct runtime-owned handles.
+     */
+    struct RuntimeConstructionToken {
+    private:
+      friend class ::lvh::Runtime;
+
+      RuntimeConstructionToken() = default;
+    };
+
     struct GamepadDevice;
     struct KeyboardDevice;
     struct MouseDevice;
@@ -103,6 +115,14 @@ namespace lvh {
     Gamepad &operator=(Gamepad &&other) noexcept;
 
     /**
+     * @brief Construct a gamepad handle for Runtime-owned state.
+     *
+     * @param token Runtime construction token.
+     * @param device Shared gamepad state.
+     */
+    Gamepad(detail::RuntimeConstructionToken token, std::shared_ptr<detail::GamepadDevice> device);
+
+    /**
      * @brief Destroy the gamepad handle.
      */
     ~Gamepad() override;
@@ -184,10 +204,6 @@ namespace lvh {
     std::size_t submit_count() const;
 
   private:
-    friend class Runtime;
-
-    explicit Gamepad(std::shared_ptr<detail::GamepadDevice> device);
-
     std::shared_ptr<detail::GamepadDevice> device_;
   };
 
@@ -222,6 +238,14 @@ namespace lvh {
      * @return This keyboard handle.
      */
     Keyboard &operator=(Keyboard &&other) noexcept;
+
+    /**
+     * @brief Construct a keyboard handle for Runtime-owned state.
+     *
+     * @param token Runtime construction token.
+     * @param device Shared keyboard state.
+     */
+    Keyboard(detail::RuntimeConstructionToken token, std::shared_ptr<detail::KeyboardDevice> device);
 
     /**
      * @brief Destroy the keyboard handle.
@@ -300,10 +324,6 @@ namespace lvh {
     std::size_t submit_count() const;
 
   private:
-    friend class Runtime;
-
-    explicit Keyboard(std::shared_ptr<detail::KeyboardDevice> device);
-
     std::shared_ptr<detail::KeyboardDevice> device_;
   };
 
@@ -338,6 +358,14 @@ namespace lvh {
      * @return This mouse handle.
      */
     Mouse &operator=(Mouse &&other) noexcept;
+
+    /**
+     * @brief Construct a mouse handle for Runtime-owned state.
+     *
+     * @param token Runtime construction token.
+     * @param device Shared mouse state.
+     */
+    Mouse(detail::RuntimeConstructionToken token, std::shared_ptr<detail::MouseDevice> device);
 
     /**
      * @brief Destroy the mouse handle.
@@ -437,10 +465,6 @@ namespace lvh {
     std::size_t submit_count() const;
 
   private:
-    friend class Runtime;
-
-    explicit Mouse(std::shared_ptr<detail::MouseDevice> device);
-
     std::shared_ptr<detail::MouseDevice> device_;
   };
 
@@ -475,6 +499,14 @@ namespace lvh {
      * @return This touchscreen handle.
      */
     Touchscreen &operator=(Touchscreen &&other) noexcept;
+
+    /**
+     * @brief Construct a touchscreen handle for Runtime-owned state.
+     *
+     * @param token Runtime construction token.
+     * @param device Shared touchscreen state.
+     */
+    Touchscreen(detail::RuntimeConstructionToken token, std::shared_ptr<detail::TouchscreenDevice> device);
 
     /**
      * @brief Destroy the touchscreen handle.
@@ -537,10 +569,6 @@ namespace lvh {
     std::size_t submit_count() const;
 
   private:
-    friend class Runtime;
-
-    explicit Touchscreen(std::shared_ptr<detail::TouchscreenDevice> device);
-
     std::shared_ptr<detail::TouchscreenDevice> device_;
   };
 
@@ -575,6 +603,14 @@ namespace lvh {
      * @return This trackpad handle.
      */
     Trackpad &operator=(Trackpad &&other) noexcept;
+
+    /**
+     * @brief Construct a trackpad handle for Runtime-owned state.
+     *
+     * @param token Runtime construction token.
+     * @param device Shared trackpad state.
+     */
+    Trackpad(detail::RuntimeConstructionToken token, std::shared_ptr<detail::TrackpadDevice> device);
 
     /**
      * @brief Destroy the trackpad handle.
@@ -645,10 +681,6 @@ namespace lvh {
     std::size_t submit_count() const;
 
   private:
-    friend class Runtime;
-
-    explicit Trackpad(std::shared_ptr<detail::TrackpadDevice> device);
-
     std::shared_ptr<detail::TrackpadDevice> device_;
   };
 
@@ -683,6 +715,14 @@ namespace lvh {
      * @return This pen tablet handle.
      */
     PenTablet &operator=(PenTablet &&other) noexcept;
+
+    /**
+     * @brief Construct a pen tablet handle for Runtime-owned state.
+     *
+     * @param token Runtime construction token.
+     * @param device Shared pen tablet state.
+     */
+    PenTablet(detail::RuntimeConstructionToken token, std::shared_ptr<detail::PenTabletDevice> device);
 
     /**
      * @brief Destroy the pen tablet handle.
@@ -746,10 +786,6 @@ namespace lvh {
     std::size_t submit_count() const;
 
   private:
-    friend class Runtime;
-
-    explicit PenTablet(std::shared_ptr<detail::PenTabletDevice> device);
-
     std::shared_ptr<detail::PenTabletDevice> device_;
   };
 
@@ -930,6 +966,14 @@ namespace lvh {
     Runtime &operator=(Runtime &&other) noexcept;
 
     /**
+     * @brief Construct a runtime for Runtime::create.
+     *
+     * @param token Runtime construction token.
+     * @param options Runtime configuration.
+     */
+    Runtime(detail::RuntimeConstructionToken token, RuntimeOptions options);
+
+    /**
      * @brief Destroy the runtime and close any remaining devices.
      */
     ~Runtime();
@@ -1060,8 +1104,6 @@ namespace lvh {
     void close_all();
 
   private:
-    explicit Runtime(RuntimeOptions options);
-
     std::shared_ptr<detail::RuntimeState> state_;
   };
 
