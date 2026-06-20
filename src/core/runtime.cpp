@@ -18,7 +18,19 @@
 
 namespace lvh::detail {
 
-  struct GamepadDevice {
+  class SynchronizedState {
+  public:
+    template<class Func>
+    decltype(auto) with_lock(Func &&func) const {
+      std::lock_guard lock {mutex_};
+      return std::forward<Func>(func)();
+    }
+
+  private:
+    mutable std::mutex mutex_;
+  };
+
+  struct GamepadDevice: SynchronizedState {
     explicit GamepadDevice(
       DeviceId device_id,
       CreateGamepadOptions create_options,
@@ -36,10 +48,9 @@ namespace lvh::detail {
     std::vector<std::uint8_t> last_report;
     std::size_t submitted_reports = 0;
     OutputCallback output_callback;
-    mutable std::mutex mutex;
   };
 
-  struct KeyboardDevice {
+  struct KeyboardDevice: SynchronizedState {
     explicit KeyboardDevice(
       DeviceId device_id,
       CreateKeyboardOptions create_options,
@@ -56,10 +67,9 @@ namespace lvh::detail {
     KeyboardEvent last_event;
     KeyboardTextEvent last_text_event;
     std::size_t submitted_events = 0;
-    mutable std::mutex mutex;
   };
 
-  struct MouseDevice {
+  struct MouseDevice: SynchronizedState {
     explicit MouseDevice(DeviceId device_id, CreateMouseOptions create_options, std::unique_ptr<BackendMouse> backend_mouse):
         id {device_id},
         options {std::move(create_options)},
@@ -71,10 +81,9 @@ namespace lvh::detail {
     bool open = true;
     MouseEvent last_event;
     std::size_t submitted_events = 0;
-    mutable std::mutex mutex;
   };
 
-  struct TouchscreenDevice {
+  struct TouchscreenDevice: SynchronizedState {
     explicit TouchscreenDevice(
       DeviceId device_id,
       CreateTouchscreenOptions create_options,
@@ -90,10 +99,9 @@ namespace lvh::detail {
     bool open = true;
     TouchContact last_contact;
     std::size_t submitted_events = 0;
-    mutable std::mutex mutex;
   };
 
-  struct TrackpadDevice {
+  struct TrackpadDevice: SynchronizedState {
     explicit TrackpadDevice(
       DeviceId device_id,
       CreateTrackpadOptions create_options,
@@ -109,10 +117,9 @@ namespace lvh::detail {
     bool open = true;
     TouchContact last_contact;
     std::size_t submitted_events = 0;
-    mutable std::mutex mutex;
   };
 
-  struct PenTabletDevice {
+  struct PenTabletDevice: SynchronizedState {
     explicit PenTabletDevice(
       DeviceId device_id,
       CreatePenTabletOptions create_options,
@@ -128,10 +135,9 @@ namespace lvh::detail {
     bool open = true;
     PenToolState last_tool;
     std::size_t submitted_events = 0;
-    mutable std::mutex mutex;
   };
 
-  class RuntimeState {
+  class RuntimeState: public SynchronizedState {
   public:
     explicit RuntimeState(RuntimeOptions runtime_options):
         options {runtime_options},
@@ -148,7 +154,6 @@ namespace lvh::detail {
     std::vector<std::weak_ptr<TouchscreenDevice>> touchscreens;
     std::vector<std::weak_ptr<TrackpadDevice>> trackpads;
     std::vector<std::weak_ptr<PenTabletDevice>> pen_tablets;
-    mutable std::mutex mutex;
   };
 
 }  // namespace lvh::detail
@@ -259,8 +264,9 @@ namespace lvh {
 
     template<class Func>
     auto with_device(const auto &device, Func &&func) {
-      std::lock_guard lock {device->mutex};
-      return func(*device);
+      return device->with_lock([&]() {
+        return func(*device);
+      });
     }
 
     template<class DeviceList>
@@ -268,7 +274,9 @@ namespace lvh {
       std::size_t count = 0;
       for (const auto &weak_device : devices) {
         if (const auto device = weak_device.lock()) {
-          if (device->open) {
+          if (device->with_lock([&]() {
+                return device->open;
+              })) {
             ++count;
           }
         }
@@ -280,11 +288,12 @@ namespace lvh {
     void close_devices(DeviceList &devices) {
       for (const auto &weak_device : devices) {
         if (const auto device = weak_device.lock()) {
-          std::lock_guard device_lock {device->mutex};
-          if (device->backend) {
-            static_cast<void>(device->backend->close());
-          }
-          device->open = false;
+          device->with_lock([&]() {
+            if (device->backend) {
+              static_cast<void>(device->backend->close());
+            }
+            device->open = false;
+          });
         }
       }
     }
@@ -976,11 +985,9 @@ namespace lvh {
       return {validation, nullptr};
     }
 
-    DeviceId id;
-    {
-      std::lock_guard lock {state_->mutex};
-      id = state_->next_device_id++;
-    }
+    const auto id = state_->with_lock([&]() {
+      return state_->next_device_id++;
+    });
 
     auto backend_result = state_->backend->create_gamepad(id, options);
     if (!backend_result) {
@@ -988,10 +995,9 @@ namespace lvh {
     }
 
     auto device = std::make_shared<detail::GamepadDevice>(id, options, std::move(backend_result.gamepad));
-    {
-      std::lock_guard lock {state_->mutex};
+    state_->with_lock([&]() {
       state_->gamepads.emplace_back(device);
-    }
+    });
 
     return {OperationStatus::success(), std::make_unique<Gamepad>(detail::RuntimeConstructionToken {}, std::move(device))};
   }
@@ -1007,11 +1013,9 @@ namespace lvh {
       return {validation, nullptr};
     }
 
-    DeviceId id;
-    {
-      std::lock_guard lock {state_->mutex};
-      id = state_->next_device_id++;
-    }
+    const auto id = state_->with_lock([&]() {
+      return state_->next_device_id++;
+    });
 
     auto backend_result = state_->backend->create_keyboard(id, options);
     if (!backend_result) {
@@ -1019,10 +1023,9 @@ namespace lvh {
     }
 
     auto device = std::make_shared<detail::KeyboardDevice>(id, options, std::move(backend_result.keyboard));
-    {
-      std::lock_guard lock {state_->mutex};
+    state_->with_lock([&]() {
       state_->keyboards.emplace_back(device);
-    }
+    });
 
     return {OperationStatus::success(), std::make_unique<Keyboard>(detail::RuntimeConstructionToken {}, std::move(device))};
   }
@@ -1038,11 +1041,9 @@ namespace lvh {
       return {validation, nullptr};
     }
 
-    DeviceId id;
-    {
-      std::lock_guard lock {state_->mutex};
-      id = state_->next_device_id++;
-    }
+    const auto id = state_->with_lock([&]() {
+      return state_->next_device_id++;
+    });
 
     auto backend_result = state_->backend->create_mouse(id, options);
     if (!backend_result) {
@@ -1050,10 +1051,9 @@ namespace lvh {
     }
 
     auto device = std::make_shared<detail::MouseDevice>(id, options, std::move(backend_result.mouse));
-    {
-      std::lock_guard lock {state_->mutex};
+    state_->with_lock([&]() {
       state_->mice.emplace_back(device);
-    }
+    });
 
     return {OperationStatus::success(), std::make_unique<Mouse>(detail::RuntimeConstructionToken {}, std::move(device))};
   }
@@ -1069,11 +1069,9 @@ namespace lvh {
       return {validation, nullptr};
     }
 
-    DeviceId id;
-    {
-      std::lock_guard lock {state_->mutex};
-      id = state_->next_device_id++;
-    }
+    const auto id = state_->with_lock([&]() {
+      return state_->next_device_id++;
+    });
 
     auto backend_result = state_->backend->create_touchscreen(id, options);
     if (!backend_result) {
@@ -1081,10 +1079,9 @@ namespace lvh {
     }
 
     auto device = std::make_shared<detail::TouchscreenDevice>(id, options, std::move(backend_result.touchscreen));
-    {
-      std::lock_guard lock {state_->mutex};
+    state_->with_lock([&]() {
       state_->touchscreens.emplace_back(device);
-    }
+    });
 
     return {OperationStatus::success(), std::make_unique<Touchscreen>(detail::RuntimeConstructionToken {}, std::move(device))};
   }
@@ -1100,11 +1097,9 @@ namespace lvh {
       return {validation, nullptr};
     }
 
-    DeviceId id;
-    {
-      std::lock_guard lock {state_->mutex};
-      id = state_->next_device_id++;
-    }
+    const auto id = state_->with_lock([&]() {
+      return state_->next_device_id++;
+    });
 
     auto backend_result = state_->backend->create_trackpad(id, options);
     if (!backend_result) {
@@ -1112,10 +1107,9 @@ namespace lvh {
     }
 
     auto device = std::make_shared<detail::TrackpadDevice>(id, options, std::move(backend_result.trackpad));
-    {
-      std::lock_guard lock {state_->mutex};
+    state_->with_lock([&]() {
       state_->trackpads.emplace_back(device);
-    }
+    });
 
     return {OperationStatus::success(), std::make_unique<Trackpad>(detail::RuntimeConstructionToken {}, std::move(device))};
   }
@@ -1131,11 +1125,9 @@ namespace lvh {
       return {validation, nullptr};
     }
 
-    DeviceId id;
-    {
-      std::lock_guard lock {state_->mutex};
-      id = state_->next_device_id++;
-    }
+    const auto id = state_->with_lock([&]() {
+      return state_->next_device_id++;
+    });
 
     auto backend_result = state_->backend->create_pen_tablet(id, options);
     if (!backend_result) {
@@ -1143,29 +1135,30 @@ namespace lvh {
     }
 
     auto device = std::make_shared<detail::PenTabletDevice>(id, options, std::move(backend_result.pen_tablet));
-    {
-      std::lock_guard lock {state_->mutex};
+    state_->with_lock([&]() {
       state_->pen_tablets.emplace_back(device);
-    }
+    });
 
     return {OperationStatus::success(), std::make_unique<PenTablet>(detail::RuntimeConstructionToken {}, std::move(device))};
   }
 
   std::size_t Runtime::active_device_count() const {
-    std::lock_guard lock {state_->mutex};
-    return count_open_devices(state_->gamepads) + count_open_devices(state_->keyboards) + count_open_devices(state_->mice) +
-           count_open_devices(state_->touchscreens) + count_open_devices(state_->trackpads) +
-           count_open_devices(state_->pen_tablets);
+    return state_->with_lock([&]() {
+      return count_open_devices(state_->gamepads) + count_open_devices(state_->keyboards) + count_open_devices(state_->mice) +
+             count_open_devices(state_->touchscreens) + count_open_devices(state_->trackpads) +
+             count_open_devices(state_->pen_tablets);
+    });
   }
 
   void Runtime::close_all() {
-    std::lock_guard lock {state_->mutex};
-    close_devices(state_->gamepads);
-    close_devices(state_->keyboards);
-    close_devices(state_->mice);
-    close_devices(state_->touchscreens);
-    close_devices(state_->trackpads);
-    close_devices(state_->pen_tablets);
+    state_->with_lock([&]() {
+      close_devices(state_->gamepads);
+      close_devices(state_->keyboards);
+      close_devices(state_->mice);
+      close_devices(state_->touchscreens);
+      close_devices(state_->trackpads);
+      close_devices(state_->pen_tablets);
+    });
   }
 
 }  // namespace lvh
