@@ -1540,7 +1540,7 @@ namespace lvh::detail {
         }
 
         for (auto slot = 0; slot < touch_max_contacts; ++slot) {
-          const auto used = std::any_of(contacts_.begin(), contacts_.end(), [slot](const auto &entry) {
+          const auto used = std::ranges::any_of(contacts_, [slot](const auto &entry) {
             return entry.second == slot;
           });
           if (!used) {
