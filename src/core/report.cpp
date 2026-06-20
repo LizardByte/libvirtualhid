@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <cstring>
 #include <optional>
+#include <span>
 #include <utility>
 
 // local includes
@@ -21,27 +22,69 @@ namespace lvh::reports {
 
     constexpr std::uint8_t neutral_hat = 8;
 
-    constexpr std::uint8_t dualsense_usb_output_report_id = 0x02;
+    using ByteReport = std::vector<std::byte>;
 
-    constexpr std::uint8_t dualsense_bt_input_report_id = 0x31;
+    constexpr auto zero_byte = std::byte {0x00};
 
-    constexpr std::uint8_t dualsense_bt_output_report_id = 0x31;
+    constexpr auto dualsense_usb_output_report_id = std::byte {0x02};
 
-    constexpr std::uint8_t dualsense_bt_input_report_reserved = 0x00;
+    constexpr auto dualsense_bt_input_report_id = std::byte {0x31};
 
-    constexpr std::uint8_t dualsense_input_crc_seed = 0xA1;
+    constexpr auto dualsense_bt_output_report_id = std::byte {0x31};
 
-    constexpr std::uint8_t dualsense_output_crc_seed = 0xA2;
+    constexpr auto dualsense_bt_input_report_reserved = std::byte {0x00};
 
-    constexpr std::uint8_t dualsense_flag0_rumble = 0x01;
+    constexpr auto dualsense_input_crc_seed = std::byte {0xA1};
 
-    constexpr std::uint8_t dualsense_flag0_right_trigger = 0x04;
+    constexpr auto dualsense_output_crc_seed = std::byte {0xA2};
 
-    constexpr std::uint8_t dualsense_flag0_left_trigger = 0x08;
+    constexpr auto dualsense_flag0_rumble = std::byte {0x01};
 
-    constexpr std::uint8_t dualsense_flag1_lightbar = 0x04;
+    constexpr auto dualsense_flag0_right_trigger = std::byte {0x04};
 
-    constexpr std::uint8_t dualsense_flag2_compatible_vibration = 0x04;
+    constexpr auto dualsense_flag0_left_trigger = std::byte {0x08};
+
+    constexpr auto dualsense_flag1_lightbar = std::byte {0x04};
+
+    constexpr auto dualsense_flag2_compatible_vibration = std::byte {0x04};
+
+    constexpr std::byte to_byte(std::uint8_t value) {
+      return static_cast<std::byte>(value);
+    }
+
+    constexpr std::byte to_low_byte(std::uint32_t value) {
+      return static_cast<std::byte>(value & 0xFFU);
+    }
+
+    constexpr std::uint8_t to_uint8(std::byte value) {
+      return std::to_integer<std::uint8_t>(value);
+    }
+
+    bool has_flag(std::byte value, std::byte flag) {
+      return (value & flag) != zero_byte;
+    }
+
+    void add_flag(ByteReport &report, std::size_t offset, std::byte flag) {
+      report[offset] |= flag;
+    }
+
+    std::vector<std::uint8_t> to_uint8_report(const ByteReport &report) {
+      std::vector<std::uint8_t> bytes;
+      bytes.reserve(report.size());
+      for (const auto value : report) {
+        bytes.push_back(to_uint8(value));
+      }
+      return bytes;
+    }
+
+    ByteReport to_byte_report(const std::vector<std::uint8_t> &report) {
+      ByteReport bytes;
+      bytes.reserve(report.size());
+      for (const auto value : report) {
+        bytes.push_back(to_byte(value));
+      }
+      return bytes;
+    }
 
     void append_u16(std::vector<std::uint8_t> &report, std::uint16_t value) {
       report.push_back(static_cast<std::uint8_t>(value & 0xFFU));
@@ -52,19 +95,19 @@ namespace lvh::reports {
       append_u16(report, static_cast<std::uint16_t>(value));
     }
 
-    void write_u16(std::vector<std::uint8_t> &report, std::size_t offset, std::uint16_t value) {
-      report[offset] = static_cast<std::uint8_t>(value & 0xFFU);
-      report[offset + 1U] = static_cast<std::uint8_t>((value >> 8U) & 0xFFU);
+    void write_u16(ByteReport &report, std::size_t offset, std::uint16_t value) {
+      report[offset] = to_low_byte(value);
+      report[offset + 1U] = to_low_byte(value >> 8U);
     }
 
-    void write_u32(std::vector<std::uint8_t> &report, std::size_t offset, std::uint32_t value) {
-      report[offset] = static_cast<std::uint8_t>(value & 0xFFU);
-      report[offset + 1U] = static_cast<std::uint8_t>((value >> 8U) & 0xFFU);
-      report[offset + 2U] = static_cast<std::uint8_t>((value >> 16U) & 0xFFU);
-      report[offset + 3U] = static_cast<std::uint8_t>((value >> 24U) & 0xFFU);
+    void write_u32(ByteReport &report, std::size_t offset, std::uint32_t value) {
+      report[offset] = to_low_byte(value);
+      report[offset + 1U] = to_low_byte(value >> 8U);
+      report[offset + 2U] = to_low_byte(value >> 16U);
+      report[offset + 3U] = to_low_byte(value >> 24U);
     }
 
-    void write_i16(std::vector<std::uint8_t> &report, std::size_t offset, std::int16_t value) {
+    void write_i16(ByteReport &report, std::size_t offset, std::int16_t value) {
       write_u16(report, offset, static_cast<std::uint16_t>(value));
     }
 
@@ -74,10 +117,17 @@ namespace lvh::reports {
       return static_cast<std::uint16_t>(low | static_cast<std::uint16_t>(high << 8U));
     }
 
-    std::uint32_t crc32(const std::uint8_t *buffer, std::size_t length, std::uint32_t seed = 0) {
+    std::uint32_t read_u32(const ByteReport &report, std::size_t offset) {
+      return std::to_integer<std::uint32_t>(report[offset]) |
+             (std::to_integer<std::uint32_t>(report[offset + 1U]) << 8U) |
+             (std::to_integer<std::uint32_t>(report[offset + 2U]) << 16U) |
+             (std::to_integer<std::uint32_t>(report[offset + 3U]) << 24U);
+    }
+
+    std::uint32_t crc32(std::span<const std::byte> buffer, std::uint32_t seed = 0) {
       auto crc = seed ^ 0xFFFFFFFFU;
-      for (std::size_t index = 0; index < length; ++index) {
-        crc ^= buffer[index];
+      for (const auto value : buffer) {
+        crc ^= std::to_integer<std::uint32_t>(value);
         for (auto bit = 0; bit < 8; ++bit) {
           const auto mask = 0U - (crc & 1U);
           crc = (crc >> 1U) ^ (0xEDB88320U & mask);
@@ -86,17 +136,18 @@ namespace lvh::reports {
       return crc ^ 0xFFFFFFFFU;
     }
 
-    std::uint32_t dualsense_crc_seed(std::uint8_t seed) {
-      return crc32(&seed, 1U);
+    std::uint32_t dualsense_crc_seed(std::byte seed) {
+      const std::array seed_report {seed};
+      return crc32(seed_report);
     }
 
-    void write_dualsense_crc(std::vector<std::uint8_t> &report, std::uint8_t seed) {
+    void write_dualsense_crc(ByteReport &report, std::byte seed) {
       if (report.size() < 4U) {
         return;
       }
 
       const auto crc_offset = report.size() - 4U;
-      write_u32(report, crc_offset, crc32(report.data(), crc_offset, dualsense_crc_seed(seed)));
+      write_u32(report, crc_offset, crc32({report.data(), crc_offset}, dualsense_crc_seed(seed)));
     }
 
     std::int16_t scale_i16(float value, float multiplier) {
@@ -137,38 +188,38 @@ namespace lvh::reports {
       return bits;
     }
 
-    std::uint8_t dualsense_battery_state(GamepadBatteryState state) {
+    std::byte dualsense_battery_state(GamepadBatteryState state) {
       switch (state) {
         case GamepadBatteryState::discharging:
-          return 0x00;
+          return std::byte {0x00};
         case GamepadBatteryState::charging:
-          return 0x01;
+          return std::byte {0x01};
         case GamepadBatteryState::full:
-          return 0x02;
+          return std::byte {0x02};
         case GamepadBatteryState::voltage_or_temperature_error:
-          return 0x0A;
+          return std::byte {0x0A};
         case GamepadBatteryState::temperature_error:
-          return 0x0B;
+          return std::byte {0x0B};
         case GamepadBatteryState::charging_error:
-          return 0x0F;
+          return std::byte {0x0F};
         case GamepadBatteryState::unknown:
           break;
       }
 
-      return 0x02;
+      return std::byte {0x02};
     }
 
     void write_dualsense_touch_contact(
-      std::vector<std::uint8_t> &report,
+      ByteReport &report,
       std::size_t offset,
       const GamepadTouchContact &contact
     ) {
       const auto x = static_cast<std::uint16_t>(std::lround(std::clamp(contact.x, 0.0F, 1.0F) * 1919.0F));
       const auto y = static_cast<std::uint16_t>(std::lround(std::clamp(contact.y, 0.0F, 1.0F) * 1079.0F));
-      report[offset] = static_cast<std::uint8_t>((contact.id & 0x7FU) | (contact.active ? 0x00U : 0x80U));
-      report[offset + 1U] = static_cast<std::uint8_t>(x & 0xFFU);
-      report[offset + 2U] = static_cast<std::uint8_t>(((x >> 8U) & 0x0FU) | ((y & 0x0FU) << 4U));
-      report[offset + 3U] = static_cast<std::uint8_t>((y >> 4U) & 0xFFU);
+      report[offset] = (to_byte(contact.id) & std::byte {0x7F}) | (contact.active ? zero_byte : std::byte {0x80});
+      report[offset + 1U] = to_low_byte(x);
+      report[offset + 2U] = to_low_byte(((x >> 8U) & 0x0FU) | ((y & 0x0FU) << 4U));
+      report[offset + 3U] = to_low_byte(y >> 4U);
     }
 
     std::vector<std::uint8_t> pack_dualsense_input_report(const DeviceProfile &profile, const GamepadState &state) {
@@ -180,63 +231,63 @@ namespace lvh::reports {
       }
 
       const auto normalized = normalize_state(state);
-      std::vector<std::uint8_t> report(profile.input_report_size, 0);
-      report[0] = is_bluetooth ? dualsense_bt_input_report_id : profile.report_id;
+      ByteReport report(profile.input_report_size, zero_byte);
+      report[0] = is_bluetooth ? dualsense_bt_input_report_id : to_byte(profile.report_id);
       if (is_bluetooth) {
         report[1] = dualsense_bt_input_report_reserved;
       }
 
-      report[payload_offset + 0U] = normalize_dualsense_axis(normalized.left_stick.x);
-      report[payload_offset + 1U] = normalize_dualsense_axis(normalized.left_stick.y);
-      report[payload_offset + 2U] = normalize_dualsense_axis(normalized.right_stick.x);
-      report[payload_offset + 3U] = normalize_dualsense_axis(normalized.right_stick.y);
-      report[payload_offset + 4U] = normalize_trigger(normalized.left_trigger);
-      report[payload_offset + 5U] = normalize_trigger(normalized.right_trigger);
-      report[payload_offset + 7U] = hat_from_buttons(normalized.buttons);
+      report[payload_offset + 0U] = to_byte(normalize_dualsense_axis(normalized.left_stick.x));
+      report[payload_offset + 1U] = to_byte(normalize_dualsense_axis(normalized.left_stick.y));
+      report[payload_offset + 2U] = to_byte(normalize_dualsense_axis(normalized.right_stick.x));
+      report[payload_offset + 3U] = to_byte(normalize_dualsense_axis(normalized.right_stick.y));
+      report[payload_offset + 4U] = to_byte(normalize_trigger(normalized.left_trigger));
+      report[payload_offset + 5U] = to_byte(normalize_trigger(normalized.right_trigger));
+      report[payload_offset + 7U] = to_byte(hat_from_buttons(normalized.buttons));
 
       if (normalized.buttons.test(GamepadButton::x)) {
-        report[payload_offset + 7U] |= 0x10;
+        add_flag(report, payload_offset + 7U, std::byte {0x10});
       }
       if (normalized.buttons.test(GamepadButton::a)) {
-        report[payload_offset + 7U] |= 0x20;
+        add_flag(report, payload_offset + 7U, std::byte {0x20});
       }
       if (normalized.buttons.test(GamepadButton::b)) {
-        report[payload_offset + 7U] |= 0x40;
+        add_flag(report, payload_offset + 7U, std::byte {0x40});
       }
       if (normalized.buttons.test(GamepadButton::y)) {
-        report[payload_offset + 7U] |= 0x80;
+        add_flag(report, payload_offset + 7U, std::byte {0x80});
       }
 
       if (normalized.buttons.test(GamepadButton::left_shoulder)) {
-        report[payload_offset + 8U] |= 0x01;
+        add_flag(report, payload_offset + 8U, std::byte {0x01});
       }
       if (normalized.buttons.test(GamepadButton::right_shoulder)) {
-        report[payload_offset + 8U] |= 0x02;
+        add_flag(report, payload_offset + 8U, std::byte {0x02});
       }
       if (normalized.left_trigger > 0.0F) {
-        report[payload_offset + 8U] |= 0x04;
+        add_flag(report, payload_offset + 8U, std::byte {0x04});
       }
       if (normalized.right_trigger > 0.0F) {
-        report[payload_offset + 8U] |= 0x08;
+        add_flag(report, payload_offset + 8U, std::byte {0x08});
       }
       if (normalized.buttons.test(GamepadButton::back)) {
-        report[payload_offset + 8U] |= 0x10;
+        add_flag(report, payload_offset + 8U, std::byte {0x10});
       }
       if (normalized.buttons.test(GamepadButton::start)) {
-        report[payload_offset + 8U] |= 0x20;
+        add_flag(report, payload_offset + 8U, std::byte {0x20});
       }
       if (normalized.buttons.test(GamepadButton::left_stick)) {
-        report[payload_offset + 8U] |= 0x40;
+        add_flag(report, payload_offset + 8U, std::byte {0x40});
       }
       if (normalized.buttons.test(GamepadButton::right_stick)) {
-        report[payload_offset + 8U] |= 0x80;
+        add_flag(report, payload_offset + 8U, std::byte {0x80});
       }
 
       if (normalized.buttons.test(GamepadButton::guide)) {
-        report[payload_offset + 9U] |= 0x01;
+        add_flag(report, payload_offset + 9U, std::byte {0x01});
       }
       if (normalized.buttons.test(GamepadButton::misc1)) {
-        report[payload_offset + 9U] |= 0x04;
+        add_flag(report, payload_offset + 9U, std::byte {0x04});
       }
 
       if (normalized.gyroscope) {
@@ -256,32 +307,29 @@ namespace lvh::reports {
       const auto battery = normalized.battery.value_or(GamepadBattery {.state = GamepadBatteryState::full, .percentage = 100});
       const auto battery_charge = std::min<std::uint8_t>(10U, static_cast<std::uint8_t>(std::lround(battery.percentage / 10.0F)));
       report[payload_offset + 52U] =
-        static_cast<std::uint8_t>(battery_charge | (dualsense_battery_state(battery.state) << 4U));
-      report[payload_offset + 53U] = 0x0C;
+        to_byte(battery_charge) | (dualsense_battery_state(battery.state) << 4U);
+      report[payload_offset + 53U] = std::byte {0x0C};
 
       if (is_bluetooth) {
         write_dualsense_crc(report, dualsense_input_crc_seed);
       }
-      return report;
+      return to_uint8_report(report);
     }
 
-    std::optional<std::size_t> dualsense_common_output_offset(const std::vector<std::uint8_t> &report) {
+    std::optional<std::size_t> dualsense_common_output_offset(const ByteReport &report) {
       if (report.size() >= 48U && report[0] == dualsense_usb_output_report_id) {
         return 1U;
       }
       if (report.size() >= 49U && report[0] == dualsense_bt_output_report_id) {
         if (report.size() >= 78U) {
-          const auto expected_crc = crc32(report.data(), report.size() - 4U, dualsense_crc_seed(dualsense_output_crc_seed));
-          const auto actual_crc = static_cast<std::uint32_t>(report[report.size() - 4U]) |
-                                  (static_cast<std::uint32_t>(report[report.size() - 3U]) << 8U) |
-                                  (static_cast<std::uint32_t>(report[report.size() - 2U]) << 16U) |
-                                  (static_cast<std::uint32_t>(report[report.size() - 1U]) << 24U);
+          const auto expected_crc = crc32({report.data(), report.size() - 4U}, dualsense_crc_seed(dualsense_output_crc_seed));
+          const auto actual_crc = read_u32(report, report.size() - 4U);
           if (actual_crc != expected_crc) {
             return std::nullopt;
           }
         }
 
-        const auto enable_hid = (report[1] & 0x02U) != 0;
+        const auto enable_hid = has_flag(report[1], std::byte {0x02});
         if (!enable_hid && report.size() < 50U) {
           return std::nullopt;
         }
@@ -291,54 +339,53 @@ namespace lvh::reports {
     }
 
     void append_dualsense_outputs(
-      const std::vector<std::uint8_t> &report,
+      const ByteReport &report,
+      const std::vector<std::uint8_t> &raw_report,
       std::size_t offset,
       std::vector<GamepadOutput> &outputs
     ) {
       const auto valid_flag0 = report[offset];
       const auto valid_flag1 = report[offset + 1U];
-      const auto motor_right = report[offset + 2U];
-      const auto motor_left = report[offset + 3U];
-      const auto right_trigger_effect_type = report[offset + 10U];
-      const auto left_trigger_effect_type = report[offset + 21U];
+      const auto motor_right = raw_report[offset + 2U];
+      const auto motor_left = raw_report[offset + 3U];
+      const auto right_trigger_effect_type = raw_report[offset + 10U];
+      const auto left_trigger_effect_type = raw_report[offset + 21U];
       const auto valid_flag2 = report[offset + 38U];
 
-      if ((valid_flag0 & dualsense_flag0_rumble) != 0 || (valid_flag2 & dualsense_flag2_compatible_vibration) != 0) {
+      if (has_flag(valid_flag0, dualsense_flag0_rumble) || has_flag(valid_flag2, dualsense_flag2_compatible_vibration)) {
         GamepadOutput output;
         output.kind = GamepadOutputKind::rumble;
         output.low_frequency_rumble = scale_output_byte(motor_left);
         output.high_frequency_rumble = scale_output_byte(motor_right);
-        output.raw_report = report;
+        output.raw_report = raw_report;
         outputs.push_back(std::move(output));
-      } else if (valid_flag0 == 0 && valid_flag1 == 0 && valid_flag2 == 0) {
+      } else if (valid_flag0 == zero_byte && valid_flag1 == zero_byte && valid_flag2 == zero_byte) {
         GamepadOutput output;
         output.kind = GamepadOutputKind::rumble;
-        output.raw_report = report;
+        output.raw_report = raw_report;
         outputs.push_back(std::move(output));
       }
 
-      if ((valid_flag1 & dualsense_flag1_lightbar) != 0) {
+      if (has_flag(valid_flag1, dualsense_flag1_lightbar)) {
         GamepadOutput output;
         output.kind = GamepadOutputKind::rgb_led;
-        output.red = report[offset + 44U];
-        output.green = report[offset + 45U];
-        output.blue = report[offset + 46U];
-        output.raw_report = report;
+        output.red = raw_report[offset + 44U];
+        output.green = raw_report[offset + 45U];
+        output.blue = raw_report[offset + 46U];
+        output.raw_report = raw_report;
         outputs.push_back(std::move(output));
       }
 
-      const auto trigger_flags = static_cast<std::uint8_t>(
-        valid_flag0 & (dualsense_flag0_left_trigger | dualsense_flag0_right_trigger)
-      );
-      if (trigger_flags != 0) {
+      const auto trigger_flags = valid_flag0 & (dualsense_flag0_left_trigger | dualsense_flag0_right_trigger);
+      if (trigger_flags != zero_byte) {
         GamepadOutput output;
         output.kind = GamepadOutputKind::adaptive_triggers;
-        output.adaptive_trigger_flags = trigger_flags;
+        output.adaptive_trigger_flags = to_uint8(trigger_flags);
         output.left_trigger_effect_type = left_trigger_effect_type;
         output.right_trigger_effect_type = right_trigger_effect_type;
-        std::copy_n(report.begin() + static_cast<std::ptrdiff_t>(offset + 11U), output.right_trigger_effect.size(), output.right_trigger_effect.begin());
-        std::copy_n(report.begin() + static_cast<std::ptrdiff_t>(offset + 22U), output.left_trigger_effect.size(), output.left_trigger_effect.begin());
-        output.raw_report = report;
+        std::copy_n(raw_report.begin() + static_cast<std::ptrdiff_t>(offset + 11U), output.right_trigger_effect.size(), output.right_trigger_effect.begin());
+        std::copy_n(raw_report.begin() + static_cast<std::ptrdiff_t>(offset + 22U), output.left_trigger_effect.size(), output.left_trigger_effect.begin());
+        output.raw_report = raw_report;
         outputs.push_back(std::move(output));
       }
     }
@@ -483,8 +530,9 @@ namespace lvh::reports {
     std::vector<GamepadOutput> outputs;
 
     if (profile.gamepad_kind == GamepadProfileKind::dualsense) {
-      if (const auto offset = dualsense_common_output_offset(report)) {
-        append_dualsense_outputs(report, *offset, outputs);
+      const auto byte_report = to_byte_report(report);
+      if (const auto offset = dualsense_common_output_offset(byte_report)) {
+        append_dualsense_outputs(byte_report, report, *offset, outputs);
       }
       if (!outputs.empty()) {
         return outputs;
