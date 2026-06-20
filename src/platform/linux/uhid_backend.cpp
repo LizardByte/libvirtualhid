@@ -22,6 +22,7 @@
 #include <numbers>
 #include <optional>
 #include <set>
+#include <span>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -684,22 +685,23 @@ namespace lvh::detail {
 
     std::vector<std::uint32_t> decode_utf8(const std::string &text) {
       std::vector<std::uint32_t> codepoints;
+      const auto bytes = std::as_bytes(std::span {text.data(), text.size()});
       for (std::size_t i = 0; i < text.size();) {
-        const auto first = static_cast<unsigned char>(text[i]);
+        const auto first = bytes[i];
         std::uint32_t codepoint = 0;
         std::size_t length = 0;
 
-        if (first <= 0x7F) {
-          codepoint = first;
+        if (const auto first_value = std::to_integer<std::uint32_t>(first); first_value <= 0x7FU) {
+          codepoint = first_value;
           length = 1;
-        } else if ((first & 0xE0U) == 0xC0U) {
-          codepoint = first & 0x1FU;
+        } else if ((first & std::byte {0xE0}) == std::byte {0xC0}) {
+          codepoint = std::to_integer<std::uint32_t>(first & std::byte {0x1F});
           length = 2;
-        } else if ((first & 0xF0U) == 0xE0U) {
-          codepoint = first & 0x0FU;
+        } else if ((first & std::byte {0xF0}) == std::byte {0xE0}) {
+          codepoint = std::to_integer<std::uint32_t>(first & std::byte {0x0F});
           length = 3;
-        } else if ((first & 0xF8U) == 0xF0U) {
-          codepoint = first & 0x07U;
+        } else if ((first & std::byte {0xF8}) == std::byte {0xF0}) {
+          codepoint = std::to_integer<std::uint32_t>(first & std::byte {0x07});
           length = 4;
         } else {
           ++i;
@@ -712,12 +714,12 @@ namespace lvh::detail {
 
         bool valid = true;
         for (std::size_t offset = 1; offset < length; ++offset) {
-          const auto next = static_cast<unsigned char>(text[i + offset]);
-          if ((next & 0xC0U) != 0x80U) {
+          const auto next = bytes[i + offset];
+          if ((next & std::byte {0xC0}) != std::byte {0x80}) {
             valid = false;
             break;
           }
-          codepoint = (codepoint << 6U) | (next & 0x3FU);
+          codepoint = (codepoint << 6U) | std::to_integer<std::uint32_t>(next & std::byte {0x3F});
         }
 
         if (valid) {

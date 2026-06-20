@@ -23,6 +23,7 @@
 #include <numbers>
 #include <optional>
 #include <set>
+#include <span>
 #include <sstream>
 #include <string>
 #include <system_error>
@@ -600,10 +601,10 @@ namespace lvh::detail::test {
     }
 
     bool write_uhid_event(int fd, const uhid_event &event) {
-      auto *data = reinterpret_cast<const char *>(&event);
+      const auto data = std::as_bytes(std::span {&event, 1U});
       std::size_t written = 0;
-      while (written < sizeof(event)) {
-        const auto result = ::write(fd, data + written, sizeof(event) - written);
+      while (written < data.size()) {
+        const auto result = ::write(fd, data.data() + written, data.size() - written);
         if (result <= 0) {
           return false;
         }
@@ -620,10 +621,10 @@ namespace lvh::detail::test {
         return false;
       }
 
-      auto *data = reinterpret_cast<char *>(&event);
+      const auto data = std::as_writable_bytes(std::span {&event, 1U});
       std::size_t read_size = 0;
-      while (read_size < sizeof(event)) {
-        const auto result = ::read(fd, data + read_size, sizeof(event) - read_size);
+      while (read_size < data.size()) {
+        const auto result = ::read(fd, data.data() + read_size, data.size() - read_size);
         if (result <= 0) {
           return false;
         }
