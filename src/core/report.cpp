@@ -350,9 +350,9 @@ namespace lvh::reports {
       const auto motor_left = raw_report[offset + 3U];
       const auto right_trigger_effect_type = raw_report[offset + 10U];
       const auto left_trigger_effect_type = raw_report[offset + 21U];
-      const auto valid_flag2 = report[offset + 38U];
 
-      if (has_flag(valid_flag0, dualsense_flag0_rumble) || has_flag(valid_flag2, dualsense_flag2_compatible_vibration)) {
+      if (const auto valid_flag2 = report[offset + 38U];
+          has_flag(valid_flag0, dualsense_flag0_rumble) || has_flag(valid_flag2, dualsense_flag2_compatible_vibration)) {
         GamepadOutput output;
         output.kind = GamepadOutputKind::rumble;
         output.low_frequency_rumble = scale_output_byte(motor_left);
@@ -531,7 +531,7 @@ namespace lvh::reports {
 
     if (profile.gamepad_kind == GamepadProfileKind::dualsense) {
       const auto byte_report = to_byte_report(report);
-      if (const auto offset = dualsense_common_output_offset(byte_report)) {
+      if (const auto offset = dualsense_common_output_offset(byte_report); offset.has_value()) {
         append_dualsense_outputs(byte_report, report, *offset, outputs);
       }
       if (!outputs.empty()) {
