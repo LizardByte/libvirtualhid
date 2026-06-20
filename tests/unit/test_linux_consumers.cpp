@@ -502,7 +502,7 @@ namespace {
       while (auto *raw_event = libinput_get_event(context)) {
         LibinputEvent event {raw_event, destroy_libinput_event};
         const auto event_type = libinput_event_get_type(event.get());
-        if (std::find(expected_types.begin(), expected_types.end(), event_type) != expected_types.end()) {
+        if (std::ranges::find(expected_types, event_type) != expected_types.end()) {
           return event;
         }
 

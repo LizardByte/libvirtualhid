@@ -237,16 +237,16 @@ TEST_F(LinuxBackendTest, CoversLinuxDiscoveryAndIdentityHelpers) {
     input_root.string(),
     hidraw_root.string()
   );
-  EXPECT_TRUE(std::any_of(nodes.begin(), nodes.end(), [](const auto &node) {
+  EXPECT_TRUE(std::ranges::any_of(nodes, [](const auto &node) {
     return node.kind == lvh::DeviceNodeKind::input_event && node.path == "/dev/input/event0";
   }));
-  EXPECT_TRUE(std::any_of(nodes.begin(), nodes.end(), [](const auto &node) {
+  EXPECT_TRUE(std::ranges::any_of(nodes, [](const auto &node) {
     return node.kind == lvh::DeviceNodeKind::joystick && node.path == "/dev/input/js0";
   }));
-  EXPECT_TRUE(std::any_of(nodes.begin(), nodes.end(), [](const auto &node) {
+  EXPECT_TRUE(std::ranges::any_of(nodes, [](const auto &node) {
     return node.kind == lvh::DeviceNodeKind::hidraw && node.path == "/dev/hidraw0";
   }));
-  EXPECT_TRUE(std::any_of(nodes.begin(), nodes.end(), [sysfs_root](const auto &node) {
+  EXPECT_TRUE(std::ranges::any_of(nodes, [sysfs_root](const auto &node) {
     return node.kind == lvh::DeviceNodeKind::sysfs && node.path.starts_with(sysfs_root.string());
   }));
 
@@ -453,10 +453,10 @@ TEST_F(LinuxBackendTest, PipeBackedUinputTouchDevicesEmitEvents) {
 
   result = lvh::detail::test::linux_uinput_trackpad_contact_pipe(contact);
   ASSERT_TRUE(result.status.ok()) << result.status.message();
-  const auto saw_left_button = std::any_of(result.events.begin(), result.events.end(), [](const auto &event) {
+  const auto saw_left_button = std::ranges::any_of(result.events, [](const auto &event) {
     return event.type == EV_KEY && event.code == BTN_LEFT && event.value == 1;
   });
-  const auto saw_finger_tool = std::any_of(result.events.begin(), result.events.end(), [](const auto &event) {
+  const auto saw_finger_tool = std::ranges::any_of(result.events, [](const auto &event) {
     return event.type == EV_KEY && event.code == BTN_TOOL_FINGER && event.value == 1;
   });
   EXPECT_TRUE(saw_left_button);
@@ -473,13 +473,13 @@ TEST_F(LinuxBackendTest, PipeBackedUinputTouchDevicesEmitEvents) {
   };
   result = lvh::detail::test::linux_uinput_pen_tablet_tool_pipe(tool);
   ASSERT_TRUE(result.status.ok()) << result.status.message();
-  const auto saw_pen_tool = std::any_of(result.events.begin(), result.events.end(), [](const auto &event) {
+  const auto saw_pen_tool = std::ranges::any_of(result.events, [](const auto &event) {
     return event.type == EV_KEY && event.code == BTN_TOOL_PEN && event.value == 1;
   });
-  const auto saw_pressure = std::any_of(result.events.begin(), result.events.end(), [](const auto &event) {
+  const auto saw_pressure = std::ranges::any_of(result.events, [](const auto &event) {
     return event.type == EV_ABS && event.code == ABS_PRESSURE && event.value > 0;
   });
-  const auto saw_stylus = std::any_of(result.events.begin(), result.events.end(), [](const auto &event) {
+  const auto saw_stylus = std::ranges::any_of(result.events, [](const auto &event) {
     return event.type == EV_KEY && event.code == BTN_STYLUS && event.value == 1;
   });
   EXPECT_TRUE(saw_pen_tool);
@@ -490,16 +490,16 @@ TEST_F(LinuxBackendTest, PipeBackedUinputTouchDevicesEmitEvents) {
 TEST_F(LinuxBackendTest, PipeBackedUinputTouchDevicesCoverStateTransitions) {
   auto result = lvh::detail::test::linux_uinput_trackpad_multi_contact_pipe();
   ASSERT_TRUE(result.status.ok()) << result.status.message();
-  const auto saw_doubletap = std::any_of(result.events.begin(), result.events.end(), [](const auto &event) {
+  const auto saw_doubletap = std::ranges::any_of(result.events, [](const auto &event) {
     return event.type == EV_KEY && event.code == BTN_TOOL_DOUBLETAP && event.value == 1;
   });
-  const auto saw_tripletap = std::any_of(result.events.begin(), result.events.end(), [](const auto &event) {
+  const auto saw_tripletap = std::ranges::any_of(result.events, [](const auto &event) {
     return event.type == EV_KEY && event.code == BTN_TOOL_TRIPLETAP && event.value == 1;
   });
-  const auto saw_quadtap = std::any_of(result.events.begin(), result.events.end(), [](const auto &event) {
+  const auto saw_quadtap = std::ranges::any_of(result.events, [](const auto &event) {
     return event.type == EV_KEY && event.code == BTN_TOOL_QUADTAP && event.value == 1;
   });
-  const auto saw_quinttap = std::any_of(result.events.begin(), result.events.end(), [](const auto &event) {
+  const auto saw_quinttap = std::ranges::any_of(result.events, [](const auto &event) {
     return event.type == EV_KEY && event.code == BTN_TOOL_QUINTTAP && event.value == 1;
   });
   EXPECT_TRUE(saw_doubletap);
@@ -511,16 +511,16 @@ TEST_F(LinuxBackendTest, PipeBackedUinputTouchDevicesCoverStateTransitions) {
 
   result = lvh::detail::test::linux_uinput_pen_tablet_transition_pipe();
   ASSERT_TRUE(result.status.ok()) << result.status.message();
-  const auto saw_rubber = std::any_of(result.events.begin(), result.events.end(), [](const auto &event) {
+  const auto saw_rubber = std::ranges::any_of(result.events, [](const auto &event) {
     return event.type == EV_KEY && event.code == BTN_TOOL_RUBBER && event.value == 1;
   });
-  const auto saw_pen_release = std::any_of(result.events.begin(), result.events.end(), [](const auto &event) {
+  const auto saw_pen_release = std::ranges::any_of(result.events, [](const auto &event) {
     return event.type == EV_KEY && event.code == BTN_TOOL_PEN && event.value == 0;
   });
-  const auto saw_distance = std::any_of(result.events.begin(), result.events.end(), [](const auto &event) {
+  const auto saw_distance = std::ranges::any_of(result.events, [](const auto &event) {
     return event.type == EV_ABS && event.code == ABS_DISTANCE && event.value > 0;
   });
-  const auto saw_secondary_button = std::any_of(result.events.begin(), result.events.end(), [](const auto &event) {
+  const auto saw_secondary_button = std::ranges::any_of(result.events, [](const auto &event) {
     return event.type == EV_KEY && event.code == BTN_STYLUS2 && event.value == 1;
   });
   EXPECT_TRUE(saw_rubber);
@@ -651,13 +651,13 @@ TEST_F(LinuxBackendTest, FakeUhidSyscallsCoverFailureBranches) {
 
 TEST_F(LinuxBackendTest, FakeUinputConstructionCoversCapabilitiesAndFailureBranches) {
   const auto has_type = [](const lvh::detail::test::LinuxLibevdevCreationResult &result, std::uint32_t type) {
-    return std::find(result.event_types.begin(), result.event_types.end(), type) != result.event_types.end();
+    return std::ranges::find(result.event_types, type) != result.event_types.end();
   };
   const auto has_property = [](const lvh::detail::test::LinuxLibevdevCreationResult &result, std::uint32_t property) {
-    return std::find(result.properties.begin(), result.properties.end(), property) != result.properties.end();
+    return std::ranges::find(result.properties, property) != result.properties.end();
   };
   const auto find_code = [](const lvh::detail::test::LinuxLibevdevCreationResult &result, std::uint32_t type, std::uint32_t code) {
-    const auto it = std::find_if(result.event_codes.begin(), result.event_codes.end(), [type, code](const auto &event_code) {
+    const auto it = std::ranges::find_if(result.event_codes, [type, code](const auto &event_code) {
       return event_code.type == type && event_code.code == code;
     });
     return it == result.event_codes.end() ? nullptr : &(*it);
