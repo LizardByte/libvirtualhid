@@ -683,7 +683,7 @@ namespace lvh::detail {
       return static_cast<int>(std::lround(radians * tablet_resolution));
     }
 
-    std::vector<std::uint32_t> decode_utf8(const std::string &text) {
+    std::vector<std::uint32_t> decode_utf8(std::string_view text) {
       std::vector<std::uint32_t> codepoints;
       const auto bytes = std::as_bytes(std::span {text.data(), text.size()});
       for (std::size_t i = 0; i < text.size();) {
