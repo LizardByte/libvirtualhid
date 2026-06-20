@@ -713,6 +713,57 @@ namespace lvh::detail {
       return static_cast<KeyboardKeyCode>(0x41 + (digit - 'A'));
     }
 
+    template<std::size_t Count, class SubmitKeyEvent>
+    OperationStatus submit_keyboard_events(const std::array<KeyboardEvent, Count> &events, SubmitKeyEvent &submit_key_event) {
+      for (const auto &event : events) {
+        if (const auto status = submit_key_event(event); !status.ok()) {
+          return status;
+        }
+      }
+      return OperationStatus::success();
+    }
+
+    template<class SubmitKeyEvent>
+    OperationStatus type_text_with_unicode_hex(std::string_view text, SubmitKeyEvent submit_key_event) {
+      static constexpr std::array<KeyboardEvent, 6> unicode_hex_prefix {{
+        {.key_code = 0xA2, .pressed = true},
+        {.key_code = 0xA0, .pressed = true},
+        {.key_code = 0x55, .pressed = true},
+        {.key_code = 0x55, .pressed = false},
+        {.key_code = 0xA0, .pressed = false},
+        {.key_code = 0xA2, .pressed = false},
+      }};
+      static constexpr std::array<KeyboardEvent, 2> unicode_hex_suffix {{
+        {.key_code = 0x0D, .pressed = true},
+        {.key_code = 0x0D, .pressed = false},
+      }};
+
+      for (const auto codepoint : decode_utf8(text)) {
+        const auto hex = uppercase_hex(codepoint);
+
+        if (const auto status = submit_keyboard_events(unicode_hex_prefix, submit_key_event); !status.ok()) {
+          return status;
+        }
+
+        for (const auto digit : hex) {
+          const auto key_code = hex_digit_key_code(digit);
+          const std::array<KeyboardEvent, 2> digit_events {{
+            {.key_code = key_code, .pressed = true},
+            {.key_code = key_code, .pressed = false},
+          }};
+          if (const auto status = submit_keyboard_events(digit_events, submit_key_event); !status.ok()) {
+            return status;
+          }
+        }
+
+        if (const auto status = submit_keyboard_events(unicode_hex_suffix, submit_key_event); !status.ok()) {
+          return status;
+        }
+      }
+
+      return OperationStatus::success();
+    }
+
     [[maybe_unused]] int legacy_scroll_steps(std::int32_t distance) {
       if (distance == 0) {
         return 0;
@@ -1158,47 +1209,9 @@ namespace lvh::detail {
       }
 
       OperationStatus type_text(const KeyboardTextEvent &event) override {
-        for (const auto codepoint : decode_utf8(event.text)) {
-          const auto hex = uppercase_hex(codepoint);
-
-          if (const auto status = submit({.key_code = 0xA2, .pressed = true}); !status.ok()) {
-            return status;
-          }
-          if (const auto status = submit({.key_code = 0xA0, .pressed = true}); !status.ok()) {
-            return status;
-          }
-          if (const auto status = submit({.key_code = 0x55, .pressed = true}); !status.ok()) {
-            return status;
-          }
-          if (const auto status = submit({.key_code = 0x55, .pressed = false}); !status.ok()) {
-            return status;
-          }
-          if (const auto status = submit({.key_code = 0xA0, .pressed = false}); !status.ok()) {
-            return status;
-          }
-          if (const auto status = submit({.key_code = 0xA2, .pressed = false}); !status.ok()) {
-            return status;
-          }
-
-          for (const auto digit : hex) {
-            const auto key_code = hex_digit_key_code(digit);
-            if (const auto status = submit({.key_code = key_code, .pressed = true}); !status.ok()) {
-              return status;
-            }
-            if (const auto status = submit({.key_code = key_code, .pressed = false}); !status.ok()) {
-              return status;
-            }
-          }
-
-          if (const auto status = submit({.key_code = 0x0D, .pressed = true}); !status.ok()) {
-            return status;
-          }
-          if (const auto status = submit({.key_code = 0x0D, .pressed = false}); !status.ok()) {
-            return status;
-          }
-        }
-
-        return OperationStatus::success();
+        return type_text_with_unicode_hex(event.text, [this](const KeyboardEvent &key_event) {
+          return submit(key_event);
+        });
       }
 
       OperationStatus close() override {
@@ -1952,47 +1965,9 @@ namespace lvh::detail {
       }
 
       OperationStatus type_text(const KeyboardTextEvent &event) override {
-        for (const auto codepoint : decode_utf8(event.text)) {
-          const auto hex = uppercase_hex(codepoint);
-
-          if (const auto status = submit({.key_code = 0xA2, .pressed = true}); !status.ok()) {
-            return status;
-          }
-          if (const auto status = submit({.key_code = 0xA0, .pressed = true}); !status.ok()) {
-            return status;
-          }
-          if (const auto status = submit({.key_code = 0x55, .pressed = true}); !status.ok()) {
-            return status;
-          }
-          if (const auto status = submit({.key_code = 0x55, .pressed = false}); !status.ok()) {
-            return status;
-          }
-          if (const auto status = submit({.key_code = 0xA0, .pressed = false}); !status.ok()) {
-            return status;
-          }
-          if (const auto status = submit({.key_code = 0xA2, .pressed = false}); !status.ok()) {
-            return status;
-          }
-
-          for (const auto digit : hex) {
-            const auto key_code = hex_digit_key_code(digit);
-            if (const auto status = submit({.key_code = key_code, .pressed = true}); !status.ok()) {
-              return status;
-            }
-            if (const auto status = submit({.key_code = key_code, .pressed = false}); !status.ok()) {
-              return status;
-            }
-          }
-
-          if (const auto status = submit({.key_code = 0x0D, .pressed = true}); !status.ok()) {
-            return status;
-          }
-          if (const auto status = submit({.key_code = 0x0D, .pressed = false}); !status.ok()) {
-            return status;
-          }
-        }
-
-        return OperationStatus::success();
+        return type_text_with_unicode_hex(event.text, [this](const KeyboardEvent &key_event) {
+          return submit(key_event);
+        });
       }
 
       OperationStatus close() override {
