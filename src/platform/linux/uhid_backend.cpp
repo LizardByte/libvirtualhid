@@ -452,7 +452,7 @@ namespace lvh::detail {
       KeyboardKeyCode key_code,
       const std::array<std::pair<KeyboardKeyCode, Target>, Size> &mappings
     ) {
-      const auto it = std::find_if(mappings.begin(), mappings.end(), [key_code](const auto &mapping) {
+      const auto it = std::ranges::find_if(mappings, [key_code](const auto &mapping) {
         return mapping.first == key_code;
       });
       if (it == mappings.end()) {
@@ -512,8 +512,8 @@ namespace lvh::detail {
         {0xE2, KEY_102ND},
       }};
 
-      if (const auto linux_key = mapped_keyboard_code(key_code, special_keys)) {
-        return *linux_key;
+      if (const auto linux_key = mapped_keyboard_code(key_code, special_keys); linux_key.has_value()) {
+        return linux_key.value();
       }
 
       if (key_code >= 0x30 && key_code <= 0x39) {
@@ -1850,8 +1850,8 @@ namespace lvh::detail {
         {0xDE, XK_apostrophe},
       }};
 
-      if (const auto keysym = mapped_keyboard_code(key_code, special_keysyms)) {
-        return *keysym;
+      if (const auto keysym = mapped_keyboard_code(key_code, special_keysyms); keysym.has_value()) {
+        return keysym.value();
       }
 
       if (key_code >= 0x30 && key_code <= 0x39) {

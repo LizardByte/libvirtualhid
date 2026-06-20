@@ -183,6 +183,18 @@ namespace lvh::detail::test {
   }  // namespace
 }  // namespace lvh::detail::test
 
+namespace {
+
+  void free_real_libevdev(libevdev *handle) {
+    ::libevdev_free(handle);
+  }
+
+  void destroy_real_libevdev_uinput(libevdev_uinput *handle) {
+    ::libevdev_uinput_destroy(handle);
+  }
+
+}  // namespace
+
 int lvh_linux_test_access(const char *path, int mode) {
   if (lvh::detail::test::active_test_syscalls() != nullptr && lvh::detail::test::active_test_syscalls()->override_access) {
     if (lvh::detail::test::active_test_syscalls()->access_result < 0) {
@@ -358,9 +370,9 @@ extern "C" libevdev *lvh_linux_test_libevdev_new() {
   return ::libevdev_new();
 }
 
-extern "C" void lvh_linux_test_libevdev_free(libevdev *libevdev_device) {
+extern "C" void lvh_linux_test_libevdev_free(libevdev *raw_libevdev_handle) {
   if (lvh::detail::test::active_test_syscalls() != nullptr && lvh::detail::test::active_test_syscalls()->override_libevdev) {
-    auto *fake_device_handle = lvh::detail::test::fake_libevdev_device(libevdev_device);
+    auto *fake_device_handle = lvh::detail::test::fake_libevdev_device(raw_libevdev_handle);
     static_cast<void>(std::erase_if(
       lvh::detail::test::active_test_syscalls()->owned_libevdev_devices,
       [fake_device_handle](const auto &owned_device) {
@@ -369,7 +381,7 @@ extern "C" void lvh_linux_test_libevdev_free(libevdev *libevdev_device) {
     ));
     return;
   }
-  ::libevdev_free(libevdev_device);
+  free_real_libevdev(raw_libevdev_handle);
 }
 
 extern "C" void lvh_linux_test_libevdev_set_name(libevdev *device, const char *name) {
@@ -486,10 +498,10 @@ extern "C" int lvh_linux_test_libevdev_uinput_create_from_device(
   return ::libevdev_uinput_create_from_device(device, uinput_fd, uinput_device);
 }
 
-extern "C" void lvh_linux_test_libevdev_uinput_destroy(libevdev_uinput *libevdev_uinput_device) {
+extern "C" void lvh_linux_test_libevdev_uinput_destroy(libevdev_uinput *raw_uinput_handle) {
   if (lvh::detail::test::active_test_syscalls() != nullptr && lvh::detail::test::active_test_syscalls()->override_libevdev) {
     ++lvh::detail::test::active_test_syscalls()->libevdev_destroy_count;
-    auto *fake_uinput_handle = lvh::detail::test::fake_libevdev_uinput(libevdev_uinput_device);
+    auto *fake_uinput_handle = lvh::detail::test::fake_libevdev_uinput(raw_uinput_handle);
     static_cast<void>(std::erase_if(
       lvh::detail::test::active_test_syscalls()->owned_libevdev_uinput_devices,
       [fake_uinput_handle](const auto &owned_device) {
@@ -498,7 +510,7 @@ extern "C" void lvh_linux_test_libevdev_uinput_destroy(libevdev_uinput *libevdev
     ));
     return;
   }
-  ::libevdev_uinput_destroy(libevdev_uinput_device);
+  destroy_real_libevdev_uinput(raw_uinput_handle);
 }
 
   #define access lvh_linux_test_access
@@ -804,9 +816,12 @@ namespace lvh::detail::test {
       return result;
     }
 
+    void keep_fake_libevdev_successful(const LinuxTestSyscalls &syscalls) {
+      static_cast<void>(syscalls);
+    }
+
     LinuxLibevdevCreationResult create_fake_libevdev_device(DeviceType device_type) {
-      return create_fake_libevdev_device(device_type, [](LinuxTestSyscalls &) {
-      });
+      return create_fake_libevdev_device(device_type, keep_fake_libevdev_successful);
     }
 
   }  // namespace
