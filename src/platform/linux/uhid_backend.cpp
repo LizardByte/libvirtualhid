@@ -642,15 +642,17 @@ namespace lvh::detail {
 
     int mouse_button_to_linux(MouseButton button) {
       switch (button) {
-        case MouseButton::left:
+        using enum MouseButton;
+
+        case left:
           return BTN_LEFT;
-        case MouseButton::middle:
+        case middle:
           return BTN_MIDDLE;
-        case MouseButton::right:
+        case right:
           return BTN_RIGHT;
-        case MouseButton::side:
+        case side:
           return BTN_SIDE;
-        case MouseButton::extra:
+        case extra:
           return BTN_EXTRA;
       }
 
@@ -1090,17 +1092,19 @@ namespace lvh::detail {
 
     OperationStatus configure_evdev_device(libevdev *device, DeviceType device_type) {
       switch (device_type) {
-        case DeviceType::keyboard:
+        using enum DeviceType;
+
+        case keyboard:
           return configure_evdev_keyboard(device);
-        case DeviceType::mouse:
+        case mouse:
           return configure_evdev_mouse(device);
-        case DeviceType::touchscreen:
+        case touchscreen:
           return configure_evdev_touchscreen(device);
-        case DeviceType::trackpad:
+        case trackpad:
           return configure_evdev_trackpad(device);
-        case DeviceType::pen_tablet:
+        case pen_tablet:
           return configure_evdev_pen_tablet(device);
-        case DeviceType::gamepad:
+        case gamepad:
           return OperationStatus::failure(ErrorCode::unsupported_profile, "gamepads are created through UHID, not uinput");
       }
 
@@ -1320,15 +1324,17 @@ namespace lvh::detail {
         }
 
         switch (event.kind) {
-          case MouseEventKind::relative_motion:
+          using enum MouseEventKind;
+
+          case relative_motion:
             return submit_relative_motion(event);
-          case MouseEventKind::absolute_motion:
+          case absolute_motion:
             return submit_absolute_motion(event);
-          case MouseEventKind::button:
+          case button:
             return submit_button(event);
-          case MouseEventKind::vertical_scroll:
+          case vertical_scroll:
             return submit_vertical_scroll(event.high_resolution_scroll);
-          case MouseEventKind::horizontal_scroll:
+          case horizontal_scroll:
             return submit_horizontal_scroll(event.high_resolution_scroll);
         }
 
@@ -1659,19 +1665,21 @@ namespace lvh::detail {
 
     int pen_tool_to_linux(PenToolType tool) {
       switch (tool) {
-        case PenToolType::pen:
+        using enum PenToolType;
+
+        case pen:
           return BTN_TOOL_PEN;
-        case PenToolType::eraser:
+        case eraser:
           return BTN_TOOL_RUBBER;
-        case PenToolType::brush:
+        case brush:
           return BTN_TOOL_BRUSH;
-        case PenToolType::pencil:
+        case pencil:
           return BTN_TOOL_PENCIL;
-        case PenToolType::airbrush:
+        case airbrush:
           return BTN_TOOL_AIRBRUSH;
-        case PenToolType::touch:
+        case touch:
           return BTN_TOUCH;
-        case PenToolType::unchanged:
+        case unchanged:
           return -1;
       }
 
@@ -1680,11 +1688,13 @@ namespace lvh::detail {
 
     int pen_button_to_linux(PenButton button) {
       switch (button) {
-        case PenButton::primary:
+        using enum PenButton;
+
+        case primary:
           return BTN_STYLUS;
-        case PenButton::secondary:
+        case secondary:
           return BTN_STYLUS2;
-        case PenButton::tertiary:
+        case tertiary:
 #if defined(BTN_STYLUS3)
           return BTN_STYLUS3;
 #else
@@ -1910,15 +1920,17 @@ namespace lvh::detail {
 
     int mouse_button_to_xtest(MouseButton button) {
       switch (button) {
-        case MouseButton::left:
+        using enum MouseButton;
+
+        case left:
           return 1;
-        case MouseButton::middle:
+        case middle:
           return 2;
-        case MouseButton::right:
+        case right:
           return 3;
-        case MouseButton::side:
+        case side:
           return 8;
-        case MouseButton::extra:
+        case extra:
           return 9;
       }
 
@@ -2072,19 +2084,21 @@ namespace lvh::detail {
         }
 
         switch (event.kind) {
-          case MouseEventKind::relative_motion:
+          using enum MouseEventKind;
+
+          case relative_motion:
             XTestFakeRelativeMotionEvent(display_, event.x, event.y, CurrentTime);
             break;
-          case MouseEventKind::absolute_motion:
+          case absolute_motion:
             submit_absolute_motion(event);
             break;
-          case MouseEventKind::button:
+          case button:
             XTestFakeButtonEvent(display_, mouse_button_to_xtest(event.button), event.pressed ? True : False, CurrentTime);
             break;
-          case MouseEventKind::vertical_scroll:
+          case vertical_scroll:
             submit_scroll(event.high_resolution_scroll, 4, 5);
             break;
-          case MouseEventKind::horizontal_scroll:
+          case horizontal_scroll:
             submit_scroll(event.high_resolution_scroll, 6, 7);
             break;
         }
@@ -2255,17 +2269,19 @@ namespace lvh::detail {
 
     private:
       OperationStatus write_event(const uhid_event &event) {
+        using enum ErrorCode;
+
         std::lock_guard lock {write_mutex_};
         if (fd_ < 0) {
-          return OperationStatus::failure(ErrorCode::device_closed, "UHID file descriptor is closed");
+          return OperationStatus::failure(device_closed, "UHID file descriptor is closed");
         }
 
         const auto result = system_write(fd_, &event, sizeof(event));
         if (result < 0) {
-          return system_error_status(ErrorCode::backend_failure, "failed to write UHID event", errno);
+          return system_error_status(backend_failure, "failed to write UHID event", errno);
         }
         if (static_cast<std::size_t>(result) != sizeof(event)) {
-          return OperationStatus::failure(ErrorCode::backend_failure, "short write while sending UHID event");
+          return OperationStatus::failure(backend_failure, "short write while sending UHID event");
         }
 
         return OperationStatus::success();

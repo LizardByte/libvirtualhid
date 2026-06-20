@@ -1081,14 +1081,15 @@ namespace lvh::detail::test {
 
     UinputPenTablet pen_tablet {descriptors[1]};
     auto status = OperationStatus::success();
+    using enum PenToolType;
     constexpr std::array tools {
-      PenToolType::pen,
-      PenToolType::eraser,
-      PenToolType::brush,
-      PenToolType::pencil,
-      PenToolType::airbrush,
-      PenToolType::touch,
-      PenToolType::unchanged,
+      pen,
+      eraser,
+      brush,
+      pencil,
+      airbrush,
+      touch,
+      unchanged,
     };
     for (const auto tool : tools) {
       if (!status.ok()) {
@@ -1098,8 +1099,8 @@ namespace lvh::detail::test {
         .tool = tool,
         .x = 0.25F,
         .y = 0.75F,
-        .pressure = tool == PenToolType::eraser ? -1.0F : 0.25F,
-        .distance = tool == PenToolType::eraser ? 0.5F : -1.0F,
+        .pressure = tool == eraser ? -1.0F : 0.25F,
+        .distance = tool == eraser ? 0.5F : -1.0F,
         .tilt_x = 120.0F,
         .tilt_y = -120.0F,
       });
@@ -1965,19 +1966,20 @@ namespace lvh::detail::test {
       return status;
     }
 
-    if (const auto status = mouse.submit({.kind = MouseEventKind::relative_motion, .x = 1, .y = -1}); !status.ok()) {
+    using enum MouseEventKind;
+    if (const auto status = mouse.submit({.kind = relative_motion, .x = 1, .y = -1}); !status.ok()) {
       return status;
     }
-    if (const auto status = mouse.submit({.kind = MouseEventKind::absolute_motion, .x = 1, .y = 1, .width = 2, .height = 2}); !status.ok()) {
+    if (const auto status = mouse.submit({.kind = absolute_motion, .x = 1, .y = 1, .width = 2, .height = 2}); !status.ok()) {
       return status;
     }
-    if (const auto status = mouse.submit({.kind = MouseEventKind::button, .button = MouseButton::extra, .pressed = true}); !status.ok()) {
+    if (const auto status = mouse.submit({.kind = button, .button = MouseButton::extra, .pressed = true}); !status.ok()) {
       return status;
     }
-    if (const auto status = mouse.submit({.kind = MouseEventKind::vertical_scroll, .high_resolution_scroll = 120}); !status.ok()) {
+    if (const auto status = mouse.submit({.kind = vertical_scroll, .high_resolution_scroll = 120}); !status.ok()) {
       return status;
     }
-    return mouse.submit({.kind = MouseEventKind::horizontal_scroll, .high_resolution_scroll = -120});
+    return mouse.submit({.kind = horizontal_scroll, .high_resolution_scroll = -120});
   #else
     return OperationStatus::failure(ErrorCode::backend_unavailable, "XTest fallback is not enabled");
   #endif

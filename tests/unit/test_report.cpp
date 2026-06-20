@@ -52,16 +52,18 @@ TEST(ReportTest, NormalizesAxesAndTriggers) {
 }
 
 TEST(ReportTest, EncodesHatSwitch) {
+  using enum lvh::GamepadButton;
+
   lvh::ButtonSet buttons;
   EXPECT_EQ(lvh::reports::hat_from_buttons(buttons), 8);
 
-  buttons.set(lvh::GamepadButton::dpad_up);
+  buttons.set(dpad_up);
   EXPECT_EQ(lvh::reports::hat_from_buttons(buttons), 0);
 
-  buttons.set(lvh::GamepadButton::dpad_right);
+  buttons.set(dpad_right);
   EXPECT_EQ(lvh::reports::hat_from_buttons(buttons), 1);
 
-  buttons.set(lvh::GamepadButton::dpad_down);
+  buttons.set(dpad_down);
   EXPECT_EQ(lvh::reports::hat_from_buttons(buttons), 2);
 }
 

@@ -157,20 +157,22 @@ namespace lvh {
   namespace {
 
     OperationStatus validate_gamepad_options(const CreateGamepadOptions &options) {
+      using enum ErrorCode;
+
       if (options.profile.device_type != DeviceType::gamepad) {
-        return OperationStatus::failure(ErrorCode::unsupported_profile, "device profile is not a gamepad");
+        return OperationStatus::failure(unsupported_profile, "device profile is not a gamepad");
       }
       if (options.profile.name.empty()) {
-        return OperationStatus::failure(ErrorCode::invalid_argument, "device profile name must not be empty");
+        return OperationStatus::failure(invalid_argument, "device profile name must not be empty");
       }
       if (options.profile.report_descriptor.empty()) {
-        return OperationStatus::failure(ErrorCode::invalid_argument, "device profile report descriptor must not be empty");
+        return OperationStatus::failure(invalid_argument, "device profile report descriptor must not be empty");
       }
       if (options.profile.report_id == 0) {
-        return OperationStatus::failure(ErrorCode::invalid_argument, "device profile report id must not be zero");
+        return OperationStatus::failure(invalid_argument, "device profile report id must not be zero");
       }
       if (options.profile.input_report_size == 0) {
-        return OperationStatus::failure(ErrorCode::invalid_argument, "device profile input report size must not be zero");
+        return OperationStatus::failure(invalid_argument, "device profile input report size must not be zero");
       }
 
       return OperationStatus::success();

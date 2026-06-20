@@ -190,19 +190,21 @@ namespace lvh::reports {
 
     std::byte dualsense_battery_state(GamepadBatteryState state) {
       switch (state) {
-        case GamepadBatteryState::discharging:
+        using enum GamepadBatteryState;
+
+        case discharging:
           return std::byte {0x00};
-        case GamepadBatteryState::charging:
+        case charging:
           return std::byte {0x01};
-        case GamepadBatteryState::full:
+        case full:
           return std::byte {0x02};
-        case GamepadBatteryState::voltage_or_temperature_error:
+        case voltage_or_temperature_error:
           return std::byte {0x0A};
-        case GamepadBatteryState::temperature_error:
+        case temperature_error:
           return std::byte {0x0B};
-        case GamepadBatteryState::charging_error:
+        case charging_error:
           return std::byte {0x0F};
-        case GamepadBatteryState::unknown:
+        case unknown:
           break;
       }
 
