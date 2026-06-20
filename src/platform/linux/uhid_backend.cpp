@@ -24,6 +24,7 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <thread>
 #include <utility>
@@ -349,7 +350,7 @@ namespace lvh::detail {
     }
 
     template<std::size_t Size>
-    void copy_string(std::array<char, Size> &destination, const std::string &source) {
+    void copy_string(std::array<char, Size> &destination, std::string_view source) {
       const auto length = std::min(source.size(), Size - 1);
       std::memcpy(destination.data(), source.data(), length);
       destination[length] = 0;
