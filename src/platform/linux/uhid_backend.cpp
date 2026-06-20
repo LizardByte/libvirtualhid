@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <iomanip>
 #include <map>
@@ -63,7 +64,7 @@
 #include <libvirtualhid/report.hpp>
 
 namespace lvh::detail {
-  namespace {
+  namespace {  // NOSONAR(cpp:S1000): Linux backend internals need internal linkage; tests include this file with syscall overrides.
 
     constexpr auto uhid_path = "/dev/uhid";
     constexpr auto uinput_path = "/dev/uinput";
@@ -227,8 +228,8 @@ namespace lvh::detail {
       return ::close(fd);
     }
 
-    std::ptrdiff_t system_write(int fd, const void *buffer, std::size_t size) {
-      return static_cast<std::ptrdiff_t>(::write(fd, buffer, size));
+    std::ptrdiff_t system_write(int fd, std::span<const std::byte> buffer) {
+      return static_cast<std::ptrdiff_t>(::write(fd, buffer.data(), buffer.size()));
     }
 
     int system_ioctl(int fd, unsigned long request, unsigned long argument = 0) {
@@ -239,8 +240,8 @@ namespace lvh::detail {
       return ::poll(descriptors, descriptor_count, timeout);
     }
 
-    std::ptrdiff_t system_read(int fd, void *buffer, std::size_t size) {
-      return static_cast<std::ptrdiff_t>(::read(fd, buffer, size));
+    std::ptrdiff_t system_read(int fd, std::span<std::byte> buffer) {
+      return static_cast<std::ptrdiff_t>(::read(fd, buffer.data(), buffer.size()));
     }
 
     std::string errno_message(int error) {
@@ -303,10 +304,10 @@ namespace lvh::detail {
       return stream.str();
     }
 
-    std::uint32_t crc32(const std::uint8_t *buffer, std::size_t length, std::uint32_t seed = 0) {
+    std::uint32_t crc32(std::span<const std::uint8_t> buffer, std::uint32_t seed = 0) {
       auto crc = seed ^ 0xFFFFFFFFU;
-      for (std::size_t index = 0; index < length; ++index) {
-        crc ^= buffer[index];
+      for (const auto byte : buffer) {
+        crc ^= byte;
         for (auto bit = 0; bit < 8; ++bit) {
           const auto mask = 0U - (crc & 1U);
           crc = (crc >> 1U) ^ (0xEDB88320U & mask);
@@ -316,7 +317,7 @@ namespace lvh::detail {
     }
 
     std::uint32_t dualsense_crc_seed(std::uint8_t seed) {
-      return crc32(&seed, 1U);
+      return crc32(std::span {&seed, 1U});
     }
 
     void write_u32_le(std::uint8_t *buffer, std::uint32_t value) {
@@ -446,91 +447,73 @@ namespace lvh::detail {
       return system_error_status(ErrorCode::backend_failure, operation, errno);
     }
 
+    template<typename Target, std::size_t Size>
+    std::optional<Target> mapped_keyboard_code(
+      KeyboardKeyCode key_code,
+      const std::array<std::pair<KeyboardKeyCode, Target>, Size> &mappings
+    ) {
+      const auto it = std::ranges::find_if(mappings, [key_code](const auto &mapping) {
+        return mapping.first == key_code;
+      });
+      if (it == mappings.end()) {
+        return std::nullopt;
+      }
+      return it->second;
+    }
+
     int key_code_to_linux(KeyboardKeyCode key_code) {
-      switch (key_code) {
-        case 0x08:
-          return KEY_BACKSPACE;
-        case 0x09:
-          return KEY_TAB;
-        case 0x0D:
-          return KEY_ENTER;
-        case 0x10:
-        case 0xA0:
-          return KEY_LEFTSHIFT;
-        case 0x11:
-        case 0xA2:
-          return KEY_LEFTCTRL;
-        case 0x12:
-        case 0xA4:
-          return KEY_LEFTALT;
-        case 0x14:
-          return KEY_CAPSLOCK;
-        case 0x1B:
-          return KEY_ESC;
-        case 0x20:
-          return KEY_SPACE;
-        case 0x21:
-          return KEY_PAGEUP;
-        case 0x22:
-          return KEY_PAGEDOWN;
-        case 0x23:
-          return KEY_END;
-        case 0x24:
-          return KEY_HOME;
-        case 0x25:
-          return KEY_LEFT;
-        case 0x26:
-          return KEY_UP;
-        case 0x27:
-          return KEY_RIGHT;
-        case 0x28:
-          return KEY_DOWN;
-        case 0x2C:
-          return KEY_SYSRQ;
-        case 0x2D:
-          return KEY_INSERT;
-        case 0x2E:
-          return KEY_DELETE;
-        case 0x5B:
-          return KEY_LEFTMETA;
-        case 0x5C:
-          return KEY_RIGHTMETA;
-        case 0x90:
-          return KEY_NUMLOCK;
-        case 0x91:
-          return KEY_SCROLLLOCK;
-        case 0xA1:
-          return KEY_RIGHTSHIFT;
-        case 0xA3:
-          return KEY_RIGHTCTRL;
-        case 0xA5:
-          return KEY_RIGHTALT;
-        case 0xBA:
-          return KEY_SEMICOLON;
-        case 0xBB:
-          return KEY_EQUAL;
-        case 0xBC:
-          return KEY_COMMA;
-        case 0xBD:
-          return KEY_MINUS;
-        case 0xBE:
-          return KEY_DOT;
-        case 0xBF:
-          return KEY_SLASH;
-        case 0xC0:
-          return KEY_GRAVE;
-        case 0xDB:
-          return KEY_LEFTBRACE;
-        case 0xDC:
-          return KEY_BACKSLASH;
-        case 0xDD:
-          return KEY_RIGHTBRACE;
-        case 0xDE:
-          return KEY_APOSTROPHE;
-        case 0xE2:
-          return KEY_102ND;
-        default:
-          break;
+      static constexpr std::array<std::pair<KeyboardKeyCode, int>, 47> special_keys {{
+        {0x08, KEY_BACKSPACE},
+        {0x09, KEY_TAB},
+        {0x0D, KEY_ENTER},
+        {0x10, KEY_LEFTSHIFT},
+        {0xA0, KEY_LEFTSHIFT},
+        {0x11, KEY_LEFTCTRL},
+        {0xA2, KEY_LEFTCTRL},
+        {0x12, KEY_LEFTALT},
+        {0xA4, KEY_LEFTALT},
+        {0x14, KEY_CAPSLOCK},
+        {0x1B, KEY_ESC},
+        {0x20, KEY_SPACE},
+        {0x21, KEY_PAGEUP},
+        {0x22, KEY_PAGEDOWN},
+        {0x23, KEY_END},
+        {0x24, KEY_HOME},
+        {0x25, KEY_LEFT},
+        {0x26, KEY_UP},
+        {0x27, KEY_RIGHT},
+        {0x28, KEY_DOWN},
+        {0x2C, KEY_SYSRQ},
+        {0x2D, KEY_INSERT},
+        {0x2E, KEY_DELETE},
+        {0x5B, KEY_LEFTMETA},
+        {0x5C, KEY_RIGHTMETA},
+        {0x6A, KEY_KPASTERISK},
+        {0x6B, KEY_KPPLUS},
+        {0x6D, KEY_KPMINUS},
+        {0x6E, KEY_KPDOT},
+        {0x6F, KEY_KPSLASH},
+        {0x90, KEY_NUMLOCK},
+        {0x91, KEY_SCROLLLOCK},
+        {0xA1, KEY_RIGHTSHIFT},
+        {0xA3, KEY_RIGHTCTRL},
+        {0xA5, KEY_RIGHTALT},
+        {0xBA, KEY_SEMICOLON},
+        {0xBB, KEY_EQUAL},
+        {0xBC, KEY_COMMA},
+        {0xBD, KEY_MINUS},
+        {0xBE, KEY_DOT},
+        {0xBF, KEY_SLASH},
+        {0xC0, KEY_GRAVE},
+        {0xDB, KEY_LEFTBRACE},
+        {0xDC, KEY_BACKSLASH},
+        {0xDD, KEY_RIGHTBRACE},
+        {0xDE, KEY_APOSTROPHE},
+        {0xE2, KEY_102ND},
+      }};
+
+      if (const auto linux_key = mapped_keyboard_code(key_code, special_keys); linux_key.has_value()) {
+        return linux_key.value();
       }
 
       if (key_code >= 0x30 && key_code <= 0x39) {
@@ -593,21 +576,6 @@ namespace lvh::detail {
           KEY_KP9,
         };
         return keypad_digit_keys[key_code - 0x60];
-      }
-      if (key_code == 0x6A) {
-        return KEY_KPASTERISK;
-      }
-      if (key_code == 0x6B) {
-        return KEY_KPPLUS;
-      }
-      if (key_code == 0x6D) {
-        return KEY_KPMINUS;
-      }
-      if (key_code == 0x6E) {
-        return KEY_KPDOT;
-      }
-      if (key_code == 0x6F) {
-        return KEY_KPSLASH;
       }
       if (key_code >= 0x70 && key_code <= 0x87) {
         static constexpr std::array function_keys {
@@ -735,9 +703,7 @@ namespace lvh::detail {
     }
 
     std::string uppercase_hex(std::uint32_t codepoint) {
-      std::ostringstream stream;
-      stream << std::uppercase << std::hex << codepoint;
-      return stream.str();
+      return std::format("{:X}", codepoint);
     }
 
     KeyboardKeyCode hex_digit_key_code(char digit) {
@@ -828,7 +794,8 @@ namespace lvh::detail {
         event.code = code;
         event.value = value;
 
-        const auto result = system_write(fd_, &event, sizeof(event));
+        const auto event_buffer = std::as_bytes(std::span {&event, 1U});
+        const auto result = system_write(fd_, event_buffer);
         if (result < 0) {
           return system_error_status(ErrorCode::backend_failure, "failed to write uinput event", errno);
         }
@@ -894,7 +861,7 @@ namespace lvh::detail {
     ) {
       return libevdev_status(
         libevdev_enable_event_code(device, type, code, absinfo),
-        "failed to enable " + description + " " + std::to_string(code)
+        std::format("failed to enable {} {}", description, code)
       );
     }
 
@@ -1138,7 +1105,7 @@ namespace lvh::detail {
         return {
           OperationStatus::failure(
             ErrorCode::backend_failure,
-            "failed to create uinput device " + std::to_string(id) + ": " + errno_message(-result)
+            std::format("failed to create uinput device {}: {}", id, errno_message(-result))
           ),
           nullptr,
         };
@@ -1730,54 +1697,19 @@ namespace lvh::detail {
           return OperationStatus::failure(ErrorCode::device_closed, "uinput pen tablet is closed");
         }
 
-        if (state.tool != PenToolType::unchanged && state.tool != last_tool_) {
-          const auto tool_code = pen_tool_to_linux(state.tool);
-          if (tool_code >= 0) {
-            if (const auto status = emit_event(EV_KEY, static_cast<std::uint16_t>(tool_code), 1); !status.ok()) {
-              return status;
-            }
-          }
-          const auto last_tool_code = pen_tool_to_linux(last_tool_);
-          if (last_tool_code >= 0) {
-            if (const auto status = emit_event(EV_KEY, static_cast<std::uint16_t>(last_tool_code), 0); !status.ok()) {
-              return status;
-            }
-          }
-          last_tool_ = state.tool;
-        }
-
-        if (const auto status = emit_event(EV_ABS, ABS_X, scale_normalized_axis(state.x, touch_axis_max_x)); !status.ok()) {
+        if (const auto status = update_pen_tool(state.tool); !status.ok()) {
           return status;
         }
-        if (const auto status = emit_event(EV_ABS, ABS_Y, scale_normalized_axis(state.y, touch_axis_max_y)); !status.ok()) {
+        if (const auto status = emit_pen_position(state); !status.ok()) {
           return status;
         }
-        if (state.pressure >= 0.0F) {
-          if (const auto status = emit_event(EV_ABS, ABS_PRESSURE, scale_normalized_axis(state.pressure, tablet_pressure_max)); !status.ok()) {
-            return status;
-          }
-          if (const auto status = emit_event(EV_ABS, ABS_DISTANCE, 0); !status.ok()) {
-            return status;
-          }
-          if (const auto status = emit_event(EV_KEY, BTN_TOUCH, state.pressure > 0.0F ? 1 : 0); !status.ok()) {
-            return status;
-          }
-        }
-        if (state.distance >= 0.0F) {
-          if (const auto status = emit_event(EV_ABS, ABS_DISTANCE, scale_normalized_axis(state.distance, tablet_distance_max)); !status.ok()) {
-            return status;
-          }
-          if (const auto status = emit_event(EV_ABS, ABS_PRESSURE, 0); !status.ok()) {
-            return status;
-          }
-          if (const auto status = emit_event(EV_KEY, BTN_TOUCH, 0); !status.ok()) {
-            return status;
-          }
-        }
-        if (const auto status = emit_event(EV_ABS, ABS_TILT_X, tablet_tilt_units(state.tilt_x)); !status.ok()) {
+        if (const auto status = emit_pen_pressure(state.pressure); !status.ok()) {
           return status;
         }
-        if (const auto status = emit_event(EV_ABS, ABS_TILT_Y, tablet_tilt_units(state.tilt_y)); !status.ok()) {
+        if (const auto status = emit_pen_distance(state.distance); !status.ok()) {
+          return status;
+        }
+        if (const auto status = emit_pen_tilt(state); !status.ok()) {
           return status;
         }
         return sync();
@@ -1802,92 +1734,124 @@ namespace lvh::detail {
       }
 
     private:
+      OperationStatus emit_pen_tool(PenToolType tool, std::int32_t value) {
+        const auto tool_code = pen_tool_to_linux(tool);
+        if (tool_code < 0) {
+          return OperationStatus::success();
+        }
+        return emit_event(EV_KEY, static_cast<std::uint16_t>(tool_code), value);
+      }
+
+      OperationStatus update_pen_tool(PenToolType tool) {
+        if (tool == PenToolType::unchanged || tool == last_tool_) {
+          return OperationStatus::success();
+        }
+        if (const auto status = emit_pen_tool(tool, 1); !status.ok()) {
+          return status;
+        }
+        if (const auto status = emit_pen_tool(last_tool_, 0); !status.ok()) {
+          return status;
+        }
+        last_tool_ = tool;
+        return OperationStatus::success();
+      }
+
+      OperationStatus emit_pen_position(const PenToolState &state) {
+        if (const auto status = emit_event(EV_ABS, ABS_X, scale_normalized_axis(state.x, touch_axis_max_x)); !status.ok()) {
+          return status;
+        }
+        return emit_event(EV_ABS, ABS_Y, scale_normalized_axis(state.y, touch_axis_max_y));
+      }
+
+      OperationStatus emit_pen_pressure(float pressure) {
+        if (pressure < 0.0F) {
+          return OperationStatus::success();
+        }
+        if (const auto status = emit_event(EV_ABS, ABS_PRESSURE, scale_normalized_axis(pressure, tablet_pressure_max)); !status.ok()) {
+          return status;
+        }
+        if (const auto status = emit_event(EV_ABS, ABS_DISTANCE, 0); !status.ok()) {
+          return status;
+        }
+        return emit_event(EV_KEY, BTN_TOUCH, pressure > 0.0F ? 1 : 0);
+      }
+
+      OperationStatus emit_pen_distance(float distance) {
+        if (distance < 0.0F) {
+          return OperationStatus::success();
+        }
+        if (const auto status = emit_event(EV_ABS, ABS_DISTANCE, scale_normalized_axis(distance, tablet_distance_max)); !status.ok()) {
+          return status;
+        }
+        if (const auto status = emit_event(EV_ABS, ABS_PRESSURE, 0); !status.ok()) {
+          return status;
+        }
+        return emit_event(EV_KEY, BTN_TOUCH, 0);
+      }
+
+      OperationStatus emit_pen_tilt(const PenToolState &state) {
+        if (const auto status = emit_event(EV_ABS, ABS_TILT_X, tablet_tilt_units(state.tilt_x)); !status.ok()) {
+          return status;
+        }
+        return emit_event(EV_ABS, ABS_TILT_Y, tablet_tilt_units(state.tilt_y));
+      }
+
       std::string device_name_;
       PenToolType last_tool_ = PenToolType::unchanged;
     };
 
 #if defined(LIBVIRTUALHID_HAVE_XTEST)
     KeySym key_code_to_keysym(KeyboardKeyCode key_code) {
-      switch (key_code) {
-        case 0x08:
-          return XK_BackSpace;
-        case 0x09:
-          return XK_Tab;
-        case 0x0D:
-          return XK_Return;
-        case 0x10:
-        case 0xA0:
-          return XK_Shift_L;
-        case 0x11:
-        case 0xA2:
-          return XK_Control_L;
-        case 0x12:
-        case 0xA4:
-          return XK_Alt_L;
-        case 0x14:
-          return XK_Caps_Lock;
-        case 0x1B:
-          return XK_Escape;
-        case 0x20:
-          return XK_space;
-        case 0x21:
-          return XK_Page_Up;
-        case 0x22:
-          return XK_Page_Down;
-        case 0x23:
-          return XK_End;
-        case 0x24:
-          return XK_Home;
-        case 0x25:
-          return XK_Left;
-        case 0x26:
-          return XK_Up;
-        case 0x27:
-          return XK_Right;
-        case 0x28:
-          return XK_Down;
-        case 0x2D:
-          return XK_Insert;
-        case 0x2E:
-          return XK_Delete;
-        case 0x5B:
-          return XK_Super_L;
-        case 0x5C:
-          return XK_Super_R;
-        case 0x90:
-          return XK_Num_Lock;
-        case 0x91:
-          return XK_Scroll_Lock;
-        case 0xA1:
-          return XK_Shift_R;
-        case 0xA3:
-          return XK_Control_R;
-        case 0xA5:
-          return XK_Alt_R;
-        case 0xBA:
-          return XK_semicolon;
-        case 0xBB:
-          return XK_equal;
-        case 0xBC:
-          return XK_comma;
-        case 0xBD:
-          return XK_minus;
-        case 0xBE:
-          return XK_period;
-        case 0xBF:
-          return XK_slash;
-        case 0xC0:
-          return XK_grave;
-        case 0xDB:
-          return XK_bracketleft;
-        case 0xDC:
-          return XK_backslash;
-        case 0xDD:
-          return XK_bracketright;
-        case 0xDE:
-          return XK_apostrophe;
-        default:
-          break;
+      static constexpr std::array<std::pair<KeyboardKeyCode, KeySym>, 45> special_keysyms {{
+        {0x08, XK_BackSpace},
+        {0x09, XK_Tab},
+        {0x0D, XK_Return},
+        {0x10, XK_Shift_L},
+        {0xA0, XK_Shift_L},
+        {0x11, XK_Control_L},
+        {0xA2, XK_Control_L},
+        {0x12, XK_Alt_L},
+        {0xA4, XK_Alt_L},
+        {0x14, XK_Caps_Lock},
+        {0x1B, XK_Escape},
+        {0x20, XK_space},
+        {0x21, XK_Page_Up},
+        {0x22, XK_Page_Down},
+        {0x23, XK_End},
+        {0x24, XK_Home},
+        {0x25, XK_Left},
+        {0x26, XK_Up},
+        {0x27, XK_Right},
+        {0x28, XK_Down},
+        {0x2D, XK_Insert},
+        {0x2E, XK_Delete},
+        {0x5B, XK_Super_L},
+        {0x5C, XK_Super_R},
+        {0x6A, XK_KP_Multiply},
+        {0x6B, XK_KP_Add},
+        {0x6D, XK_KP_Subtract},
+        {0x6E, XK_KP_Decimal},
+        {0x6F, XK_KP_Divide},
+        {0x90, XK_Num_Lock},
+        {0x91, XK_Scroll_Lock},
+        {0xA1, XK_Shift_R},
+        {0xA3, XK_Control_R},
+        {0xA5, XK_Alt_R},
+        {0xBA, XK_semicolon},
+        {0xBB, XK_equal},
+        {0xBC, XK_comma},
+        {0xBD, XK_minus},
+        {0xBE, XK_period},
+        {0xBF, XK_slash},
+        {0xC0, XK_grave},
+        {0xDB, XK_bracketleft},
+        {0xDC, XK_backslash},
+        {0xDD, XK_bracketright},
+        {0xDE, XK_apostrophe},
+      }};
+
+      if (const auto keysym = mapped_keyboard_code(key_code, special_keysyms); keysym.has_value()) {
+        return keysym.value();
       }
 
       if (key_code >= 0x30 && key_code <= 0x39) {
@@ -1898,21 +1862,6 @@ namespace lvh::detail {
       }
       if (key_code >= 0x60 && key_code <= 0x69) {
         return XK_KP_0 + static_cast<KeySym>(key_code - 0x60);
-      }
-      if (key_code == 0x6A) {
-        return XK_KP_Multiply;
-      }
-      if (key_code == 0x6B) {
-        return XK_KP_Add;
-      }
-      if (key_code == 0x6D) {
-        return XK_KP_Subtract;
-      }
-      if (key_code == 0x6E) {
-        return XK_KP_Decimal;
-      }
-      if (key_code == 0x6F) {
-        return XK_KP_Divide;
       }
       if (key_code >= 0x70 && key_code <= 0x87) {
         return XK_F1 + static_cast<KeySym>(key_code - 0x70);
@@ -2178,7 +2127,7 @@ namespace lvh::detail {
         }
 
         copy_string(request.name, options.profile.name);
-        copy_string(request.phys, "libvirtualhid/uhid/" + std::to_string(id));
+        copy_string(request.phys, std::format("libvirtualhid/uhid/{}", id));
         copy_string(request.uniq, unique_id);
         request.rd_size = static_cast<std::uint16_t>(options.profile.report_descriptor.size());
         request.bus = to_uhid_bus(options.profile.bus_type);
@@ -2285,7 +2234,8 @@ namespace lvh::detail {
           return OperationStatus::failure(device_closed, "UHID file descriptor is closed");
         }
 
-        const auto result = system_write(fd_, &event, sizeof(event));
+        const auto event_buffer = std::as_bytes(std::span {&event, 1U});
+        const auto result = system_write(fd_, event_buffer);
         if (result < 0) {
           return system_error_status(backend_failure, "failed to write UHID event", errno);
         }
@@ -2320,7 +2270,7 @@ namespace lvh::detail {
           }
 
           uhid_event event {};
-          const auto read_result = system_read(fd_, &event, sizeof(event));
+          const auto read_result = system_read(fd_, std::as_writable_bytes(std::span {&event, 1U}));
           if (read_result < 0) {
             if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
               continue;
@@ -2418,8 +2368,7 @@ namespace lvh::detail {
           if (profile_.bus_type == BusType::bluetooth && event.u.get_report_reply.err == 0 && event.u.get_report_reply.size >= 4U) {
             const auto crc_offset = static_cast<std::size_t>(event.u.get_report_reply.size) - 4U;
             const auto crc = crc32(
-              event.u.get_report_reply.data,
-              crc_offset,
+              std::span<const std::uint8_t> {event.u.get_report_reply.data, crc_offset},
               dualsense_crc_seed(dualsense_feature_crc_seed)
             );
             write_u32_le(event.u.get_report_reply.data + crc_offset, crc);

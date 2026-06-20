@@ -115,7 +115,7 @@ namespace lvh::detail::test {
     }
   #endif
 
-    struct LinuxTestSyscalls {
+    struct LinuxTestSyscalls {  // NOSONAR(cpp:S1820): Test-only fake syscall state keeps related Linux hook controls visible at call sites.
       bool override_access = false;
       int access_result = 0;
       bool override_open = false;
@@ -155,13 +155,16 @@ namespace lvh::detail::test {
       std::size_t libevdev_destroy_count = 0;
     };
 
-    LinuxTestSyscalls *active_test_syscalls = nullptr;
+    LinuxTestSyscalls *&active_test_syscalls() {
+      static LinuxTestSyscalls *syscalls = nullptr;
+      return syscalls;
+    }
 
     class ScopedLinuxTestSyscalls {
     public:
       explicit ScopedLinuxTestSyscalls(LinuxTestSyscalls &syscalls):
-          previous_ {active_test_syscalls} {
-        active_test_syscalls = &syscalls;
+          previous_ {active_test_syscalls()} {
+        active_test_syscalls() = &syscalls;
       }
 
       ScopedLinuxTestSyscalls(const ScopedLinuxTestSyscalls &) = delete;
@@ -170,7 +173,7 @@ namespace lvh::detail::test {
       ScopedLinuxTestSyscalls &operator=(ScopedLinuxTestSyscalls &&) noexcept = delete;
 
       ~ScopedLinuxTestSyscalls() {
-        active_test_syscalls = previous_;
+        active_test_syscalls() = previous_;
       }
 
     private:
@@ -180,21 +183,28 @@ namespace lvh::detail::test {
   }  // namespace
 }  // namespace lvh::detail::test
 
+namespace {
+
+  constexpr auto free_real_libevdev = &::libevdev_free;
+  constexpr auto destroy_real_libevdev_uinput = &::libevdev_uinput_destroy;
+
+}  // namespace
+
 int lvh_linux_test_access(const char *path, int mode) {
-  if (lvh::detail::test::active_test_syscalls != nullptr && lvh::detail::test::active_test_syscalls->override_access) {
-    if (lvh::detail::test::active_test_syscalls->access_result < 0) {
+  if (lvh::detail::test::active_test_syscalls() != nullptr && lvh::detail::test::active_test_syscalls()->override_access) {
+    if (lvh::detail::test::active_test_syscalls()->access_result < 0) {
       errno = EACCES;
     }
-    return lvh::detail::test::active_test_syscalls->access_result;
+    return lvh::detail::test::active_test_syscalls()->access_result;
   }
   return ::access(path, mode);
 }
 
 int lvh_linux_test_open(const char *path, int flags) {
-  if (lvh::detail::test::active_test_syscalls != nullptr && lvh::detail::test::active_test_syscalls->override_open) {
-    if (lvh::detail::test::active_test_syscalls->open_result < 0) {
+  if (lvh::detail::test::active_test_syscalls() != nullptr && lvh::detail::test::active_test_syscalls()->override_open) {
+    if (lvh::detail::test::active_test_syscalls()->open_result < 0) {
       errno = ENOENT;
-      return lvh::detail::test::active_test_syscalls->open_result;
+      return lvh::detail::test::active_test_syscalls()->open_result;
     }
     const auto fd = ::open("/dev/null", O_RDWR);
     if (fd < 0) {
@@ -205,15 +215,15 @@ int lvh_linux_test_open(const char *path, int flags) {
   return ::open(path, flags);
 }
 
-std::ptrdiff_t lvh_linux_test_write(int fd, const void *buffer, std::size_t size) {
-  if (lvh::detail::test::active_test_syscalls != nullptr && lvh::detail::test::active_test_syscalls->override_write) {
-    const auto call_count = ++lvh::detail::test::active_test_syscalls->write_call_count;
-    if (lvh::detail::test::active_test_syscalls->fail_write_call == call_count) {
+std::ptrdiff_t lvh_linux_test_write(int fd, const std::byte *buffer, std::size_t size) {
+  if (lvh::detail::test::active_test_syscalls() != nullptr && lvh::detail::test::active_test_syscalls()->override_write) {
+    const auto call_count = ++lvh::detail::test::active_test_syscalls()->write_call_count;
+    if (lvh::detail::test::active_test_syscalls()->fail_write_call == call_count) {
       errno = EIO;
       return -1;
     }
-    if (lvh::detail::test::active_test_syscalls->short_write_call == call_count) {
-      return static_cast<std::ptrdiff_t>(lvh::detail::test::active_test_syscalls->short_write_size);
+    if (lvh::detail::test::active_test_syscalls()->short_write_call == call_count) {
+      return static_cast<std::ptrdiff_t>(lvh::detail::test::active_test_syscalls()->short_write_size);
     }
     return static_cast<std::ptrdiff_t>(size);
   }
@@ -221,9 +231,9 @@ std::ptrdiff_t lvh_linux_test_write(int fd, const void *buffer, std::size_t size
 }
 
 int lvh_linux_test_ioctl(int fd, unsigned long request, unsigned long argument) {
-  if (lvh::detail::test::active_test_syscalls != nullptr && lvh::detail::test::active_test_syscalls->override_ioctl) {
-    if (const auto call_count = ++lvh::detail::test::active_test_syscalls->ioctl_call_count;
-        lvh::detail::test::active_test_syscalls->fail_ioctl_call == call_count) {
+  if (lvh::detail::test::active_test_syscalls() != nullptr && lvh::detail::test::active_test_syscalls()->override_ioctl) {
+    if (const auto call_count = ++lvh::detail::test::active_test_syscalls()->ioctl_call_count;
+        lvh::detail::test::active_test_syscalls()->fail_ioctl_call == call_count) {
       errno = EINVAL;
       return -1;
     }
@@ -233,23 +243,23 @@ int lvh_linux_test_ioctl(int fd, unsigned long request, unsigned long argument) 
 }
 
 int lvh_linux_test_poll(pollfd *descriptors, nfds_t descriptor_count, int timeout) {
-  if (lvh::detail::test::active_test_syscalls != nullptr && lvh::detail::test::active_test_syscalls->override_poll) {
-    const auto call_index = static_cast<std::size_t>(lvh::detail::test::active_test_syscalls->poll_call_count++);
+  if (lvh::detail::test::active_test_syscalls() != nullptr && lvh::detail::test::active_test_syscalls()->override_poll) {
+    const auto call_index = static_cast<std::size_t>(lvh::detail::test::active_test_syscalls()->poll_call_count++);
     auto result = 0;
-    if (call_index < lvh::detail::test::active_test_syscalls->poll_results.size()) {
-      result = lvh::detail::test::active_test_syscalls->poll_results[call_index];
+    if (call_index < lvh::detail::test::active_test_syscalls()->poll_results.size()) {
+      result = lvh::detail::test::active_test_syscalls()->poll_results[call_index];
     }
 
     if (descriptor_count > 0) {
       descriptors[0].revents = 0;
-      if (result > 0 && call_index < lvh::detail::test::active_test_syscalls->poll_revents.size()) {
-        descriptors[0].revents = lvh::detail::test::active_test_syscalls->poll_revents[call_index];
+      if (result > 0 && call_index < lvh::detail::test::active_test_syscalls()->poll_revents.size()) {
+        descriptors[0].revents = lvh::detail::test::active_test_syscalls()->poll_revents[call_index];
       }
     }
 
     if (result < 0) {
-      errno = call_index < lvh::detail::test::active_test_syscalls->poll_errors.size() ?
-                lvh::detail::test::active_test_syscalls->poll_errors[call_index] :
+      errno = call_index < lvh::detail::test::active_test_syscalls()->poll_errors.size() ?
+                lvh::detail::test::active_test_syscalls()->poll_errors[call_index] :
                 EIO;
     }
     return result;
@@ -257,24 +267,24 @@ int lvh_linux_test_poll(pollfd *descriptors, nfds_t descriptor_count, int timeou
   return ::poll(descriptors, descriptor_count, timeout);
 }
 
-std::ptrdiff_t lvh_linux_test_read(int fd, void *buffer, std::size_t size) {
-  if (lvh::detail::test::active_test_syscalls != nullptr && lvh::detail::test::active_test_syscalls->override_read) {
-    const auto call_index = static_cast<std::size_t>(lvh::detail::test::active_test_syscalls->read_call_count++);
+std::ptrdiff_t lvh_linux_test_read(int fd, std::byte *buffer, std::size_t size) {
+  if (lvh::detail::test::active_test_syscalls() != nullptr && lvh::detail::test::active_test_syscalls()->override_read) {
+    const auto call_index = static_cast<std::size_t>(lvh::detail::test::active_test_syscalls()->read_call_count++);
     auto result = std::ptrdiff_t {0};
-    if (call_index < lvh::detail::test::active_test_syscalls->read_results.size()) {
-      result = lvh::detail::test::active_test_syscalls->read_results[call_index];
+    if (call_index < lvh::detail::test::active_test_syscalls()->read_results.size()) {
+      result = lvh::detail::test::active_test_syscalls()->read_results[call_index];
     }
 
     if (result < 0) {
-      errno = call_index < lvh::detail::test::active_test_syscalls->read_errors.size() ?
-                lvh::detail::test::active_test_syscalls->read_errors[call_index] :
+      errno = call_index < lvh::detail::test::active_test_syscalls()->read_errors.size() ?
+                lvh::detail::test::active_test_syscalls()->read_errors[call_index] :
                 EIO;
       return result;
     }
 
     if (result > 0) {
       const auto bytes = std::min<std::size_t>(static_cast<std::size_t>(result), std::min(size, sizeof(uhid_event)));
-      std::memcpy(buffer, &lvh::detail::test::active_test_syscalls->read_event, bytes);
+      std::memcpy(buffer, &lvh::detail::test::active_test_syscalls()->read_event, bytes);
       return static_cast<std::ptrdiff_t>(bytes);
     }
 
@@ -293,16 +303,16 @@ int lvh_linux_test_x_close_display(Display *) {
 }
 
 Bool lvh_linux_test_xtest_query_extension(Display *, int *, int *, int *, int *) {
-  if (lvh::detail::test::active_test_syscalls != nullptr && lvh::detail::test::active_test_syscalls->override_xtest_query) {
-    return lvh::detail::test::active_test_syscalls->xtest_query_result ? True : False;
+  if (lvh::detail::test::active_test_syscalls() != nullptr && lvh::detail::test::active_test_syscalls()->override_xtest_query) {
+    return lvh::detail::test::active_test_syscalls()->xtest_query_result ? True : False;
   }
   return True;
 }
 
 KeyCode lvh_linux_test_x_keysym_to_keycode(Display *, KeySym keysym) {
-  if (lvh::detail::test::active_test_syscalls != nullptr && lvh::detail::test::active_test_syscalls->override_x_keycode) {
-    const auto call_count = ++lvh::detail::test::active_test_syscalls->x_keycode_call_count;
-    if (lvh::detail::test::active_test_syscalls->fail_x_keycode_call == call_count) {
+  if (lvh::detail::test::active_test_syscalls() != nullptr && lvh::detail::test::active_test_syscalls()->override_x_keycode) {
+    const auto call_count = ++lvh::detail::test::active_test_syscalls()->x_keycode_call_count;
+    if (lvh::detail::test::active_test_syscalls()->fail_x_keycode_call == call_count) {
       return 0;
     }
   }
@@ -343,34 +353,34 @@ int lvh_linux_test_xtest_fake_relative_motion_event(Display *, int, int, unsigne
   #endif
 
 extern "C" libevdev *lvh_linux_test_libevdev_new() {
-  if (lvh::detail::test::active_test_syscalls != nullptr && lvh::detail::test::active_test_syscalls->override_libevdev) {
-    if (lvh::detail::test::active_test_syscalls->libevdev_new_returns_null) {
+  if (lvh::detail::test::active_test_syscalls() != nullptr && lvh::detail::test::active_test_syscalls()->override_libevdev) {
+    if (lvh::detail::test::active_test_syscalls()->libevdev_new_returns_null) {
       return nullptr;
     }
     auto fake_device = std::make_unique<lvh::detail::test::FakeLibevdevDevice>();
     auto *created_device = fake_device.get();
-    lvh::detail::test::active_test_syscalls->owned_libevdev_devices.push_back(std::move(fake_device));
+    lvh::detail::test::active_test_syscalls()->owned_libevdev_devices.push_back(std::move(fake_device));
     return lvh::detail::test::libevdev_handle(created_device);
   }
   return ::libevdev_new();
 }
 
-extern "C" void lvh_linux_test_libevdev_free(libevdev *device) {
-  if (lvh::detail::test::active_test_syscalls != nullptr && lvh::detail::test::active_test_syscalls->override_libevdev) {
-    auto *fake_device_handle = lvh::detail::test::fake_libevdev_device(device);
+extern "C" void lvh_linux_test_libevdev_free(libevdev *raw_libevdev_handle) {
+  if (lvh::detail::test::active_test_syscalls() != nullptr && lvh::detail::test::active_test_syscalls()->override_libevdev) {
+    auto *fake_device_handle = lvh::detail::test::fake_libevdev_device(raw_libevdev_handle);
     static_cast<void>(std::erase_if(
-      lvh::detail::test::active_test_syscalls->owned_libevdev_devices,
+      lvh::detail::test::active_test_syscalls()->owned_libevdev_devices,
       [fake_device_handle](const auto &owned_device) {
         return owned_device.get() == fake_device_handle;
       }
     ));
     return;
   }
-  ::libevdev_free(device);
+  free_real_libevdev(raw_libevdev_handle);
 }
 
 extern "C" void lvh_linux_test_libevdev_set_name(libevdev *device, const char *name) {
-  if (lvh::detail::test::active_test_syscalls != nullptr && lvh::detail::test::active_test_syscalls->override_libevdev) {
+  if (lvh::detail::test::active_test_syscalls() != nullptr && lvh::detail::test::active_test_syscalls()->override_libevdev) {
     lvh::detail::test::fake_libevdev_device(device)->name = name == nullptr ? "" : name;
     return;
   }
@@ -378,7 +388,7 @@ extern "C" void lvh_linux_test_libevdev_set_name(libevdev *device, const char *n
 }
 
 extern "C" void lvh_linux_test_libevdev_set_id_bustype(libevdev *device, int bustype) {
-  if (lvh::detail::test::active_test_syscalls != nullptr && lvh::detail::test::active_test_syscalls->override_libevdev) {
+  if (lvh::detail::test::active_test_syscalls() != nullptr && lvh::detail::test::active_test_syscalls()->override_libevdev) {
     lvh::detail::test::fake_libevdev_device(device)->bustype = static_cast<std::uint16_t>(bustype);
     return;
   }
@@ -386,7 +396,7 @@ extern "C" void lvh_linux_test_libevdev_set_id_bustype(libevdev *device, int bus
 }
 
 extern "C" void lvh_linux_test_libevdev_set_id_vendor(libevdev *device, int vendor) {
-  if (lvh::detail::test::active_test_syscalls != nullptr && lvh::detail::test::active_test_syscalls->override_libevdev) {
+  if (lvh::detail::test::active_test_syscalls() != nullptr && lvh::detail::test::active_test_syscalls()->override_libevdev) {
     lvh::detail::test::fake_libevdev_device(device)->vendor = static_cast<std::uint16_t>(vendor);
     return;
   }
@@ -394,7 +404,7 @@ extern "C" void lvh_linux_test_libevdev_set_id_vendor(libevdev *device, int vend
 }
 
 extern "C" void lvh_linux_test_libevdev_set_id_product(libevdev *device, int product) {
-  if (lvh::detail::test::active_test_syscalls != nullptr && lvh::detail::test::active_test_syscalls->override_libevdev) {
+  if (lvh::detail::test::active_test_syscalls() != nullptr && lvh::detail::test::active_test_syscalls()->override_libevdev) {
     lvh::detail::test::fake_libevdev_device(device)->product = static_cast<std::uint16_t>(product);
     return;
   }
@@ -402,7 +412,7 @@ extern "C" void lvh_linux_test_libevdev_set_id_product(libevdev *device, int pro
 }
 
 extern "C" void lvh_linux_test_libevdev_set_id_version(libevdev *device, int version) {
-  if (lvh::detail::test::active_test_syscalls != nullptr && lvh::detail::test::active_test_syscalls->override_libevdev) {
+  if (lvh::detail::test::active_test_syscalls() != nullptr && lvh::detail::test::active_test_syscalls()->override_libevdev) {
     lvh::detail::test::fake_libevdev_device(device)->version = static_cast<std::uint16_t>(version);
     return;
   }
@@ -410,8 +420,8 @@ extern "C" void lvh_linux_test_libevdev_set_id_version(libevdev *device, int ver
 }
 
 extern "C" int lvh_linux_test_libevdev_enable_event_type(libevdev *device, unsigned int type) {
-  if (lvh::detail::test::active_test_syscalls != nullptr && lvh::detail::test::active_test_syscalls->override_libevdev) {
-    if (lvh::detail::test::active_test_syscalls->fail_libevdev_event_type) {
+  if (lvh::detail::test::active_test_syscalls() != nullptr && lvh::detail::test::active_test_syscalls()->override_libevdev) {
+    if (lvh::detail::test::active_test_syscalls()->fail_libevdev_event_type) {
       return -EIO;
     }
     lvh::detail::test::fake_libevdev_device(device)->event_types.push_back(type);
@@ -426,8 +436,8 @@ extern "C" int lvh_linux_test_libevdev_enable_event_code(
   unsigned int code,
   const void *data
 ) {
-  if (lvh::detail::test::active_test_syscalls != nullptr && lvh::detail::test::active_test_syscalls->override_libevdev) {
-    if (lvh::detail::test::active_test_syscalls->fail_libevdev_event_code) {
+  if (lvh::detail::test::active_test_syscalls() != nullptr && lvh::detail::test::active_test_syscalls()->override_libevdev) {
+    if (lvh::detail::test::active_test_syscalls()->fail_libevdev_event_code) {
       return -EIO;
     }
 
@@ -451,8 +461,8 @@ extern "C" int lvh_linux_test_libevdev_enable_event_code(
 }
 
 extern "C" int lvh_linux_test_libevdev_enable_property(libevdev *device, unsigned int property) {
-  if (lvh::detail::test::active_test_syscalls != nullptr && lvh::detail::test::active_test_syscalls->override_libevdev) {
-    if (lvh::detail::test::active_test_syscalls->fail_libevdev_property) {
+  if (lvh::detail::test::active_test_syscalls() != nullptr && lvh::detail::test::active_test_syscalls()->override_libevdev) {
+    if (lvh::detail::test::active_test_syscalls()->fail_libevdev_property) {
       return -EIO;
     }
     lvh::detail::test::fake_libevdev_device(device)->properties.push_back(property);
@@ -466,36 +476,36 @@ extern "C" int lvh_linux_test_libevdev_uinput_create_from_device(
   int uinput_fd,
   libevdev_uinput **uinput_device
 ) {
-  if (lvh::detail::test::active_test_syscalls != nullptr && lvh::detail::test::active_test_syscalls->override_libevdev) {
-    if (lvh::detail::test::active_test_syscalls->fail_libevdev_create || uinput_fd < 0) {
+  if (lvh::detail::test::active_test_syscalls() != nullptr && lvh::detail::test::active_test_syscalls()->override_libevdev) {
+    if (lvh::detail::test::active_test_syscalls()->fail_libevdev_create || uinput_fd < 0) {
       return -EIO;
     }
 
     const auto &source_device = *lvh::detail::test::fake_libevdev_device(device);
-    lvh::detail::test::active_test_syscalls->libevdev_devices.push_back(source_device);
+    lvh::detail::test::active_test_syscalls()->libevdev_devices.push_back(source_device);
     auto owned_uinput_device =
       std::make_unique<lvh::detail::test::FakeLibevdevUinput>(lvh::detail::test::FakeLibevdevUinput {source_device});
     auto *created_uinput_device = owned_uinput_device.get();
-    lvh::detail::test::active_test_syscalls->owned_libevdev_uinput_devices.push_back(std::move(owned_uinput_device));
+    lvh::detail::test::active_test_syscalls()->owned_libevdev_uinput_devices.push_back(std::move(owned_uinput_device));
     *uinput_device = lvh::detail::test::libevdev_uinput_handle(created_uinput_device);
     return 0;
   }
   return ::libevdev_uinput_create_from_device(device, uinput_fd, uinput_device);
 }
 
-extern "C" void lvh_linux_test_libevdev_uinput_destroy(libevdev_uinput *uinput_device) {
-  if (lvh::detail::test::active_test_syscalls != nullptr && lvh::detail::test::active_test_syscalls->override_libevdev) {
-    ++lvh::detail::test::active_test_syscalls->libevdev_destroy_count;
-    auto *fake_uinput_handle = lvh::detail::test::fake_libevdev_uinput(uinput_device);
+extern "C" void lvh_linux_test_libevdev_uinput_destroy(libevdev_uinput *raw_uinput_handle) {
+  if (lvh::detail::test::active_test_syscalls() != nullptr && lvh::detail::test::active_test_syscalls()->override_libevdev) {
+    ++lvh::detail::test::active_test_syscalls()->libevdev_destroy_count;
+    auto *fake_uinput_handle = lvh::detail::test::fake_libevdev_uinput(raw_uinput_handle);
     static_cast<void>(std::erase_if(
-      lvh::detail::test::active_test_syscalls->owned_libevdev_uinput_devices,
+      lvh::detail::test::active_test_syscalls()->owned_libevdev_uinput_devices,
       [fake_uinput_handle](const auto &owned_device) {
         return owned_device.get() == fake_uinput_handle;
       }
     ));
     return;
   }
-  ::libevdev_uinput_destroy(uinput_device);
+  destroy_real_libevdev_uinput(raw_uinput_handle);
 }
 
   #define access lvh_linux_test_access
@@ -519,13 +529,13 @@ extern "C" void lvh_linux_test_libevdev_uinput_destroy(libevdev_uinput *uinput_d
 
   #if defined(LIBVIRTUALHID_HAVE_XTEST)
     #if defined(DefaultScreen)
-      #undef DefaultScreen
+      #undef DefaultScreen  // NOSONAR(cpp:S959): X11 exposes this as a macro; the test hook replaces it while including the backend.
     #endif
     #if defined(DisplayHeight)
-      #undef DisplayHeight
+      #undef DisplayHeight  // NOSONAR(cpp:S959): X11 exposes this as a macro; the test hook replaces it while including the backend.
     #endif
     #if defined(DisplayWidth)
-      #undef DisplayWidth
+      #undef DisplayWidth  // NOSONAR(cpp:S959): X11 exposes this as a macro; the test hook replaces it while including the backend.
     #endif
 
     #define DefaultScreen lvh_linux_test_default_screen
@@ -768,15 +778,11 @@ namespace lvh::detail::test {
       return OperationStatus::failure(ErrorCode::unsupported_profile, "unsupported fake uinput device type");
     }
 
-    LinuxLibevdevCreationResult create_fake_libevdev_device(
-      DeviceType device_type,
-      void (*configure_failure)(LinuxTestSyscalls &) = nullptr
-    ) {
+    template<typename ConfigureFailure>
+    LinuxLibevdevCreationResult create_fake_libevdev_device(DeviceType device_type, ConfigureFailure configure_failure) {
       LinuxTestSyscalls syscalls;
       syscalls.override_libevdev = true;
-      if (configure_failure != nullptr) {
-        configure_failure(syscalls);
-      }
+      configure_failure(syscalls);
       ScopedLinuxTestSyscalls scoped_syscalls {syscalls};
 
       LinuxLibevdevCreationResult result;
@@ -803,6 +809,14 @@ namespace lvh::detail::test {
         result.close_status = OperationStatus::success();
       }
       return result;
+    }
+
+    void keep_fake_libevdev_successful(const LinuxTestSyscalls &syscalls) {
+      static_cast<void>(syscalls);
+    }
+
+    LinuxLibevdevCreationResult create_fake_libevdev_device(DeviceType device_type) {
+      return create_fake_libevdev_device(device_type, keep_fake_libevdev_successful);
     }
 
   }  // namespace
@@ -1364,7 +1378,7 @@ namespace lvh::detail::test {
       const auto report_size = static_cast<std::size_t>(event.u.input2.size);
       if (report_size == options.profile.input_report_size && event.u.input2.data[0] == 0x31) {
         const auto crc_offset = report_size - 4U;
-        const auto expected_crc = crc32(event.u.input2.data, crc_offset, dualsense_crc_seed(0xA1));
+        const auto expected_crc = crc32(std::span<const std::uint8_t> {event.u.input2.data, crc_offset}, dualsense_crc_seed(0xA1));
         const auto actual_crc = read_u32_le(event.u.input2.data + crc_offset);
         result.saw_dualsense_bluetooth_input = expected_crc == actual_crc;
       }
@@ -1384,8 +1398,7 @@ namespace lvh::detail::test {
       if (report_size >= 4U) {
         const auto crc_offset = report_size - 4U;
         const auto expected_crc = crc32(
-          event.u.get_report_reply.data,
-          crc_offset,
+          std::span<const std::uint8_t> {event.u.get_report_reply.data, crc_offset},
           dualsense_crc_seed(dualsense_feature_crc_seed)
         );
         const auto actual_crc = read_u32_le(event.u.get_report_reply.data + crc_offset);

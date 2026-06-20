@@ -305,7 +305,12 @@ namespace lvh {
 
   Gamepad::Gamepad(Gamepad &&) noexcept = default;
   Gamepad &Gamepad::operator=(Gamepad &&) noexcept = default;
-  Gamepad::~Gamepad() = default;
+
+  Gamepad::~Gamepad() {
+    if (device_) {
+      static_cast<void>(close());
+    }
+  }
 
   DeviceId Gamepad::device_id() const {
     return device_->id;
@@ -425,7 +430,12 @@ namespace lvh {
 
   Keyboard::Keyboard(Keyboard &&) noexcept = default;
   Keyboard &Keyboard::operator=(Keyboard &&) noexcept = default;
-  Keyboard::~Keyboard() = default;
+
+  Keyboard::~Keyboard() {
+    if (device_) {
+      static_cast<void>(close());
+    }
+  }
 
   DeviceId Keyboard::device_id() const {
     return device_->id;
@@ -531,7 +541,12 @@ namespace lvh {
 
   Mouse::Mouse(Mouse &&) noexcept = default;
   Mouse &Mouse::operator=(Mouse &&) noexcept = default;
-  Mouse::~Mouse() = default;
+
+  Mouse::~Mouse() {
+    if (device_) {
+      static_cast<void>(close());
+    }
+  }
 
   DeviceId Mouse::device_id() const {
     return device_->id;
@@ -641,7 +656,12 @@ namespace lvh {
 
   Touchscreen::Touchscreen(Touchscreen &&) noexcept = default;
   Touchscreen &Touchscreen::operator=(Touchscreen &&) noexcept = default;
-  Touchscreen::~Touchscreen() = default;
+
+  Touchscreen::~Touchscreen() {
+    if (device_) {
+      static_cast<void>(close());
+    }
+  }
 
   DeviceId Touchscreen::device_id() const {
     return device_->id;
@@ -743,7 +763,12 @@ namespace lvh {
 
   Trackpad::Trackpad(Trackpad &&) noexcept = default;
   Trackpad &Trackpad::operator=(Trackpad &&) noexcept = default;
-  Trackpad::~Trackpad() = default;
+
+  Trackpad::~Trackpad() {
+    if (device_) {
+      static_cast<void>(close());
+    }
+  }
 
   DeviceId Trackpad::device_id() const {
     return device_->id;
@@ -862,7 +887,12 @@ namespace lvh {
 
   PenTablet::PenTablet(PenTablet &&) noexcept = default;
   PenTablet &PenTablet::operator=(PenTablet &&) noexcept = default;
-  PenTablet::~PenTablet() = default;
+
+  PenTablet::~PenTablet() {
+    if (device_) {
+      static_cast<void>(close());
+    }
+  }
 
   DeviceId PenTablet::device_id() const {
     return device_->id;

@@ -42,7 +42,7 @@ namespace lvh {
   }
 
   void ButtonSet::set(GamepadButton button, bool pressed) {
-    const auto mask = 1U << static_cast<std::uint8_t>(button);
+    const auto mask = 1U << std::to_underlying(button);
     if (pressed) {
       bits_ |= mask;
     } else {
@@ -59,7 +59,7 @@ namespace lvh {
   }
 
   bool ButtonSet::test(GamepadButton button) const {
-    return (bits_ & (1U << static_cast<std::uint8_t>(button))) != 0;
+    return (bits_ & (1U << std::to_underlying(button))) != 0;
   }
 
   std::uint32_t ButtonSet::raw_bits() const {

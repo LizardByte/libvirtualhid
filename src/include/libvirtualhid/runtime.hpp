@@ -123,7 +123,7 @@ namespace lvh {
     Gamepad(detail::RuntimeConstructionToken token, std::shared_ptr<detail::GamepadDevice> device);
 
     /**
-     * @brief Destroy the gamepad handle.
+     * @brief Destroy the gamepad handle and close the virtual device if it is still open.
      */
     ~Gamepad() override;
 
@@ -248,7 +248,7 @@ namespace lvh {
     Keyboard(detail::RuntimeConstructionToken token, std::shared_ptr<detail::KeyboardDevice> device);
 
     /**
-     * @brief Destroy the keyboard handle.
+     * @brief Destroy the keyboard handle and close the virtual device if it is still open.
      */
     ~Keyboard() override;
 
@@ -368,7 +368,7 @@ namespace lvh {
     Mouse(detail::RuntimeConstructionToken token, std::shared_ptr<detail::MouseDevice> device);
 
     /**
-     * @brief Destroy the mouse handle.
+     * @brief Destroy the mouse handle and close the virtual device if it is still open.
      */
     ~Mouse() override;
 
@@ -509,7 +509,7 @@ namespace lvh {
     Touchscreen(detail::RuntimeConstructionToken token, std::shared_ptr<detail::TouchscreenDevice> device);
 
     /**
-     * @brief Destroy the touchscreen handle.
+     * @brief Destroy the touchscreen handle and close the virtual device if it is still open.
      */
     ~Touchscreen() override;
 
@@ -613,7 +613,7 @@ namespace lvh {
     Trackpad(detail::RuntimeConstructionToken token, std::shared_ptr<detail::TrackpadDevice> device);
 
     /**
-     * @brief Destroy the trackpad handle.
+     * @brief Destroy the trackpad handle and close the virtual device if it is still open.
      */
     ~Trackpad() override;
 
@@ -725,7 +725,7 @@ namespace lvh {
     PenTablet(detail::RuntimeConstructionToken token, std::shared_ptr<detail::PenTabletDevice> device);
 
     /**
-     * @brief Destroy the pen tablet handle.
+     * @brief Destroy the pen tablet handle and close the virtual device if it is still open.
      */
     ~PenTablet() override;
 
