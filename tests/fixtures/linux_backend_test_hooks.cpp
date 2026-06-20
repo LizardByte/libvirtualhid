@@ -185,13 +185,8 @@ namespace lvh::detail::test {
 
 namespace {
 
-  void free_real_libevdev(libevdev *handle) {
-    ::libevdev_free(handle);
-  }
-
-  void destroy_real_libevdev_uinput(libevdev_uinput *handle) {
-    ::libevdev_uinput_destroy(handle);
-  }
+  constexpr auto free_real_libevdev = &::libevdev_free;
+  constexpr auto destroy_real_libevdev_uinput = &::libevdev_uinput_destroy;
 
 }  // namespace
 
