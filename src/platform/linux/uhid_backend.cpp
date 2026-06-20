@@ -403,13 +403,11 @@ namespace lvh::detail {
         for (std::filesystem::directory_iterator it {input_root, error}, end; !error && it != end; it.increment(error)) {
           const auto filename = it->path().filename().string();
           const auto is_event_node = filename.starts_with("event");
-          const auto is_joystick_node = filename.starts_with("js");
-          if (!is_event_node && !is_joystick_node) {
+          if (const auto is_joystick_node = filename.starts_with("js"); !is_event_node && !is_joystick_node) {
             continue;
           }
 
-          const auto sysfs_name = read_first_line(it->path() / "device" / "name");
-          if (!sysfs_name || *sysfs_name != name) {
+          if (const auto sysfs_name = read_first_line(it->path() / "device" / "name"); !sysfs_name || *sysfs_name != name) {
             continue;
           }
 
@@ -749,8 +747,7 @@ namespace lvh::detail {
         return 0;
       }
 
-      const auto steps = distance / 120;
-      if (steps != 0) {
+      if (const auto steps = distance / 120; steps != 0) {
         return steps;
       }
       return distance > 0 ? 1 : -1;

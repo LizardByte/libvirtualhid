@@ -152,8 +152,7 @@ namespace {
   }
 
   bool sdl_joystick_matches_profile(int index, const lvh::DeviceProfile &profile) {
-    const auto *name = SDL_JoystickNameForIndex(index);
-    if (name != nullptr && profile.name == name) {
+    if (const auto *name = SDL_JoystickNameForIndex(index); name != nullptr && profile.name == name) {
       return true;
     }
 
@@ -305,9 +304,9 @@ namespace {
       const auto controller_button_pressed = sdl_controller_has_pressed_button(controller);
       const auto controller_axis_moved = sdl_controller_has_moved_axis(controller);
       const auto joystick_button_pressed = joystick != nullptr && sdl_joystick_has_pressed_button(joystick);
-      const auto joystick_axis_moved = joystick != nullptr && sdl_joystick_has_moved_axis(joystick);
 
-      if ((controller_button_pressed || joystick_button_pressed) && (controller_axis_moved || joystick_axis_moved)) {
+      if (const auto joystick_axis_moved = joystick != nullptr && sdl_joystick_has_moved_axis(joystick);
+          (controller_button_pressed || joystick_button_pressed) && (controller_axis_moved || joystick_axis_moved)) {
         return true;
       }
 

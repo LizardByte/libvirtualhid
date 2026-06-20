@@ -377,15 +377,14 @@ namespace lvh {
 
   OperationStatus Gamepad::dispatch_output(const GamepadOutput &output) {
     OutputCallback callback;
-    const auto status = with_device(device_, [&callback](auto &device) {
-      if (!device.open) {
-        return OperationStatus::failure(ErrorCode::device_closed, "gamepad is closed");
-      }
-      callback = device.output_callback;
-      return OperationStatus::success();
-    });
-
-    if (!status.ok()) {
+    if (const auto status = with_device(device_, [&callback](auto &device) {
+          if (!device.open) {
+            return OperationStatus::failure(ErrorCode::device_closed, "gamepad is closed");
+          }
+          callback = device.output_callback;
+          return OperationStatus::success();
+        });
+        !status.ok()) {
       return status;
     }
     if (callback) {
