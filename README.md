@@ -83,6 +83,47 @@ MSBuild, or EWDK. The boundary between the library and driver should therefore
 be compiler-neutral: prefer a stable C ABI, named pipe, device interface IOCTL,
 or similar control channel over passing C++ STL types across that boundary.
 
+The current Windows backend selects a UMDF control-channel implementation for
+`BackendKind::platform_default`. It probes `\\.\LibVirtualHid`, reports
+`requires_installed_driver = true`, and only advertises gamepad/output-report
+support when the driver package is installed and the control device can be
+opened. The client library stays buildable with MSVC and MinGW/UCRT64 because
+the backend talks to the driver through fixed-size C protocol structures and
+Win32 `DeviceIoControl` calls. The default control device path can be overridden
+for diagnostics with `LIBVIRTUALHID_WINDOWS_CONTROL_DEVICE`.
+
+Build the UMDF package separately with the Microsoft driver toolchain:
+
+```powershell
+cmake -S . -B cmake-build-windows-driver -G "Visual Studio 17 2022" -A x64 `
+  -DLIBVIRTUALHID_BUILD_WINDOWS_DRIVER=ON -DLIBVIRTUALHID_ENABLE_PACKAGING=ON `
+  -DBUILD_TESTS=OFF -DBUILD_EXAMPLES=OFF
+cmake --build cmake-build-windows-driver --config Release --target libvirtualhid_umdf
+cmake --build cmake-build-windows-driver --config Release --target libvirtualhid_windows_catalog
+cpack -G WIX --config .\cmake-build-windows-driver\CPackConfig.cmake
+```
+
+Developer install/uninstall helpers live under `scripts/windows`:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\windows\install-driver.ps1 `
+  -InfPath .\cmake-build-windows-driver\src\platform\windows\driver\package\Release\libvirtualhid.inf
+powershell -ExecutionPolicy Bypass -File .\scripts\windows\uninstall-driver.ps1 `
+  -Force -RemoveCertificateSubject "CN=libvirtualhid CI Test Driver Signing"
+```
+
+The helper stages the INF with `pnputil` and uses `devcon.exe` when available
+to create the `ROOT\LIBVIRTUALHID` development device.
+
+Windows driver packages require a signed catalog for normal installation. Pull
+request builds generate a short-lived self-signed test certificate, sign
+`libvirtualhid.cat`, bundle the public `.cer` into the WiX installer, and import
+that certificate into the local machine root and trusted-publisher stores during
+install. The uninstall helper removes certificates matching
+`CN=libvirtualhid CI Test Driver Signing`. Push/release builds must use Azure
+Trusted Signing for the catalog and generated MSI, matching Sunshine's Windows
+signing model, and must not ship the local PR test certificate.
+
 ### Linux
 
 Linux should compile directly into the consuming project and use standard kernel
@@ -309,9 +350,9 @@ The intended project layout is:
 src/include/libvirtualhid/    Public C++ headers
 src/core/                     Shared profile, descriptor, and report logic
 src/platform/windows/         Windows client backend and UMDF control channel
+src/platform/windows/driver/  Windows UMDF2 driver package sources
 src/platform/linux/           Linux uhid/uinput backend
 src/platform/macos/           Future macOS backend
-drivers/windows/              UMDF2 driver package sources
 profiles/                     Built-in gamepad profiles
 examples/                     Minimal consumers and platform smoke tests
 tests/                        Unit and integration tests
@@ -389,13 +430,14 @@ third-party/googletest/       GoogleTest submodule
 
 ### Phase 3: Windows MVP
 
-- [ ] Build a UMDF2 HID minidriver package with CMake/WDK integration.
-- [ ] Implement the Windows backend and control channel between the C++ library and
+- [x] Add CMake/WDK integration for the UMDF2 driver package.
+- [x] Implement the Windows backend and control channel between the C++ library and
   the UMDF driver.
 - [x] Keep the client library buildable with MSVC and MinGW/UCRT64. Keep the driver
   package on the Microsoft WDK toolchain.
-- [ ] Add install/uninstall tooling for developer workflows.
-- [ ] Support hot-plug, multi-controller instances, and output report callbacks.
+- [x] Add install/uninstall tooling for developer workflows.
+- [x] Support backend hot-plug, multi-controller instances, and output report callbacks
+  through the Windows control protocol.
 - [ ] Validate visibility through DirectInput, XInput where applicable, SDL/HIDAPI,
   Windows.Gaming.Input/GameInput, and browser Gamepad API.
 

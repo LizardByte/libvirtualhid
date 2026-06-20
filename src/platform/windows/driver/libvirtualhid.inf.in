@@ -1,0 +1,50 @@
+;
+; libvirtualhid UMDF2 control driver package.
+;
+
+[Version]
+Signature="$WINDOWS NT$"
+Class=HIDClass
+ClassGuid={745A17A0-74D3-11D0-B6FE-00A0C90F57DA}
+Provider=%ManufacturerName%
+DriverVer=*,@LIBVIRTUALHID_DRIVER_VERSION@
+CatalogFile=libvirtualhid.cat
+PnpLockdown=1
+
+[Manufacturer]
+%ManufacturerName%=Standard,NT@LIBVIRTUALHID_INF_ARCH@
+
+[Standard.NT@LIBVIRTUALHID_INF_ARCH@]
+%DeviceName%=DeviceInstall,ROOT\LIBVIRTUALHID
+
+[DestinationDirs]
+UMDriverCopy=13
+
+[DeviceInstall.NT]
+CopyFiles=UMDriverCopy
+
+[UMDriverCopy]
+libvirtualhid_umdf.dll
+
+[DeviceInstall.NT.Services]
+AddService=WUDFRd,0x000001fa,WUDFRD_ServiceInstall
+
+[WUDFRD_ServiceInstall]
+DisplayName=%WudfRdDisplayName%
+ServiceType=1
+StartType=3
+ErrorControl=1
+ServiceBinary=%12%\WUDFRd.sys
+
+[DeviceInstall.NT.Wdf]
+UmdfService=libvirtualhid_umdf,libvirtualhid_umdf_Install
+UmdfServiceOrder=libvirtualhid_umdf
+
+[libvirtualhid_umdf_Install]
+UmdfLibraryVersion=2.0
+ServiceBinary=%13%\libvirtualhid_umdf.dll
+
+[Strings]
+ManufacturerName="LizardByte"
+DeviceName="libvirtualhid Virtual HID Control Device"
+WudfRdDisplayName="Windows Driver Foundation - User-mode Driver Framework Reflector"

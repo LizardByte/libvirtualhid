@@ -21,7 +21,8 @@ set(LIBVIRTUALHID_TEST_SOURCES
   "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_linux_consumers.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_profiles.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_report.cpp"
-  "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_runtime.cpp")
+  "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_runtime.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_windows_protocol.cpp")
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     find_package(PkgConfig REQUIRED)
@@ -43,6 +44,7 @@ add_executable(${TEST_BINARY}
 target_include_directories(${TEST_BINARY}
   PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/include"
+  "${PROJECT_SOURCE_DIR}/src/platform/windows/shared"
   "${PROJECT_SOURCE_DIR}/src")
 
 target_link_libraries(${TEST_BINARY}

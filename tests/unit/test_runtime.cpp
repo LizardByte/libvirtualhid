@@ -39,6 +39,20 @@ TEST(RuntimeTest, PlatformDefaultReportsCurrentPlatformCapabilities) {
 #if defined(__linux__)
   EXPECT_EQ(runtime->capabilities().backend_name, "linux-uhid-uinput");
   EXPECT_FALSE(runtime->capabilities().requires_installed_driver);
+#elif defined(_WIN32)
+  EXPECT_EQ(runtime->capabilities().backend_name, "windows-umdf");
+  EXPECT_TRUE(runtime->capabilities().requires_installed_driver);
+  EXPECT_FALSE(runtime->capabilities().supports_keyboard);
+  EXPECT_FALSE(runtime->capabilities().supports_mouse);
+  EXPECT_FALSE(runtime->capabilities().supports_touchscreen);
+  EXPECT_FALSE(runtime->capabilities().supports_trackpad);
+  EXPECT_FALSE(runtime->capabilities().supports_pen_tablet);
+
+  if (!runtime->capabilities().supports_gamepad) {
+    auto created = runtime->create_gamepad(lvh::profiles::xbox_360());
+    EXPECT_FALSE(created);
+    EXPECT_EQ(created.status.code(), lvh::ErrorCode::backend_unavailable);
+  }
 #else
   EXPECT_EQ(runtime->capabilities().backend_name, "platform-default-unimplemented");
   EXPECT_FALSE(runtime->capabilities().supports_gamepad);
