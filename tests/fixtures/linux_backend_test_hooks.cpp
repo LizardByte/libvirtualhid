@@ -220,8 +220,8 @@ std::ptrdiff_t lvh_linux_test_write(int fd, const void *buffer, std::size_t size
 
 int lvh_linux_test_ioctl(int fd, unsigned long request, unsigned long argument) {
   if (lvh::detail::test::active_test_syscalls != nullptr && lvh::detail::test::active_test_syscalls->override_ioctl) {
-    const auto call_count = ++lvh::detail::test::active_test_syscalls->ioctl_call_count;
-    if (lvh::detail::test::active_test_syscalls->fail_ioctl_call == call_count) {
+    if (const auto call_count = ++lvh::detail::test::active_test_syscalls->ioctl_call_count;
+        lvh::detail::test::active_test_syscalls->fail_ioctl_call == call_count) {
       errno = EINVAL;
       return -1;
     }
@@ -616,8 +616,7 @@ namespace lvh::detail::test {
       pollfd descriptor {};
       descriptor.fd = fd;
       descriptor.events = POLLIN;
-      const auto poll_result = ::poll(&descriptor, 1, 1000);
-      if (poll_result <= 0 || (descriptor.revents & POLLIN) == 0) {
+      if (const auto poll_result = ::poll(&descriptor, 1, 1000); poll_result <= 0 || (descriptor.revents & POLLIN) == 0) {
         return false;
       }
 

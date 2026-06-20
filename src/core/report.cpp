@@ -227,8 +227,7 @@ namespace lvh::reports {
     std::vector<std::uint8_t> pack_dualsense_input_report(const DeviceProfile &profile, const GamepadState &state) {
       const auto is_bluetooth = profile.bus_type == BusType::bluetooth;
       const auto payload_offset = is_bluetooth ? 2U : 1U;
-      const auto minimum_report_size = is_bluetooth ? 78U : 64U;
-      if (profile.input_report_size < minimum_report_size) {
+      if (const auto minimum_report_size = is_bluetooth ? 78U : 64U; profile.input_report_size < minimum_report_size) {
         return {};
       }
 
@@ -518,8 +517,7 @@ namespace lvh::reports {
   }
 
   GamepadOutput parse_output_report(const DeviceProfile &profile, const std::vector<std::uint8_t> &report) {
-    const auto outputs = parse_output_reports(profile, report);
-    if (!outputs.empty()) {
+    if (const auto outputs = parse_output_reports(profile, report); !outputs.empty()) {
       return outputs.front();
     }
 
