@@ -393,6 +393,8 @@ namespace lvh::detail {
       const std::filesystem::path &input_root,
       const std::filesystem::path &hidraw_root
     ) {
+      using enum DeviceNodeKind;
+
       std::vector<DeviceNode> nodes;
       if (name.empty()) {
         return nodes;
@@ -413,10 +415,10 @@ namespace lvh::detail {
 
           append_node(
             nodes,
-            is_event_node ? DeviceNodeKind::input_event : DeviceNodeKind::joystick,
+            is_event_node ? input_event : joystick,
             std::filesystem::path {"/dev/input"} / it->path().filename()
           );
-          append_node(nodes, DeviceNodeKind::sysfs, it->path());
+          append_node(nodes, sysfs, it->path());
         }
       }
 
@@ -426,8 +428,8 @@ namespace lvh::detail {
             continue;
           }
 
-          append_node(nodes, DeviceNodeKind::hidraw, std::filesystem::path {"/dev"} / it->path().filename());
-          append_node(nodes, DeviceNodeKind::sysfs, it->path());
+          append_node(nodes, hidraw, std::filesystem::path {"/dev"} / it->path().filename());
+          append_node(nodes, sysfs, it->path());
         }
       }
 
