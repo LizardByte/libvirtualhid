@@ -170,9 +170,9 @@ namespace lvh {
     /**
      * @brief Register a callback for backend output events.
      *
-     * @param callback Output callback. Passing an empty callback clears it.
+     * @param callback Output callback copied into the handle. Passing an empty callback clears it.
      */
-    void set_output_callback(OutputCallback callback);
+    void set_output_callback(const OutputCallback &callback);
 
     /**
      * @brief Dispatch an output event to the registered callback.

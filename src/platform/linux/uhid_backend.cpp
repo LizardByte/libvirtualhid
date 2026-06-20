@@ -338,14 +338,14 @@ namespace lvh::detail {
     }
 
     template<std::size_t Size>
-    void copy_string(__u8 (&destination)[Size], const std::string &source) {
+    void copy_string(__u8 (&destination)[Size], std::string_view source) {
       const auto length = std::min(source.size(), Size - 1);
       std::memcpy(destination, source.data(), length);
       destination[length] = 0;
     }
 
     template<std::size_t Size>
-    void copy_string(char (&destination)[Size], const std::string &source) {
+    void copy_string(char (&destination)[Size], std::string_view source) {
       const auto length = std::min(source.size(), Size - 1);
       std::memcpy(destination, source.data(), length);
       destination[length] = 0;
@@ -373,7 +373,7 @@ namespace lvh::detail {
       nodes.push_back({.kind = kind, .path = path.string()});
     }
 
-    bool hidraw_name_matches(const std::filesystem::path &uevent_path, const std::string &name) {
+    bool hidraw_name_matches(const std::filesystem::path &uevent_path, std::string_view name) {
       std::ifstream file {uevent_path};
       if (!file) {
         return false;
@@ -381,9 +381,9 @@ namespace lvh::detail {
 
       std::string line;
       while (std::getline(file, line)) {
-        constexpr auto key = "HID_NAME=";
+        constexpr std::string_view key {"HID_NAME="};
         if (line.starts_with(key)) {
-          return line.substr(std::char_traits<char>::length(key)) == name;
+          return line.size() == key.size() + name.size() && line.ends_with(name);
         }
       }
 
@@ -1451,7 +1451,7 @@ namespace lvh::detail {
         }
 
         const auto slot = slot_for_contact(contact.id);
-        if (!slot) {
+        if (!slot.has_value()) {
           return OperationStatus::failure(ErrorCode::invalid_argument, "too many active touch contacts");
         }
 
@@ -2398,17 +2398,17 @@ namespace lvh::detail {
           event.u.get_report_reply.err = 0;
           switch (report_number) {
             case dualsense_calibration_report:
-              copy_get_report_payload(event, dualsense_calibration_info, sizeof(dualsense_calibration_info));
+              copy_get_report_payload(event, dualsense_calibration_info);
               break;
             case dualsense_pairing_report:
-              copy_get_report_payload(event, dualsense_pairing_info, sizeof(dualsense_pairing_info));
+              copy_get_report_payload(event, dualsense_pairing_info);
               for (std::size_t index = 0; index < dualsense_mac_address_.size(); ++index) {
                 event.u.get_report_reply.data[1U + index] =
                   dualsense_mac_address_[dualsense_mac_address_.size() - 1U - index];
               }
               break;
             case dualsense_firmware_report:
-              copy_get_report_payload(event, dualsense_firmware_info, sizeof(dualsense_firmware_info));
+              copy_get_report_payload(event, dualsense_firmware_info);
               break;
             default:
               event.u.get_report_reply.err = EINVAL;
@@ -2429,10 +2429,9 @@ namespace lvh::detail {
         static_cast<void>(write_event(event));
       }
 
-      template<std::size_t Size>
-      void copy_get_report_payload(uhid_event &event, const std::uint8_t (&payload)[Size], std::size_t payload_size) {
-        event.u.get_report_reply.size = static_cast<std::uint16_t>(std::min<std::size_t>(payload_size, UHID_DATA_MAX));
-        std::memcpy(event.u.get_report_reply.data, payload, event.u.get_report_reply.size);
+      static void copy_get_report_payload(uhid_event &event, std::span<const std::uint8_t> payload) {
+        event.u.get_report_reply.size = static_cast<std::uint16_t>(std::min<std::size_t>(payload.size(), UHID_DATA_MAX));
+        std::memcpy(event.u.get_report_reply.data, payload.data(), event.u.get_report_reply.size);
       }
 
       void send_set_report_reply(std::uint32_t id, std::uint16_t error) {

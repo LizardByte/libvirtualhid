@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -660,7 +661,7 @@ TEST_F(LinuxBackendTest, FakeUinputConstructionCoversCapabilitiesAndFailureBranc
     const auto it = std::ranges::find_if(result.event_codes, [type, code](const auto &event_code) {
       return event_code.type == type && event_code.code == code;
     });
-    return it == result.event_codes.end() ? nullptr : &(*it);
+    return it == result.event_codes.end() ? nullptr : std::to_address(it);
   };
 
   const auto keyboard = lvh::detail::test::linux_uinput_create_fake_libevdev_device(lvh::DeviceType::keyboard);

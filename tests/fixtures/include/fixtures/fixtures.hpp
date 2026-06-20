@@ -36,10 +36,12 @@ private:
  */
 class LinuxTest: public BaseTest {
 protected:
+#if !defined(__linux__)
   /**
    * @brief Set up the test.
    */
   void SetUp() override;
+#endif
 
   /**
    * @brief Check that a Linux device node is readable and writable.
@@ -55,10 +57,12 @@ protected:
  */
 class MacOSTest: public BaseTest {
 protected:
+#if !defined(__APPLE__) || !defined(__MACH__)
   /**
    * @brief Set up the test.
    */
   void SetUp() override;
+#endif
 };
 
 /**
@@ -66,10 +70,12 @@ protected:
  */
 class WindowsTest: public BaseTest {
 protected:
+#if !defined(_WIN32)
   /**
    * @brief Set up the test.
    */
   void SetUp() override;
+#endif
 };
 
 // Undefine the original TEST macro.

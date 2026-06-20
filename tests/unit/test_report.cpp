@@ -5,6 +5,7 @@
 
 // standard includes
 #include <cstdint>
+#include <span>
 #include <vector>
 
 // local includes
@@ -14,10 +15,10 @@
 #include <libvirtualhid/report.hpp>
 
 namespace {
-  std::uint32_t test_crc32(const std::uint8_t *buffer, std::size_t length, std::uint32_t seed = 0) {
+  std::uint32_t test_crc32(std::span<const std::uint8_t> buffer, std::uint32_t seed = 0) {
     auto crc = seed ^ 0xFFFFFFFFU;
-    for (std::size_t index = 0; index < length; ++index) {
-      crc ^= buffer[index];
+    for (const auto byte : buffer) {
+      crc ^= byte;
       for (auto bit = 0; bit < 8; ++bit) {
         const auto mask = 0U - (crc & 1U);
         crc = (crc >> 1U) ^ (0xEDB88320U & mask);
@@ -27,7 +28,7 @@ namespace {
   }
 
   std::uint32_t test_dualsense_crc_seed(std::uint8_t seed) {
-    return test_crc32(&seed, 1U);
+    return test_crc32(std::span {&seed, 1U});
   }
 
   std::uint32_t read_u32_le(const std::vector<std::uint8_t> &bytes, std::size_t offset) {
@@ -146,7 +147,7 @@ TEST(ReportTest, PacksDualSenseBluetoothReportWithCrc) {
   EXPECT_EQ(report[55], 0x0C);
 
   const auto crc_offset = report.size() - 4U;
-  const auto expected_crc = test_crc32(report.data(), crc_offset, test_dualsense_crc_seed(0xA1));
+  const auto expected_crc = test_crc32(std::span {report}.first(crc_offset), test_dualsense_crc_seed(0xA1));
   EXPECT_EQ(read_u32_le(report, crc_offset), expected_crc);
 }
 
@@ -213,7 +214,7 @@ TEST(ReportTest, ParsesDualSenseBluetoothOutputReportEvents) {
   report[47] = 0x22;
   report[48] = 0x33;
   const auto crc_offset = report.size() - 4U;
-  const auto crc = test_crc32(report.data(), crc_offset, test_dualsense_crc_seed(0xA2));
+  const auto crc = test_crc32(std::span {report}.first(crc_offset), test_dualsense_crc_seed(0xA2));
   report[crc_offset] = static_cast<std::uint8_t>(crc & 0xFFU);
   report[crc_offset + 1U] = static_cast<std::uint8_t>((crc >> 8U) & 0xFFU);
   report[crc_offset + 2U] = static_cast<std::uint8_t>((crc >> 16U) & 0xFFU);
