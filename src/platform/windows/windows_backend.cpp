@@ -12,7 +12,6 @@
 // standard includes
 #include <algorithm>
 #include <cstdint>
-#include <cstdlib>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -120,8 +119,14 @@ namespace lvh::detail {
     }
 
     std::string resolve_control_device_path() {
-      if (const auto *path = std::getenv("LIBVIRTUALHID_WINDOWS_CONTROL_DEVICE"); path != nullptr && path[0] != '\0') {
-        return path;
+      constexpr auto environment_name = "LIBVIRTUALHID_WINDOWS_CONTROL_DEVICE";
+      const auto required_size = ::GetEnvironmentVariableA(environment_name, nullptr, 0);
+      if (required_size > 1U) {
+        std::string path(required_size - 1U, '\0');
+        const auto copied_size = ::GetEnvironmentVariableA(environment_name, path.data(), required_size);
+        if (copied_size > 0U && copied_size < required_size) {
+          return path;
+        }
       }
 
       return std::string {windows::default_control_device_path};

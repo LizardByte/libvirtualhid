@@ -32,20 +32,26 @@ else()
 endif()
 set(LIBVIRTUALHID_DRIVER_VERSION "${PROJECT_VERSION}.0")
 
-set(_lvh_wdk_roots
-    "$ENV{WDKContentRoot}"
-    "$ENV{WindowsSdkDir}"
-    "C:/Program Files (x86)/Windows Kits/10")
-
-set(_lvh_wdf_include_candidates)
-set(_lvh_wdf_library_candidates)
-set(_lvh_wdk_tool_candidates)
-foreach(lvh_wdk_root IN LISTS _lvh_wdk_roots)
+set(_lvh_wdk_roots)
+foreach(lvh_wdk_root IN ITEMS
+        "$ENV{WDKContentRoot}"
+        "$ENV{WindowsSdkDir}"
+        "C:/Program Files (x86)/Windows Kits/10")
     if(NOT lvh_wdk_root)
         continue()
     endif()
 
     file(TO_CMAKE_PATH "${lvh_wdk_root}" lvh_wdk_root_cmake)
+    string(REGEX REPLACE "/+$" "" lvh_wdk_root_cmake "${lvh_wdk_root_cmake}")
+    list(APPEND _lvh_wdk_roots "${lvh_wdk_root_cmake}")
+endforeach()
+list(REMOVE_DUPLICATES _lvh_wdk_roots)
+
+set(_lvh_wdf_include_candidates)
+set(_lvh_wdf_library_candidates)
+set(_lvh_wdk_um_library_candidates)
+set(_lvh_wdk_tool_candidates)
+foreach(lvh_wdk_root_cmake IN LISTS _lvh_wdk_roots)
     if(EXISTS "${lvh_wdk_root_cmake}")
         file(GLOB _lvh_wdf_include_glob
              LIST_DIRECTORIES true
@@ -53,6 +59,9 @@ foreach(lvh_wdk_root IN LISTS _lvh_wdk_roots)
         file(GLOB _lvh_wdf_library_glob
              LIST_DIRECTORIES true
              "${lvh_wdk_root_cmake}/Lib/wdf/umdf/${LIBVIRTUALHID_WDK_LIBRARY_ARCH}/2.*")
+        file(GLOB _lvh_wdk_um_library_glob
+             LIST_DIRECTORIES true
+             "${lvh_wdk_root_cmake}/Lib/*/um/${LIBVIRTUALHID_WDK_LIBRARY_ARCH}")
         file(GLOB _lvh_wdk_tool_glob
              LIST_DIRECTORIES true
              "${lvh_wdk_root_cmake}/bin/*/x64"
@@ -61,6 +70,7 @@ foreach(lvh_wdk_root IN LISTS _lvh_wdk_roots)
              "${lvh_wdk_root_cmake}/bin/x86")
         list(APPEND _lvh_wdf_include_candidates ${_lvh_wdf_include_glob})
         list(APPEND _lvh_wdf_library_candidates ${_lvh_wdf_library_glob})
+        list(APPEND _lvh_wdk_um_library_candidates ${_lvh_wdk_um_library_glob})
         list(APPEND _lvh_wdk_tool_candidates ${_lvh_wdk_tool_glob})
     endif()
 endforeach()
@@ -70,6 +80,9 @@ if(_lvh_wdf_include_candidates)
 endif()
 if(_lvh_wdf_library_candidates)
     list(SORT _lvh_wdf_library_candidates COMPARE NATURAL ORDER DESCENDING)
+endif()
+if(_lvh_wdk_um_library_candidates)
+    list(SORT _lvh_wdk_um_library_candidates COMPARE NATURAL ORDER DESCENDING)
 endif()
 if(_lvh_wdk_tool_candidates)
     list(SORT _lvh_wdk_tool_candidates COMPARE NATURAL ORDER DESCENDING)
@@ -86,14 +99,23 @@ find_library(LIBVIRTUALHID_WDF_DRIVER_STUB_UM_LIBRARY
              PATHS ${_lvh_wdf_library_candidates}
              NO_DEFAULT_PATH)
 
-if(NOT LIBVIRTUALHID_WDF_INCLUDE_DIR OR NOT LIBVIRTUALHID_WDF_DRIVER_STUB_UM_LIBRARY)
+find_library(LIBVIRTUALHID_NTDLL_LIBRARY
+             NAMES ntdll
+             PATHS ${_lvh_wdk_um_library_candidates}
+             NO_DEFAULT_PATH)
+
+if(NOT LIBVIRTUALHID_WDF_INCLUDE_DIR
+   OR NOT LIBVIRTUALHID_WDF_DRIVER_STUB_UM_LIBRARY
+   OR NOT LIBVIRTUALHID_NTDLL_LIBRARY)
     message(FATAL_ERROR
-            "Could not find UMDF2 WDK headers/libraries. Install the Windows Driver Kit or set "
-            "LIBVIRTUALHID_WDF_INCLUDE_DIR and LIBVIRTUALHID_WDF_DRIVER_STUB_UM_LIBRARY.")
+            "Could not find UMDF2 WDK headers/libraries. Install the Windows Driver Kit or set the "
+            "LIBVIRTUALHID_WDF_INCLUDE_DIR, LIBVIRTUALHID_WDF_DRIVER_STUB_UM_LIBRARY, and "
+            "LIBVIRTUALHID_NTDLL_LIBRARY cache variables.")
 endif()
 
 message(STATUS "WDF include directory: ${LIBVIRTUALHID_WDF_INCLUDE_DIR}")
 message(STATUS "WDF UMDF stub library: ${LIBVIRTUALHID_WDF_DRIVER_STUB_UM_LIBRARY}")
+message(STATUS "NTDLL import library: ${LIBVIRTUALHID_NTDLL_LIBRARY}")
 
 find_program(LIBVIRTUALHID_STAMPINF
              NAMES stampinf stampinf.exe
@@ -132,31 +154,39 @@ target_compile_options(libvirtualhid_umdf PRIVATE /W4)
 if(LIBVIRTUALHID_WARNINGS_AS_ERRORS)
     target_compile_options(libvirtualhid_umdf PRIVATE /WX)
 endif()
-target_link_libraries(libvirtualhid_umdf PRIVATE "${LIBVIRTUALHID_WDF_DRIVER_STUB_UM_LIBRARY}")
+target_link_libraries(libvirtualhid_umdf
+  PRIVATE
+  "${LIBVIRTUALHID_WDF_DRIVER_STUB_UM_LIBRARY}"
+  "${LIBVIRTUALHID_NTDLL_LIBRARY}")
 set_target_properties(libvirtualhid_umdf PROPERTIES
   OUTPUT_NAME libvirtualhid_umdf
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/package")
 
-add_custom_command(TARGET libvirtualhid_umdf POST_BUILD
-  COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_FILE_DIR:libvirtualhid_umdf>"
+add_custom_target(libvirtualhid_windows_inf
+  COMMAND "${CMAKE_COMMAND}" -E make_directory
+          "$<TARGET_FILE_DIR:libvirtualhid_umdf>"
   COMMAND "${CMAKE_COMMAND}" -E copy_if_different
           "${CMAKE_CURRENT_BINARY_DIR}/libvirtualhid.inf"
           "$<TARGET_FILE_DIR:libvirtualhid_umdf>/libvirtualhid.inf"
-  COMMENT "Copying libvirtualhid driver INF")
-
-add_custom_command(TARGET libvirtualhid_umdf POST_BUILD
-  COMMAND "${LIBVIRTUALHID_STAMPINF}"
-          -f "$<TARGET_FILE_DIR:libvirtualhid_umdf>/libvirtualhid.inf"
+  COMMAND "${CMAKE_COMMAND}" -E chdir "$<TARGET_FILE_DIR:libvirtualhid_umdf>"
+          "${LIBVIRTUALHID_STAMPINF}"
+          -f libvirtualhid.inf
           -d "*"
           -v "${LIBVIRTUALHID_DRIVER_VERSION}"
-  COMMENT "Stamping libvirtualhid.inf")
+  DEPENDS
+  libvirtualhid_umdf
+  "${CMAKE_CURRENT_BINARY_DIR}/libvirtualhid.inf"
+  COMMENT "Preparing libvirtualhid driver INF"
+  VERBATIM)
 
 add_custom_target(libvirtualhid_windows_catalog
-  COMMAND "${LIBVIRTUALHID_INF2CAT}"
-          /driver:"$<TARGET_FILE_DIR:libvirtualhid_umdf>"
+  COMMAND "${CMAKE_COMMAND}" -E chdir "$<TARGET_FILE_DIR:libvirtualhid_umdf>"
+          "${LIBVIRTUALHID_INF2CAT}"
+          /driver:.
           /os:${LIBVIRTUALHID_INF2CAT_OS}
-  DEPENDS libvirtualhid_umdf
-  COMMENT "Generating libvirtualhid driver catalog")
+  DEPENDS libvirtualhid_windows_inf
+  COMMENT "Generating libvirtualhid driver catalog"
+  VERBATIM)
 
 install(TARGETS libvirtualhid_umdf
   RUNTIME DESTINATION "drivers/windows"

@@ -20,6 +20,12 @@ PnpLockdown=1
 [DestinationDirs]
 UMDriverCopy=13
 
+[SourceDisksNames]
+1=%DiskName%,,,
+
+[SourceDisksFiles]
+libvirtualhid_umdf.dll=1
+
 [DeviceInstall.NT]
 CopyFiles=UMDriverCopy
 
@@ -46,5 +52,6 @@ ServiceBinary=%13%\libvirtualhid_umdf.dll
 
 [Strings]
 ManufacturerName="LizardByte"
+DiskName="libvirtualhid UMDF Driver Install Disk"
 DeviceName="libvirtualhid Virtual HID Control Device"
 WudfRdDisplayName="Windows Driver Foundation - User-mode Driver Framework Reflector"

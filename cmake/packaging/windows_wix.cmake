@@ -42,15 +42,14 @@ set(CPACK_WIX_UPGRADE_GUID "71D7B738-9D83-4E57-82E3-C3106D9F8053")
 set(CPACK_WIX_HELP_LINK "https://app.lizardbyte.dev/support")
 set(CPACK_WIX_PRODUCT_URL "${CMAKE_PROJECT_HOMEPAGE_URL}")
 set(CPACK_WIX_PROGRAM_MENU_FOLDER "LizardByte")
-set(CPACK_WIX_EXTENSIONS "WixToolset.UI.wixext")
+set(CPACK_WIX_EXTENSIONS
+        "${WIX_TOOL_PATH}/extensions/WixToolset.UI.wixext/${WIX_UI_VERSION}/wixext4/WixToolset.UI.wixext.dll")
 
 file(COPY "${CMAKE_CURRENT_LIST_DIR}/wix_resources/"
         DESTINATION "${WIX_BUILD_PARENT_DIRECTORY}/")
 
 set(CPACK_WIX_EXTRA_SOURCES
         "${WIX_BUILD_PARENT_DIRECTORY}/libvirtualhid-driver-installer.wxs")
-set(CPACK_WIX_PATCH_FILE
-        "${WIX_BUILD_PARENT_DIRECTORY}/patch.xml")
 
 file(COPY "${CMAKE_SOURCE_DIR}/LICENSE"
         DESTINATION "${CMAKE_BINARY_DIR}")

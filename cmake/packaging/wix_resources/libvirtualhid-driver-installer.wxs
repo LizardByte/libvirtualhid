@@ -31,7 +31,5 @@
       <Custom Action="CA_LibVirtualHidUninstallDriver" Before="RemoveFiles" Condition="REMOVE=&quot;ALL&quot; AND UILevel &gt; 3" />
       <Custom Action="CA_LibVirtualHidUninstallDriverSilent" Before="RemoveFiles" Condition="REMOVE=&quot;ALL&quot; AND UILevel &lt;= 3" />
     </InstallExecuteSequence>
-
-    <Feature Id="RunLibVirtualHidDriverInstallScripts" Title="Run libvirtualhid Driver Installation Scripts" Level="1" Display="hidden" />
   </Fragment>
 </Wix>
