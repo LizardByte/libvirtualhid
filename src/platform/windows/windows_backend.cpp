@@ -784,7 +784,7 @@ namespace lvh::detail {
         return next_driver_id_ - 1U;
       }
 
-      void enqueue_output_event(LvhWindowsOutputReportEvent event) {
+      void enqueue_output_event(const LvhWindowsOutputReportEvent &event) {
         std::lock_guard lock {mutex_};
         output_events_.push_back(event);
       }
