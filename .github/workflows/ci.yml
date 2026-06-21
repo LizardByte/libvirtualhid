@@ -503,7 +503,8 @@ jobs:
           azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           certificate-profile-name: ${{ vars.AZURE_SIGNING_CERT_PROFILE }}
           endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
-          files: cmake-build-driver/src/platform/windows/driver/package/Release/libvirtualhid.cat
+          files: |
+            ${{ github.workspace }}/cmake-build-driver/src/platform/windows/driver/package/Release/libvirtualhid.cat
           signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT }}
 
       - name: Package Windows driver installer
