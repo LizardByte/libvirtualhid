@@ -38,6 +38,18 @@ if(LIBVIRTUALHID_USES_THREADS)
           ${X11_LIBRARIES}
           ${X11_XTest_LIB})
     endif()
+elseif(WIN32)
+    target_sources(${PROJECT_NAME}
+      PRIVATE
+      "${CMAKE_CURRENT_SOURCE_DIR}/platform/windows/windows_backend.cpp")
+    target_include_directories(${PROJECT_NAME}
+      PRIVATE
+      "${CMAKE_CURRENT_SOURCE_DIR}/platform/windows/shared")
+    target_compile_definitions(${PROJECT_NAME}
+      PRIVATE
+      NOMINMAX
+      WIN32_LEAN_AND_MEAN
+      _WIN32_WINNT=0x0600)
 else()
     target_sources(${PROJECT_NAME}
       PRIVATE
@@ -58,8 +70,14 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
 
 if(MSVC)
     target_compile_options(${PROJECT_NAME} PRIVATE /W4)
+    if(LIBVIRTUALHID_WARNINGS_AS_ERRORS)
+        target_compile_options(${PROJECT_NAME} PRIVATE /WX)
+    endif()
 else()
     target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -Wpedantic)
+    if(LIBVIRTUALHID_WARNINGS_AS_ERRORS)
+        target_compile_options(${PROJECT_NAME} PRIVATE -Werror)
+    endif()
 endif()
 
 install(TARGETS ${PROJECT_NAME}

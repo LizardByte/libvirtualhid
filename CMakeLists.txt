@@ -25,6 +25,8 @@ endif()
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/build_version.cmake")
+
 #
 # Project optional configuration
 #
@@ -32,6 +34,9 @@ option(BUILD_DOCS "Build documentation" ${LIBVIRTUALHID_IS_TOP_LEVEL})
 option(BUILD_TESTS "Build tests" ${LIBVIRTUALHID_IS_TOP_LEVEL})
 option(BUILD_EXAMPLES "Build examples" ${LIBVIRTUALHID_IS_TOP_LEVEL})
 option(LIBVIRTUALHID_ENABLE_XTEST "Enable X11/XTest keyboard and mouse fallback on Linux" ON)
+option(LIBVIRTUALHID_BUILD_WINDOWS_DRIVER "Build the Windows UMDF2 driver package with the WDK/MSVC toolchain" OFF)
+option(LIBVIRTUALHID_ENABLE_PACKAGING "Enable CPack package metadata" ${LIBVIRTUALHID_IS_TOP_LEVEL})
+option(LIBVIRTUALHID_WARNINGS_AS_ERRORS "Treat libvirtualhid warnings as errors" ${LIBVIRTUALHID_IS_TOP_LEVEL})
 
 set(CMAKE_COLOR_MAKEFILE ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -85,6 +90,10 @@ add_subdirectory(src)
 # Examples, tests, and docs are top-level only
 #
 if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
+    if(WIN32 AND LIBVIRTUALHID_BUILD_WINDOWS_DRIVER)
+        add_subdirectory(src/platform/windows/driver)
+    endif()
+
     if(BUILD_DOCS)
         add_subdirectory(third-party/doxyconfig docs)
     endif()
@@ -118,3 +127,7 @@ install(FILES
         "${CMAKE_CURRENT_BINARY_DIR}/libvirtualhid-config.cmake"
         "${CMAKE_CURRENT_BINARY_DIR}/libvirtualhid-config-version.cmake"
   DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/libvirtualhid")
+
+if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME AND LIBVIRTUALHID_ENABLE_PACKAGING)
+    include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/packaging/common.cmake")
+endif()

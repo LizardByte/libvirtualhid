@@ -196,7 +196,7 @@ jobs:
         if: matrix.kind != 'msvc'
         env:
           BRANCH: ${{ github.head_ref || github.ref_name }}
-          BUILD_VERSION: ${{ needs.setup_release.outputs.release_tag }}
+          BUILD_VERSION: ${{ needs.setup_release.outputs.release_version }}
           CC: ${{ matrix.cc }}
           COMMIT: ${{ needs.setup_release.outputs.release_commit }}
           CXX: ${{ matrix.cxx }}
@@ -214,7 +214,7 @@ jobs:
         if: matrix.kind == 'msvc'
         env:
           BRANCH: ${{ github.head_ref || github.ref_name }}
-          BUILD_VERSION: ${{ needs.setup_release.outputs.release_tag }}
+          BUILD_VERSION: ${{ needs.setup_release.outputs.release_version }}
           COMMIT: ${{ needs.setup_release.outputs.release_commit }}
         run: |
           cmake `
@@ -233,6 +233,66 @@ jobs:
       - name: Build MSVC
         if: matrix.kind == 'msvc'
         run: cmake --build cmake-build-ci --config Debug --parallel 2
+
+      - name: Configure Windows test driver package
+        if: >-
+          matrix.kind == 'msvc' &&
+          github.event_name == 'pull_request'
+        env:
+          BRANCH: ${{ github.head_ref || github.ref_name }}
+          BUILD_VERSION: ${{ needs.setup_release.outputs.release_version }}
+          COMMIT: ${{ needs.setup_release.outputs.release_commit }}
+        run: |
+          $certificatePath = Join-Path `
+            $env:GITHUB_WORKSPACE `
+            "cmake-build-driver-test\certificates\libvirtualhid-ci-test.cer"
+          cmake `
+            -DBUILD_DOCS=OFF `
+            -DBUILD_EXAMPLES=OFF `
+            -DBUILD_TESTS=OFF `
+            -DLIBVIRTUALHID_BUILD_WINDOWS_DRIVER=ON `
+            -DLIBVIRTUALHID_ENABLE_PACKAGING=OFF `
+            "-DLIBVIRTUALHID_DRIVER_TEST_CERTIFICATE=$certificatePath" `
+            -A x64 `
+            -B cmake-build-driver-test `
+            -G "Visual Studio 17 2022" `
+            -S .
+
+      - name: Build Windows test driver package
+        if: >-
+          matrix.kind == 'msvc' &&
+          github.event_name == 'pull_request'
+        run: cmake --build cmake-build-driver-test --config Release --target libvirtualhid_windows_catalog --parallel 2
+
+      - name: Sign Windows test driver package
+        if: >-
+          matrix.kind == 'msvc' &&
+          github.event_name == 'pull_request'
+        run: |
+          $packagePath = Join-Path `
+            $env:GITHUB_WORKSPACE `
+            "cmake-build-driver-test\src\platform\windows\driver\package\Release"
+          $certificatePath = Join-Path `
+            $env:GITHUB_WORKSPACE `
+            "cmake-build-driver-test\certificates\libvirtualhid-ci-test.cer"
+          .\scripts\windows\sign-driver-package.ps1 `
+            -PackagePath $packagePath `
+            -CertificatePath $certificatePath
+
+      - name: Install Windows test driver package
+        if: >-
+          matrix.kind == 'msvc' &&
+          github.event_name == 'pull_request'
+        run: |
+          $packagePath = Join-Path `
+            $env:GITHUB_WORKSPACE `
+            "cmake-build-driver-test\src\platform\windows\driver\package\Release"
+          $certificatePath = Join-Path `
+            $env:GITHUB_WORKSPACE `
+            "cmake-build-driver-test\certificates\libvirtualhid-ci-test.cer"
+          .\scripts\windows\install-driver.ps1 `
+            -InfPath (Join-Path $packagePath "libvirtualhid.inf") `
+            -CertificatePath $certificatePath
 
       - name: Prepare report directory
         run: cmake -E make_directory cmake-build-ci/reports
@@ -329,6 +389,17 @@ jobs:
         if: matrix.kind == 'msvc'
         run: .\cmake-build-ci\examples\Debug\gamepad_adapter.exe
 
+      - name: Uninstall Windows test driver package
+        if: >-
+          always() &&
+          matrix.kind == 'msvc' &&
+          github.event_name == 'pull_request'
+        run: |
+          .\scripts\windows\uninstall-driver.ps1 `
+            -OriginalName "libvirtualhid.inf" `
+            -RemoveCertificateSubject "CN=libvirtualhid CI Test Driver Signing" `
+            -Force
+
       - name: Install
         if: matrix.kind != 'msvc'
         run: cmake --install cmake-build-ci --prefix cmake-build-ci/install
@@ -356,6 +427,127 @@ jobs:
         with:
           name: reports-${{ matrix.name }}
           path: cmake-build-ci/reports
+          if-no-files-found: error
+
+  windows_driver:
+    name: Windows Driver Installer
+    needs: setup_release
+    permissions:
+      contents: read
+    runs-on: windows-2022
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+        with:
+          submodules: recursive
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@9a946fdbd5fb07b82b2f5a4466058b876ab72bb2  # v5.3.0
+        with:
+          dotnet-version: '10.x'
+
+      - name: Configure Windows driver package
+        shell: pwsh
+        env:
+          BRANCH: ${{ github.head_ref || github.ref_name }}
+          BUILD_VERSION: ${{ needs.setup_release.outputs.release_version }}
+          COMMIT: ${{ needs.setup_release.outputs.release_commit }}
+        run: |
+          $certificatePath = Join-Path $env:GITHUB_WORKSPACE "cmake-build-driver\certificates\libvirtualhid-ci-test.cer"
+          cmake `
+            -DBUILD_DOCS=OFF `
+            -DBUILD_EXAMPLES=OFF `
+            -DBUILD_TESTS=OFF `
+            -DLIBVIRTUALHID_BUILD_WINDOWS_DRIVER=ON `
+            -DLIBVIRTUALHID_ENABLE_PACKAGING=ON `
+            "-DLIBVIRTUALHID_DRIVER_TEST_CERTIFICATE=$certificatePath" `
+            -A x64 `
+            -B cmake-build-driver `
+            -G "Visual Studio 17 2022" `
+            -S .
+
+      - name: Build Windows driver package
+        shell: pwsh
+        run: cmake --build cmake-build-driver --config Release --target libvirtualhid_windows_catalog --parallel 2
+
+      - name: Validate Azure signing configuration
+        if: >-
+          github.event_name == 'push' &&
+          vars.AZURE_SIGNING_ACCOUNT == ''
+        shell: pwsh
+        run: throw "Push builds must use Azure Trusted Signing for the Windows driver package."
+
+      - name: Sign Windows driver package with local test certificate
+        if: github.event_name == 'pull_request'
+        shell: pwsh
+        run: |
+          $packagePath = Join-Path `
+            $env:GITHUB_WORKSPACE `
+            "cmake-build-driver\src\platform\windows\driver\package\Release"
+          $certificatePath = Join-Path `
+            $env:GITHUB_WORKSPACE `
+            "cmake-build-driver\certificates\libvirtualhid-ci-test.cer"
+          .\scripts\windows\sign-driver-package.ps1 `
+            -PackagePath $packagePath `
+            -CertificatePath $certificatePath
+
+      - name: Sign Windows driver package with Azure Trusted Signing
+        if: >-
+          github.event_name == 'push' &&
+          vars.AZURE_SIGNING_ACCOUNT != ''
+        uses: azure/trusted-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82  # v2.0.0
+        with:
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          certificate-profile-name: ${{ vars.AZURE_SIGNING_CERT_PROFILE }}
+          endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          files: cmake-build-driver/src/platform/windows/driver/package/Release/libvirtualhid.cat
+          signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+
+      - name: Package Windows driver installer
+        shell: pwsh
+        run: |
+          Push-Location .\cmake-build-driver
+          cpack -G WIX
+          $packageExitCode = $LASTEXITCODE
+          Pop-Location
+          if ($packageExitCode -ne 0) {
+            exit $packageExitCode
+          }
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          Copy-Item `
+            -LiteralPath .\cmake-build-driver\cpack_artifacts\libvirtualhid.msi `
+            -Destination .\artifacts\libvirtualhid-Windows-Driver-installer.msi
+
+      - name: Sign Windows driver installer with Azure Trusted Signing
+        if: >-
+          github.event_name == 'push' &&
+          vars.AZURE_SIGNING_ACCOUNT != ''
+        uses: azure/trusted-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82  # v2.0.0
+        with:
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          certificate-profile-name: ${{ vars.AZURE_SIGNING_CERT_PROFILE }}
+          endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          files-folder: artifacts
+          files-folder-filter: msi
+          files-folder-recurse: false
+          signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+
+      - name: Debug wix
+        if: always()
+        shell: pwsh
+        run: |
+          Get-Content .\cmake-build-driver\cpack_artifacts\_CPack_Packages\win64\WIX\wix.log `
+            -ErrorAction SilentlyContinue
+
+      - name: Upload Windows driver installer artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: windows-driver-installer
+          path: artifacts
           if-no-files-found: error
 
   codecov:
@@ -430,9 +622,11 @@ jobs:
       always() &&
       needs.setup_release.outputs.publish_release == 'true' &&
       needs.build.result == 'success' &&
+      needs.windows_driver.result == 'success' &&
       startsWith(github.repository, 'LizardByte/')
     needs:
       - build
+      - windows_driver
       - setup_release
     permissions:
       contents: read
@@ -468,6 +662,12 @@ jobs:
           name: install-Windows-MSVC
           path: install-Windows-MSVC
 
+      - name: Download Windows driver installer artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: windows-driver-installer
+          path: windows-driver-installer
+
       - name: Package install artifacts
         run: |
           mkdir -p artifacts
@@ -476,6 +676,7 @@ jobs:
               "artifacts/libvirtualhid-${{ needs.setup_release.outputs.release_tag }}-${name}.zip" \
               "install-${name}"
           done
+          cp windows-driver-installer/* artifacts/
 
       - name: Create/Update GitHub Release
         if: needs.setup_release.outputs.publish_release == 'true'

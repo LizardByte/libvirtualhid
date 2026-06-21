@@ -8,6 +8,9 @@
 
 // local includes
 #include "fixtures/fixtures.hpp"
+#if defined(_WIN32)
+  #include "platform/windows/shared/lvh_windows_protocol.h"
+#endif
 
 /**
  * @brief Test fixture for Linux runtime integration tests.
@@ -39,6 +42,53 @@ TEST(RuntimeTest, PlatformDefaultReportsCurrentPlatformCapabilities) {
 #if defined(__linux__)
   EXPECT_EQ(runtime->capabilities().backend_name, "linux-uhid-uinput");
   EXPECT_FALSE(runtime->capabilities().requires_installed_driver);
+#elif defined(_WIN32)
+  EXPECT_EQ(runtime->capabilities().backend_name, "windows-umdf");
+  EXPECT_TRUE(runtime->capabilities().requires_installed_driver);
+  EXPECT_FALSE(runtime->capabilities().supports_keyboard);
+  EXPECT_FALSE(runtime->capabilities().supports_mouse);
+  EXPECT_FALSE(runtime->capabilities().supports_touchscreen);
+  EXPECT_FALSE(runtime->capabilities().supports_trackpad);
+  EXPECT_FALSE(runtime->capabilities().supports_pen_tablet);
+
+  EXPECT_EQ(runtime->create_keyboard().status.code(), lvh::ErrorCode::unsupported_profile);
+  EXPECT_EQ(runtime->create_mouse().status.code(), lvh::ErrorCode::unsupported_profile);
+  EXPECT_EQ(runtime->create_touchscreen().status.code(), lvh::ErrorCode::unsupported_profile);
+  EXPECT_EQ(runtime->create_trackpad().status.code(), lvh::ErrorCode::unsupported_profile);
+  EXPECT_EQ(runtime->create_pen_tablet().status.code(), lvh::ErrorCode::unsupported_profile);
+
+  if (!runtime->capabilities().supports_gamepad) {
+    auto created = runtime->create_gamepad(lvh::profiles::xbox_360());
+    EXPECT_FALSE(created);
+    EXPECT_EQ(created.status.code(), lvh::ErrorCode::backend_unavailable);
+  } else {
+    auto created = runtime->create_gamepad(lvh::profiles::xbox_360());
+    ASSERT_TRUE(created) << created.status.message();
+    ASSERT_NE(created.gamepad, nullptr);
+    EXPECT_FALSE(created.gamepad->device_nodes().empty());
+
+    lvh::GamepadState state;
+    state.buttons.set(lvh::GamepadButton::a);
+    state.left_stick.x = 0.25F;
+    state.right_trigger = 1.0F;
+
+    EXPECT_TRUE(created.gamepad->submit(state).ok());
+    EXPECT_TRUE(created.gamepad->close().ok());
+    EXPECT_TRUE(created.gamepad->close().ok());
+    EXPECT_EQ(created.gamepad->submit(state).code(), lvh::ErrorCode::device_closed);
+  }
+
+  auto invalid_profile = lvh::profiles::xbox_360();
+  invalid_profile.report_descriptor.resize(LVH_WINDOWS_MAX_REPORT_DESCRIPTOR_SIZE + 1U);
+  EXPECT_EQ(runtime->create_gamepad(invalid_profile).status.code(), lvh::ErrorCode::invalid_argument);
+
+  invalid_profile = lvh::profiles::xbox_360();
+  invalid_profile.input_report_size = LVH_WINDOWS_MAX_INPUT_REPORT_SIZE + 1U;
+  EXPECT_EQ(runtime->create_gamepad(invalid_profile).status.code(), lvh::ErrorCode::invalid_argument);
+
+  invalid_profile = lvh::profiles::xbox_360();
+  invalid_profile.output_report_size = LVH_WINDOWS_MAX_OUTPUT_REPORT_SIZE + 1U;
+  EXPECT_EQ(runtime->create_gamepad(invalid_profile).status.code(), lvh::ErrorCode::invalid_argument);
 #else
   EXPECT_EQ(runtime->capabilities().backend_name, "platform-default-unimplemented");
   EXPECT_FALSE(runtime->capabilities().supports_gamepad);
