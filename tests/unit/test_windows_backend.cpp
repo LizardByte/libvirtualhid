@@ -5,7 +5,7 @@
 
 // local includes
 #include "fixtures/fixtures.hpp"
-#include "platform/windows/windows_backend_test_hooks.hpp"
+#include "fixtures/windows_backend_test_hooks.hpp"
 
 namespace {
 

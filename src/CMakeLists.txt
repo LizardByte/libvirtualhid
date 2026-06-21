@@ -68,12 +68,6 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
   EXPORT_NAME libvirtualhid
   OUTPUT_NAME virtualhid)
 
-if(BUILD_TESTS)
-    target_compile_definitions(${PROJECT_NAME}
-      PRIVATE
-      LIBVIRTUALHID_ENABLE_TEST_HOOKS=1)
-endif()
-
 if(MSVC)
     target_compile_options(${PROJECT_NAME} PRIVATE /W4)
     if(LIBVIRTUALHID_WARNINGS_AS_ERRORS)

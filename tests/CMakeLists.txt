@@ -38,6 +38,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     endif()
 elseif(WIN32)
     list(APPEND LIBVIRTUALHID_TEST_SOURCES
+         "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/windows_backend_test_hooks.cpp"
          "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_windows_backend.cpp")
 endif()
 

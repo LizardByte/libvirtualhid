@@ -1,5 +1,5 @@
 /**
- * @file src/platform/windows/windows_backend_test_hooks.hpp
+ * @file tests/fixtures/include/fixtures/windows_backend_test_hooks.hpp
  * @brief Private Windows backend test hooks.
  */
 #pragma once
