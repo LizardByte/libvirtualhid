@@ -6,12 +6,18 @@
 // local includes
 #include "core/backend.hpp"
 #include "platform/windows/control_protocol.hpp"
+#if defined(LIBVIRTUALHID_ENABLE_TEST_HOOKS)
+  #include "platform/windows/windows_backend_test_hooks.hpp"
+#endif
 
+#include <libvirtualhid/profiles.hpp>
 #include <libvirtualhid/report.hpp>
 
 // standard includes
 #include <algorithm>
 #include <array>
+#include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <map>
@@ -137,6 +143,35 @@ namespace lvh::detail {
 
     class WindowsControlChannel {
     public:
+      WindowsControlChannel(const WindowsControlChannel &) = delete;
+      WindowsControlChannel &operator=(const WindowsControlChannel &) = delete;
+      WindowsControlChannel(WindowsControlChannel &&) noexcept = delete;
+      WindowsControlChannel &operator=(WindowsControlChannel &&) noexcept = delete;
+
+      virtual ~WindowsControlChannel() = default;
+
+      virtual const std::string &path() const = 0;
+
+      virtual OperationStatus create_gamepad(
+        LvhWindowsCreateGamepadRequest request,
+        LvhWindowsCreateGamepadResponse &response
+      ) const = 0;
+
+      virtual OperationStatus destroy_device(std::uint64_t driver_device_id) const = 0;
+
+      virtual OperationStatus submit_input_report(
+        std::uint64_t driver_device_id,
+        const std::vector<std::uint8_t> &report
+      ) const = 0;
+
+      virtual std::optional<LvhWindowsOutputReportEvent> read_output_report(HANDLE stop_event) const = 0;
+
+    protected:
+      WindowsControlChannel() = default;
+    };
+
+    class Win32WindowsControlChannel final: public WindowsControlChannel {
+    public:
       static std::unique_ptr<WindowsControlChannel> open(const std::string &path) {
         const auto handle = ::CreateFileA(
           path.c_str(),
@@ -152,17 +187,17 @@ namespace lvh::detail {
           return nullptr;
         }
 
-        return std::make_unique<WindowsControlChannel>(path, make_unique_handle(handle));
+        return std::make_unique<Win32WindowsControlChannel>(path, make_unique_handle(handle));
       }
 
-      const std::string &path() const {
+      const std::string &path() const override {
         return path_;
       }
 
       OperationStatus create_gamepad(
         LvhWindowsCreateGamepadRequest request,
         LvhWindowsCreateGamepadResponse &response
-      ) const {
+      ) const override {
         using enum ErrorCode;
 
         DWORD bytes_returned = 0;
@@ -184,7 +219,7 @@ namespace lvh::detail {
         return protocol_status(response.status, "Windows driver rejected gamepad creation");
       }
 
-      OperationStatus destroy_device(std::uint64_t driver_device_id) const {
+      OperationStatus destroy_device(std::uint64_t driver_device_id) const override {
         auto request = windows::make_destroy_device_request(driver_device_id);
         DWORD bytes_returned = 0;
         return device_io_control(
@@ -198,7 +233,7 @@ namespace lvh::detail {
       OperationStatus submit_input_report(
         std::uint64_t driver_device_id,
         const std::vector<std::uint8_t> &report
-      ) const {
+      ) const override {
         using enum ErrorCode;
 
         if (report.size() > LVH_WINDOWS_MAX_INPUT_REPORT_SIZE) {
@@ -215,7 +250,7 @@ namespace lvh::detail {
         );
       }
 
-      std::optional<LvhWindowsOutputReportEvent> read_output_report(HANDLE stop_event) const {
+      std::optional<LvhWindowsOutputReportEvent> read_output_report(HANDLE stop_event) const override {
         LvhWindowsOutputReportEvent event {};
         event.version = LVH_WINDOWS_CONTROL_PROTOCOL_VERSION;
         event.size = sizeof(event);
@@ -278,7 +313,7 @@ namespace lvh::detail {
         return event;
       }
 
-      WindowsControlChannel(std::string path, UniqueHandle handle):
+      Win32WindowsControlChannel(std::string path, UniqueHandle handle):
           path_ {std::move(path)},
           handle_ {std::move(handle)} {}
 
@@ -562,12 +597,19 @@ namespace lvh::detail {
 
     class WindowsBackend final: public Backend {
     public:
-      WindowsBackend() {
+      WindowsBackend():
+          WindowsBackend(
+            Win32WindowsControlChannel::open(resolve_control_device_path()),
+            Win32WindowsControlChannel::open(resolve_control_device_path())
+          ) {}
+
+      WindowsBackend(
+        std::unique_ptr<WindowsControlChannel> command_channel,
+        std::unique_ptr<WindowsControlChannel> event_channel
+      ) {
         capabilities_.backend_name = "windows-umdf";
         capabilities_.requires_installed_driver = true;
 
-        auto command_channel = WindowsControlChannel::open(resolve_control_device_path());
-        auto event_channel = WindowsControlChannel::open(resolve_control_device_path());
         if (!command_channel || !event_channel) {
           return;
         }
@@ -660,7 +702,262 @@ namespace lvh::detail {
       std::shared_ptr<WindowsBackendContext> context_;
     };
 
+#if defined(LIBVIRTUALHID_ENABLE_TEST_HOOKS)
+
+    struct FakeWindowsControlChannelState {
+      mutable std::mutex mutex;
+      std::string path = R"(\\.\LibVirtualHid)";
+      std::string response_device_path = R"(\\.\LibVirtualHid#100)";
+      std::uint64_t next_driver_id = 100;
+      OperationStatus create_transport_status = OperationStatus::success();
+      std::uint32_t create_protocol_status = LVH_WINDOWS_STATUS_SUCCESS;
+      OperationStatus submit_status = OperationStatus::success();
+      OperationStatus destroy_status = OperationStatus::success();
+      std::vector<LvhWindowsCreateGamepadRequest> create_requests;
+      std::vector<std::vector<std::uint8_t>> submit_reports;
+      std::vector<std::uint64_t> destroyed_ids;
+      std::vector<LvhWindowsOutputReportEvent> output_events;
+    };
+
+    class FakeWindowsControlChannel final: public WindowsControlChannel {
+    public:
+      explicit FakeWindowsControlChannel(std::shared_ptr<FakeWindowsControlChannelState> state):
+          state_ {std::move(state)} {}
+
+      const std::string &path() const override {
+        return state_->path;
+      }
+
+      OperationStatus create_gamepad(
+        LvhWindowsCreateGamepadRequest request,
+        LvhWindowsCreateGamepadResponse &response
+      ) const override {
+        std::lock_guard lock {state_->mutex};
+        state_->create_requests.push_back(request);
+        if (!state_->create_transport_status.ok()) {
+          return state_->create_transport_status;
+        }
+
+        response.version = LVH_WINDOWS_CONTROL_PROTOCOL_VERSION;
+        response.size = sizeof(response);
+        response.status = state_->create_protocol_status;
+        response.driver_device_id = state_->next_driver_id++;
+        windows::copy_string(response.device_path, state_->response_device_path);
+        return protocol_status(response.status, "Windows driver rejected gamepad creation");
+      }
+
+      OperationStatus destroy_device(std::uint64_t driver_device_id) const override {
+        std::lock_guard lock {state_->mutex};
+        state_->destroyed_ids.push_back(driver_device_id);
+        return state_->destroy_status;
+      }
+
+      OperationStatus submit_input_report(
+        std::uint64_t /*driver_device_id*/,
+        const std::vector<std::uint8_t> &report
+      ) const override {
+        using enum ErrorCode;
+
+        if (report.size() > LVH_WINDOWS_MAX_INPUT_REPORT_SIZE) {
+          return OperationStatus::failure(invalid_argument, "input report exceeds Windows control protocol limit");
+        }
+
+        std::lock_guard lock {state_->mutex};
+        state_->submit_reports.push_back(report);
+        return state_->submit_status;
+      }
+
+      std::optional<LvhWindowsOutputReportEvent> read_output_report(HANDLE stop_event) const override {
+        {
+          std::lock_guard lock {state_->mutex};
+          if (!state_->output_events.empty()) {
+            auto event = state_->output_events.front();
+            state_->output_events.erase(state_->output_events.begin());
+            return event;
+          }
+        }
+
+        static_cast<void>(::WaitForSingleObject(stop_event, 1U));
+        return std::nullopt;
+      }
+
+    private:
+      std::shared_ptr<FakeWindowsControlChannelState> state_;
+    };
+
+    std::unique_ptr<WindowsBackend> make_fake_windows_backend(
+      std::shared_ptr<FakeWindowsControlChannelState> command_state,
+      std::shared_ptr<FakeWindowsControlChannelState> event_state
+    ) {
+      return std::make_unique<WindowsBackend>(
+        std::make_unique<FakeWindowsControlChannel>(std::move(command_state)),
+        std::make_unique<FakeWindowsControlChannel>(std::move(event_state))
+      );
+    }
+
+    template<typename Predicate>
+    bool wait_until(Predicate predicate) {
+      const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds {250};
+      while (std::chrono::steady_clock::now() < deadline) {
+        if (predicate()) {
+          return true;
+        }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds {1});
+      }
+
+      return predicate();
+    }
+
+    void wait_for_output_events_to_drain(const std::shared_ptr<FakeWindowsControlChannelState> &state) {
+      static_cast<void>(wait_until([&state] {
+        std::lock_guard lock {state->mutex};
+        return state->output_events.empty();
+      }));
+    }
+
+    std::uint64_t last_created_driver_id(const std::shared_ptr<FakeWindowsControlChannelState> &state) {
+      std::lock_guard lock {state->mutex};
+      return state->next_driver_id - 1U;
+    }
+
+    void enqueue_output_report(
+      const std::shared_ptr<FakeWindowsControlChannelState> &state,
+      std::uint64_t driver_id,
+      const DeviceProfile &profile
+    ) {
+      LvhWindowsOutputReportEvent event {};
+      event.version = LVH_WINDOWS_CONTROL_PROTOCOL_VERSION;
+      event.size = sizeof(event);
+      event.driver_device_id = driver_id;
+      event.report_size = static_cast<std::uint32_t>(profile.output_report_size);
+      event.report[0] = profile.report_id;
+      event.report[1] = 0x78;
+      event.report[2] = 0x56;
+      event.report[3] = 0x34;
+      event.report[4] = 0x12;
+
+      std::lock_guard lock {state->mutex};
+      state->output_events.push_back(event);
+    }
+
+    OperationStatus create_gamepad_with_protocol_status(std::uint32_t protocol_status_code) {
+      auto command_state = std::make_shared<FakeWindowsControlChannelState>();
+      command_state->create_protocol_status = protocol_status_code;
+      auto backend = make_fake_windows_backend(command_state, std::make_shared<FakeWindowsControlChannelState>());
+
+      CreateGamepadOptions options;
+      options.profile = profiles::xbox_360();
+      return backend->create_gamepad(1, options).status;
+    }
+
+#endif
+
   }  // namespace
+
+#if defined(LIBVIRTUALHID_ENABLE_TEST_HOOKS)
+
+  namespace test {
+
+    WindowsBackendLifecycleResult windows_backend_fake_channel_lifecycle() {
+      WindowsBackendLifecycleResult result;
+      auto command_state = std::make_shared<FakeWindowsControlChannelState>();
+      auto event_state = std::make_shared<FakeWindowsControlChannelState>();
+      auto backend = make_fake_windows_backend(command_state, event_state);
+      result.capabilities = backend->capabilities();
+
+      CreateGamepadOptions options;
+      options.profile = profiles::xbox_360();
+      auto created = backend->create_gamepad(7, options);
+      result.create_status = created.status;
+      if (!created) {
+        return result;
+      }
+
+      result.device_nodes = created.gamepad->device_nodes();
+      std::vector<std::uint8_t> report(options.profile.input_report_size, 0x7A);
+      result.submit_status = created.gamepad->submit(report);
+
+      const auto driver_id = last_created_driver_id(command_state);
+      enqueue_output_report(event_state, driver_id, options.profile);
+      wait_for_output_events_to_drain(event_state);
+
+      std::atomic_bool output_seen {false};
+      created.gamepad->set_output_callback([&result, &output_seen](const GamepadOutput &output) {
+        result.last_output = output;
+        result.saw_output = true;
+        output_seen.store(true);
+      });
+      enqueue_output_report(event_state, driver_id, options.profile);
+      static_cast<void>(wait_until([&output_seen] {
+        return output_seen.load();
+      }));
+
+      result.close_status = created.gamepad->close();
+      enqueue_output_report(event_state, driver_id, options.profile);
+      wait_for_output_events_to_drain(event_state);
+      result.second_close_status = created.gamepad->close();
+      result.submit_after_close_status = created.gamepad->submit(report);
+
+      {
+        std::lock_guard lock {command_state->mutex};
+        result.create_requests = command_state->create_requests.size();
+        result.submit_requests = command_state->submit_reports.size();
+        result.destroy_requests = command_state->destroyed_ids.size();
+      }
+
+      return result;
+    }
+
+    WindowsBackendFailureResult windows_backend_fake_channel_failures() {
+      WindowsBackendFailureResult result;
+      result.invalid_argument_status = create_gamepad_with_protocol_status(LVH_WINDOWS_STATUS_INVALID_ARGUMENT);
+      result.unsupported_profile_status = create_gamepad_with_protocol_status(LVH_WINDOWS_STATUS_UNSUPPORTED_PROFILE);
+      result.device_closed_status = create_gamepad_with_protocol_status(LVH_WINDOWS_STATUS_DEVICE_NOT_FOUND);
+      result.backend_failure_status = create_gamepad_with_protocol_status(LVH_WINDOWS_STATUS_BACKEND_FAILURE);
+
+      {
+        auto command_state = std::make_shared<FakeWindowsControlChannelState>();
+        command_state->create_transport_status =
+          OperationStatus::failure(ErrorCode::backend_failure, "transport failed");
+        auto backend = make_fake_windows_backend(command_state, std::make_shared<FakeWindowsControlChannelState>());
+
+        CreateGamepadOptions options;
+        options.profile = profiles::xbox_360();
+        result.transport_failure_status = backend->create_gamepad(2, options).status;
+      }
+
+      {
+        WindowsBackend backend {nullptr, nullptr};
+
+        CreateGamepadOptions options;
+        options.profile = profiles::xbox_360();
+        result.unavailable_status = backend.create_gamepad(3, options).status;
+      }
+
+      {
+        auto command_state = std::make_shared<FakeWindowsControlChannelState>();
+        command_state->path.clear();
+        command_state->response_device_path.clear();
+        auto backend = make_fake_windows_backend(command_state, std::make_shared<FakeWindowsControlChannelState>());
+
+        CreateGamepadOptions options;
+        options.profile = profiles::xbox_360();
+        auto created = backend->create_gamepad(4, options);
+        result.empty_nodes_create_status = created.status;
+        if (created) {
+          result.empty_device_nodes = created.gamepad->device_nodes();
+          result.oversized_submit_status =
+            created.gamepad->submit(std::vector<std::uint8_t>(LVH_WINDOWS_MAX_INPUT_REPORT_SIZE + 1U, 0x7B));
+        }
+      }
+
+      return result;
+    }
+
+  }  // namespace test
+
+#endif
 
   std::unique_ptr<Backend> create_platform_backend() {
     return std::make_unique<WindowsBackend>();

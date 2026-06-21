@@ -36,6 +36,9 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     if(LIBVIRTUALHID_ENABLE_XTEST)
         find_package(X11 QUIET)
     endif()
+elseif(WIN32)
+    list(APPEND LIBVIRTUALHID_TEST_SOURCES
+         "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_windows_backend.cpp")
 endif()
 
 add_executable(${TEST_BINARY}

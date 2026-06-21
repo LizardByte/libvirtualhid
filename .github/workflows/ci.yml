@@ -243,7 +243,9 @@ jobs:
           BUILD_VERSION: ${{ needs.setup_release.outputs.release_version }}
           COMMIT: ${{ needs.setup_release.outputs.release_commit }}
         run: |
-          $certificatePath = Join-Path $env:GITHUB_WORKSPACE "cmake-build-driver-test\certificates\libvirtualhid-ci-test.cer"
+          $certificatePath = Join-Path `
+            $env:GITHUB_WORKSPACE `
+            "cmake-build-driver-test\certificates\libvirtualhid-ci-test.cer"
           cmake `
             -DBUILD_DOCS=OFF `
             -DBUILD_EXAMPLES=OFF `
