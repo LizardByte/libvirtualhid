@@ -234,6 +234,64 @@ jobs:
         if: matrix.kind == 'msvc'
         run: cmake --build cmake-build-ci --config Debug --parallel 2
 
+      - name: Configure Windows test driver package
+        if: >-
+          matrix.kind == 'msvc' &&
+          github.event_name == 'pull_request'
+        env:
+          BRANCH: ${{ github.head_ref || github.ref_name }}
+          BUILD_VERSION: ${{ needs.setup_release.outputs.release_version }}
+          COMMIT: ${{ needs.setup_release.outputs.release_commit }}
+        run: |
+          $certificatePath = Join-Path $env:GITHUB_WORKSPACE "cmake-build-driver-test\certificates\libvirtualhid-ci-test.cer"
+          cmake `
+            -DBUILD_DOCS=OFF `
+            -DBUILD_EXAMPLES=OFF `
+            -DBUILD_TESTS=OFF `
+            -DLIBVIRTUALHID_BUILD_WINDOWS_DRIVER=ON `
+            -DLIBVIRTUALHID_ENABLE_PACKAGING=OFF `
+            "-DLIBVIRTUALHID_DRIVER_TEST_CERTIFICATE=$certificatePath" `
+            -A x64 `
+            -B cmake-build-driver-test `
+            -G "Visual Studio 17 2022" `
+            -S .
+
+      - name: Build Windows test driver package
+        if: >-
+          matrix.kind == 'msvc' &&
+          github.event_name == 'pull_request'
+        run: cmake --build cmake-build-driver-test --config Release --target libvirtualhid_windows_catalog --parallel 2
+
+      - name: Sign Windows test driver package
+        if: >-
+          matrix.kind == 'msvc' &&
+          github.event_name == 'pull_request'
+        run: |
+          $packagePath = Join-Path `
+            $env:GITHUB_WORKSPACE `
+            "cmake-build-driver-test\src\platform\windows\driver\package\Release"
+          $certificatePath = Join-Path `
+            $env:GITHUB_WORKSPACE `
+            "cmake-build-driver-test\certificates\libvirtualhid-ci-test.cer"
+          .\scripts\windows\sign-driver-package.ps1 `
+            -PackagePath $packagePath `
+            -CertificatePath $certificatePath
+
+      - name: Install Windows test driver package
+        if: >-
+          matrix.kind == 'msvc' &&
+          github.event_name == 'pull_request'
+        run: |
+          $packagePath = Join-Path `
+            $env:GITHUB_WORKSPACE `
+            "cmake-build-driver-test\src\platform\windows\driver\package\Release"
+          $certificatePath = Join-Path `
+            $env:GITHUB_WORKSPACE `
+            "cmake-build-driver-test\certificates\libvirtualhid-ci-test.cer"
+          .\scripts\windows\install-driver.ps1 `
+            -InfPath (Join-Path $packagePath "libvirtualhid.inf") `
+            -CertificatePath $certificatePath
+
       - name: Prepare report directory
         run: cmake -E make_directory cmake-build-ci/reports
 
@@ -328,6 +386,17 @@ jobs:
       - name: Run gamepad adapter example MSVC
         if: matrix.kind == 'msvc'
         run: .\cmake-build-ci\examples\Debug\gamepad_adapter.exe
+
+      - name: Uninstall Windows test driver package
+        if: >-
+          always() &&
+          matrix.kind == 'msvc' &&
+          github.event_name == 'pull_request'
+        run: |
+          .\scripts\windows\uninstall-driver.ps1 `
+            -OriginalName "libvirtualhid.inf" `
+            -RemoveCertificateSubject "CN=libvirtualhid CI Test Driver Signing" `
+            -Force
 
       - name: Install
         if: matrix.kind != 'msvc'

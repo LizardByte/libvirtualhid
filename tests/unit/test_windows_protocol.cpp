@@ -9,8 +9,8 @@
 
 // standard includes
 #include <cstdint>
-#include <cstring>
 #include <string>
+#include <string_view>
 #include <vector>
 
 // lib includes
@@ -58,6 +58,7 @@ TEST(WindowsProtocolTest, MapsBusTypesAndGamepadKinds) {
   EXPECT_EQ(lvh::detail::windows::protocol_bus_type(lvh::BusType::unknown), LVH_WINDOWS_BUS_UNKNOWN);
   EXPECT_EQ(lvh::detail::windows::protocol_bus_type(lvh::BusType::usb), LVH_WINDOWS_BUS_USB);
   EXPECT_EQ(lvh::detail::windows::protocol_bus_type(lvh::BusType::bluetooth), LVH_WINDOWS_BUS_BLUETOOTH);
+  EXPECT_EQ(lvh::detail::windows::protocol_bus_type(static_cast<lvh::BusType>(255)), LVH_WINDOWS_BUS_UNKNOWN);
 
   EXPECT_EQ(
     lvh::detail::windows::protocol_gamepad_kind(lvh::GamepadProfileKind::generic),
@@ -83,6 +84,10 @@ TEST(WindowsProtocolTest, MapsBusTypesAndGamepadKinds) {
     lvh::detail::windows::protocol_gamepad_kind(lvh::GamepadProfileKind::switch_pro),
     LVH_WINDOWS_GAMEPAD_SWITCH_PRO
   );
+  EXPECT_EQ(
+    lvh::detail::windows::protocol_gamepad_kind(static_cast<lvh::GamepadProfileKind>(255)),
+    LVH_WINDOWS_GAMEPAD_GENERIC
+  );
 }
 
 TEST(WindowsProtocolTest, BuildsCapabilityFlags) {
@@ -106,19 +111,36 @@ TEST(WindowsProtocolTest, BuildsCapabilityFlags) {
 }
 
 TEST(WindowsProtocolTest, CopyHelpersTruncateAndZeroFill) {
-  char text[5] {'x', 'x', 'x', 'x', 'x'};
-  EXPECT_EQ(lvh::detail::windows::copy_string(text, "abcdef"), 4U);
-  EXPECT_EQ(std::memcmp(text, "abcd", 4), 0);
-  EXPECT_EQ(text[4], '\0');
+  LvhWindowsCreateGamepadRequest create_request {};
+  create_request.name[0] = 'x';
+  create_request.name[1] = 'x';
+  create_request.name[2] = 'x';
+  create_request.name[3] = 'x';
+  create_request.name[4] = 'x';
+  const std::string oversized_name(LVH_WINDOWS_MAX_DEVICE_NAME_SIZE + 5U, 'a');
+  EXPECT_EQ(
+    lvh::detail::windows::copy_string(create_request.name, oversized_name),
+    LVH_WINDOWS_MAX_DEVICE_NAME_SIZE - 1U
+  );
+  EXPECT_EQ(
+    std::string_view {create_request.name},
+    std::string_view {oversized_name}.substr(0U, LVH_WINDOWS_MAX_DEVICE_NAME_SIZE - 1U)
+  );
+  EXPECT_EQ(create_request.name[LVH_WINDOWS_MAX_DEVICE_NAME_SIZE - 1U], '\0');
 
-  std::uint8_t bytes[5] {0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+  LvhWindowsSubmitInputReportRequest submit_request {};
+  submit_request.report[0] = 0xFF;
+  submit_request.report[1] = 0xFF;
+  submit_request.report[2] = 0xFF;
+  submit_request.report[3] = 0xFF;
+  submit_request.report[4] = 0xFF;
   const std::vector<std::uint8_t> source {1, 2};
-  EXPECT_EQ(lvh::detail::windows::copy_bytes(bytes, source), 2U);
-  EXPECT_EQ(bytes[0], 1U);
-  EXPECT_EQ(bytes[1], 2U);
-  EXPECT_EQ(bytes[2], 0U);
-  EXPECT_EQ(bytes[3], 0U);
-  EXPECT_EQ(bytes[4], 0U);
+  EXPECT_EQ(lvh::detail::windows::copy_bytes(submit_request.report, source), 2U);
+  EXPECT_EQ(submit_request.report[0], 1U);
+  EXPECT_EQ(submit_request.report[1], 2U);
+  EXPECT_EQ(submit_request.report[2], 0U);
+  EXPECT_EQ(submit_request.report[3], 0U);
+  EXPECT_EQ(submit_request.report[4], 0U);
 }
 
 TEST(WindowsProtocolTest, PacksGamepadCreateRequest) {
