@@ -437,7 +437,13 @@ jobs:
       - name: Package Windows driver installer
         shell: pwsh
         run: |
-          cpack -G WIX --config .\cmake-build-driver\CPackConfig.cmake
+          Push-Location .\cmake-build-driver
+          cpack -G WIX
+          $packageExitCode = $LASTEXITCODE
+          Pop-Location
+          if ($packageExitCode -ne 0) {
+            exit $packageExitCode
+          }
           New-Item -ItemType Directory -Force -Path artifacts | Out-Null
           Copy-Item `
             -LiteralPath .\cmake-build-driver\cpack_artifacts\libvirtualhid.msi `
