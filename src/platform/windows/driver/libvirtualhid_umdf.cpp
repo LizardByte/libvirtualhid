@@ -29,13 +29,13 @@
 // standard includes
 #include <algorithm>
 #include <atomic>
+#include <charconv>
 #include <cstdint>
 #include <cstring>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <string>
 #include <vector>
 
 // local includes
@@ -295,10 +295,23 @@ namespace {
   }
 
   void set_device_path(std::uint64_t driver_device_id, char (&device_path)[LVH_WINDOWS_MAX_DEVICE_PATH_SIZE]) {
-    const auto path = std::string {LVH_WINDOWS_CONTROL_DEVICE_PATH} + "#" + std::to_string(driver_device_id);
-    const auto copied_size = std::min(path.size(), sizeof(device_path) - 1U);
-    std::memcpy(device_path, path.data(), copied_size);
-    device_path[copied_size] = '\0';
+    constexpr auto path_prefix_size = sizeof(LVH_WINDOWS_CONTROL_DEVICE_PATH) - 1U;
+    constexpr auto separator_size = 1U;
+    static_assert(path_prefix_size + separator_size < LVH_WINDOWS_MAX_DEVICE_PATH_SIZE);
+
+    std::memcpy(device_path, LVH_WINDOWS_CONTROL_DEVICE_PATH, path_prefix_size);
+    device_path[path_prefix_size] = '#';
+
+    const auto output = std::to_chars(
+      device_path + path_prefix_size + separator_size,
+      device_path + sizeof(device_path) - 1U,
+      driver_device_id
+    );
+    if (output.ec == std::errc {}) {
+      *output.ptr = '\0';
+    } else {
+      device_path[path_prefix_size + separator_size] = '\0';
+    }
   }
 
   void handle_create_gamepad_request(WDFREQUEST request) {
