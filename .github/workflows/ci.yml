@@ -37,6 +37,7 @@ jobs:
         id: setup_release
         uses: LizardByte/actions/actions/release_setup@200eaeb897a2b065a65cb6f16b41077432007490  # v2026.605.34721
         with:
+          dotnet: true
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
   build:

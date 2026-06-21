@@ -35,7 +35,6 @@
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <sstream>
 #include <string>
 #include <vector>
 
@@ -296,10 +295,7 @@ namespace {
   }
 
   void set_device_path(std::uint64_t driver_device_id, char (&device_path)[LVH_WINDOWS_MAX_DEVICE_PATH_SIZE]) {
-    std::ostringstream stream;
-    stream << LVH_WINDOWS_CONTROL_DEVICE_PATH << '#' << driver_device_id;
-
-    const auto path = stream.str();
+    const auto path = std::string {LVH_WINDOWS_CONTROL_DEVICE_PATH} + "#" + std::to_string(driver_device_id);
     const auto copied_size = std::min(path.size(), sizeof(device_path) - 1U);
     std::memcpy(device_path, path.data(), copied_size);
     device_path[copied_size] = '\0';
