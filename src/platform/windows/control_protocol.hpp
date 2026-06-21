@@ -50,11 +50,13 @@ namespace lvh::detail::windows {
 
   inline std::uint32_t protocol_bus_type(BusType bus_type) {
     switch (bus_type) {
-      case BusType::usb:
+      using enum BusType;
+
+      case usb:
         return LVH_WINDOWS_BUS_USB;
-      case BusType::bluetooth:
+      case bluetooth:
         return LVH_WINDOWS_BUS_BLUETOOTH;
-      case BusType::unknown:
+      case unknown:
         return LVH_WINDOWS_BUS_UNKNOWN;
     }
 
@@ -63,17 +65,19 @@ namespace lvh::detail::windows {
 
   inline std::uint32_t protocol_gamepad_kind(GamepadProfileKind kind) {
     switch (kind) {
-      case GamepadProfileKind::generic:
+      using enum GamepadProfileKind;
+
+      case generic:
         return LVH_WINDOWS_GAMEPAD_GENERIC;
-      case GamepadProfileKind::xbox_360:
+      case xbox_360:
         return LVH_WINDOWS_GAMEPAD_XBOX_360;
-      case GamepadProfileKind::xbox_one:
+      case xbox_one:
         return LVH_WINDOWS_GAMEPAD_XBOX_ONE;
-      case GamepadProfileKind::xbox_series:
+      case xbox_series:
         return LVH_WINDOWS_GAMEPAD_XBOX_SERIES;
-      case GamepadProfileKind::dualsense:
+      case dualsense:
         return LVH_WINDOWS_GAMEPAD_DUALSENSE;
-      case GamepadProfileKind::switch_pro:
+      case switch_pro:
         return LVH_WINDOWS_GAMEPAD_SWITCH_PRO;
     }
 
@@ -82,7 +86,7 @@ namespace lvh::detail::windows {
 
   template<std::size_t Size>
   std::uint32_t copy_string(char (&target)[Size], std::string_view source) {
-    std::fill(std::begin(target), std::end(target), '\0');
+    std::ranges::fill(target, '\0');
 
     const auto copied = std::min(source.size(), Size - 1U);
     if (copied > 0U) {
@@ -94,7 +98,7 @@ namespace lvh::detail::windows {
 
   template<std::size_t Size>
   std::uint32_t copy_bytes(std::uint8_t (&target)[Size], const std::vector<std::uint8_t> &source) {
-    std::fill(std::begin(target), std::end(target), std::uint8_t {});
+    std::ranges::fill(target, std::uint8_t {});
 
     const auto copied = std::min(source.size(), Size);
     if (copied > 0U) {
@@ -115,20 +119,21 @@ namespace lvh::detail::windows {
     request.bus_type = protocol_bus_type(options.profile.bus_type);
     request.gamepad_kind = protocol_gamepad_kind(options.profile.gamepad_kind);
     request.flags = gamepad_flags(options.profile.capabilities);
-    request.vendor_id = options.profile.vendor_id;
-    request.product_id = options.profile.product_id;
-    request.device_version = options.profile.version;
-    request.report_id = options.profile.report_id;
-    request.input_report_size = static_cast<std::uint32_t>(
+    request.hardware_ids.vendor_id = options.profile.vendor_id;
+    request.hardware_ids.product_id = options.profile.product_id;
+    request.hardware_ids.device_version = options.profile.version;
+    request.hardware_ids.report_id = options.profile.report_id;
+    request.report_sizes.input_report_size = static_cast<std::uint32_t>(
       std::min(options.profile.input_report_size, static_cast<std::size_t>(LVH_WINDOWS_MAX_INPUT_REPORT_SIZE))
     );
-    request.output_report_size = static_cast<std::uint32_t>(
+    request.report_sizes.output_report_size = static_cast<std::uint32_t>(
       std::min(options.profile.output_report_size, static_cast<std::size_t>(LVH_WINDOWS_MAX_OUTPUT_REPORT_SIZE))
     );
-    request.report_descriptor_size = copy_bytes(request.report_descriptor, options.profile.report_descriptor);
-    request.name_size = copy_string(request.name, options.profile.name);
-    request.manufacturer_size = copy_string(request.manufacturer, options.profile.manufacturer);
-    request.stable_id_size = copy_string(request.stable_id, options.metadata.stable_id);
+    request.report_sizes.report_descriptor_size =
+      copy_bytes(request.report_descriptor, options.profile.report_descriptor);
+    request.report_sizes.name_size = copy_string(request.name, options.profile.name);
+    request.report_sizes.manufacturer_size = copy_string(request.manufacturer, options.profile.manufacturer);
+    request.report_sizes.stable_id_size = copy_string(request.stable_id, options.metadata.stable_id);
 
     return request;
   }

@@ -12,7 +12,7 @@
 
 // platform includes
 #define WIN32_NO_STATUS
-#include <windows.h>
+#include <Windows.h>
 #undef WIN32_NO_STATUS
 
 #if defined(_MSC_VER)
@@ -28,10 +28,11 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
-#include <cstdio>
 #include <cstring>
 #include <map>
 #include <mutex>
+#include <sstream>
+#include <string>
 #include <vector>
 
 // local includes
@@ -45,12 +46,18 @@ namespace {
     LvhWindowsCreateGamepadRequest request {};
   };
 
-  std::atomic<std::uint64_t> next_driver_device_id {1};
-  std::mutex devices_mutex;
-  std::map<std::uint64_t, DeviceRecord> devices;
+  struct DriverState {
+    std::atomic<std::uint64_t> next_driver_device_id {1};
+    std::mutex devices_mutex;
+    std::map<std::uint64_t, DeviceRecord> devices;
+    std::mutex output_requests_mutex;
+    std::vector<WDFREQUEST> pending_output_requests;
+  };
 
-  std::mutex output_requests_mutex;
-  std::vector<WDFREQUEST> pending_output_requests;
+  DriverState &driver_state() {
+    static DriverState state;
+    return state;
+  }
 
   bool valid_header(std::uint32_t version, std::uint32_t size, std::uint32_t expected_size) {
     return version == LVH_WINDOWS_CONTROL_PROTOCOL_VERSION && size == expected_size;
@@ -61,14 +68,57 @@ namespace {
   }
 
   bool remove_pending_output_request(WDFREQUEST request) {
-    std::lock_guard lock {output_requests_mutex};
-    const auto iter = std::find(pending_output_requests.begin(), pending_output_requests.end(), request);
-    if (iter == pending_output_requests.end()) {
+    auto &state = driver_state();
+    std::lock_guard lock {state.output_requests_mutex};
+    const auto iter = std::ranges::find(state.pending_output_requests, request);
+    if (iter == state.pending_output_requests.end()) {
       return false;
     }
 
-    pending_output_requests.erase(iter);
+    state.pending_output_requests.erase(iter);
     return true;
+  }
+
+  template<typename ProtocolBuffer>
+  NTSTATUS retrieve_input_buffer(WDFREQUEST request, ProtocolBuffer *&buffer) {
+    PVOID raw_buffer = nullptr;
+    const auto status = WdfRequestRetrieveInputBuffer(request, sizeof(ProtocolBuffer), &raw_buffer, nullptr);
+    buffer = static_cast<ProtocolBuffer *>(raw_buffer);
+    return status;
+  }
+
+  template<typename ProtocolBuffer>
+  NTSTATUS retrieve_output_buffer(WDFREQUEST request, ProtocolBuffer *&buffer) {
+    PVOID raw_buffer = nullptr;
+    const auto status = WdfRequestRetrieveOutputBuffer(request, sizeof(ProtocolBuffer), &raw_buffer, nullptr);
+    buffer = static_cast<ProtocolBuffer *>(raw_buffer);
+    return status;
+  }
+
+  bool valid_create_request(const LvhWindowsCreateGamepadRequest &request) {
+    const auto descriptor_size = request.report_sizes.report_descriptor_size;
+    const auto input_report_size = request.report_sizes.input_report_size;
+    const auto output_report_size = request.report_sizes.output_report_size;
+
+    return valid_header(request.version, request.size, sizeof(request)) && descriptor_size > 0U &&
+           descriptor_size <= LVH_WINDOWS_MAX_REPORT_DESCRIPTOR_SIZE && input_report_size > 0U &&
+           input_report_size <= LVH_WINDOWS_MAX_INPUT_REPORT_SIZE &&
+           output_report_size <= LVH_WINDOWS_MAX_OUTPUT_REPORT_SIZE;
+  }
+
+  bool valid_submit_input_report_request(const LvhWindowsSubmitInputReportRequest &request) {
+    return valid_header(request.version, request.size, sizeof(request)) && request.report_size > 0U &&
+           request.report_size <= LVH_WINDOWS_MAX_INPUT_REPORT_SIZE;
+  }
+
+  void set_device_path(std::uint64_t driver_device_id, char (&device_path)[LVH_WINDOWS_MAX_DEVICE_PATH_SIZE]) {
+    std::ostringstream stream;
+    stream << LVH_WINDOWS_CONTROL_DEVICE_PATH << '#' << driver_device_id;
+
+    const auto path = stream.str();
+    const auto copied_size = std::min(path.size(), sizeof(device_path) - 1U);
+    std::memcpy(device_path, path.data(), copied_size);
+    device_path[copied_size] = '\0';
   }
 
 }  // namespace
@@ -131,14 +181,14 @@ void LvhEvtIoDeviceControl(
     case LVH_WINDOWS_IOCTL_CREATE_GAMEPAD:
       {
         auto *create_request = static_cast<LvhWindowsCreateGamepadRequest *>(nullptr);
-        auto status = WdfRequestRetrieveInputBuffer(request, sizeof(LvhWindowsCreateGamepadRequest), reinterpret_cast<PVOID *>(&create_request), nullptr);
+        auto status = retrieve_input_buffer(request, create_request);
         if (!NT_SUCCESS(status)) {
           complete_request(request, status);
           return;
         }
 
         auto *create_response = static_cast<LvhWindowsCreateGamepadResponse *>(nullptr);
-        status = WdfRequestRetrieveOutputBuffer(request, sizeof(LvhWindowsCreateGamepadResponse), reinterpret_cast<PVOID *>(&create_response), nullptr);
+        status = retrieve_output_buffer(request, create_response);
         if (!NT_SUCCESS(status)) {
           complete_request(request, status);
           return;
@@ -148,21 +198,22 @@ void LvhEvtIoDeviceControl(
         create_response->version = LVH_WINDOWS_CONTROL_PROTOCOL_VERSION;
         create_response->size = sizeof(*create_response);
 
-        if (!valid_header(create_request->version, create_request->size, sizeof(*create_request)) || create_request->report_descriptor_size == 0U || create_request->report_descriptor_size > LVH_WINDOWS_MAX_REPORT_DESCRIPTOR_SIZE || create_request->input_report_size == 0U || create_request->input_report_size > LVH_WINDOWS_MAX_INPUT_REPORT_SIZE || create_request->output_report_size > LVH_WINDOWS_MAX_OUTPUT_REPORT_SIZE) {
+        if (!valid_create_request(*create_request)) {
           create_response->status = LVH_WINDOWS_STATUS_INVALID_ARGUMENT;
           complete_request(request, STATUS_SUCCESS, sizeof(*create_response));
           return;
         }
 
-        const auto driver_device_id = next_driver_device_id.fetch_add(1);
+        auto &state = driver_state();
+        const auto driver_device_id = state.next_driver_device_id.fetch_add(1);
         {
-          std::lock_guard lock {devices_mutex};
-          devices.emplace(driver_device_id, DeviceRecord {.request = *create_request});
+          std::lock_guard lock {state.devices_mutex};
+          state.devices.try_emplace(driver_device_id, DeviceRecord {.request = *create_request});
         }
 
         create_response->status = LVH_WINDOWS_STATUS_SUCCESS;
         create_response->driver_device_id = driver_device_id;
-        std::snprintf(create_response->device_path, sizeof(create_response->device_path), "%s#%llu", LVH_WINDOWS_CONTROL_DEVICE_PATH, static_cast<unsigned long long>(driver_device_id));
+        set_device_path(driver_device_id, create_response->device_path);
         complete_request(request, STATUS_SUCCESS, sizeof(*create_response));
         return;
       }
@@ -170,7 +221,7 @@ void LvhEvtIoDeviceControl(
     case LVH_WINDOWS_IOCTL_DESTROY_DEVICE:
       {
         auto *destroy_request = static_cast<LvhWindowsDestroyDeviceRequest *>(nullptr);
-        const auto status = WdfRequestRetrieveInputBuffer(request, sizeof(LvhWindowsDestroyDeviceRequest), reinterpret_cast<PVOID *>(&destroy_request), nullptr);
+        const auto status = retrieve_input_buffer(request, destroy_request);
         if (!NT_SUCCESS(status)) {
           complete_request(request, status);
           return;
@@ -181,8 +232,9 @@ void LvhEvtIoDeviceControl(
           return;
         }
 
-        std::lock_guard lock {devices_mutex};
-        devices.erase(destroy_request->driver_device_id);
+        auto &state = driver_state();
+        std::lock_guard lock {state.devices_mutex};
+        state.devices.erase(destroy_request->driver_device_id);
         complete_request(request, STATUS_SUCCESS);
         return;
       }
@@ -190,19 +242,20 @@ void LvhEvtIoDeviceControl(
     case LVH_WINDOWS_IOCTL_SUBMIT_INPUT_REPORT:
       {
         auto *submit_request = static_cast<LvhWindowsSubmitInputReportRequest *>(nullptr);
-        const auto status = WdfRequestRetrieveInputBuffer(request, sizeof(LvhWindowsSubmitInputReportRequest), reinterpret_cast<PVOID *>(&submit_request), nullptr);
+        const auto status = retrieve_input_buffer(request, submit_request);
         if (!NT_SUCCESS(status)) {
           complete_request(request, status);
           return;
         }
 
-        if (!valid_header(submit_request->version, submit_request->size, sizeof(*submit_request)) || submit_request->report_size == 0U || submit_request->report_size > LVH_WINDOWS_MAX_INPUT_REPORT_SIZE) {
+        if (!valid_submit_input_report_request(*submit_request)) {
           complete_request(request, STATUS_INVALID_PARAMETER);
           return;
         }
 
-        std::lock_guard lock {devices_mutex};
-        if (devices.find(submit_request->driver_device_id) == devices.end()) {
+        auto &state = driver_state();
+        std::lock_guard lock {state.devices_mutex};
+        if (!state.devices.contains(submit_request->driver_device_id)) {
           complete_request(request, STATUS_OBJECT_NAME_NOT_FOUND);
           return;
         }
@@ -213,14 +266,15 @@ void LvhEvtIoDeviceControl(
 
     case LVH_WINDOWS_IOCTL_READ_OUTPUT_REPORT:
       {
-        std::lock_guard lock {output_requests_mutex};
+        auto &state = driver_state();
+        std::lock_guard lock {state.output_requests_mutex};
         const auto status = WdfRequestMarkCancelableEx(request, LvhEvtOutputReadCanceled);
         if (!NT_SUCCESS(status)) {
           complete_request(request, status);
           return;
         }
 
-        pending_output_requests.push_back(request);
+        state.pending_output_requests.push_back(request);
         return;
       }
 
