@@ -237,6 +237,54 @@ of both, then document the entitlement, signing, and distribution requirements.
 The public API should already be shaped so the macOS backend can plug in without
 breaking Windows or Linux consumers.
 
+## CMake Consumption
+
+All consumption modes expose the same CMake target:
+`libvirtualhid::libvirtualhid`.
+
+For an installed package, install the project into a prefix and point consumer
+configures at that prefix:
+
+```bash
+cmake --install cmake-build-release --prefix /opt/libvirtualhid
+cmake -S your-app -B cmake-build-your-app -DCMAKE_PREFIX_PATH=/opt/libvirtualhid
+```
+
+Then link the exported config package from the consuming project:
+
+```cmake
+find_package(libvirtualhid CONFIG REQUIRED)
+target_link_libraries(your_app PRIVATE libvirtualhid::libvirtualhid)
+```
+
+For a vendored checkout, add the project directly and link the same target:
+
+```cmake
+add_subdirectory(third-party/libvirtualhid)
+target_link_libraries(your_app PRIVATE libvirtualhid::libvirtualhid)
+```
+
+For `FetchContent`, pin a tag or commit and make the project available:
+
+```cmake
+include(FetchContent)
+
+FetchContent_Declare(
+  libvirtualhid
+  GIT_REPOSITORY https://github.com/LizardByte/libvirtualhid.git
+  GIT_TAG <tag-or-commit>
+)
+FetchContent_MakeAvailable(libvirtualhid)
+
+target_link_libraries(your_app PRIVATE libvirtualhid::libvirtualhid)
+```
+
+Tests, examples, docs, and the Windows driver package are top-level or opt-in
+builds, so normal vendored and `FetchContent` consumers only get the library
+target unless they explicitly enable additional options. Linux consumers still
+need the development packages used by the backend, such as `libevdev` and
+`pkg-config`.
+
 ## Proposed Public API Shape
 
 The exact names may change during implementation, but the API should center on
@@ -454,15 +502,15 @@ third-party/googletest/       GoogleTest submodule
 
 ### Phase 4: API Parity and Packaging
 
-- [ ] Keep one API surface across Windows and Linux, with capability queries for
+- [x] Keep one API surface across Windows and Linux, with capability queries for
   platform limitations instead of platform-specific methods.
-- [ ] Add installed CMake package support and `FetchContent` documentation.
+- [x] Add installed CMake package support and `FetchContent` documentation.
 - [x] Add CI for formatting, static analysis, CMake configure/build, unit tests, and
   platform smoke tests.
-- [ ] Defer C, Python, and Rust bindings until after the platform API is stable,
+- [x] Defer C, Python, and Rust bindings until after the platform API is stable,
   likely after macOS support lands.
-- [ ] Decide whether official Windows releases should ship signed driver packages
-  in addition to source. (Yes, we should ship signed driver packages/installers from this repo's releases)
+- [x] Decide whether official Windows releases should ship signed driver packages
+  in addition to source.
 
 ### Phase 5: macOS Research and Backend
 
