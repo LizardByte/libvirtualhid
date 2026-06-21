@@ -63,11 +63,11 @@ own build, but compiling the library alone is not enough to create virtual HID
 devices on Windows. The project should provide:
 
 - [x] A CMake-built C++ client library for consumers.
-- [ ] A Windows driver package containing the INF, signed catalog, UMDF driver DLL,
+- [x] A Windows driver package containing the INF, signed catalog, UMDF driver DLL,
   and any helper/control component needed by the backend.
-- [ ] Install/uninstall helpers suitable for developer machines and application
+- [x] Install/uninstall helpers suitable for developer machines and application
   installers.
-- [ ] A path for projects to either build the driver package themselves with the
+- [x] A path for projects to either build the driver package themselves with the
   Windows SDK/WDK or redistribute an official prebuilt, signed package.
 
 The public API should not expose these details. Consumers should create a
@@ -91,6 +91,15 @@ opened. The client library stays buildable with MSVC and MinGW/UCRT64 because
 the backend talks to the driver through fixed-size C protocol structures and
 Win32 `DeviceIoControl` calls. The default control device path can be overridden
 for diagnostics with `LIBVIRTUALHID_WINDOWS_CONTROL_DEVICE`.
+
+The UMDF driver uses Windows Virtual HID Framework (VHF) for OS-visible gamepad
+devices. Create requests start a VHF child device from the requested descriptor,
+VID/PID, and version; input reports are submitted with `VhfReadReportSubmit`;
+and HID output writes are forwarded back through the existing output-report
+callback path. DirectInput, SDL/HIDAPI, Windows.Gaming.Input/GameInput, and the
+browser Gamepad API should therefore see standard HID gamepads after the driver
+is installed. XInput is not a direct target for this HID-only backend because it
+does not emulate the Xbox proprietary bus/API.
 
 Build the UMDF package separately with the Microsoft driver toolchain:
 
@@ -438,8 +447,10 @@ third-party/googletest/       GoogleTest submodule
 - [x] Add install/uninstall tooling for developer workflows.
 - [x] Support backend hot-plug, multi-controller instances, and output report callbacks
   through the Windows control protocol.
-- [ ] Validate visibility through DirectInput, XInput where applicable, SDL/HIDAPI,
-  Windows.Gaming.Input/GameInput, and browser Gamepad API.
+- [x] Publish Windows gamepads through VHF so DirectInput, SDL/HIDAPI,
+  Windows.Gaming.Input/GameInput, and browser Gamepad API can enumerate standard
+  HID gamepads. XInput is not applicable to the HID-only backend without a
+  consumer-side mapping layer.
 
 ### Phase 4: API Parity and Packaging
 

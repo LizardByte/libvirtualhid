@@ -29,8 +29,14 @@ libvirtualhid_umdf.dll=1
 [DeviceInstall.NT]
 CopyFiles=UMDriverCopy
 
+[DeviceInstall.NT.HW]
+AddReg=DeviceInstall_AddReg
+
 [UMDriverCopy]
 libvirtualhid_umdf.dll
+
+[DeviceInstall_AddReg]
+HKR,,"LowerFilters",0x00010000,"vhf"
 
 [DeviceInstall.NT.Services]
 AddService=WUDFRd,0x000001fa,WUDFRD_ServiceInstall

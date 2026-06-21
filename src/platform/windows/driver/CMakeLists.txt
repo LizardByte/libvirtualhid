@@ -48,6 +48,7 @@ endforeach()
 list(REMOVE_DUPLICATES _lvh_wdk_roots)
 
 set(_lvh_wdf_include_candidates)
+set(_lvh_wdk_shared_include_candidates)
 set(_lvh_wdf_library_candidates)
 set(_lvh_wdk_um_library_candidates)
 set(_lvh_wdk_tool_candidates)
@@ -59,6 +60,9 @@ foreach(lvh_wdk_root_cmake IN LISTS _lvh_wdk_roots)
         file(GLOB _lvh_wdf_library_glob
              LIST_DIRECTORIES true
              "${lvh_wdk_root_cmake}/Lib/wdf/umdf/${LIBVIRTUALHID_WDK_LIBRARY_ARCH}/2.*")
+        file(GLOB _lvh_wdk_shared_include_glob
+             LIST_DIRECTORIES true
+             "${lvh_wdk_root_cmake}/Include/*/shared")
         file(GLOB _lvh_wdk_um_library_glob
              LIST_DIRECTORIES true
              "${lvh_wdk_root_cmake}/Lib/*/um/${LIBVIRTUALHID_WDK_LIBRARY_ARCH}")
@@ -69,6 +73,7 @@ foreach(lvh_wdk_root_cmake IN LISTS _lvh_wdk_roots)
              "${lvh_wdk_root_cmake}/bin/*/x86"
              "${lvh_wdk_root_cmake}/bin/x86")
         list(APPEND _lvh_wdf_include_candidates ${_lvh_wdf_include_glob})
+        list(APPEND _lvh_wdk_shared_include_candidates ${_lvh_wdk_shared_include_glob})
         list(APPEND _lvh_wdf_library_candidates ${_lvh_wdf_library_glob})
         list(APPEND _lvh_wdk_um_library_candidates ${_lvh_wdk_um_library_glob})
         list(APPEND _lvh_wdk_tool_candidates ${_lvh_wdk_tool_glob})
@@ -77,6 +82,9 @@ endforeach()
 
 if(_lvh_wdf_include_candidates)
     list(SORT _lvh_wdf_include_candidates COMPARE NATURAL ORDER DESCENDING)
+endif()
+if(_lvh_wdk_shared_include_candidates)
+    list(SORT _lvh_wdk_shared_include_candidates COMPARE NATURAL ORDER DESCENDING)
 endif()
 if(_lvh_wdf_library_candidates)
     list(SORT _lvh_wdf_library_candidates COMPARE NATURAL ORDER DESCENDING)
@@ -94,9 +102,19 @@ find_path(LIBVIRTUALHID_WDF_INCLUDE_DIR
           PATHS ${_lvh_wdf_include_candidates}
           NO_DEFAULT_PATH)
 
+find_path(LIBVIRTUALHID_VHF_INCLUDE_DIR
+          NAMES vhf.h
+          PATHS ${_lvh_wdk_shared_include_candidates}
+          NO_DEFAULT_PATH)
+
 find_library(LIBVIRTUALHID_WDF_DRIVER_STUB_UM_LIBRARY
              NAMES WdfDriverStubUm
              PATHS ${_lvh_wdf_library_candidates}
+             NO_DEFAULT_PATH)
+
+find_library(LIBVIRTUALHID_VHF_UM_LIBRARY
+             NAMES VhfUm
+             PATHS ${_lvh_wdk_um_library_candidates}
              NO_DEFAULT_PATH)
 
 find_library(LIBVIRTUALHID_NTDLL_LIBRARY
@@ -105,16 +123,21 @@ find_library(LIBVIRTUALHID_NTDLL_LIBRARY
              NO_DEFAULT_PATH)
 
 if(NOT LIBVIRTUALHID_WDF_INCLUDE_DIR
+   OR NOT LIBVIRTUALHID_VHF_INCLUDE_DIR
    OR NOT LIBVIRTUALHID_WDF_DRIVER_STUB_UM_LIBRARY
+   OR NOT LIBVIRTUALHID_VHF_UM_LIBRARY
    OR NOT LIBVIRTUALHID_NTDLL_LIBRARY)
     message(FATAL_ERROR
             "Could not find UMDF2 WDK headers/libraries. Install the Windows Driver Kit or set the "
-            "LIBVIRTUALHID_WDF_INCLUDE_DIR, LIBVIRTUALHID_WDF_DRIVER_STUB_UM_LIBRARY, and "
+            "LIBVIRTUALHID_WDF_INCLUDE_DIR, LIBVIRTUALHID_VHF_INCLUDE_DIR, "
+            "LIBVIRTUALHID_WDF_DRIVER_STUB_UM_LIBRARY, LIBVIRTUALHID_VHF_UM_LIBRARY, and "
             "LIBVIRTUALHID_NTDLL_LIBRARY cache variables.")
 endif()
 
 message(STATUS "WDF include directory: ${LIBVIRTUALHID_WDF_INCLUDE_DIR}")
+message(STATUS "VHF include directory: ${LIBVIRTUALHID_VHF_INCLUDE_DIR}")
 message(STATUS "WDF UMDF stub library: ${LIBVIRTUALHID_WDF_DRIVER_STUB_UM_LIBRARY}")
+message(STATUS "VHF UMDF library: ${LIBVIRTUALHID_VHF_UM_LIBRARY}")
 message(STATUS "NTDLL import library: ${LIBVIRTUALHID_NTDLL_LIBRARY}")
 
 find_program(LIBVIRTUALHID_STAMPINF
@@ -141,6 +164,7 @@ add_library(libvirtualhid_umdf SHARED
 target_include_directories(libvirtualhid_umdf
   PRIVATE
   "${LIBVIRTUALHID_WDF_INCLUDE_DIR}"
+  "${LIBVIRTUALHID_VHF_INCLUDE_DIR}"
   "${CMAKE_CURRENT_SOURCE_DIR}/../shared")
 
 target_compile_definitions(libvirtualhid_umdf
@@ -148,6 +172,7 @@ target_compile_definitions(libvirtualhid_umdf
   NOMINMAX
   WIN32_LEAN_AND_MEAN
   UMDF_USING_NTSTATUS
+  NTDDI_VERSION=0x0A000000
   _WIN32_WINNT=0x0A00)
 
 target_compile_options(libvirtualhid_umdf PRIVATE /W4)
@@ -157,6 +182,7 @@ endif()
 target_link_libraries(libvirtualhid_umdf
   PRIVATE
   "${LIBVIRTUALHID_WDF_DRIVER_STUB_UM_LIBRARY}"
+  "${LIBVIRTUALHID_VHF_UM_LIBRARY}"
   "${LIBVIRTUALHID_NTDLL_LIBRARY}")
 set_target_properties(libvirtualhid_umdf PROPERTIES
   OUTPUT_NAME libvirtualhid_umdf
