@@ -7,6 +7,7 @@
 // standard includes
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 // lib includes
@@ -41,7 +42,16 @@ namespace lvh::detail::test {
     std::vector<DeviceNode> empty_device_nodes;
   };
 
+  struct WindowsBackendUtilityResult {
+    std::string default_device_path;
+    std::string custom_device_path;
+    OperationStatus formatted_error_status;
+    OperationStatus fallback_error_status;
+    bool timeout_result = true;
+  };
+
   WindowsBackendLifecycleResult windows_backend_fake_channel_lifecycle();
   WindowsBackendFailureResult windows_backend_fake_channel_failures();
+  WindowsBackendUtilityResult windows_backend_fake_channel_utilities();
 
 }  // namespace lvh::detail::test

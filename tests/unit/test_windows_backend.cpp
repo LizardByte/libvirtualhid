@@ -58,3 +58,18 @@ TEST_F(WindowsBackendTest, FakeChannelCoversCreateFailureBranches) {
   EXPECT_TRUE(result.empty_device_nodes.empty());
   EXPECT_EQ(result.oversized_submit_status.code(), lvh::ErrorCode::invalid_argument);
 }
+
+TEST_F(WindowsBackendTest, UtilityHookCoversEnvironmentErrorAndThreadBranches) {
+  const auto result = lvh::detail::test::windows_backend_fake_channel_utilities();
+
+  EXPECT_EQ(result.default_device_path, R"(\\.\LibVirtualHid)");
+  EXPECT_EQ(result.custom_device_path, R"(\\.\LibVirtualHid-Test)");
+  EXPECT_EQ(result.formatted_error_status.code(), lvh::ErrorCode::backend_failure);
+  EXPECT_EQ(result.fallback_error_status.code(), lvh::ErrorCode::backend_failure);
+  EXPECT_NE(result.formatted_error_status.message().find("format known Windows error:"), std::string::npos);
+  EXPECT_NE(
+    result.fallback_error_status.message().find("format unknown Windows error: Windows error 3758096385"),
+    std::string::npos
+  );
+  EXPECT_FALSE(result.timeout_result);
+}
