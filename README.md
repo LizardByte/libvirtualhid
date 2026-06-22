@@ -349,9 +349,9 @@ the requirements expressed in terms that apply to other consumers:
   streaming hosts can preserve stable controller lifecycles across arrival,
   update, feedback, and removal events.
 - [x] Built-in profiles should cover common streaming controller choices:
-  automatic selection, Xbox One-style, DualSense-style, and Switch Pro-style
-  devices. Xbox 360 can remain useful as a compatibility profile and test
-  target.
+  automatic selection, Xbox One-style, DualShock 4-style, DualSense-style, and
+  Switch Pro-style devices. Xbox 360 can remain useful as a compatibility
+  profile and test target.
 - [x] Controller metadata must be rich enough for streaming-host selection rules:
   client controller type, motion sensor capability, touchpad capability, RGB LED
   support, battery state, and per-controller identity data.
@@ -434,8 +434,8 @@ third-party/googletest/       GoogleTest submodule
 - [x] Add CI using the `libdisplaydevice` workflow pattern for Linux GCC, Linux
   Clang, macOS, Windows MinGW/UCRT64, and Windows MSVC configure/build/test
   coverage.
-- [x] Add descriptor/profile models for at least Xbox 360, Xbox Series, DualSense,
-  and a generic HID gamepad.
+- [x] Add descriptor/profile models for at least Xbox 360, Xbox Series,
+  DualShock 4, DualSense, and a generic HID gamepad.
 - [x] Add unit tests for state normalization and HID report packing.
 - [x] Add a streaming-host-oriented example or adapter test that exercises
   controller arrival, state updates, output feedback, and removal without
@@ -448,8 +448,9 @@ third-party/googletest/       GoogleTest submodule
 - [x] Support output report callbacks for rumble and profile-specific feedback.
 - [x] Add X11/XTest fallback support for keyboard and mouse only.
 - [x] Add examples and integration tests that validate virtual device visibility
-  through SDL2 for generic gamepad input, DualSense USB input, and DualSense
-  Bluetooth controller discovery, plus libinput for keyboard/mouse.
+  through SDL2 for generic gamepad input, DualShock 4 USB input, DualShock 4
+  Bluetooth controller discovery, DualSense USB input, and DualSense Bluetooth
+  controller discovery, plus libinput for keyboard/mouse.
 - [x] Document required Linux permissions and sample udev rules.
 
 ### Phase 2B: Linux inputtino Parity
@@ -467,6 +468,11 @@ third-party/googletest/       GoogleTest submodule
   into consumers.
 - [x] Parse DualSense output reports into rumble, RGB LED, adaptive trigger, and
   raw-report callbacks.
+- [x] Add DualShock 4 USB and Bluetooth profiles with descriptor-driven input
+  reports, touchpad click, touch contacts, motion sensors, battery state,
+  lightbar feedback, rumble callbacks, Bluetooth CRC handling, GET_REPORT
+  replies, stable MAC identity, periodic reports, and generated sensor
+  timestamps.
 - [x] Expose created device nodes and sysfs paths through the platform-neutral
   public API.
 - [x] Add configurable keyboard auto-repeat for held keys.
@@ -476,6 +482,7 @@ third-party/googletest/       GoogleTest submodule
   gamepad path in this library; if one is added later, it must implement Linux
   force-feedback upload, erase, playback, and gain handling.
 - [x] Expand Linux consumer tests so SDL2 validates generic joystick input,
+  DualShock 4 USB controller input, DualShock 4 Bluetooth controller discovery,
   DualSense USB controller input, and DualSense Bluetooth controller discovery,
   and libinput validates keyboard, mouse, touchscreen, trackpad, and pen tablet
   events.

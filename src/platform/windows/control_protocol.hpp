@@ -75,6 +75,8 @@ namespace lvh::detail::windows {
         return LVH_WINDOWS_GAMEPAD_XBOX_ONE;
       case xbox_series:
         return LVH_WINDOWS_GAMEPAD_XBOX_SERIES;
+      case dualshock4:
+        return LVH_WINDOWS_GAMEPAD_DUALSHOCK4;
       case dualsense:
         return LVH_WINDOWS_GAMEPAD_DUALSENSE;
       case switch_pro:

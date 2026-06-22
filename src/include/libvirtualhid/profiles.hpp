@@ -42,6 +42,27 @@ namespace lvh::profiles {
   DeviceProfile xbox_series();
 
   /**
+   * @brief Create the PlayStation DualShock 4-compatible gamepad profile.
+   *
+   * @return Default DualShock 4-compatible device profile.
+   */
+  DeviceProfile dualshock4();
+
+  /**
+   * @brief Create the USB PlayStation DualShock 4-compatible gamepad profile.
+   *
+   * @return USB DualShock 4-compatible device profile.
+   */
+  DeviceProfile dualshock4_usb();
+
+  /**
+   * @brief Create the Bluetooth PlayStation DualShock 4-compatible gamepad profile.
+   *
+   * @return Bluetooth DualShock 4-compatible device profile.
+   */
+  DeviceProfile dualshock4_bluetooth();
+
+  /**
    * @brief Create the PlayStation DualSense-compatible gamepad profile.
    *
    * @return Default DualSense-compatible device profile.

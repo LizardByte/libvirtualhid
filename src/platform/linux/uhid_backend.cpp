@@ -77,11 +77,170 @@ namespace lvh::detail {
     constexpr auto tablet_distance_max = 1024;
     constexpr auto tablet_resolution = 28;
     constexpr auto poll_timeout_ms = 100;
+    constexpr auto dualshock4_usb_calibration_report = 0x02;
+    constexpr auto dualshock4_bluetooth_calibration_report = 0x05;
+    constexpr auto dualshock4_pairing_report = 0x12;
+    constexpr auto dualshock4_firmware_report = 0xA3;
+    constexpr auto playstation_periodic_report_ms = 10;
+    constexpr std::uint8_t playstation_feature_crc_seed = 0xA3;
     constexpr auto dualsense_calibration_report = 0x05;
     constexpr auto dualsense_pairing_report = 0x09;
     constexpr auto dualsense_firmware_report = 0x20;
-    constexpr auto dualsense_periodic_report_ms = 10;
-    constexpr std::uint8_t dualsense_feature_crc_seed = 0xA3;
+
+    constexpr std::uint8_t dualshock4_usb_calibration_info[] {
+      0x02,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x10,
+      0x27,
+      0xF0,
+      0xD8,
+      0x10,
+      0x27,
+      0xF0,
+      0xD8,
+      0x10,
+      0x27,
+      0xF0,
+      0xD8,
+      0xF4,
+      0x01,
+      0xF4,
+      0x01,
+      0x10,
+      0x27,
+      0xF0,
+      0xD8,
+      0x10,
+      0x27,
+      0xF0,
+      0xD8,
+      0x10,
+      0x27,
+      0xF0,
+      0xD8,
+      0x00,
+      0x00,
+    };
+
+    constexpr std::uint8_t dualshock4_bluetooth_calibration_info[] {
+      0x05,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x10,
+      0x27,
+      0xF0,
+      0xD8,
+      0x10,
+      0x27,
+      0xF0,
+      0xD8,
+      0x10,
+      0x27,
+      0xF0,
+      0xD8,
+      0xF4,
+      0x01,
+      0xF4,
+      0x01,
+      0x10,
+      0x27,
+      0xF0,
+      0xD8,
+      0x10,
+      0x27,
+      0xF0,
+      0xD8,
+      0x10,
+      0x27,
+      0xF0,
+      0xD8,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+    };
+
+    constexpr std::uint8_t dualshock4_firmware_info[] {
+      0xA3,
+      0x41,
+      0x75,
+      0x67,
+      0x20,
+      0x20,
+      0x33,
+      0x20,
+      0x32,
+      0x30,
+      0x31,
+      0x33,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x30,
+      0x37,
+      0x3A,
+      0x30,
+      0x31,
+      0x3A,
+      0x31,
+      0x32,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x01,
+      0x00,
+      0x31,
+      0x03,
+      0x00,
+      0x00,
+      0x00,
+      0x49,
+      0x00,
+      0x05,
+      0x00,
+      0x00,
+      0x80,
+      0x03,
+      0x00,
+    };
+
+    constexpr std::uint8_t dualshock4_pairing_info[] {
+      0x12,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+    };
 
     constexpr std::uint8_t dualsense_calibration_info[] {
       0x05,
@@ -316,7 +475,7 @@ namespace lvh::detail {
       return crc ^ 0xFFFFFFFFU;
     }
 
-    std::uint32_t dualsense_crc_seed(std::uint8_t seed) {
+    std::uint32_t playstation_crc_seed(std::uint8_t seed) {
       return crc32(std::span {&seed, 1U});
     }
 
@@ -325,6 +484,10 @@ namespace lvh::detail {
       buffer[1] = static_cast<std::uint8_t>((value >> 8U) & 0xFFU);
       buffer[2] = static_cast<std::uint8_t>((value >> 16U) & 0xFFU);
       buffer[3] = static_cast<std::uint8_t>((value >> 24U) & 0xFFU);
+    }
+
+    bool is_playstation_profile(GamepadProfileKind kind) {
+      return kind == GamepadProfileKind::dualshock4 || kind == GamepadProfileKind::dualsense;
     }
 
     std::uint16_t to_uhid_bus(BusType bus_type) {
@@ -2096,9 +2259,9 @@ namespace lvh::detail {
 
         event.type = UHID_CREATE2;
         auto unique_id = options.metadata.stable_id.empty() ? std::to_string(id) : options.metadata.stable_id;
-        if (options.profile.gamepad_kind == GamepadProfileKind::dualsense) {
-          dualsense_mac_address_ = parse_mac_address(options.metadata.stable_id).value_or(generated_mac_address(id));
-          unique_id = format_mac_address(dualsense_mac_address_);
+        if (is_playstation_profile(options.profile.gamepad_kind)) {
+          playstation_mac_address_ = parse_mac_address(options.metadata.stable_id).value_or(generated_mac_address(id));
+          unique_id = format_mac_address(playstation_mac_address_);
         }
 
         copy_string(request.name, options.profile.name);
@@ -2125,7 +2288,7 @@ namespace lvh::detail {
         reader_ = std::jthread {[this](std::stop_token stop_token) {
           read_loop(stop_token);
         }};
-        if (profile_.gamepad_kind == GamepadProfileKind::dualsense) {
+        if (is_playstation_profile(profile_.gamepad_kind)) {
           periodic_reporter_ = std::jthread {[this](std::stop_token stop_token) {
             periodic_report_loop(stop_token);
           }};
@@ -2279,7 +2442,7 @@ namespace lvh::detail {
 
       void periodic_report_loop(std::stop_token stop_token) {
         while (!stop_token.stop_requested() && running_) {
-          std::this_thread::sleep_for(std::chrono::milliseconds {dualsense_periodic_report_ms});
+          std::this_thread::sleep_for(std::chrono::milliseconds {playstation_periodic_report_ms});
           if (stop_token.stop_requested() || !running_ || !open_) {
             break;
           }
@@ -2319,7 +2482,34 @@ namespace lvh::detail {
         event.u.get_report_reply.id = id;
         event.u.get_report_reply.err = EIO;
 
-        if (profile_.gamepad_kind == GamepadProfileKind::dualsense) {
+        if (profile_.gamepad_kind == GamepadProfileKind::dualshock4) {
+          event.u.get_report_reply.err = 0;
+          switch (report_number) {
+            case dualshock4_usb_calibration_report:
+              copy_get_report_payload(event, dualshock4_usb_calibration_info);
+              break;
+            case dualshock4_bluetooth_calibration_report:
+              if (profile_.bus_type == BusType::bluetooth) {
+                copy_get_report_payload(event, dualshock4_bluetooth_calibration_info);
+                break;
+              }
+              event.u.get_report_reply.err = EINVAL;
+              break;
+            case dualshock4_pairing_report:
+              copy_get_report_payload(event, dualshock4_pairing_info);
+              for (std::size_t index = 0; index < playstation_mac_address_.size(); ++index) {
+                event.u.get_report_reply.data[1U + index] =
+                  playstation_mac_address_[playstation_mac_address_.size() - 1U - index];
+              }
+              break;
+            case dualshock4_firmware_report:
+              copy_get_report_payload(event, dualshock4_firmware_info);
+              break;
+            default:
+              event.u.get_report_reply.err = EINVAL;
+              break;
+          }
+        } else if (profile_.gamepad_kind == GamepadProfileKind::dualsense) {
           event.u.get_report_reply.err = 0;
           switch (report_number) {
             case dualsense_calibration_report:
@@ -2327,9 +2517,9 @@ namespace lvh::detail {
               break;
             case dualsense_pairing_report:
               copy_get_report_payload(event, dualsense_pairing_info);
-              for (std::size_t index = 0; index < dualsense_mac_address_.size(); ++index) {
+              for (std::size_t index = 0; index < playstation_mac_address_.size(); ++index) {
                 event.u.get_report_reply.data[1U + index] =
-                  dualsense_mac_address_[dualsense_mac_address_.size() - 1U - index];
+                  playstation_mac_address_[playstation_mac_address_.size() - 1U - index];
               }
               break;
             case dualsense_firmware_report:
@@ -2339,15 +2529,18 @@ namespace lvh::detail {
               event.u.get_report_reply.err = EINVAL;
               break;
           }
+        }
 
-          if (profile_.bus_type == BusType::bluetooth && event.u.get_report_reply.err == 0 && event.u.get_report_reply.size >= 4U) {
-            const auto crc_offset = static_cast<std::size_t>(event.u.get_report_reply.size) - 4U;
-            const auto crc = crc32(
-              std::span<const std::uint8_t> {event.u.get_report_reply.data, crc_offset},
-              dualsense_crc_seed(dualsense_feature_crc_seed)
-            );
-            write_u32_le(event.u.get_report_reply.data + crc_offset, crc);
-          }
+        if (
+          profile_.bus_type == BusType::bluetooth && is_playstation_profile(profile_.gamepad_kind) &&
+          event.u.get_report_reply.err == 0 && event.u.get_report_reply.size >= 4U
+        ) {
+          const auto crc_offset = static_cast<std::size_t>(event.u.get_report_reply.size) - 4U;
+          const auto crc = crc32(
+            std::span<const std::uint8_t> {event.u.get_report_reply.data, crc_offset},
+            playstation_crc_seed(playstation_feature_crc_seed)
+          );
+          write_u32_le(event.u.get_report_reply.data + crc_offset, crc);
         }
 
         static_cast<void>(write_event(event));
@@ -2369,7 +2562,7 @@ namespace lvh::detail {
       int fd_ = -1;
       DeviceProfile profile_;
       std::string device_name_;
-      std::array<std::uint8_t, 6> dualsense_mac_address_ {};
+      std::array<std::uint8_t, 6> playstation_mac_address_ {};
       std::vector<std::uint8_t> last_report_;
       std::atomic_bool open_ = true;
       std::atomic_bool running_ = false;

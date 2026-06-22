@@ -567,6 +567,27 @@ TEST_F(LinuxBackendTest, SocketpairBackedDualSenseBluetoothFramesReports) {
   EXPECT_TRUE(result.saw_dualsense_feature_crc);
 }
 
+TEST_F(LinuxBackendTest, SocketpairBackedDualShock4RepliesToFeatureReports) {
+  const auto result = lvh::detail::test::linux_dualshock4_uhid_socketpair_reports();
+  EXPECT_TRUE(result.create_status.ok()) << result.create_status.message();
+  EXPECT_TRUE(result.close_status.ok()) << result.close_status.message();
+  EXPECT_TRUE(result.saw_create);
+  EXPECT_TRUE(result.saw_dualshock4_calibration);
+  EXPECT_TRUE(result.saw_dualshock4_pairing);
+  EXPECT_TRUE(result.saw_dualshock4_firmware);
+}
+
+TEST_F(LinuxBackendTest, SocketpairBackedDualShock4BluetoothFramesReports) {
+  const auto result = lvh::detail::test::linux_dualshock4_bluetooth_uhid_socketpair_reports();
+  EXPECT_TRUE(result.create_status.ok()) << result.create_status.message();
+  EXPECT_TRUE(result.close_status.ok()) << result.close_status.message();
+  EXPECT_TRUE(result.saw_create);
+  EXPECT_TRUE(result.saw_dualshock4_bluetooth_input);
+  EXPECT_TRUE(result.saw_dualshock4_calibration);
+  EXPECT_TRUE(result.saw_dualshock4_pairing);
+  EXPECT_TRUE(result.saw_dualshock4_feature_crc);
+}
+
 TEST_F(LinuxBackendTest, FakeLinuxBackendCreatesAllDeviceTypes) {
   const auto unavailable = lvh::detail::test::linux_backend_fake_unavailable_capabilities();
   EXPECT_FALSE(unavailable.supports_virtual_hid);

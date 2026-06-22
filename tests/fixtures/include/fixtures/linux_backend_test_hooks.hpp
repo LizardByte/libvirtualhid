@@ -91,9 +91,19 @@ namespace lvh::detail::test {
     bool saw_dualsense_calibration = false;
 
     /**
+     * @brief Whether the peer observed a DualShock 4 calibration reply.
+     */
+    bool saw_dualshock4_calibration = false;
+
+    /**
      * @brief Whether the peer observed a DualSense pairing reply.
      */
     bool saw_dualsense_pairing = false;
+
+    /**
+     * @brief Whether the peer observed a DualShock 4 pairing reply.
+     */
+    bool saw_dualshock4_pairing = false;
 
     /**
      * @brief Whether the peer observed a DualSense firmware reply.
@@ -101,14 +111,29 @@ namespace lvh::detail::test {
     bool saw_dualsense_firmware = false;
 
     /**
+     * @brief Whether the peer observed a DualShock 4 firmware reply.
+     */
+    bool saw_dualshock4_firmware = false;
+
+    /**
      * @brief Whether the peer observed a signed Bluetooth DualSense feature reply.
      */
     bool saw_dualsense_feature_crc = false;
 
     /**
+     * @brief Whether the peer observed a signed Bluetooth DualShock 4 feature reply.
+     */
+    bool saw_dualshock4_feature_crc = false;
+
+    /**
      * @brief Whether the peer observed a Bluetooth-framed DualSense input report.
      */
     bool saw_dualsense_bluetooth_input = false;
+
+    /**
+     * @brief Whether the peer observed a Bluetooth-framed DualShock 4 input report.
+     */
+    bool saw_dualshock4_bluetooth_input = false;
 
     /**
      * @brief Whether the peer observed a set-report reply.
@@ -658,6 +683,20 @@ namespace lvh::detail::test {
    * @return Round-trip result with Bluetooth framing observations.
    */
   LinuxUhidRoundTripResult linux_dualsense_bluetooth_uhid_socketpair_reports();
+
+  /**
+   * @brief Exercise DualShock 4 UHID feature-report replies over a socketpair.
+   *
+   * @return Round-trip result with feature-report observations.
+   */
+  LinuxUhidRoundTripResult linux_dualshock4_uhid_socketpair_reports();
+
+  /**
+   * @brief Exercise Bluetooth DualShock 4 UHID framing and signed feature replies over a socketpair.
+   *
+   * @return Round-trip result with Bluetooth framing observations.
+   */
+  LinuxUhidRoundTripResult linux_dualshock4_bluetooth_uhid_socketpair_reports();
 
   /**
    * @brief Create all Linux backend device types using fake successful syscalls.
