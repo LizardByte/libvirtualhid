@@ -23,35 +23,33 @@ int main() {
   options.metadata.has_battery = true;
   options.metadata.stable_id = "remote-client-0";
 
-  auto created = runtime->create_gamepad(options);
+  auto created = lvh::GamepadStateAdapter::create(*runtime, options);
   if (!created) {
     std::cerr << created.status.message() << '\n';
     return 1;
   }
 
-  created.gamepad->set_output_callback([](const lvh::GamepadOutput &output) {
+  auto &adapter = *created.adapter;
+  adapter.set_output_callback([](const lvh::GamepadOutput &output) {
     if (output.kind == lvh::GamepadOutputKind::rumble) {
       std::cout << "rumble " << output.low_frequency_rumble << ' '
                 << output.high_frequency_rumble << '\n';
     }
   });
 
-  lvh::GamepadState state;
-  state.buttons.set(lvh::GamepadButton::a);
-  state.left_stick = {0.25F, -0.5F};
-  state.right_trigger = 1.0F;
-
-  if (const auto status = created.gamepad->submit(state); !status.ok()) {
+  if (const auto status = adapter.set_button(lvh::GamepadButton::a, true); !status.ok()) {
     std::cerr << status.message() << '\n';
     return 1;
   }
+  adapter.set_left_stick({0.25F, -0.5F});
+  adapter.set_right_trigger(1.0F);
 
   lvh::GamepadOutput rumble;
   rumble.kind = lvh::GamepadOutputKind::rumble;
   rumble.low_frequency_rumble = 0x4000;
   rumble.high_frequency_rumble = 0x2000;
-  created.gamepad->dispatch_output(rumble);
-  created.gamepad->close();
+  adapter.dispatch_output(rumble);
+  adapter.close();
 
   return 0;
 }

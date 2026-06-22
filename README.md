@@ -519,7 +519,87 @@ third-party/googletest/       GoogleTest submodule
 - [x] Decide whether official Windows releases should ship signed driver packages
   in addition to source.
 
-### Phase 5: macOS Research and Backend
+### Phase 5: Sunshine Replacement Readiness
+
+The Windows driver package is part of the intended design, similar in role to
+ViGEmBus as an installable user-mode virtual device component. The remaining
+replacement blockers are compatibility, packaging integration, and feature
+parity with Sunshine's current ViGEmBus and inputtino behavior, while keeping
+one public API across supported operating systems. The API may expose a richer
+cross-platform model than any one backend can implement, but backends must report
+unsupported features through capabilities instead of forcing consumers onto
+platform-specific calls.
+
+#### Phase 5A: Shared Sunshine Adapter
+
+- [x] Add a Sunshine-oriented adapter example or test that maps controller
+  arrival, state updates, touchpad contacts, motion samples, battery reports,
+  feedback callbacks, and removal through the existing platform-neutral
+  `Runtime` and `Gamepad` APIs.
+- [x] Preserve Sunshine's asynchronous event shape by caching per-controller
+  `GamepadState` and resubmitting after separate button, axis, trigger, touch,
+  motion, and battery updates.
+- [x] Expand or formally map the public button model so Sunshine's full
+  controller flag set is preserved, including guide/home, profile-specific
+  misc/share, and rear paddles where the emulated profile can expose them.
+- [x] Add profile capability checks for rumble, trigger rumble, RGB LED,
+  adaptive triggers, motion, touchpad, battery, and profile-specific buttons so
+  Sunshine can keep one code path while warning only when a selected profile
+  cannot expose a client-reported feature.
+
+#### Phase 5B: Windows ViGEmBus Parity
+
+- [ ] Validate the UMDF/VHF backend as Sunshine's Windows gamepad replacement
+  against the consumers that currently work through ViGEmBus, including SDL,
+  HIDAPI, browser Gamepad API, DirectInput, GameInput, and games or clients that
+  rely on the current Xbox controller behavior.
+- [ ] Decide and document the Windows Xbox compatibility story before replacing
+  ViGEmBus. If the HID backend is not accepted by XInput-only consumers, keep a
+  compatibility layer, consumer-side mapping, or a retained ViGEmBus path for
+  that class of application.
+- [x] Add a DualShock 4 compatible profile for Sunshine's current DS4 mode,
+  including touchpad click, touch contacts, motion sensors, battery state,
+  lightbar feedback, rumble feedback, Bluetooth CRC handling, and timestamp
+  behavior.
+- [ ] Validate the DualShock 4 profile through Sunshine's Windows path against
+  the same applications currently covered by ViGEmBus DS4 mode.
+- [ ] Replace Sunshine's ViGEmBus installer, status API, and diagnostics with
+  equivalent libvirtualhid driver package checks, install/uninstall flows, and
+  signed release packaging.
+- [ ] Run Windows lifecycle and multi-controller validation through Sunshine with
+  the installed driver package, including hot-plug, output-report callbacks,
+  process shutdown cleanup, and simultaneous controllers.
+
+#### Phase 5C: Linux and FreeBSD inputtino Parity
+
+- [ ] Implement a Sunshine Linux adapter that preserves the current `xone`,
+  `ds5`, `switch`, and `auto` selection behavior while using the same
+  platform-neutral libvirtualhid API as Windows.
+- [ ] Validate Linux DualSense parity against inputtino's UHID path: USB and
+  Bluetooth reports, calibration/pairing/firmware feature replies, periodic
+  input reports, touchpad, motion, battery, rumble, RGB LED, and adaptive trigger
+  feedback.
+- [ ] Validate Linux DualShock 4 parity against Sunshine's former Windows DS4
+  behavior and Linux consumers: USB and Bluetooth reports,
+  calibration/pairing/firmware feature replies, periodic input reports, sensor
+  timestamps, touchpad, motion, battery, rumble, and RGB LED feedback.
+- [ ] Validate Xbox One and Switch Pro behavior through SDL and evdev consumers,
+  including d-pad, sticks, triggers, guide/misc buttons, rumble, device names,
+  VID/PID/version identity, and stable device-node discovery.
+- [ ] Add a FreeBSD backend plan instead of assuming the Linux backend applies
+  unchanged. Sunshine disables inputtino `USE_UHID` on FreeBSD, so the current
+  FreeBSD path uses the uinput/libevdev-style fallback and does not get the
+  UHID-only DualSense features.
+- [ ] Keep the FreeBSD API surface identical to Linux and Windows, but report
+  FreeBSD's real backend capabilities separately. At minimum, validate basic
+  Xbox One, Switch Pro, and uinput-backed PS5-style gamepad creation; only mark
+  DualSense touch, motion, battery, RGB LED, adaptive triggers, and Bluetooth
+  identity as supported if a FreeBSD backend can actually deliver them.
+- [ ] Add FreeBSD configure/build coverage and a smoke-test strategy for the
+  supported subset, with explicit documentation for required device nodes,
+  permissions, and any FreeBSD-specific package dependencies.
+
+### Phase 6: macOS Research and Backend
 
 - [ ] Prototype macOS virtual HID creation and report submission.
 - [ ] Document signing, entitlement, and installer constraints.

@@ -509,6 +509,10 @@ namespace lvh {
     dpad_right,  ///< Directional pad right.
     misc1,  ///< Profile-specific miscellaneous button.
     touchpad,  ///< Touchpad click button.
+    paddle1,  ///< First rear paddle button.
+    paddle2,  ///< Second rear paddle button.
+    paddle3,  ///< Third rear paddle button.
+    paddle4,  ///< Fourth rear paddle button.
   };
 
   /**
@@ -894,6 +898,7 @@ namespace lvh {
     rgb_led,  ///< RGB LED color output.
     adaptive_triggers,  ///< Adaptive trigger output.
     raw_report,  ///< Raw output report bytes.
+    trigger_rumble,  ///< Independent trigger rumble output.
   };
 
   /**
@@ -914,6 +919,16 @@ namespace lvh {
      * @brief High-frequency rumble motor strength.
      */
     std::uint16_t high_frequency_rumble = 0;
+
+    /**
+     * @brief Left trigger rumble motor strength.
+     */
+    std::uint16_t left_trigger_rumble = 0;
+
+    /**
+     * @brief Right trigger rumble motor strength.
+     */
+    std::uint16_t right_trigger_rumble = 0;
 
     /**
      * @brief Red LED channel value.
