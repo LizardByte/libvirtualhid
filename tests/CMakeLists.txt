@@ -16,6 +16,7 @@ set(TEST_BINARY test_libvirtualhid)
 
 set(LIBVIRTUALHID_TEST_SOURCES
   "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/fixtures.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_gamepad_adapter.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_gamepad_lifecycle.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_linux_backend.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_linux_consumers.cpp"

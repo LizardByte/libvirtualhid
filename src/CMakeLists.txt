@@ -4,6 +4,7 @@ add_library(libvirtualhid::libvirtualhid ALIAS ${PROJECT_NAME})
 target_sources(${PROJECT_NAME}
   PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}/core/backend.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/core/gamepad_adapter.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/core/profiles.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/core/report.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/core/runtime.cpp"

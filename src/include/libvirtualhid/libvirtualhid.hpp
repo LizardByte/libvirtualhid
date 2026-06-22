@@ -5,6 +5,7 @@
 #pragma once
 
 // local includes
+#include <libvirtualhid/gamepad_adapter.hpp>
 #include <libvirtualhid/profiles.hpp>
 #include <libvirtualhid/report.hpp>
 #include <libvirtualhid/runtime.hpp>
