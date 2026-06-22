@@ -1378,7 +1378,7 @@ namespace lvh::detail::test {
       const auto report_size = static_cast<std::size_t>(event.u.input2.size);
       if (report_size == options.profile.input_report_size && event.u.input2.data[0] == 0x31) {
         const auto crc_offset = report_size - 4U;
-        const auto expected_crc = crc32(std::span<const std::uint8_t> {event.u.input2.data, crc_offset}, dualsense_crc_seed(0xA1));
+        const auto expected_crc = crc32(std::span<const std::uint8_t> {event.u.input2.data, crc_offset}, playstation_crc_seed(0xA1));
         const auto actual_crc = read_u32_le(event.u.input2.data + crc_offset);
         result.saw_dualsense_bluetooth_input = expected_crc == actual_crc;
       }
@@ -1399,11 +1399,144 @@ namespace lvh::detail::test {
         const auto crc_offset = report_size - 4U;
         const auto expected_crc = crc32(
           std::span<const std::uint8_t> {event.u.get_report_reply.data, crc_offset},
-          dualsense_crc_seed(dualsense_feature_crc_seed)
+          playstation_crc_seed(playstation_feature_crc_seed)
         );
         const auto actual_crc = read_u32_le(event.u.get_report_reply.data + crc_offset);
         result.saw_dualsense_feature_crc = expected_crc == actual_crc;
       }
+    }
+
+    result.close_status = gamepad.close();
+    static_cast<void>(::close(descriptors[1]));
+    result.submit_status = OperationStatus::success();
+    return result;
+  }
+
+  LinuxUhidRoundTripResult linux_dualshock4_uhid_socketpair_reports() {
+    LinuxUhidRoundTripResult result;
+    std::array<int, 2> descriptors {-1, -1};
+    if (::socketpair(AF_UNIX, SOCK_STREAM, 0, descriptors.data()) != 0) {
+      result.create_status = system_error_status(ErrorCode::backend_failure, "failed to create socketpair", errno);
+      result.submit_status = result.create_status;
+      result.close_status = result.create_status;
+      return result;
+    }
+
+    CreateGamepadOptions options;
+    options.profile = profiles::dualshock4_usb();
+    options.metadata.stable_id = "02:03:04:05:06:07";
+
+    UhidGamepad gamepad {descriptors[0]};
+    result.create_status = gamepad.create(10, options);
+
+    uhid_event event {};
+    if (read_uhid_event_type(descriptors[1], UHID_CREATE2, event)) {
+      result.saw_create = event.u.create2.vendor == options.profile.vendor_id &&
+                          event.u.create2.product == options.profile.product_id;
+    }
+
+    event = {};
+    event.type = UHID_GET_REPORT;
+    event.u.get_report.id = 16;
+    event.u.get_report.rnum = 0x02;
+    static_cast<void>(write_uhid_event(descriptors[1], event));
+    if (read_uhid_event_type(descriptors[1], UHID_GET_REPORT_REPLY, event)) {
+      result.saw_dualshock4_calibration = event.u.get_report_reply.err == 0 && event.u.get_report_reply.size == 37 &&
+                                          event.u.get_report_reply.data[0] == 0x02;
+    }
+
+    event = {};
+    event.type = UHID_GET_REPORT;
+    event.u.get_report.id = 17;
+    event.u.get_report.rnum = 0x12;
+    static_cast<void>(write_uhid_event(descriptors[1], event));
+    if (read_uhid_event_type(descriptors[1], UHID_GET_REPORT_REPLY, event)) {
+      result.saw_dualshock4_pairing = event.u.get_report_reply.err == 0 && event.u.get_report_reply.size == 16 &&
+                                      event.u.get_report_reply.data[0] == 0x12 &&
+                                      event.u.get_report_reply.data[1] == 0x07 &&
+                                      event.u.get_report_reply.data[6] == 0x02;
+    }
+
+    event = {};
+    event.type = UHID_GET_REPORT;
+    event.u.get_report.id = 18;
+    event.u.get_report.rnum = 0xA3;
+    static_cast<void>(write_uhid_event(descriptors[1], event));
+    if (read_uhid_event_type(descriptors[1], UHID_GET_REPORT_REPLY, event)) {
+      result.saw_dualshock4_firmware = event.u.get_report_reply.err == 0 && event.u.get_report_reply.size == 49 &&
+                                       event.u.get_report_reply.data[0] == 0xA3;
+    }
+
+    result.close_status = gamepad.close();
+    static_cast<void>(::close(descriptors[1]));
+    result.submit_status = OperationStatus::success();
+    return result;
+  }
+
+  LinuxUhidRoundTripResult linux_dualshock4_bluetooth_uhid_socketpair_reports() {
+    LinuxUhidRoundTripResult result;
+    std::array<int, 2> descriptors {-1, -1};
+    if (::socketpair(AF_UNIX, SOCK_STREAM, 0, descriptors.data()) != 0) {
+      result.create_status = system_error_status(ErrorCode::backend_failure, "failed to create socketpair", errno);
+      result.submit_status = result.create_status;
+      result.close_status = result.create_status;
+      return result;
+    }
+
+    CreateGamepadOptions options;
+    options.profile = profiles::dualshock4_bluetooth();
+    options.metadata.stable_id = "02:03:04:05:06:07";
+
+    UhidGamepad gamepad {descriptors[0]};
+    result.create_status = gamepad.create(11, options);
+
+    uhid_event event {};
+    if (read_uhid_event_type(descriptors[1], UHID_CREATE2, event)) {
+      result.saw_create = event.u.create2.vendor == options.profile.vendor_id &&
+                          event.u.create2.product == options.profile.product_id &&
+                          event.u.create2.bus == BUS_BLUETOOTH;
+    }
+
+    if (read_uhid_event_type(descriptors[1], UHID_INPUT2, event)) {
+      const auto report_size = static_cast<std::size_t>(event.u.input2.size);
+      if (report_size == options.profile.input_report_size && event.u.input2.data[0] == 0x11) {
+        const auto crc_offset = report_size - 4U;
+        const auto expected_crc = crc32(std::span<const std::uint8_t> {event.u.input2.data, crc_offset}, playstation_crc_seed(0xA1));
+        const auto actual_crc = read_u32_le(event.u.input2.data + crc_offset);
+        result.saw_dualshock4_bluetooth_input = expected_crc == actual_crc;
+      }
+    }
+
+    event = {};
+    event.type = UHID_GET_REPORT;
+    event.u.get_report.id = 19;
+    event.u.get_report.rnum = 0x05;
+    static_cast<void>(write_uhid_event(descriptors[1], event));
+    if (read_uhid_event_type(descriptors[1], UHID_GET_REPORT_REPLY, event)) {
+      const auto report_size = static_cast<std::size_t>(event.u.get_report_reply.size);
+      result.saw_dualshock4_calibration = event.u.get_report_reply.err == 0 && report_size == 41U &&
+                                          event.u.get_report_reply.data[0] == 0x05;
+      if (report_size >= 4U) {
+        const auto crc_offset = report_size - 4U;
+        const auto expected_crc = crc32(
+          std::span<const std::uint8_t> {event.u.get_report_reply.data, crc_offset},
+          playstation_crc_seed(playstation_feature_crc_seed)
+        );
+        const auto actual_crc = read_u32_le(event.u.get_report_reply.data + crc_offset);
+        result.saw_dualshock4_feature_crc = expected_crc == actual_crc;
+      }
+    }
+
+    event = {};
+    event.type = UHID_GET_REPORT;
+    event.u.get_report.id = 20;
+    event.u.get_report.rnum = 0x12;
+    static_cast<void>(write_uhid_event(descriptors[1], event));
+    if (read_uhid_event_type(descriptors[1], UHID_GET_REPORT_REPLY, event)) {
+      result.saw_dualshock4_pairing = event.u.get_report_reply.err == 0 && event.u.get_report_reply.size == 16 &&
+                                      event.u.get_report_reply.data[0] == 0x12 &&
+                                      event.u.get_report_reply.data[1] == 0x07 &&
+                                      event.u.get_report_reply.data[6] == 0x02;
     }
 
     result.close_status = gamepad.close();

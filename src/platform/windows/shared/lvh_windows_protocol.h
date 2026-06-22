@@ -86,6 +86,7 @@ enum class LvhWindowsGamepadProfileKind : uint32_t {
   xbox_series = 3,
   dualsense = 4,
   switch_pro = 5,
+  dualshock4 = 6,
 };
 
 namespace lvh_windows_protocol_detail {
@@ -112,6 +113,7 @@ namespace lvh_windows_protocol_detail {
   inline constexpr uint32_t gamepad_xbox_series = to_uint32(xbox_series);
   inline constexpr uint32_t gamepad_dualsense = to_uint32(dualsense);
   inline constexpr uint32_t gamepad_switch_pro = to_uint32(switch_pro);
+  inline constexpr uint32_t gamepad_dualshock4 = to_uint32(dualshock4);
 }  // namespace lvh_windows_protocol_detail
 
 inline constexpr uint32_t LVH_WINDOWS_STATUS_SUCCESS = lvh_windows_protocol_detail::status_success;
@@ -132,6 +134,8 @@ inline constexpr uint32_t LVH_WINDOWS_GAMEPAD_XBOX_ONE = lvh_windows_protocol_de
 inline constexpr uint32_t LVH_WINDOWS_GAMEPAD_XBOX_SERIES = lvh_windows_protocol_detail::gamepad_xbox_series;
 inline constexpr uint32_t LVH_WINDOWS_GAMEPAD_DUALSENSE = lvh_windows_protocol_detail::gamepad_dualsense;
 inline constexpr uint32_t LVH_WINDOWS_GAMEPAD_SWITCH_PRO = lvh_windows_protocol_detail::gamepad_switch_pro;
+inline constexpr uint32_t LVH_WINDOWS_GAMEPAD_DUALSHOCK4 =
+  lvh_windows_protocol_detail::gamepad_dualshock4;
 
 #else
 
@@ -184,6 +188,7 @@ enum LvhWindowsGamepadProfileKind {
   LVH_WINDOWS_GAMEPAD_XBOX_SERIES = 3,
   LVH_WINDOWS_GAMEPAD_DUALSENSE = 4,
   LVH_WINDOWS_GAMEPAD_SWITCH_PRO = 5,
+  LVH_WINDOWS_GAMEPAD_DUALSHOCK4 = 6,
 };
 
 #endif

@@ -25,12 +25,31 @@ TEST(ProfileTest, BuiltInProfilesHaveDescriptors) {
 
 TEST(ProfileTest, StreamingControllerProfilesArePresent) {
   const auto xbox_one = lvh::profiles::xbox_one();
+  const auto dualshock4 = lvh::profiles::dualshock4();
   const auto dualsense = lvh::profiles::dualsense();
   const auto switch_pro = lvh::profiles::switch_pro();
 
   EXPECT_EQ(xbox_one.vendor_id, 0x045E);
   EXPECT_EQ(xbox_one.product_id, 0x02EA);
   EXPECT_TRUE(xbox_one.capabilities.supports_rumble);
+
+  EXPECT_EQ(dualshock4.vendor_id, 0x054C);
+  EXPECT_EQ(dualshock4.product_id, 0x05C4);
+  EXPECT_EQ(dualshock4.input_report_size, 64U);
+  EXPECT_EQ(dualshock4.output_report_size, 32U);
+  EXPECT_TRUE(dualshock4.capabilities.supports_motion);
+  EXPECT_TRUE(dualshock4.capabilities.supports_touchpad);
+  EXPECT_TRUE(dualshock4.capabilities.supports_rgb_led);
+  EXPECT_TRUE(dualshock4.capabilities.supports_battery);
+  EXPECT_FALSE(dualshock4.capabilities.supports_adaptive_triggers);
+  EXPECT_EQ(dualshock4.manufacturer, "Sony Interactive Entertainment");
+
+  const auto dualshock4_bluetooth = lvh::profiles::dualshock4_bluetooth();
+  EXPECT_EQ(dualshock4_bluetooth.bus_type, lvh::BusType::bluetooth);
+  EXPECT_EQ(dualshock4_bluetooth.report_id, 0x11);
+  EXPECT_EQ(dualshock4_bluetooth.input_report_size, 78U);
+  EXPECT_EQ(dualshock4_bluetooth.output_report_size, 78U);
+  EXPECT_NE(dualshock4_bluetooth.report_descriptor, dualshock4.report_descriptor);
 
   EXPECT_EQ(dualsense.vendor_id, 0x054C);
   EXPECT_TRUE(dualsense.capabilities.supports_motion);

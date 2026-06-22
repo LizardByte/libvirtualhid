@@ -326,6 +326,7 @@ namespace {
   void configure_sdl_hidapi_hints() {
     SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
     SDL_SetHint("SDL_JOYSTICK_HIDAPI", "1");
+    SDL_SetHint("SDL_JOYSTICK_HIDAPI_PS4", "1");
     SDL_SetHint("SDL_JOYSTICK_HIDAPI_PS5", "1");
   }
 
@@ -373,7 +374,7 @@ namespace {
     EXPECT_GE(SDL_JoystickNumAxes(joystick), minimum_axes);
   }
 
-  void expect_sdl_dualsense_controller_profile(SDL_GameController *controller) {
+  void expect_sdl_playstation_controller_profile(SDL_GameController *controller) {
     auto *mapping = SDL_GameControllerMapping(controller);
     EXPECT_NE(mapping, nullptr) << SDL_GetError();
     if (mapping != nullptr) {
@@ -381,7 +382,7 @@ namespace {
     }
   }
 
-  void exercise_sdl_dualsense_controller(
+  void exercise_sdl_playstation_controller(
     const SdlGamepadConsumerCase &test_case,
     const lvh::DeviceProfile &expected_profile,
     int joystick_index,
@@ -416,7 +417,7 @@ namespace {
     state.touchpad_contacts[0] = {.id = 1, .active = true, .x = 0.5F, .y = 0.25F};
     ASSERT_TRUE(gamepad.submit(state).ok());
 
-    expect_sdl_dualsense_controller_profile(controller.get());
+    expect_sdl_playstation_controller_profile(controller.get());
     if (test_case.expect_live_input) {
       EXPECT_TRUE(wait_for_sdl_controller_input(controller.get())) << describe_sdl_controller_state(controller.get());
     }
@@ -446,12 +447,12 @@ namespace {
     );
   }
 
-  void run_sdl_dualsense_controller_test(const SdlGamepadConsumerCase &test_case) {
+  void run_sdl_playstation_controller_test(const SdlGamepadConsumerCase &test_case) {
     run_sdl_gamepad_test(
       test_case,
       SDL_INIT_GAMECONTROLLER | SDL_INIT_JOYSTICK | SDL_INIT_EVENTS,
       [&test_case](const auto &expected_profile, int joystick_index, lvh::Gamepad &gamepad) {
-        exercise_sdl_dualsense_controller(test_case, expected_profile, joystick_index, gamepad);
+        exercise_sdl_playstation_controller(test_case, expected_profile, joystick_index, gamepad);
       }
     );
   }
@@ -543,7 +544,7 @@ TEST_F(LinuxConsumerTest, SdlSeesUhidGamepadButtonAndAxisInput) {
 TEST_F(LinuxConsumerTest, SdlSeesDualSenseUsbControllerBehavior) {
   ASSERT_TRUE(HasReadableWritableDeviceNode("/dev/uhid"));
 
-  run_sdl_dualsense_controller_test({
+  run_sdl_playstation_controller_test({
     .profile = lvh::profiles::dualsense_usb(),
     .name_suffix = "SDL DualSense USB",
     .stable_id = "02:00:00:00:00:01",
@@ -552,10 +553,35 @@ TEST_F(LinuxConsumerTest, SdlSeesDualSenseUsbControllerBehavior) {
   });
 }
 
+TEST_F(LinuxConsumerTest, SdlSeesDualShock4UsbControllerBehavior) {
+  ASSERT_TRUE(HasReadableWritableDeviceNode("/dev/uhid"));
+
+  run_sdl_playstation_controller_test({
+    .profile = lvh::profiles::dualshock4_usb(),
+    .name_suffix = "SDL DualShock 4 USB",
+    .stable_id = "02:00:00:00:00:03",
+    .minimum_buttons = 10,
+    .minimum_axes = 4,
+  });
+}
+
+TEST_F(LinuxConsumerTest, SdlSeesDualShock4BluetoothControllerDiscovery) {
+  ASSERT_TRUE(HasReadableWritableDeviceNode("/dev/uhid"));
+
+  run_sdl_playstation_controller_test({
+    .profile = lvh::profiles::dualshock4_bluetooth(),
+    .name_suffix = "SDL DualShock 4 Bluetooth",
+    .stable_id = "02:00:00:00:00:04",
+    .minimum_buttons = 10,
+    .minimum_axes = 4,
+    .expect_live_input = false,
+  });
+}
+
 TEST_F(LinuxConsumerTest, SdlSeesDualSenseBluetoothControllerDiscovery) {
   ASSERT_TRUE(HasReadableWritableDeviceNode("/dev/uhid"));
 
-  run_sdl_dualsense_controller_test({
+  run_sdl_playstation_controller_test({
     .profile = lvh::profiles::dualsense_bluetooth(),
     .name_suffix = "SDL DualSense Bluetooth",
     .stable_id = "02:00:00:00:00:02",
@@ -794,6 +820,10 @@ TEST_F(LinuxConsumerTest, LibinputSeesUinputPenTabletTool) {
 TEST_F(LinuxConsumerTest, SdlSeesUhidGamepadButtonAndAxisInput) {}
 
 TEST_F(LinuxConsumerTest, SdlSeesDualSenseUsbControllerBehavior) {}
+
+TEST_F(LinuxConsumerTest, SdlSeesDualShock4UsbControllerBehavior) {}
+
+TEST_F(LinuxConsumerTest, SdlSeesDualShock4BluetoothControllerDiscovery) {}
 
 TEST_F(LinuxConsumerTest, SdlSeesDualSenseBluetoothControllerDiscovery) {}
 

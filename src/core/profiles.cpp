@@ -19,6 +19,14 @@ namespace lvh::profiles {
 
     constexpr std::size_t common_output_report_size = 5;
 
+    constexpr std::size_t dualshock4_usb_input_report_size = 64;
+
+    constexpr std::size_t dualshock4_usb_output_report_size = 32;
+
+    constexpr std::size_t dualshock4_bluetooth_input_report_size = 78;
+
+    constexpr std::size_t dualshock4_bluetooth_output_report_size = 78;
+
     constexpr std::size_t dualsense_usb_input_report_size = 64;
 
     constexpr std::size_t dualsense_usb_output_report_size = 48;
@@ -149,6 +157,937 @@ namespace lvh::profiles {
 
       descriptor.push_back(0xC0);  // End Collection
       return descriptor;
+    }
+
+    std::vector<std::uint8_t> make_playstation_common_gamepad_descriptor_prefix(std::uint8_t report_id) {
+      return {
+        // Usage Page (Generic Desktop)
+        0x05,
+        0x01,
+        // Usage (Game Pad)
+        0x09,
+        0x05,
+        // Collection (Application)
+        0xA1,
+        0x01,
+        // Report ID
+        0x85,
+        report_id,
+        // Usage (X)
+        0x09,
+        0x30,
+        // Usage (Y)
+        0x09,
+        0x31,
+        // Usage (Z)
+        0x09,
+        0x32,
+        // Usage (Rz)
+        0x09,
+        0x35,
+        // Logical Minimum (0)
+        0x15,
+        0x00,
+        // Logical Maximum (255)
+        0x26,
+        0xFF,
+        0x00,
+        // Report Size (8)
+        0x75,
+        0x08,
+        // Report Count (4)
+        0x95,
+        0x04,
+        // Input (Data,Var,Abs)
+        0x81,
+        0x02,
+        // Usage (Hat switch)
+        0x09,
+        0x39,
+        // Logical Minimum (0)
+        0x15,
+        0x00,
+        // Logical Maximum (7)
+        0x25,
+        0x07,
+        // Physical Minimum (0)
+        0x35,
+        0x00,
+        // Physical Maximum (315)
+        0x46,
+        0x3B,
+        0x01,
+        // Unit (Degrees)
+        0x65,
+        0x14,
+        // Report Size (4)
+        0x75,
+        0x04,
+        // Report Count (1)
+        0x95,
+        0x01,
+        // Input (Data,Var,Abs,Null)
+        0x81,
+        0x42,
+        // Unit (None)
+        0x65,
+        0x00,
+        // Usage Page (Button)
+        0x05,
+        0x09,
+        // Usage Minimum (Button 1)
+        0x19,
+        0x01,
+        // Usage Maximum (Button 14)
+        0x29,
+        0x0E,
+        // Logical Minimum (0)
+        0x15,
+        0x00,
+        // Logical Maximum (1)
+        0x25,
+        0x01,
+        // Report Size (1)
+        0x75,
+        0x01,
+        // Report Count (14)
+        0x95,
+        0x0E,
+        // Input (Data,Var,Abs)
+        0x81,
+        0x02,
+      };
+    }
+
+    std::vector<std::uint8_t> make_dualshock4_usb_report_descriptor() {
+      // DualShock 4 USB descriptor data is derived from the public descriptor used by WinUHid.
+      auto descriptor = make_playstation_common_gamepad_descriptor_prefix(0x01);
+      descriptor.insert(
+        descriptor.end(),
+        {
+          // Usage Page (Vendor Defined)
+          0x06,
+          0x00,
+          0xFF,
+          // Usage (Vendor Usage 0x20)
+          0x09,
+          0x20,
+          // Report Size (6)
+          0x75,
+          0x06,
+          // Report Count (1)
+          0x95,
+          0x01,
+          // Logical Minimum (0)
+          0x15,
+          0x00,
+          // Logical Maximum (127)
+          0x25,
+          0x7F,
+          // Input (Data,Var,Abs)
+          0x81,
+          0x02,
+          // Usage Page (Generic Desktop)
+          0x05,
+          0x01,
+          // Usage (Rx)
+          0x09,
+          0x33,
+          // Usage (Ry)
+          0x09,
+          0x34,
+          // Logical Minimum (0)
+          0x15,
+          0x00,
+          // Logical Maximum (255)
+          0x26,
+          0xFF,
+          0x00,
+          // Report Size (8)
+          0x75,
+          0x08,
+          // Report Count (2)
+          0x95,
+          0x02,
+          // Input (Data,Var,Abs)
+          0x81,
+          0x02,
+          // Usage Page (Vendor Defined)
+          0x06,
+          0x00,
+          0xFF,
+          // Usage (Vendor Usage 0x21)
+          0x09,
+          0x21,
+          // Report Count (54)
+          0x95,
+          0x36,
+          // Input (Data,Var,Abs)
+          0x81,
+          0x02,
+          // Report ID (5)
+          0x85,
+          0x05,
+          // Usage (Vendor Usage 0x22)
+          0x09,
+          0x22,
+          // Report Count (31)
+          0x95,
+          0x1F,
+          // Output (Data,Var,Abs)
+          0x91,
+          0x02,
+          // Report ID (4)
+          0x85,
+          0x04,
+          // Usage (Vendor Usage 0x23)
+          0x09,
+          0x23,
+          // Report Count (36)
+          0x95,
+          0x24,
+          // Feature (Data,Var,Abs)
+          0xB1,
+          0x02,
+          // Report ID (2)
+          0x85,
+          0x02,
+          // Usage (Vendor Usage 0x24)
+          0x09,
+          0x24,
+          // Report Count (36)
+          0x95,
+          0x24,
+          // Feature (Data,Var,Abs)
+          0xB1,
+          0x02,
+          // Report ID (8)
+          0x85,
+          0x08,
+          // Usage (Vendor Usage 0x25)
+          0x09,
+          0x25,
+          // Report Count (3)
+          0x95,
+          0x03,
+          // Feature (Data,Var,Abs)
+          0xB1,
+          0x02,
+          // Report ID (16)
+          0x85,
+          0x10,
+          // Usage (Vendor Usage 0x26)
+          0x09,
+          0x26,
+          // Report Count (4)
+          0x95,
+          0x04,
+          // Feature (Data,Var,Abs)
+          0xB1,
+          0x02,
+          // Report ID (17)
+          0x85,
+          0x11,
+          // Usage (Vendor Usage 0x27)
+          0x09,
+          0x27,
+          // Report Count (2)
+          0x95,
+          0x02,
+          // Feature (Data,Var,Abs)
+          0xB1,
+          0x02,
+          // Report ID (18)
+          0x85,
+          0x12,
+          // Usage Page (Vendor Defined 0xFF02)
+          0x06,
+          0x02,
+          0xFF,
+          // Usage (Vendor Usage 0x21)
+          0x09,
+          0x21,
+          // Report Count (15)
+          0x95,
+          0x0F,
+          // Feature (Data,Var,Abs)
+          0xB1,
+          0x02,
+          // Report ID (19)
+          0x85,
+          0x13,
+          // Usage (Vendor Usage 0x22)
+          0x09,
+          0x22,
+          // Report Count (22)
+          0x95,
+          0x16,
+          // Feature (Data,Var,Abs)
+          0xB1,
+          0x02,
+          // Report ID (20)
+          0x85,
+          0x14,
+          // Usage Page (Vendor Defined 0xFF05)
+          0x06,
+          0x05,
+          0xFF,
+          // Usage (Vendor Usage 0x20)
+          0x09,
+          0x20,
+          // Report Count (16)
+          0x95,
+          0x10,
+          // Feature (Data,Var,Abs)
+          0xB1,
+          0x02,
+          // Report ID (21)
+          0x85,
+          0x15,
+          // Usage (Vendor Usage 0x21)
+          0x09,
+          0x21,
+          // Report Count (44)
+          0x95,
+          0x2C,
+          // Feature (Data,Var,Abs)
+          0xB1,
+          0x02,
+          // Usage Page (Vendor Defined 0xFF80)
+          0x06,
+          0x80,
+          0xFF,
+          // Report ID (128)
+          0x85,
+          0x80,
+          // Usage (Vendor Usage 0x20)
+          0x09,
+          0x20,
+          // Report Count (6)
+          0x95,
+          0x06,
+          // Feature (Data,Var,Abs)
+          0xB1,
+          0x02,
+          // Report ID (129)
+          0x85,
+          0x81,
+          // Usage (Vendor Usage 0x21)
+          0x09,
+          0x21,
+          // Report Count (6)
+          0x95,
+          0x06,
+          // Feature (Data,Var,Abs)
+          0xB1,
+          0x02,
+          // Report ID (130)
+          0x85,
+          0x82,
+          // Usage (Vendor Usage 0x22)
+          0x09,
+          0x22,
+          // Report Count (5)
+          0x95,
+          0x05,
+          // Feature (Data,Var,Abs)
+          0xB1,
+          0x02,
+          // Report ID (131)
+          0x85,
+          0x83,
+          // Usage (Vendor Usage 0x23)
+          0x09,
+          0x23,
+          // Report Count (1)
+          0x95,
+          0x01,
+          // Feature (Data,Var,Abs)
+          0xB1,
+          0x02,
+          // Report ID (132)
+          0x85,
+          0x84,
+          // Usage (Vendor Usage 0x24)
+          0x09,
+          0x24,
+          // Report Count (4)
+          0x95,
+          0x04,
+          // Feature (Data,Var,Abs)
+          0xB1,
+          0x02,
+          // Report ID (133)
+          0x85,
+          0x85,
+          // Usage (Vendor Usage 0x25)
+          0x09,
+          0x25,
+          // Report Count (6)
+          0x95,
+          0x06,
+          // Feature (Data,Var,Abs)
+          0xB1,
+          0x02,
+          // Report ID (134)
+          0x85,
+          0x86,
+          // Usage (Vendor Usage 0x26)
+          0x09,
+          0x26,
+          // Report Count (6)
+          0x95,
+          0x06,
+          // Feature (Data,Var,Abs)
+          0xB1,
+          0x02,
+          // Report ID (135)
+          0x85,
+          0x87,
+          // Usage (Vendor Usage 0x27)
+          0x09,
+          0x27,
+          // Report Count (35)
+          0x95,
+          0x23,
+          // Feature (Data,Var,Abs)
+          0xB1,
+          0x02,
+          // Report ID (136)
+          0x85,
+          0x88,
+          // Usage (Vendor Usage 0x28)
+          0x09,
+          0x28,
+          // Report Count (34)
+          0x95,
+          0x22,
+          // Feature (Data,Var,Abs)
+          0xB1,
+          0x02,
+          // Report ID (137)
+          0x85,
+          0x89,
+          // Usage (Vendor Usage 0x29)
+          0x09,
+          0x29,
+          // Report Count (2)
+          0x95,
+          0x02,
+          // Feature (Data,Var,Abs)
+          0xB1,
+          0x02,
+          // Report ID (144)
+          0x85,
+          0x90,
+          // Usage (Vendor Usage 0x30)
+          0x09,
+          0x30,
+          // Report Count (5)
+          0x95,
+          0x05,
+          // Feature (Data,Var,Abs)
+          0xB1,
+          0x02,
+          // Report ID (145)
+          0x85,
+          0x91,
+          // Usage (Vendor Usage 0x31)
+          0x09,
+          0x31,
+          // Report Count (3)
+          0x95,
+          0x03,
+          // Feature (Data,Var,Abs)
+          0xB1,
+          0x02,
+          // Report ID (146)
+          0x85,
+          0x92,
+          // Usage (Vendor Usage 0x32)
+          0x09,
+          0x32,
+          // Report Count (3)
+          0x95,
+          0x03,
+          // Feature (Data,Var,Abs)
+          0xB1,
+          0x02,
+          // Report ID (147)
+          0x85,
+          0x93,
+          // Usage (Vendor Usage 0x33)
+          0x09,
+          0x33,
+          // Report Count (12)
+          0x95,
+          0x0C,
+          // Feature (Data,Var,Abs)
+          0xB1,
+          0x02,
+          // Report ID (160)
+          0x85,
+          0xA0,
+          // Usage (Vendor Usage 0x40)
+          0x09,
+          0x40,
+          // Report Count (6)
+          0x95,
+          0x06,
+          // Feature (Data,Var,Abs)
+          0xB1,
+          0x02,
+          // Report ID (161)
+          0x85,
+          0xA1,
+          // Usage (Vendor Usage 0x41)
+          0x09,
+          0x41,
+          // Report Count (1)
+          0x95,
+          0x01,
+          // Feature (Data,Var,Abs)
+          0xB1,
+          0x02,
+          // Report ID (162)
+          0x85,
+          0xA2,
+          // Usage (Vendor Usage 0x42)
+          0x09,
+          0x42,
+          // Report Count (1)
+          0x95,
+          0x01,
+          // Feature (Data,Var,Abs)
+          0xB1,
+          0x02,
+          // Report ID (163)
+          0x85,
+          0xA3,
+          // Usage (Vendor Usage 0x43)
+          0x09,
+          0x43,
+          // Report Count (48)
+          0x95,
+          0x30,
+          // Feature (Data,Var,Abs)
+          0xB1,
+          0x02,
+          // Report ID (164)
+          0x85,
+          0xA4,
+          // Usage (Vendor Usage 0x44)
+          0x09,
+          0x44,
+          // Report Count (13)
+          0x95,
+          0x0D,
+          // Feature (Data,Var,Abs)
+          0xB1,
+          0x02,
+          // Report ID (165)
+          0x85,
+          0xA5,
+          // Usage (Vendor Usage 0x45)
+          0x09,
+          0x45,
+          // Report Count (21)
+          0x95,
+          0x15,
+          // Feature (Data,Var,Abs)
+          0xB1,
+          0x02,
+          // Report ID (166)
+          0x85,
+          0xA6,
+          // Usage (Vendor Usage 0x46)
+          0x09,
+          0x46,
+          // Report Count (21)
+          0x95,
+          0x15,
+          // Feature (Data,Var,Abs)
+          0xB1,
+          0x02,
+          // Report ID (240)
+          0x85,
+          0xF0,
+          // Usage (Vendor Usage 0x47)
+          0x09,
+          0x47,
+          // Report Count (63)
+          0x95,
+          0x3F,
+          // Feature (Data,Var,Abs)
+          0xB1,
+          0x02,
+          // Report ID (241)
+          0x85,
+          0xF1,
+          // Usage (Vendor Usage 0x48)
+          0x09,
+          0x48,
+          // Report Count (63)
+          0x95,
+          0x3F,
+          // Feature (Data,Var,Abs)
+          0xB1,
+          0x02,
+          // Report ID (242)
+          0x85,
+          0xF2,
+          // Usage (Vendor Usage 0x49)
+          0x09,
+          0x49,
+          // Report Count (15)
+          0x95,
+          0x0F,
+          // Feature (Data,Var,Abs)
+          0xB1,
+          0x02,
+          // Report ID (167)
+          0x85,
+          0xA7,
+          // Usage (Vendor Usage 0x4A)
+          0x09,
+          0x4A,
+          // Report Count (1)
+          0x95,
+          0x01,
+          // Feature (Data,Var,Abs)
+          0xB1,
+          0x02,
+          // Report ID (168)
+          0x85,
+          0xA8,
+          // Usage (Vendor Usage 0x4B)
+          0x09,
+          0x4B,
+          // Report Count (1)
+          0x95,
+          0x01,
+          // Feature (Data,Var,Abs)
+          0xB1,
+          0x02,
+          // Report ID (169)
+          0x85,
+          0xA9,
+          // Usage (Vendor Usage 0x4C)
+          0x09,
+          0x4C,
+          // Report Count (8)
+          0x95,
+          0x08,
+          // Feature (Data,Var,Abs)
+          0xB1,
+          0x02,
+          // Report ID (170)
+          0x85,
+          0xAA,
+          // Usage (Vendor Usage 0x4E)
+          0x09,
+          0x4E,
+          // Report Count (1)
+          0x95,
+          0x01,
+          // Feature (Data,Var,Abs)
+          0xB1,
+          0x02,
+          // Report ID (171)
+          0x85,
+          0xAB,
+          // Usage (Vendor Usage 0x4F)
+          0x09,
+          0x4F,
+          // Report Count (57)
+          0x95,
+          0x39,
+          // Feature (Data,Var,Abs)
+          0xB1,
+          0x02,
+          // Report ID (172)
+          0x85,
+          0xAC,
+          // Usage (Vendor Usage 0x50)
+          0x09,
+          0x50,
+          // Report Count (57)
+          0x95,
+          0x39,
+          // Feature (Data,Var,Abs)
+          0xB1,
+          0x02,
+          // Report ID (173)
+          0x85,
+          0xAD,
+          // Usage (Vendor Usage 0x51)
+          0x09,
+          0x51,
+          // Report Count (11)
+          0x95,
+          0x0B,
+          // Feature (Data,Var,Abs)
+          0xB1,
+          0x02,
+          // Report ID (174)
+          0x85,
+          0xAE,
+          // Usage (Vendor Usage 0x52)
+          0x09,
+          0x52,
+          // Report Count (1)
+          0x95,
+          0x01,
+          // Feature (Data,Var,Abs)
+          0xB1,
+          0x02,
+          // Report ID (175)
+          0x85,
+          0xAF,
+          // Usage (Vendor Usage 0x53)
+          0x09,
+          0x53,
+          // Report Count (2)
+          0x95,
+          0x02,
+          // Feature (Data,Var,Abs)
+          0xB1,
+          0x02,
+          // Report ID (176)
+          0x85,
+          0xB0,
+          // Usage (Vendor Usage 0x54)
+          0x09,
+          0x54,
+          // Report Count (63)
+          0x95,
+          0x3F,
+          // Feature (Data,Var,Abs)
+          0xB1,
+          0x02,
+          // End Collection
+          0xC0,
+        }
+      );
+
+      return descriptor;
+    }
+
+    std::vector<std::uint8_t> make_dualshock4_bluetooth_report_descriptor() {
+      // DualShock 4 Bluetooth report framing follows the Linux hid-playstation DS4 layout.
+      return {
+        // Usage Page (Generic Desktop)
+        0x05,
+        0x01,
+        // Usage (Game Pad)
+        0x09,
+        0x05,
+        // Collection (Application)
+        0xA1,
+        0x01,
+        // Report ID (17)
+        0x85,
+        0x11,
+        // Usage Page (Vendor Defined)
+        0x06,
+        0x00,
+        0xFF,
+        // Usage (Vendor Usage 0x20)
+        0x09,
+        0x20,
+        // Logical Minimum (0)
+        0x15,
+        0x00,
+        // Logical Maximum (255)
+        0x26,
+        0xFF,
+        0x00,
+        // Report Size (8)
+        0x75,
+        0x08,
+        // Report Count (2)
+        0x95,
+        0x02,
+        // Input (Data,Var,Abs)
+        0x81,
+        0x02,
+        // Usage Page (Generic Desktop)
+        0x05,
+        0x01,
+        // Usage (X)
+        0x09,
+        0x30,
+        // Usage (Y)
+        0x09,
+        0x31,
+        // Usage (Z)
+        0x09,
+        0x32,
+        // Usage (Rz)
+        0x09,
+        0x35,
+        // Report Size (8)
+        0x75,
+        0x08,
+        // Report Count (4)
+        0x95,
+        0x04,
+        // Input (Data,Var,Abs)
+        0x81,
+        0x02,
+        // Usage (Hat switch)
+        0x09,
+        0x39,
+        // Logical Minimum (0)
+        0x15,
+        0x00,
+        // Logical Maximum (7)
+        0x25,
+        0x07,
+        // Physical Minimum (0)
+        0x35,
+        0x00,
+        // Physical Maximum (315)
+        0x46,
+        0x3B,
+        0x01,
+        // Unit (Degrees)
+        0x65,
+        0x14,
+        // Report Size (4)
+        0x75,
+        0x04,
+        // Report Count (1)
+        0x95,
+        0x01,
+        // Input (Data,Var,Abs,Null)
+        0x81,
+        0x42,
+        // Unit (None)
+        0x65,
+        0x00,
+        // Usage Page (Button)
+        0x05,
+        0x09,
+        // Usage Minimum (Button 1)
+        0x19,
+        0x01,
+        // Usage Maximum (Button 14)
+        0x29,
+        0x0E,
+        // Logical Minimum (0)
+        0x15,
+        0x00,
+        // Logical Maximum (1)
+        0x25,
+        0x01,
+        // Report Size (1)
+        0x75,
+        0x01,
+        // Report Count (14)
+        0x95,
+        0x0E,
+        // Input (Data,Var,Abs)
+        0x81,
+        0x02,
+        // Usage Page (Vendor Defined)
+        0x06,
+        0x00,
+        0xFF,
+        // Usage (Vendor Usage 0x21)
+        0x09,
+        0x21,
+        // Report Size (6)
+        0x75,
+        0x06,
+        // Report Count (1)
+        0x95,
+        0x01,
+        // Input (Data,Var,Abs)
+        0x81,
+        0x02,
+        // Usage Page (Generic Desktop)
+        0x05,
+        0x01,
+        // Usage (Rx)
+        0x09,
+        0x33,
+        // Usage (Ry)
+        0x09,
+        0x34,
+        // Report Size (8)
+        0x75,
+        0x08,
+        // Report Count (2)
+        0x95,
+        0x02,
+        // Input (Data,Var,Abs)
+        0x81,
+        0x02,
+        // Usage Page (Vendor Defined)
+        0x06,
+        0x00,
+        0xFF,
+        // Usage (Vendor Usage 0x22)
+        0x09,
+        0x22,
+        // Report Count (66)
+        0x95,
+        0x42,
+        // Input (Data,Var,Abs)
+        0x81,
+        0x02,
+        // Report ID (17)
+        0x85,
+        0x11,
+        // Usage (Vendor Usage 0x23)
+        0x09,
+        0x23,
+        // Report Count (77)
+        0x95,
+        0x4D,
+        // Output (Data,Var,Abs)
+        0x91,
+        0x02,
+        // Report ID (5)
+        0x85,
+        0x05,
+        // Usage (Vendor Usage 0x24)
+        0x09,
+        0x24,
+        // Report Count (40)
+        0x95,
+        0x28,
+        // Feature (Data,Var,Abs)
+        0xB1,
+        0x02,
+        // Report ID (18)
+        0x85,
+        0x12,
+        // Usage (Vendor Usage 0x25)
+        0x09,
+        0x25,
+        // Report Count (15)
+        0x95,
+        0x0F,
+        // Feature (Data,Var,Abs)
+        0xB1,
+        0x02,
+        // Report ID (163)
+        0x85,
+        0xA3,
+        // Usage (Vendor Usage 0x26)
+        0x09,
+        0x26,
+        // Report Count (48)
+        0x95,
+        0x30,
+        // Feature (Data,Var,Abs)
+        0xB1,
+        0x02,
+        // End Collection
+        0xC0,
+      };
     }
 
     std::vector<std::uint8_t> make_dualsense_usb_report_descriptor() {
@@ -432,287 +1371,229 @@ namespace lvh::profiles {
 
     std::vector<std::uint8_t> make_dualsense_bluetooth_report_descriptor() {
       // DualSense Bluetooth descriptor data is derived from the public reverse-engineered descriptor used by inputtino.
-      return {
-        0x05,
-        0x01,
-        0x09,
-        0x05,
-        0xA1,
-        0x01,
-        0x85,
-        0x01,
-        0x09,
-        0x30,
-        0x09,
-        0x31,
-        0x09,
-        0x32,
-        0x09,
-        0x35,
-        0x15,
-        0x00,
-        0x26,
-        0xFF,
-        0x00,
-        0x75,
-        0x08,
-        0x95,
-        0x04,
-        0x81,
-        0x02,
-        0x09,
-        0x39,
-        0x15,
-        0x00,
-        0x25,
-        0x07,
-        0x35,
-        0x00,
-        0x46,
-        0x3B,
-        0x01,
-        0x65,
-        0x14,
-        0x75,
-        0x04,
-        0x95,
-        0x01,
-        0x81,
-        0x42,
-        0x65,
-        0x00,
-        0x05,
-        0x09,
-        0x19,
-        0x01,
-        0x29,
-        0x0E,
-        0x15,
-        0x00,
-        0x25,
-        0x01,
-        0x75,
-        0x01,
-        0x95,
-        0x0E,
-        0x81,
-        0x02,
-        0x75,
-        0x06,
-        0x95,
-        0x01,
-        0x81,
-        0x01,
-        0x05,
-        0x01,
-        0x09,
-        0x33,
-        0x09,
-        0x34,
-        0x15,
-        0x00,
-        0x26,
-        0xFF,
-        0x00,
-        0x75,
-        0x08,
-        0x95,
-        0x02,
-        0x81,
-        0x02,
-        0x06,
-        0x00,
-        0xFF,
-        0x15,
-        0x00,
-        0x26,
-        0xFF,
-        0x00,
-        0x75,
-        0x08,
-        0x95,
-        0x4D,
-        0x85,
-        0x31,
-        0x09,
-        0x31,
-        0x91,
-        0x02,
-        0x09,
-        0x3B,
-        0x81,
-        0x02,
-        0x85,
-        0x32,
-        0x09,
-        0x32,
-        0x95,
-        0x8D,
-        0x91,
-        0x02,
-        0x85,
-        0x33,
-        0x09,
-        0x33,
-        0x95,
-        0xCD,
-        0x91,
-        0x02,
-        0x85,
-        0x34,
-        0x09,
-        0x34,
-        0x96,
-        0x0D,
-        0x01,
-        0x91,
-        0x02,
-        0x85,
-        0x35,
-        0x09,
-        0x35,
-        0x96,
-        0x4D,
-        0x01,
-        0x91,
-        0x02,
-        0x85,
-        0x36,
-        0x09,
-        0x36,
-        0x96,
-        0x8D,
-        0x01,
-        0x91,
-        0x02,
-        0x85,
-        0x37,
-        0x09,
-        0x37,
-        0x96,
-        0xCD,
-        0x01,
-        0x91,
-        0x02,
-        0x85,
-        0x38,
-        0x09,
-        0x38,
-        0x96,
-        0x0D,
-        0x02,
-        0x91,
-        0x02,
-        0x85,
-        0x39,
-        0x09,
-        0x39,
-        0x96,
-        0x22,
-        0x02,
-        0x91,
-        0x02,
-        0x06,
-        0x80,
-        0xFF,
-        0x85,
-        0x05,
-        0x09,
-        0x33,
-        0x95,
-        0x28,
-        0xB1,
-        0x02,
-        0x85,
-        0x08,
-        0x09,
-        0x34,
-        0x95,
-        0x2F,
-        0xB1,
-        0x02,
-        0x85,
-        0x09,
-        0x09,
-        0x24,
-        0x95,
-        0x13,
-        0xB1,
-        0x02,
-        0x85,
-        0x20,
-        0x09,
-        0x26,
-        0x95,
-        0x3F,
-        0xB1,
-        0x02,
-        0x85,
-        0x22,
-        0x09,
-        0x40,
-        0x95,
-        0x3F,
-        0xB1,
-        0x02,
-        0x85,
-        0x80,
-        0x09,
-        0x28,
-        0x95,
-        0x3F,
-        0xB1,
-        0x02,
-        0x85,
-        0x81,
-        0x09,
-        0x29,
-        0x95,
-        0x3F,
-        0xB1,
-        0x02,
-        0x85,
-        0x82,
-        0x09,
-        0x2A,
-        0x95,
-        0x09,
-        0xB1,
-        0x02,
-        0x85,
-        0x83,
-        0x09,
-        0x2B,
-        0x95,
-        0x3F,
-        0xB1,
-        0x02,
-        0x85,
-        0xF1,
-        0x09,
-        0x31,
-        0x95,
-        0x3F,
-        0xB1,
-        0x02,
-        0x85,
-        0xF2,
-        0x09,
-        0x32,
-        0x95,
-        0x0F,
-        0xB1,
-        0x02,
-        0x85,
-        0xF0,
-        0x09,
-        0x30,
-        0x95,
-        0x3F,
-        0xB1,
-        0x02,
-        0xC0,
-      };
+      auto descriptor = make_playstation_common_gamepad_descriptor_prefix(0x01);
+      descriptor.insert(
+        descriptor.end(),
+        {
+          0x75,
+          0x06,
+          0x95,
+          0x01,
+          0x81,
+          0x01,
+          0x05,
+          0x01,
+          0x09,
+          0x33,
+          0x09,
+          0x34,
+          0x15,
+          0x00,
+          0x26,
+          0xFF,
+          0x00,
+          0x75,
+          0x08,
+          0x95,
+          0x02,
+          0x81,
+          0x02,
+          0x06,
+          0x00,
+          0xFF,
+          0x15,
+          0x00,
+          0x26,
+          0xFF,
+          0x00,
+          0x75,
+          0x08,
+          0x95,
+          0x4D,
+          0x85,
+          0x31,
+          0x09,
+          0x31,
+          0x91,
+          0x02,
+          0x09,
+          0x3B,
+          0x81,
+          0x02,
+          0x85,
+          0x32,
+          0x09,
+          0x32,
+          0x95,
+          0x8D,
+          0x91,
+          0x02,
+          0x85,
+          0x33,
+          0x09,
+          0x33,
+          0x95,
+          0xCD,
+          0x91,
+          0x02,
+          0x85,
+          0x34,
+          0x09,
+          0x34,
+          0x96,
+          0x0D,
+          0x01,
+          0x91,
+          0x02,
+          0x85,
+          0x35,
+          0x09,
+          0x35,
+          0x96,
+          0x4D,
+          0x01,
+          0x91,
+          0x02,
+          0x85,
+          0x36,
+          0x09,
+          0x36,
+          0x96,
+          0x8D,
+          0x01,
+          0x91,
+          0x02,
+          0x85,
+          0x37,
+          0x09,
+          0x37,
+          0x96,
+          0xCD,
+          0x01,
+          0x91,
+          0x02,
+          0x85,
+          0x38,
+          0x09,
+          0x38,
+          0x96,
+          0x0D,
+          0x02,
+          0x91,
+          0x02,
+          0x85,
+          0x39,
+          0x09,
+          0x39,
+          0x96,
+          0x22,
+          0x02,
+          0x91,
+          0x02,
+          0x06,
+          0x80,
+          0xFF,
+          0x85,
+          0x05,
+          0x09,
+          0x33,
+          0x95,
+          0x28,
+          0xB1,
+          0x02,
+          0x85,
+          0x08,
+          0x09,
+          0x34,
+          0x95,
+          0x2F,
+          0xB1,
+          0x02,
+          0x85,
+          0x09,
+          0x09,
+          0x24,
+          0x95,
+          0x13,
+          0xB1,
+          0x02,
+          0x85,
+          0x20,
+          0x09,
+          0x26,
+          0x95,
+          0x3F,
+          0xB1,
+          0x02,
+          0x85,
+          0x22,
+          0x09,
+          0x40,
+          0x95,
+          0x3F,
+          0xB1,
+          0x02,
+          0x85,
+          0x80,
+          0x09,
+          0x28,
+          0x95,
+          0x3F,
+          0xB1,
+          0x02,
+          0x85,
+          0x81,
+          0x09,
+          0x29,
+          0x95,
+          0x3F,
+          0xB1,
+          0x02,
+          0x85,
+          0x82,
+          0x09,
+          0x2A,
+          0x95,
+          0x09,
+          0xB1,
+          0x02,
+          0x85,
+          0x83,
+          0x09,
+          0x2B,
+          0x95,
+          0x3F,
+          0xB1,
+          0x02,
+          0x85,
+          0xF1,
+          0x09,
+          0x31,
+          0x95,
+          0x3F,
+          0xB1,
+          0x02,
+          0x85,
+          0xF2,
+          0x09,
+          0x32,
+          0x95,
+          0x0F,
+          0xB1,
+          0x02,
+          0x85,
+          0xF0,
+          0x09,
+          0x30,
+          0x95,
+          0x3F,
+          0xB1,
+          0x02,
+          0xC0,
+        }
+      );
+
+      return descriptor;
     }
 
     DeviceProfile make_gamepad_profile(
@@ -739,6 +1620,33 @@ namespace lvh::profiles {
       profile.manufacturer = "LizardByte";
       profile.capabilities = capabilities;
       profile.report_descriptor = make_gamepad_report_descriptor(profile.report_id, profile.capabilities.supports_rumble);
+      return profile;
+    }
+
+    DeviceProfile make_dualshock4_profile(BusType bus_type) {
+      DeviceProfile profile;
+      profile.device_type = DeviceType::gamepad;
+      profile.gamepad_kind = GamepadProfileKind::dualshock4;
+      profile.bus_type = bus_type;
+      profile.vendor_id = 0x054C;
+      profile.product_id = 0x05C4;
+      profile.version = 0x0000;
+      profile.report_id = bus_type == BusType::bluetooth ? 0x11 : 1;
+      profile.input_report_size =
+        bus_type == BusType::bluetooth ? dualshock4_bluetooth_input_report_size : dualshock4_usb_input_report_size;
+      profile.output_report_size =
+        bus_type == BusType::bluetooth ? dualshock4_bluetooth_output_report_size : dualshock4_usb_output_report_size;
+      profile.name = "Wireless Controller";
+      profile.manufacturer = "Sony Interactive Entertainment";
+      profile.capabilities = {
+        .supports_rumble = true,
+        .supports_motion = true,
+        .supports_touchpad = true,
+        .supports_rgb_led = true,
+        .supports_battery = true,
+      };
+      profile.report_descriptor =
+        bus_type == BusType::bluetooth ? make_dualshock4_bluetooth_report_descriptor() : make_dualshock4_usb_report_descriptor();
       return profile;
     }
 
@@ -828,6 +1736,18 @@ namespace lvh::profiles {
     );
   }
 
+  DeviceProfile dualshock4() {
+    return dualshock4_usb();
+  }
+
+  DeviceProfile dualshock4_usb() {
+    return make_dualshock4_profile(BusType::usb);
+  }
+
+  DeviceProfile dualshock4_bluetooth() {
+    return make_dualshock4_profile(BusType::bluetooth);
+  }
+
   DeviceProfile dualsense() {
     return dualsense_usb();
   }
@@ -883,6 +1803,8 @@ namespace lvh::profiles {
         return xbox_one();
       case GamepadProfileKind::xbox_series:
         return xbox_series();
+      case GamepadProfileKind::dualshock4:
+        return dualshock4();
       case GamepadProfileKind::dualsense:
         return dualsense();
       case GamepadProfileKind::switch_pro:
@@ -898,6 +1820,7 @@ namespace lvh::profiles {
       xbox_360(),
       xbox_one(),
       xbox_series(),
+      dualshock4(),
       dualsense(),
       switch_pro(),
     };

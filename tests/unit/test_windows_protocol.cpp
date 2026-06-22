@@ -77,6 +77,10 @@ TEST(WindowsProtocolTest, MapsBusTypesAndGamepadKinds) {
     LVH_WINDOWS_GAMEPAD_XBOX_SERIES
   );
   EXPECT_EQ(
+    lvh::detail::windows::protocol_gamepad_kind(lvh::GamepadProfileKind::dualshock4),
+    LVH_WINDOWS_GAMEPAD_DUALSHOCK4
+  );
+  EXPECT_EQ(
     lvh::detail::windows::protocol_gamepad_kind(lvh::GamepadProfileKind::dualsense),
     LVH_WINDOWS_GAMEPAD_DUALSENSE
   );

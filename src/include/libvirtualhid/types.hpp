@@ -230,6 +230,7 @@ namespace lvh {
     xbox_series,  ///< Xbox Series-compatible profile.
     dualsense,  ///< PlayStation DualSense-compatible profile.
     switch_pro,  ///< Nintendo Switch Pro-compatible profile.
+    dualshock4,  ///< PlayStation DualShock 4-compatible profile.
   };
 
   /**
@@ -507,6 +508,7 @@ namespace lvh {
     dpad_left,  ///< Directional pad left.
     dpad_right,  ///< Directional pad right.
     misc1,  ///< Profile-specific miscellaneous button.
+    touchpad,  ///< Touchpad click button.
   };
 
   /**

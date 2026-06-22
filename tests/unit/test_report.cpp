@@ -27,7 +27,7 @@ namespace {
     return crc ^ 0xFFFFFFFFU;
   }
 
-  std::uint32_t test_dualsense_crc_seed(std::uint8_t seed) {
+  std::uint32_t test_playstation_crc_seed(std::uint8_t seed) {
     return test_crc32(std::span {&seed, 1U});
   }
 
@@ -147,7 +147,79 @@ TEST(ReportTest, PacksDualSenseBluetoothReportWithCrc) {
   EXPECT_EQ(report[55], 0x0C);
 
   const auto crc_offset = report.size() - 4U;
-  const auto expected_crc = test_crc32(std::span {report}.first(crc_offset), test_dualsense_crc_seed(0xA1));
+  const auto expected_crc = test_crc32(std::span {report}.first(crc_offset), test_playstation_crc_seed(0xA1));
+  EXPECT_EQ(read_u32_le(report, crc_offset), expected_crc);
+}
+
+TEST(ReportTest, PacksDualShock4UsbReport) {
+  using enum lvh::GamepadButton;
+
+  const auto profile = lvh::profiles::dualshock4_usb();
+
+  lvh::GamepadState state;
+  state.buttons.set(x);
+  state.buttons.set(a);
+  state.buttons.set(b);
+  state.buttons.set(y);
+  state.buttons.set(left_shoulder);
+  state.buttons.set(right_shoulder);
+  state.buttons.set(back);
+  state.buttons.set(start);
+  state.buttons.set(left_stick);
+  state.buttons.set(right_stick);
+  state.buttons.set(guide);
+  state.buttons.set(touchpad);
+  state.left_stick = {1.0F, -1.0F};
+  state.right_stick = {0.0F, 0.0F};
+  state.left_trigger = 1.0F;
+  state.right_trigger = 0.5F;
+  state.acceleration = lvh::Vector3 {.x = 0.0F, .y = 9.80665F, .z = 0.0F};
+  state.gyroscope = lvh::Vector3 {.x = 1.0F, .y = 2.0F, .z = 3.0F};
+  state.battery = lvh::GamepadBattery {.state = lvh::GamepadBatteryState::charging, .percentage = 80};
+  state.touchpad_contacts[0] = {.id = 3, .active = true, .x = 0.5F, .y = 0.25F};
+
+  const auto report = lvh::reports::pack_input_report(profile, state);
+
+  ASSERT_EQ(report.size(), profile.input_report_size);
+  EXPECT_EQ(report[0], 0x01);
+  EXPECT_EQ(report[1], 255);
+  EXPECT_EQ(report[2], 0);
+  EXPECT_EQ(report[3], 128);
+  EXPECT_EQ(report[4], 128);
+  EXPECT_EQ(report[5], 0xF8);
+  EXPECT_EQ(report[6], 0xFF);
+  EXPECT_EQ(report[7], 0x03);
+  EXPECT_EQ(report[8], 255);
+  EXPECT_EQ(report[9], 128);
+  EXPECT_EQ(report[12], 204);
+  EXPECT_EQ(report[13], 20);
+  EXPECT_EQ(report[21], 0x10);
+  EXPECT_EQ(report[22], 0x27);
+  EXPECT_EQ(report[30], 0x18);
+  EXPECT_EQ(report[33], 1);
+  EXPECT_EQ(report[35] & 0x7F, 3);
+  EXPECT_EQ(report[35] & 0x80, 0);
+}
+
+TEST(ReportTest, PacksDualShock4BluetoothReportWithCrc) {
+  const auto profile = lvh::profiles::dualshock4_bluetooth();
+
+  lvh::GamepadState state;
+  state.buttons.set(lvh::GamepadButton::touchpad);
+  state.battery = lvh::GamepadBattery {.state = lvh::GamepadBatteryState::full, .percentage = 100};
+
+  const auto report = lvh::reports::pack_input_report(profile, state);
+
+  ASSERT_EQ(report.size(), profile.input_report_size);
+  EXPECT_EQ(report[0], 0x11);
+  EXPECT_EQ(report[3], 128);
+  EXPECT_EQ(report[4], 128);
+  EXPECT_EQ(report[9], 0x02);
+  EXPECT_EQ(report[32], 0x1B);
+  EXPECT_EQ(report[35], 1);
+
+  const auto crc_offset = report.size() - 4U;
+  const auto expected_crc = test_crc32(std::span {report}.first(crc_offset), test_playstation_crc_seed(0xA1));
   EXPECT_EQ(read_u32_le(report, crc_offset), expected_crc);
 }
 
@@ -214,7 +286,7 @@ TEST(ReportTest, ParsesDualSenseBluetoothOutputReportEvents) {
   report[47] = 0x22;
   report[48] = 0x33;
   const auto crc_offset = report.size() - 4U;
-  const auto crc = test_crc32(std::span {report}.first(crc_offset), test_dualsense_crc_seed(0xA2));
+  const auto crc = test_crc32(std::span {report}.first(crc_offset), test_playstation_crc_seed(0xA2));
   report[crc_offset] = static_cast<std::uint8_t>(crc & 0xFFU);
   report[crc_offset + 1U] = static_cast<std::uint8_t>((crc >> 8U) & 0xFFU);
   report[crc_offset + 2U] = static_cast<std::uint8_t>((crc >> 16U) & 0xFFU);
@@ -229,6 +301,57 @@ TEST(ReportTest, ParsesDualSenseBluetoothOutputReportEvents) {
   EXPECT_EQ(outputs[1].green, 0x22);
   EXPECT_EQ(outputs[1].blue, 0x33);
   EXPECT_EQ(outputs[2].kind, lvh::GamepadOutputKind::adaptive_triggers);
+}
+
+TEST(ReportTest, ParsesDualShock4OutputReportEvents) {
+  const auto profile = lvh::profiles::dualshock4_usb();
+  std::vector<std::uint8_t> report(profile.output_report_size, 0);
+  report[0] = 0x05;
+  report[1] = 0x03;
+  report[4] = 0x80;
+  report[5] = 0x40;
+  report[6] = 0x11;
+  report[7] = 0x22;
+  report[8] = 0x33;
+
+  const auto outputs = lvh::reports::parse_output_reports(profile, report);
+
+  ASSERT_EQ(outputs.size(), 2U);
+  EXPECT_EQ(outputs[0].kind, lvh::GamepadOutputKind::rumble);
+  EXPECT_GT(outputs[0].low_frequency_rumble, 0U);
+  EXPECT_GT(outputs[0].high_frequency_rumble, 0U);
+  EXPECT_EQ(outputs[1].kind, lvh::GamepadOutputKind::rgb_led);
+  EXPECT_EQ(outputs[1].red, 0x11);
+  EXPECT_EQ(outputs[1].green, 0x22);
+  EXPECT_EQ(outputs[1].blue, 0x33);
+}
+
+TEST(ReportTest, ParsesDualShock4BluetoothOutputReportEvents) {
+  const auto profile = lvh::profiles::dualshock4_bluetooth();
+  std::vector<std::uint8_t> report(profile.output_report_size, 0);
+  report[0] = 0x11;
+  report[1] = 0xC0;
+  report[3] = 0x03;
+  report[6] = 0x80;
+  report[7] = 0x40;
+  report[8] = 0x11;
+  report[9] = 0x22;
+  report[10] = 0x33;
+  const auto crc_offset = report.size() - 4U;
+  const auto crc = test_crc32(std::span {report}.first(crc_offset), test_playstation_crc_seed(0xA2));
+  report[crc_offset] = static_cast<std::uint8_t>(crc & 0xFFU);
+  report[crc_offset + 1U] = static_cast<std::uint8_t>((crc >> 8U) & 0xFFU);
+  report[crc_offset + 2U] = static_cast<std::uint8_t>((crc >> 16U) & 0xFFU);
+  report[crc_offset + 3U] = static_cast<std::uint8_t>((crc >> 24U) & 0xFFU);
+
+  const auto outputs = lvh::reports::parse_output_reports(profile, report);
+
+  ASSERT_EQ(outputs.size(), 2U);
+  EXPECT_EQ(outputs[0].kind, lvh::GamepadOutputKind::rumble);
+  EXPECT_EQ(outputs[1].kind, lvh::GamepadOutputKind::rgb_led);
+  EXPECT_EQ(outputs[1].red, 0x11);
+  EXPECT_EQ(outputs[1].green, 0x22);
+  EXPECT_EQ(outputs[1].blue, 0x33);
 }
 
 TEST(ReportTest, KeepsUnrecognizedOutputReportsRaw) {

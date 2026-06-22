@@ -6,6 +6,7 @@
 // standard includes
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -26,6 +27,18 @@ namespace lvh::reports {
 
     constexpr auto zero_byte = std::byte {0x00};
 
+    constexpr auto dualshock4_usb_output_report_id = std::byte {0x05};
+
+    constexpr auto dualshock4_bt_input_report_id = std::byte {0x11};
+
+    constexpr auto dualshock4_bt_output_report_id = std::byte {0x11};
+
+    constexpr auto dualshock4_output_hwctl_crc32 = std::byte {0x40};
+
+    constexpr auto dualshock4_flag0_rumble = std::byte {0x01};
+
+    constexpr auto dualshock4_flag0_lightbar = std::byte {0x02};
+
     constexpr auto dualsense_usb_output_report_id = std::byte {0x02};
 
     constexpr auto dualsense_bt_input_report_id = std::byte {0x31};
@@ -34,9 +47,9 @@ namespace lvh::reports {
 
     constexpr auto dualsense_bt_input_report_reserved = std::byte {0x00};
 
-    constexpr auto dualsense_input_crc_seed = std::byte {0xA1};
+    constexpr auto playstation_input_crc_seed = std::byte {0xA1};
 
-    constexpr auto dualsense_output_crc_seed = std::byte {0xA2};
+    constexpr auto playstation_output_crc_seed = std::byte {0xA2};
 
     constexpr auto dualsense_flag0_rumble = std::byte {0x01};
 
@@ -136,18 +149,18 @@ namespace lvh::reports {
       return crc ^ 0xFFFFFFFFU;
     }
 
-    std::uint32_t dualsense_crc_seed(std::byte seed) {
+    std::uint32_t playstation_crc_seed(std::byte seed) {
       const std::array seed_report {seed};
       return crc32(seed_report);
     }
 
-    void write_dualsense_crc(ByteReport &report, std::byte seed) {
+    void write_playstation_crc(ByteReport &report, std::byte seed) {
       if (report.size() < 4U) {
         return;
       }
 
       const auto crc_offset = report.size() - 4U;
-      write_u32(report, crc_offset, crc32({report.data(), crc_offset}, dualsense_crc_seed(seed)));
+      write_u32(report, crc_offset, crc32({report.data(), crc_offset}, playstation_crc_seed(seed)));
     }
 
     std::int16_t scale_i16(float value, float multiplier) {
@@ -155,7 +168,7 @@ namespace lvh::reports {
       return static_cast<std::int16_t>(std::lround(scaled));
     }
 
-    std::uint8_t normalize_dualsense_axis(float value) {
+    std::uint8_t normalize_u8_axis(float value) {
       return static_cast<std::uint8_t>(std::lround((clamp_axis(value) + 1.0F) * 127.5F));
     }
 
@@ -224,6 +237,145 @@ namespace lvh::reports {
       report[offset + 3U] = to_low_byte(y >> 4U);
     }
 
+    void write_dualshock4_touch_contact(
+      ByteReport &report,
+      std::size_t offset,
+      const GamepadTouchContact &contact
+    ) {
+      const auto x = static_cast<std::uint16_t>(std::lround(std::clamp(contact.x, 0.0F, 1.0F) * 1919.0F));
+      const auto y = static_cast<std::uint16_t>(std::lround(std::clamp(contact.y, 0.0F, 1.0F) * 941.0F));
+      report[offset] = (to_byte(contact.id) & std::byte {0x7F}) | (contact.active ? zero_byte : std::byte {0x80});
+      report[offset + 1U] = to_low_byte(x);
+      report[offset + 2U] = to_low_byte(((x >> 8U) & 0x0FU) | ((y & 0x0FU) << 4U));
+      report[offset + 3U] = to_low_byte(y >> 4U);
+    }
+
+    std::uint8_t dualshock4_battery_status(const GamepadBattery &battery) {
+      using enum GamepadBatteryState;
+
+      if (battery.state == full) {
+        return 0x1B;
+      }
+      if (
+        battery.state == voltage_or_temperature_error ||
+        battery.state == temperature_error ||
+        battery.state == charging_error
+      ) {
+        return 0x0F;
+      }
+
+      const auto charge = std::min<std::uint8_t>(10U, static_cast<std::uint8_t>(std::lround(battery.percentage / 10.0F)));
+      if (battery.state == discharging) {
+        return charge;
+      }
+
+      return static_cast<std::uint8_t>(0x10U | charge);
+    }
+
+    std::uint8_t dualshock4_battery_level(const GamepadBattery &battery) {
+      if (battery.state == GamepadBatteryState::full && battery.percentage >= 100U) {
+        return 0xFF;
+      }
+
+      return static_cast<std::uint8_t>(std::lround((static_cast<float>(battery.percentage) / 100.0F) * 255.0F));
+    }
+
+    std::uint16_t dualshock4_sensor_timestamp() {
+      static const auto start = std::chrono::steady_clock::now();
+      const auto elapsed =
+        std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start).count();
+      return static_cast<std::uint16_t>((static_cast<std::uint64_t>(elapsed) * 3U) / 16U);
+    }
+
+    std::vector<std::uint8_t> pack_dualshock4_input_report(const DeviceProfile &profile, const GamepadState &state) {
+      const auto is_bluetooth = profile.bus_type == BusType::bluetooth;
+      const auto payload_offset = is_bluetooth ? 3U : 1U;
+      if (const auto minimum_report_size = is_bluetooth ? 78U : 64U; profile.input_report_size < minimum_report_size) {
+        return {};
+      }
+
+      const auto normalized = normalize_state(state);
+      const auto acceleration = normalized.acceleration.value_or(Vector3 {.x = 0.0F, .y = 9.80665F, .z = 0.0F});
+      const auto gyroscope = normalized.gyroscope.value_or(Vector3 {});
+      const auto battery = normalized.battery.value_or(GamepadBattery {.state = GamepadBatteryState::full, .percentage = 100});
+
+      ByteReport report(profile.input_report_size, zero_byte);
+      report[0] = is_bluetooth ? dualshock4_bt_input_report_id : to_byte(profile.report_id);
+
+      report[payload_offset + 0U] = to_byte(normalize_u8_axis(normalized.left_stick.x));
+      report[payload_offset + 1U] = to_byte(normalize_u8_axis(normalized.left_stick.y));
+      report[payload_offset + 2U] = to_byte(normalize_u8_axis(normalized.right_stick.x));
+      report[payload_offset + 3U] = to_byte(normalize_u8_axis(normalized.right_stick.y));
+      report[payload_offset + 4U] = to_byte(hat_from_buttons(normalized.buttons));
+
+      if (normalized.buttons.test(GamepadButton::x)) {
+        add_flag(report, payload_offset + 4U, std::byte {0x10});
+      }
+      if (normalized.buttons.test(GamepadButton::a)) {
+        add_flag(report, payload_offset + 4U, std::byte {0x20});
+      }
+      if (normalized.buttons.test(GamepadButton::b)) {
+        add_flag(report, payload_offset + 4U, std::byte {0x40});
+      }
+      if (normalized.buttons.test(GamepadButton::y)) {
+        add_flag(report, payload_offset + 4U, std::byte {0x80});
+      }
+
+      if (normalized.buttons.test(GamepadButton::left_shoulder)) {
+        add_flag(report, payload_offset + 5U, std::byte {0x01});
+      }
+      if (normalized.buttons.test(GamepadButton::right_shoulder)) {
+        add_flag(report, payload_offset + 5U, std::byte {0x02});
+      }
+      if (normalized.left_trigger > 0.0F) {
+        add_flag(report, payload_offset + 5U, std::byte {0x04});
+      }
+      if (normalized.right_trigger > 0.0F) {
+        add_flag(report, payload_offset + 5U, std::byte {0x08});
+      }
+      if (normalized.buttons.test(GamepadButton::back)) {
+        add_flag(report, payload_offset + 5U, std::byte {0x10});
+      }
+      if (normalized.buttons.test(GamepadButton::start)) {
+        add_flag(report, payload_offset + 5U, std::byte {0x20});
+      }
+      if (normalized.buttons.test(GamepadButton::left_stick)) {
+        add_flag(report, payload_offset + 5U, std::byte {0x40});
+      }
+      if (normalized.buttons.test(GamepadButton::right_stick)) {
+        add_flag(report, payload_offset + 5U, std::byte {0x80});
+      }
+
+      if (normalized.buttons.test(GamepadButton::guide)) {
+        add_flag(report, payload_offset + 6U, std::byte {0x01});
+      }
+      if (normalized.buttons.test(GamepadButton::touchpad)) {
+        add_flag(report, payload_offset + 6U, std::byte {0x02});
+      }
+
+      report[payload_offset + 7U] = to_byte(normalize_trigger(normalized.left_trigger));
+      report[payload_offset + 8U] = to_byte(normalize_trigger(normalized.right_trigger));
+      write_u16(report, payload_offset + 9U, dualshock4_sensor_timestamp());
+      report[payload_offset + 11U] = to_byte(dualshock4_battery_level(battery));
+      write_i16(report, payload_offset + 12U, scale_i16(gyroscope.x, 20.0F));
+      write_i16(report, payload_offset + 14U, scale_i16(gyroscope.y, 20.0F));
+      write_i16(report, payload_offset + 16U, scale_i16(gyroscope.z, 20.0F));
+      write_i16(report, payload_offset + 18U, scale_i16(acceleration.x, 10000.0F / 9.80665F));
+      write_i16(report, payload_offset + 20U, scale_i16(acceleration.y, 10000.0F / 9.80665F));
+      write_i16(report, payload_offset + 22U, scale_i16(acceleration.z, 10000.0F / 9.80665F));
+      report[payload_offset + 29U] = to_byte(dualshock4_battery_status(battery));
+
+      const auto touch_report_offset = payload_offset + 33U;
+      report[payload_offset + 32U] = std::byte {0x01};
+      write_dualshock4_touch_contact(report, touch_report_offset + 1U, normalized.touchpad_contacts[0]);
+      write_dualshock4_touch_contact(report, touch_report_offset + 5U, normalized.touchpad_contacts[1]);
+
+      if (is_bluetooth) {
+        write_playstation_crc(report, playstation_input_crc_seed);
+      }
+      return to_uint8_report(report);
+    }
+
     std::vector<std::uint8_t> pack_dualsense_input_report(const DeviceProfile &profile, const GamepadState &state) {
       const auto is_bluetooth = profile.bus_type == BusType::bluetooth;
       const auto payload_offset = is_bluetooth ? 2U : 1U;
@@ -238,10 +390,10 @@ namespace lvh::reports {
         report[1] = dualsense_bt_input_report_reserved;
       }
 
-      report[payload_offset + 0U] = to_byte(normalize_dualsense_axis(normalized.left_stick.x));
-      report[payload_offset + 1U] = to_byte(normalize_dualsense_axis(normalized.left_stick.y));
-      report[payload_offset + 2U] = to_byte(normalize_dualsense_axis(normalized.right_stick.x));
-      report[payload_offset + 3U] = to_byte(normalize_dualsense_axis(normalized.right_stick.y));
+      report[payload_offset + 0U] = to_byte(normalize_u8_axis(normalized.left_stick.x));
+      report[payload_offset + 1U] = to_byte(normalize_u8_axis(normalized.left_stick.y));
+      report[payload_offset + 2U] = to_byte(normalize_u8_axis(normalized.right_stick.x));
+      report[payload_offset + 3U] = to_byte(normalize_u8_axis(normalized.right_stick.y));
       report[payload_offset + 4U] = to_byte(normalize_trigger(normalized.left_trigger));
       report[payload_offset + 5U] = to_byte(normalize_trigger(normalized.right_trigger));
       report[payload_offset + 7U] = to_byte(hat_from_buttons(normalized.buttons));
@@ -287,6 +439,9 @@ namespace lvh::reports {
       if (normalized.buttons.test(GamepadButton::guide)) {
         add_flag(report, payload_offset + 9U, std::byte {0x01});
       }
+      if (normalized.buttons.test(GamepadButton::touchpad)) {
+        add_flag(report, payload_offset + 9U, std::byte {0x02});
+      }
       if (normalized.buttons.test(GamepadButton::misc1)) {
         add_flag(report, payload_offset + 9U, std::byte {0x04});
       }
@@ -312,7 +467,7 @@ namespace lvh::reports {
       report[payload_offset + 53U] = std::byte {0x0C};
 
       if (is_bluetooth) {
-        write_dualsense_crc(report, dualsense_input_crc_seed);
+        write_playstation_crc(report, playstation_input_crc_seed);
       }
       return to_uint8_report(report);
     }
@@ -323,7 +478,7 @@ namespace lvh::reports {
       }
       if (report.size() >= 49U && report[0] == dualsense_bt_output_report_id) {
         if (report.size() >= 78U) {
-          const auto expected_crc = crc32({report.data(), report.size() - 4U}, dualsense_crc_seed(dualsense_output_crc_seed));
+          const auto expected_crc = crc32({report.data(), report.size() - 4U}, playstation_crc_seed(playstation_output_crc_seed));
           const auto actual_crc = read_u32(report, report.size() - 4U);
           if (actual_crc != expected_crc) {
             return std::nullopt;
@@ -337,6 +492,59 @@ namespace lvh::reports {
         return enable_hid ? 2U : 3U;
       }
       return std::nullopt;
+    }
+
+    std::optional<std::size_t> dualshock4_common_output_offset(const ByteReport &report) {
+      if (report.size() >= 32U && report[0] == dualshock4_usb_output_report_id) {
+        return 1U;
+      }
+      if (report.size() >= 78U && report[0] == dualshock4_bt_output_report_id) {
+        if (has_flag(report[1], dualshock4_output_hwctl_crc32)) {
+          const auto expected_crc = crc32({report.data(), report.size() - 4U}, playstation_crc_seed(playstation_output_crc_seed));
+          const auto actual_crc = read_u32(report, report.size() - 4U);
+          if (actual_crc != expected_crc) {
+            return std::nullopt;
+          }
+        }
+        return 3U;
+      }
+      return std::nullopt;
+    }
+
+    void append_dualshock4_outputs(
+      const ByteReport &report,
+      const std::vector<std::uint8_t> &raw_report,
+      std::size_t offset,
+      std::vector<GamepadOutput> &outputs
+    ) {
+      const auto valid_flag0 = report[offset];
+      const auto valid_flag1 = report[offset + 1U];
+      const auto motor_right = raw_report[offset + 3U];
+      const auto motor_left = raw_report[offset + 4U];
+
+      if (has_flag(valid_flag0, dualshock4_flag0_rumble)) {
+        GamepadOutput output;
+        output.kind = GamepadOutputKind::rumble;
+        output.low_frequency_rumble = scale_output_byte(motor_left);
+        output.high_frequency_rumble = scale_output_byte(motor_right);
+        output.raw_report = raw_report;
+        outputs.push_back(std::move(output));
+      } else if (valid_flag0 == zero_byte && valid_flag1 == zero_byte) {
+        GamepadOutput output;
+        output.kind = GamepadOutputKind::rumble;
+        output.raw_report = raw_report;
+        outputs.push_back(std::move(output));
+      }
+
+      if (has_flag(valid_flag0, dualshock4_flag0_lightbar)) {
+        GamepadOutput output;
+        output.kind = GamepadOutputKind::rgb_led;
+        output.red = raw_report[offset + 5U];
+        output.green = raw_report[offset + 6U];
+        output.blue = raw_report[offset + 7U];
+        output.raw_report = raw_report;
+        outputs.push_back(std::move(output));
+      }
     }
 
     void append_dualsense_outputs(
@@ -489,8 +697,13 @@ namespace lvh::reports {
   }
 
   std::vector<std::uint8_t> pack_input_report(const DeviceProfile &profile, const GamepadState &state) {
-    if (profile.device_type == DeviceType::gamepad && profile.gamepad_kind == GamepadProfileKind::dualsense) {
-      return pack_dualsense_input_report(profile, state);
+    if (profile.device_type == DeviceType::gamepad) {
+      if (profile.gamepad_kind == GamepadProfileKind::dualshock4) {
+        return pack_dualshock4_input_report(profile, state);
+      }
+      if (profile.gamepad_kind == GamepadProfileKind::dualsense) {
+        return pack_dualsense_input_report(profile, state);
+      }
     }
 
     constexpr std::size_t common_report_size = 14;
@@ -528,6 +741,16 @@ namespace lvh::reports {
 
   std::vector<GamepadOutput> parse_output_reports(const DeviceProfile &profile, const std::vector<std::uint8_t> &report) {
     std::vector<GamepadOutput> outputs;
+
+    if (profile.gamepad_kind == GamepadProfileKind::dualshock4) {
+      const auto byte_report = to_byte_report(report);
+      if (const auto offset = dualshock4_common_output_offset(byte_report); offset.has_value()) {
+        append_dualshock4_outputs(byte_report, report, *offset, outputs);
+      }
+      if (!outputs.empty()) {
+        return outputs;
+      }
+    }
 
     if (profile.gamepad_kind == GamepadProfileKind::dualsense) {
       const auto byte_report = to_byte_report(report);
