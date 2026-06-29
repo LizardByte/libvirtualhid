@@ -9,13 +9,19 @@ if(WIN32)
 endif()
 
 include(GoogleTest)
-add_subdirectory("${PROJECT_SOURCE_DIR}/third-party/googletest"
+add_subdirectory("${PROJECT_SOURCE_DIR}/third-party/lizardbyte-common/third-party/googletest"
                  "third-party/googletest")
 
+set(LIZARDBYTE_COMMON_BUILD_TEST_SUPPORT ON CACHE BOOL "Build lizardbyte-common GoogleTest support helpers" FORCE)
+if(NOT TARGET lizardbyte::common)
+    add_subdirectory("${PROJECT_SOURCE_DIR}/third-party/lizardbyte-common"
+                     "third-party/lizardbyte-common")
+elseif(NOT TARGET lizardbyte::test_support)
+    message(FATAL_ERROR "libvirtualhid tests require lizardbyte::test_support")
+endif()
 set(TEST_BINARY test_libvirtualhid)
 
 set(LIBVIRTUALHID_TEST_SOURCES
-  "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/fixtures.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_gamepad_adapter.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_gamepad_lifecycle.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_linux_backend.cpp"
@@ -55,7 +61,8 @@ target_include_directories(${TEST_BINARY}
 target_link_libraries(${TEST_BINARY}
   PRIVATE
   gmock_main
-  libvirtualhid::libvirtualhid)
+  libvirtualhid::libvirtualhid
+  lizardbyte::test_support)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_libraries(${TEST_BINARY}
