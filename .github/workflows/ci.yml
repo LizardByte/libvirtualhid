@@ -435,7 +435,7 @@ jobs:
     needs: setup_release
     permissions:
       contents: read
-    runs-on: windows-2022
+    runs-on: windows-2025
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
