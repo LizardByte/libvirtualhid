@@ -1,8 +1,24 @@
-# libvirtualhid
+<div align="center">
+  <img
+    src="https://raw.githubusercontent.com/LizardByte/.github/refs/heads/master/branding/logos/logo.svg"
+    alt="LizardByte icon"
+    width="256"
+  />
+  <h1 align="center">libvirtualhid</h1>
+  <h4 align="center">Cross-platform C++ virtual HID library.</h4>
+</div>
 
-[![GitHub Workflow Status (CI)](https://img.shields.io/github/actions/workflow/status/lizardbyte/libvirtualhid/ci.yml.svg?branch=master&label=CI%20build&logo=github&style=for-the-badge)](https://github.com/LizardByte/libvirtualhid/actions/workflows/ci.yml?query=branch%3Amaster)
-[![Codecov](https://img.shields.io/codecov/c/gh/LizardByte/libvirtualhid?token=2MeMpktxpv&style=for-the-badge&logo=codecov&label=codecov)](https://codecov.io/gh/LizardByte/libvirtualhid)
-[![GitHub stars](https://img.shields.io/github/stars/lizardbyte/libvirtualhid.svg?logo=github&style=for-the-badge)](https://github.com/LizardByte/libvirtualhid)
+<div align="center">
+  <a href="https://github.com/LizardByte/libvirtualhid"><img src="https://img.shields.io/github/stars/lizardbyte/libvirtualhid.svg?logo=github&style=for-the-badge" alt="GitHub stars"></a>
+  <a href="https://github.com/LizardByte/libvirtualhid/actions/workflows/ci.yml?query=branch%3Amaster"><img src="https://img.shields.io/github/actions/workflow/status/lizardbyte/libvirtualhid/ci.yml.svg?branch=master&label=CI%20build&logo=github&style=for-the-badge" alt="GitHub Workflow Status (CI)"></a>
+  <a href="https://docs.lizardbyte.dev/projects/libvirtualhid"><img src="https://img.shields.io/readthedocs/libvirtualhid.svg?label=Docs&style=for-the-badge&logo=readthedocs" alt="Read the Docs"></a>
+  <a href="https://codecov.io/gh/LizardByte/libvirtualhid"><img src="https://img.shields.io/endpoint.svg?url=https%3A%2F%2Fapp.lizardbyte.dev%2Fdashboard%2Fshields%2Fcodecov%2Flibvirtualhid.json&style=for-the-badge&logo=codecov" alt="Codecov"></a>
+  <a href="https://sonarcloud.io/project/overview?id=LizardByte_libvirtualhid"><img src="https://img.shields.io/sonar/quality_gate/LizardByte_libvirtualhid.svg?server=https%3A%2F%2Fsonarcloud.io&style=for-the-badge&logo=sonarqubecloud&label=sonarcloud" alt="SonarCloud"></a>
+</div>
+
+# Overview
+
+## ℹ️ About
 
 `libvirtualhid` is a planned cross-platform C++ library for creating virtual HID
 input devices for remote streaming hosts and similar low-latency input
@@ -12,7 +28,7 @@ The primary target is gamepad input. Keyboard and mouse support are secondary
 goals once the gamepad model, descriptor handling, and output report plumbing
 are stable.
 
-## Goals
+## 🎯 Goals
 
 - Provide the same public C++ API on Windows, Linux, and eventually macOS.
 - Hide platform-specific virtual HID details behind backend implementations.
@@ -25,14 +41,14 @@ are stable.
   network input collection and feed local reports into this library.
 - Use the MIT license.
 
-## Non-goals
+## ❌ Non-goals
 
 - No anti-cheat bypass or stealth device hiding.
 - No replication of controller authentication chips or private vendor secrets.
 - No Windows kernel-mode driver.
 - No built-in network protocol.
 
-## Reference Projects
+## 📚 Reference Projects
 
 The initial design is informed by these projects:
 
@@ -50,7 +66,7 @@ The initial design is informed by these projects:
   their CMake option shape, top-level-only test/doc setup, `third-party`
   submodule layout, and GoogleTest wiring.
 
-## Platform Strategy
+## 🖥️ Platform Strategy
 
 ### Windows
 
@@ -237,7 +253,7 @@ of both, then document the entitlement, signing, and distribution requirements.
 The public API should already be shaped so the macOS backend can plug in without
 breaking Windows or Linux consumers.
 
-## CMake Consumption
+## 🛠️ CMake Consumption
 
 All consumption modes expose the same CMake target:
 `libvirtualhid::libvirtualhid`.
@@ -285,7 +301,7 @@ target unless they explicitly enable additional options. Linux consumers still
 need the development packages used by the backend, such as `libevdev` and
 `pkg-config`.
 
-## Proposed Public API Shape
+## 📖 Proposed Public API Shape
 
 The exact names may change during implementation, but the API should center on
 portable concepts instead of platform concepts:
@@ -337,7 +353,7 @@ Expected core types:
   `supports_keyboard`, `supports_mouse`, `supports_xtest_fallback`, and
   `requires_installed_driver`.
 
-## Streaming Host Integration Requirements
+## 📡 Streaming Host Integration Requirements
 
 Streaming hosts are the first consumer class to design against. The initial
 implementation should cover the behavior Sunshine needs first, while keeping
@@ -379,7 +395,7 @@ the requirements expressed in terms that apply to other consumers:
   parsing, configuration system, or feedback queue. It should expose the device
   primitives consumers need to keep that ownership in their applications.
 
-## Tooling and Dependency Plan
+## 🛠️ Tooling and Dependency Plan
 
 - [x] Use CMake as the only build system for the core library.
 - [x] Follow the LizardByte `tray` and `libdisplaydevice` pattern: top-level-only
@@ -399,7 +415,7 @@ the requirements expressed in terms that apply to other consumers:
 - [ ] Add separate WDK/MSVC validation for the driver package once driver sources
   exist.
 
-## Repository Plan
+## 📒 Repository Plan
 
 The intended project layout is:
 
@@ -419,7 +435,7 @@ third-party/doxyconfig/       LizardByte Doxygen configuration submodule
 third-party/googletest/       GoogleTest submodule
 ```
 
-## Implementation Plan
+## 📋 Implementation Plan
 
 ### Phase 1: Project Foundation
 
@@ -606,7 +622,7 @@ platform-specific calls.
 - [ ] Add macOS backend behind the existing public API.
 - [ ] Add macOS discovery and smoke-test coverage.
 
-## Testing Plan
+## 🧪 Testing Plan
 
 - [ ] Unit test descriptor generation, report packing, axis scaling, button mapping,
   and output report parsing.
@@ -617,6 +633,6 @@ platform-specific calls.
   Gamepad API, DirectInput/XInput/GameInput on Windows, and evdev/libinput
   libraries on Linux.
 
-## License
+## 📄 License
 
 `libvirtualhid` is licensed under the MIT License. See [LICENSE](LICENSE).
