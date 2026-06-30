@@ -2,9 +2,6 @@
 	path = third-party/doxyconfig
 	url = https://github.com/LizardByte/doxyconfig.git
 	branch = master
-[submodule "third-party/googletest"]
-	path = third-party/googletest
-	url = https://github.com/google/googletest.git
 [submodule "third-party/lizardbyte-common"]
 	path = third-party/lizardbyte-common
 	url = https://github.com/LizardByte/lizardbyte-common.git
