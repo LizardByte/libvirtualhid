@@ -139,8 +139,17 @@ powershell -ExecutionPolicy Bypass -File .\scripts\windows\uninstall-driver.ps1 
   -Force -RemoveCertificateSubject "CN=libvirtualhid CI Test Driver Signing"
 ```
 
-The helper stages the INF with `pnputil` and uses `devcon.exe` when available
-to create the `ROOT\LIBVIRTUALHID` development device.
+The helper stages the INF with `pnputil`, updates an existing
+`ROOT\LIBVIRTUALHID` device when present, and creates that root-enumerated
+device when it is missing. It uses `devcon.exe` when available, otherwise it
+uses SetupAPI/NewDev directly so MSI installs do not require the WDK tools on
+the target machine.
+
+The driver binary is a UMDF DLL installed through the Windows Driver Store, not
+a libvirtualhid `.sys` copied into `C:\Windows\System32\drivers`. Windows still
+uses its built-in `WUDFRd.sys` and VHF components under `System32\drivers`; the
+libvirtualhid-specific sign that installation completed is the
+`ROOT\LIBVIRTUALHID` device and the `\\.\LibVirtualHid` control device.
 
 Windows driver packages require a signed catalog for normal installation. Pull
 request builds generate a short-lived self-signed test certificate, sign
