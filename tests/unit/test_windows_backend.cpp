@@ -105,30 +105,30 @@ TEST_F(WindowsBackendTest, UtilityHookCoversEnvironmentErrorAndThreadBranches) {
 TEST_F(WindowsBackendTest, SendInputDevicesTranslateKeyboardMouseFailuresAndUnsupportedProfiles) {
   const auto result = lvh::detail::test::windows_backend_send_input_devices();
 
-  expect_ok(result.keyboard_down_status);
-  expect_ok(result.keyboard_up_status);
-  expect_ok(result.keyboard_text_status);
-  expect_ok(result.keyboard_empty_text_status);
-  EXPECT_EQ(result.keyboard_invalid_text_status.code(), lvh::ErrorCode::invalid_argument);
-  EXPECT_EQ(result.keyboard_failure_status.code(), lvh::ErrorCode::backend_failure);
+  expect_ok(result.keyboard.down_status);
+  expect_ok(result.keyboard.up_status);
+  expect_ok(result.keyboard.text_status);
+  expect_ok(result.keyboard.empty_text_status);
+  EXPECT_EQ(result.keyboard.invalid_text_status.code(), lvh::ErrorCode::invalid_argument);
+  EXPECT_EQ(result.keyboard.failure_status.code(), lvh::ErrorCode::backend_failure);
 
-  expect_ok(result.mouse_relative_status);
-  expect_ok(result.mouse_absolute_status);
-  expect_ok(result.mouse_degenerate_absolute_status);
-  expect_ok(result.mouse_left_button_status);
-  expect_ok(result.mouse_middle_button_status);
-  expect_ok(result.mouse_right_button_status);
-  expect_ok(result.mouse_side_button_status);
-  expect_ok(result.mouse_extra_button_status);
-  expect_ok(result.mouse_vertical_scroll_status);
-  expect_ok(result.mouse_horizontal_scroll_status);
-  EXPECT_EQ(result.mouse_failure_status.code(), lvh::ErrorCode::backend_failure);
+  expect_ok(result.mouse.relative_status);
+  expect_ok(result.mouse.absolute_status);
+  expect_ok(result.mouse.degenerate_absolute_status);
+  expect_ok(result.mouse.left_button_status);
+  expect_ok(result.mouse.middle_button_status);
+  expect_ok(result.mouse.right_button_status);
+  expect_ok(result.mouse.side_button_status);
+  expect_ok(result.mouse.extra_button_status);
+  expect_ok(result.mouse.vertical_scroll_status);
+  expect_ok(result.mouse.horizontal_scroll_status);
+  EXPECT_EQ(result.mouse.failure_status.code(), lvh::ErrorCode::backend_failure);
 
-  EXPECT_EQ(result.invalid_keyboard_profile_status.code(), lvh::ErrorCode::unsupported_profile);
-  EXPECT_EQ(result.invalid_mouse_profile_status.code(), lvh::ErrorCode::unsupported_profile);
-  EXPECT_EQ(result.unsupported_touchscreen_status.code(), lvh::ErrorCode::unsupported_profile);
-  EXPECT_EQ(result.unsupported_trackpad_status.code(), lvh::ErrorCode::unsupported_profile);
-  EXPECT_EQ(result.unsupported_pen_tablet_status.code(), lvh::ErrorCode::unsupported_profile);
+  EXPECT_EQ(result.keyboard.invalid_profile_status.code(), lvh::ErrorCode::unsupported_profile);
+  EXPECT_EQ(result.mouse.invalid_profile_status.code(), lvh::ErrorCode::unsupported_profile);
+  EXPECT_EQ(result.unsupported.touchscreen_status.code(), lvh::ErrorCode::unsupported_profile);
+  EXPECT_EQ(result.unsupported.trackpad_status.code(), lvh::ErrorCode::unsupported_profile);
+  EXPECT_EQ(result.unsupported.pen_tablet_status.code(), lvh::ErrorCode::unsupported_profile);
 
   ASSERT_EQ(result.sent_inputs.size(), 18U);
   EXPECT_EQ(result.sent_inputs[0].type, INPUT_KEYBOARD);

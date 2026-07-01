@@ -17,6 +17,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <limits>
 #include <map>
 #include <memory>
@@ -46,9 +47,20 @@ namespace lvh::detail {
     class WindowsBackendContext;
 
     using UniqueHandle = std::unique_ptr<void, decltype(&::CloseHandle)>;
-    using SendInputFunction = UINT(WINAPI *)(UINT, LPINPUT, int);
+    using SendInputFunction = std::function<UINT(std::span<INPUT>)>;
 
-    SendInputFunction send_input_function = ::SendInput;
+    UINT send_input_with_win32(std::span<INPUT> inputs) {
+      return ::SendInput(
+        static_cast<UINT>(inputs.size()),
+        inputs.data(),
+        static_cast<int>(sizeof(INPUT))
+      );
+    }
+
+    SendInputFunction &send_input_function() {
+      static SendInputFunction function = send_input_with_win32;
+      return function;
+    }
 
     UniqueHandle make_unique_handle(HANDLE handle) {
       return {handle, &::CloseHandle};
@@ -90,12 +102,7 @@ namespace lvh::detail {
     OperationStatus send_input(std::span<INPUT> inputs, std::string_view operation) {
       using enum ErrorCode;
 
-      if (const auto sent = send_input_function(
-            static_cast<UINT>(inputs.size()),
-            inputs.data(),
-            static_cast<int>(sizeof(INPUT))
-          );
-          sent != static_cast<UINT>(inputs.size())) {
+      if (const auto sent = send_input_function()(inputs); sent != static_cast<UINT>(inputs.size())) {
         return windows_failure(backend_failure, operation, ::GetLastError());
       }
 

@@ -70,29 +70,41 @@ namespace lvh::detail::test {
     std::uint32_t mouse_flags = 0;
   };
 
+  struct WindowsKeyboardSendInputResult {
+    OperationStatus down_status;
+    OperationStatus up_status;
+    OperationStatus text_status;
+    OperationStatus empty_text_status;
+    OperationStatus invalid_text_status;
+    OperationStatus failure_status;
+    OperationStatus invalid_profile_status;
+  };
+
+  struct WindowsMouseSendInputResult {
+    OperationStatus relative_status;
+    OperationStatus absolute_status;
+    OperationStatus degenerate_absolute_status;
+    OperationStatus left_button_status;
+    OperationStatus middle_button_status;
+    OperationStatus right_button_status;
+    OperationStatus side_button_status;
+    OperationStatus extra_button_status;
+    OperationStatus vertical_scroll_status;
+    OperationStatus horizontal_scroll_status;
+    OperationStatus failure_status;
+    OperationStatus invalid_profile_status;
+  };
+
+  struct WindowsUnsupportedInputResult {
+    OperationStatus touchscreen_status;
+    OperationStatus trackpad_status;
+    OperationStatus pen_tablet_status;
+  };
+
   struct WindowsBackendSendInputResult {
-    OperationStatus keyboard_down_status;
-    OperationStatus keyboard_up_status;
-    OperationStatus keyboard_text_status;
-    OperationStatus keyboard_empty_text_status;
-    OperationStatus keyboard_invalid_text_status;
-    OperationStatus keyboard_failure_status;
-    OperationStatus mouse_relative_status;
-    OperationStatus mouse_absolute_status;
-    OperationStatus mouse_degenerate_absolute_status;
-    OperationStatus mouse_left_button_status;
-    OperationStatus mouse_middle_button_status;
-    OperationStatus mouse_right_button_status;
-    OperationStatus mouse_side_button_status;
-    OperationStatus mouse_extra_button_status;
-    OperationStatus mouse_vertical_scroll_status;
-    OperationStatus mouse_horizontal_scroll_status;
-    OperationStatus mouse_failure_status;
-    OperationStatus invalid_keyboard_profile_status;
-    OperationStatus invalid_mouse_profile_status;
-    OperationStatus unsupported_touchscreen_status;
-    OperationStatus unsupported_trackpad_status;
-    OperationStatus unsupported_pen_tablet_status;
+    WindowsKeyboardSendInputResult keyboard;
+    WindowsMouseSendInputResult mouse;
+    WindowsUnsupportedInputResult unsupported;
     std::vector<WindowsSendInputRecord> sent_inputs;
   };
 
