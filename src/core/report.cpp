@@ -104,10 +104,6 @@ namespace lvh::reports {
       report.push_back(static_cast<std::uint8_t>((value >> 8U) & 0xFFU));
     }
 
-    void append_i16(std::vector<std::uint8_t> &report, std::int16_t value) {
-      append_u16(report, static_cast<std::uint16_t>(value));
-    }
-
     void write_u16(ByteReport &report, std::size_t offset, std::uint16_t value) {
       report[offset] = to_low_byte(value);
       report[offset + 1U] = to_low_byte(value >> 8U);
@@ -706,7 +702,7 @@ namespace lvh::reports {
       }
     }
 
-    constexpr std::size_t common_report_size = 14;
+    constexpr std::size_t common_report_size = 10;
     if (profile.device_type != DeviceType::gamepad || profile.input_report_size < common_report_size) {
       return {};
     }
@@ -718,10 +714,10 @@ namespace lvh::reports {
     report.push_back(profile.report_id);
     append_u16(report, report_button_bits(normalized.buttons));
     report.push_back(hat_from_buttons(normalized.buttons));
-    append_i16(report, normalize_axis(normalized.left_stick.x));
-    append_i16(report, normalize_axis(normalized.left_stick.y));
-    append_i16(report, normalize_axis(normalized.right_stick.x));
-    append_i16(report, normalize_axis(normalized.right_stick.y));
+    report.push_back(normalize_u8_axis(normalized.left_stick.x));
+    report.push_back(normalize_u8_axis(normalized.left_stick.y));
+    report.push_back(normalize_u8_axis(normalized.right_stick.x));
+    report.push_back(normalize_u8_axis(normalized.right_stick.y));
     report.push_back(normalize_trigger(normalized.left_trigger));
     report.push_back(normalize_trigger(normalized.right_trigger));
 

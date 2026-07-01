@@ -15,7 +15,7 @@
 namespace lvh::profiles {
   namespace {
 
-    constexpr std::size_t common_report_size = 14;
+    constexpr std::size_t common_report_size = 10;
 
     constexpr std::size_t common_output_report_size = 5;
 
@@ -94,14 +94,13 @@ namespace lvh::profiles {
         0x01,  // Report Count (1)
         0x81,
         0x03,  // Input (Const,Var,Abs)
-        0x16,
-        0x00,
-        0x80,  // Logical Minimum (-32768)
+        0x15,
+        0x00,  // Logical Minimum (0)
         0x26,
         0xFF,
-        0x7F,  // Logical Maximum (32767)
+        0x00,  // Logical Maximum (255)
         0x75,
-        0x10,  // Report Size (16)
+        0x08,  // Report Size (8)
         0x95,
         0x04,  // Report Count (4)
         0x09,

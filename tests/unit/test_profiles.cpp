@@ -3,6 +3,10 @@
  * @brief Unit tests for built-in gamepad profiles.
  */
 
+// standard includes
+#include <algorithm>
+#include <array>
+
 // local includes
 #include "fixtures/fixtures.hpp"
 
@@ -18,7 +22,7 @@ TEST(ProfileTest, BuiltInProfilesHaveDescriptors) {
     EXPECT_NE(profile.vendor_id, 0);
     EXPECT_NE(profile.product_id, 0);
     EXPECT_NE(profile.report_id, 0);
-    EXPECT_GE(profile.input_report_size, 14U);
+    EXPECT_GE(profile.input_report_size, 10U);
     EXPECT_FALSE(profile.report_descriptor.empty());
   }
 }
@@ -32,6 +36,20 @@ TEST(ProfileTest, StreamingControllerProfilesArePresent) {
   EXPECT_EQ(xbox_one.vendor_id, 0x045E);
   EXPECT_EQ(xbox_one.product_id, 0x02EA);
   EXPECT_TRUE(xbox_one.capabilities.supports_rumble);
+  EXPECT_EQ(xbox_one.input_report_size, 10U);
+
+  const std::array<std::uint8_t, 9> byte_axis_descriptor {
+    0x15,
+    0x00,
+    0x26,
+    0xFF,
+    0x00,
+    0x75,
+    0x08,
+    0x95,
+    0x04,
+  };
+  EXPECT_TRUE(std::ranges::search(xbox_one.report_descriptor, byte_axis_descriptor).begin() != xbox_one.report_descriptor.end());
 
   EXPECT_EQ(dualshock4.vendor_id, 0x054C);
   EXPECT_EQ(dualshock4.product_id, 0x05C4);

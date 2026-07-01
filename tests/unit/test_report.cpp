@@ -87,12 +87,12 @@ TEST(ReportTest, PacksCommonGamepadReport) {
   EXPECT_EQ(report[1], 0x21);  // A + Start
   EXPECT_EQ(report[2], 0x00);
   EXPECT_EQ(report[3], 6);  // D-pad left
-  EXPECT_EQ(report[4], 0xFF);
-  EXPECT_EQ(report[5], 0x7F);
-  EXPECT_EQ(report[6], 0x00);
-  EXPECT_EQ(report[7], 0x80);
-  EXPECT_EQ(report[12], 64);
-  EXPECT_EQ(report[13], 255);
+  EXPECT_EQ(report[4], 255);  // Left stick X
+  EXPECT_EQ(report[5], 0);  // Left stick Y
+  EXPECT_EQ(report[6], 191);  // Right stick X
+  EXPECT_EQ(report[7], 64);  // Right stick Y
+  EXPECT_EQ(report[8], 64);  // Left trigger
+  EXPECT_EQ(report[9], 255);  // Right trigger
 }
 
 TEST(ReportTest, PacksDualSenseUsbReport) {
