@@ -230,6 +230,71 @@ namespace lvh::detail {
       return backend->create_gamepad(1, options).status;
     }
 
+    struct FakeSendInputState {
+      std::vector<test::WindowsSendInputRecord> sent_inputs;
+      std::optional<UINT> forced_sent_count;
+    };
+
+    FakeSendInputState *active_fake_send_input_state = nullptr;
+
+    test::WindowsSendInputRecord make_send_input_record(const INPUT &input) {
+      test::WindowsSendInputRecord record;
+      record.type = input.type;
+      if (input.type == INPUT_KEYBOARD) {
+        record.virtual_key = input.ki.wVk;
+        record.scan_code = input.ki.wScan;
+        record.key_flags = input.ki.dwFlags;
+      } else if (input.type == INPUT_MOUSE) {
+        record.mouse_x = input.mi.dx;
+        record.mouse_y = input.mi.dy;
+        record.mouse_data = input.mi.mouseData;
+        record.mouse_flags = input.mi.dwFlags;
+      }
+
+      return record;
+    }
+
+    UINT WINAPI fake_send_input(UINT input_count, LPINPUT inputs, int /*input_size*/) {
+      if (!active_fake_send_input_state) {
+        return input_count;
+      }
+
+      for (UINT index = 0; index < input_count; ++index) {
+        active_fake_send_input_state->sent_inputs.push_back(make_send_input_record(inputs[index]));
+      }
+
+      if (active_fake_send_input_state->forced_sent_count) {
+        ::SetLastError(ERROR_ACCESS_DENIED);
+        return *active_fake_send_input_state->forced_sent_count;
+      }
+
+      return input_count;
+    }
+
+    class ScopedFakeSendInput {
+    public:
+      explicit ScopedFakeSendInput(FakeSendInputState &state):
+          previous_state_ {active_fake_send_input_state},
+          previous_function_ {send_input_function} {
+        active_fake_send_input_state = &state;
+        send_input_function = fake_send_input;
+      }
+
+      ScopedFakeSendInput(const ScopedFakeSendInput &) = delete;
+      ScopedFakeSendInput &operator=(const ScopedFakeSendInput &) = delete;
+      ScopedFakeSendInput(ScopedFakeSendInput &&) noexcept = delete;
+      ScopedFakeSendInput &operator=(ScopedFakeSendInput &&) noexcept = delete;
+
+      ~ScopedFakeSendInput() {
+        send_input_function = previous_function_;
+        active_fake_send_input_state = previous_state_;
+      }
+
+    private:
+      FakeSendInputState *previous_state_ = nullptr;
+      SendInputFunction previous_function_ = nullptr;
+    };
+
   }  // namespace
 
   namespace test {
@@ -304,6 +369,18 @@ namespace lvh::detail {
         CreateGamepadOptions options;
         options.profile = profiles::xbox_360();
         result.unavailable_status = backend.create_gamepad(3, options).status;
+
+        auto oversized_descriptor_options = options;
+        oversized_descriptor_options.profile.report_descriptor.assign(LVH_WINDOWS_MAX_REPORT_DESCRIPTOR_SIZE + 1U, 0x01);
+        result.oversized_descriptor_status = backend.create_gamepad(17, oversized_descriptor_options).status;
+
+        auto oversized_input_options = options;
+        oversized_input_options.profile.input_report_size = LVH_WINDOWS_MAX_INPUT_REPORT_SIZE + 1U;
+        result.oversized_input_report_status = backend.create_gamepad(18, oversized_input_options).status;
+
+        auto oversized_output_options = options;
+        oversized_output_options.profile.output_report_size = LVH_WINDOWS_MAX_OUTPUT_REPORT_SIZE + 1U;
+        result.oversized_output_report_status = backend.create_gamepad(19, oversized_output_options).status;
       }
 
       {
@@ -392,6 +469,93 @@ namespace lvh::detail {
         return false;
       });
 
+      return result;
+    }
+
+    WindowsBackendSendInputResult windows_backend_send_input_devices() {
+      WindowsBackendSendInputResult result;
+      WindowsBackend backend {nullptr, nullptr};
+      FakeSendInputState fake_send_input;
+      ScopedFakeSendInput scoped_send_input {fake_send_input};
+
+      CreateKeyboardOptions keyboard_options;
+      keyboard_options.profile = profiles::keyboard();
+      auto keyboard = backend.create_keyboard(10, keyboard_options);
+      if (keyboard) {
+        result.keyboard_down_status = keyboard.keyboard->submit({.key_code = 0x41, .pressed = true});
+        result.keyboard_up_status = keyboard.keyboard->submit({.key_code = 0x41, .pressed = false});
+        result.keyboard_text_status = keyboard.keyboard->type_text({.text = "Az"});
+        result.keyboard_empty_text_status = keyboard.keyboard->type_text({.text = ""});
+        result.keyboard_invalid_text_status = keyboard.keyboard->type_text({.text = std::string(1U, '\xFF')});
+
+        fake_send_input.forced_sent_count = 0U;
+        result.keyboard_failure_status = keyboard.keyboard->submit({.key_code = 0x42, .pressed = true});
+        fake_send_input.forced_sent_count.reset();
+      } else {
+        result.keyboard_down_status = keyboard.status;
+      }
+
+      CreateMouseOptions mouse_options;
+      mouse_options.profile = profiles::mouse();
+      auto mouse = backend.create_mouse(11, mouse_options);
+      if (mouse) {
+        result.mouse_relative_status =
+          mouse.mouse->submit({.kind = MouseEventKind::relative_motion, .x = 11, .y = -12});
+        result.mouse_absolute_status =
+          mouse.mouse->submit({.kind = MouseEventKind::absolute_motion, .x = 50, .y = 25, .width = 100, .height = 50});
+        result.mouse_degenerate_absolute_status =
+          mouse.mouse->submit({.kind = MouseEventKind::absolute_motion, .x = 99, .y = 99, .width = 1, .height = 0});
+
+        MouseEvent button_event;
+        button_event.kind = MouseEventKind::button;
+        button_event.button = MouseButton::left;
+        button_event.pressed = true;
+        result.mouse_left_button_status = mouse.mouse->submit(button_event);
+        button_event.button = MouseButton::middle;
+        button_event.pressed = false;
+        result.mouse_middle_button_status = mouse.mouse->submit(button_event);
+        button_event.button = MouseButton::right;
+        button_event.pressed = true;
+        result.mouse_right_button_status = mouse.mouse->submit(button_event);
+        button_event.button = MouseButton::side;
+        result.mouse_side_button_status = mouse.mouse->submit(button_event);
+        button_event.button = MouseButton::extra;
+        button_event.pressed = false;
+        result.mouse_extra_button_status = mouse.mouse->submit(button_event);
+
+        result.mouse_vertical_scroll_status =
+          mouse.mouse->submit({.kind = MouseEventKind::vertical_scroll, .high_resolution_scroll = 120});
+        result.mouse_horizontal_scroll_status =
+          mouse.mouse->submit({.kind = MouseEventKind::horizontal_scroll, .high_resolution_scroll = -240});
+
+        fake_send_input.forced_sent_count = 0U;
+        result.mouse_failure_status = mouse.mouse->submit({.kind = MouseEventKind::relative_motion, .x = 1, .y = 1});
+        fake_send_input.forced_sent_count.reset();
+      } else {
+        result.mouse_relative_status = mouse.status;
+      }
+
+      CreateKeyboardOptions invalid_keyboard_options;
+      invalid_keyboard_options.profile = profiles::mouse();
+      result.invalid_keyboard_profile_status = backend.create_keyboard(12, invalid_keyboard_options).status;
+
+      CreateMouseOptions invalid_mouse_options;
+      invalid_mouse_options.profile = profiles::keyboard();
+      result.invalid_mouse_profile_status = backend.create_mouse(13, invalid_mouse_options).status;
+
+      CreateTouchscreenOptions touchscreen_options;
+      touchscreen_options.profile = profiles::touchscreen();
+      result.unsupported_touchscreen_status = backend.create_touchscreen(14, touchscreen_options).status;
+
+      CreateTrackpadOptions trackpad_options;
+      trackpad_options.profile = profiles::trackpad();
+      result.unsupported_trackpad_status = backend.create_trackpad(15, trackpad_options).status;
+
+      CreatePenTabletOptions pen_tablet_options;
+      pen_tablet_options.profile = profiles::pen_tablet();
+      result.unsupported_pen_tablet_status = backend.create_pen_tablet(16, pen_tablet_options).status;
+
+      result.sent_inputs = std::move(fake_send_input.sent_inputs);
       return result;
     }
 

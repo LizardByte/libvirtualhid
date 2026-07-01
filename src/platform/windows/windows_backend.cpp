@@ -46,6 +46,9 @@ namespace lvh::detail {
     class WindowsBackendContext;
 
     using UniqueHandle = std::unique_ptr<void, decltype(&::CloseHandle)>;
+    using SendInputFunction = UINT(WINAPI *)(UINT, LPINPUT, int);
+
+    SendInputFunction send_input_function = ::SendInput;
 
     UniqueHandle make_unique_handle(HANDLE handle) {
       return {handle, &::CloseHandle};
@@ -87,7 +90,7 @@ namespace lvh::detail {
     OperationStatus send_input(std::span<INPUT> inputs, std::string_view operation) {
       using enum ErrorCode;
 
-      if (const auto sent = ::SendInput(
+      if (const auto sent = send_input_function(
             static_cast<UINT>(inputs.size()),
             inputs.data(),
             static_cast<int>(sizeof(INPUT))

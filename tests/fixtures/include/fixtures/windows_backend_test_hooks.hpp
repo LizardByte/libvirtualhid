@@ -37,6 +37,9 @@ namespace lvh::detail::test {
     OperationStatus backend_failure_status;
     OperationStatus transport_failure_status;
     OperationStatus unavailable_status;
+    OperationStatus oversized_descriptor_status;
+    OperationStatus oversized_input_report_status;
+    OperationStatus oversized_output_report_status;
     OperationStatus empty_nodes_create_status;
     OperationStatus oversized_submit_status;
     std::vector<DeviceNode> empty_device_nodes;
@@ -56,8 +59,46 @@ namespace lvh::detail::test {
     bool timeout_result = true;
   };
 
+  struct WindowsSendInputRecord {
+    std::uint32_t type = 0;
+    std::uint16_t virtual_key = 0;
+    std::uint16_t scan_code = 0;
+    std::uint32_t key_flags = 0;
+    std::int32_t mouse_x = 0;
+    std::int32_t mouse_y = 0;
+    std::uint32_t mouse_data = 0;
+    std::uint32_t mouse_flags = 0;
+  };
+
+  struct WindowsBackendSendInputResult {
+    OperationStatus keyboard_down_status;
+    OperationStatus keyboard_up_status;
+    OperationStatus keyboard_text_status;
+    OperationStatus keyboard_empty_text_status;
+    OperationStatus keyboard_invalid_text_status;
+    OperationStatus keyboard_failure_status;
+    OperationStatus mouse_relative_status;
+    OperationStatus mouse_absolute_status;
+    OperationStatus mouse_degenerate_absolute_status;
+    OperationStatus mouse_left_button_status;
+    OperationStatus mouse_middle_button_status;
+    OperationStatus mouse_right_button_status;
+    OperationStatus mouse_side_button_status;
+    OperationStatus mouse_extra_button_status;
+    OperationStatus mouse_vertical_scroll_status;
+    OperationStatus mouse_horizontal_scroll_status;
+    OperationStatus mouse_failure_status;
+    OperationStatus invalid_keyboard_profile_status;
+    OperationStatus invalid_mouse_profile_status;
+    OperationStatus unsupported_touchscreen_status;
+    OperationStatus unsupported_trackpad_status;
+    OperationStatus unsupported_pen_tablet_status;
+    std::vector<WindowsSendInputRecord> sent_inputs;
+  };
+
   WindowsBackendLifecycleResult windows_backend_fake_channel_lifecycle();
   WindowsBackendFailureResult windows_backend_fake_channel_failures();
   WindowsBackendUtilityResult windows_backend_fake_channel_utilities();
+  WindowsBackendSendInputResult windows_backend_send_input_devices();
 
 }  // namespace lvh::detail::test
