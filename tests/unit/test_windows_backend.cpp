@@ -20,6 +20,8 @@ TEST_F(WindowsBackendTest, FakeChannelExercisesLifecycleSubmitCloseAndOutput) {
   EXPECT_TRUE(result.capabilities.requires_installed_driver);
   EXPECT_TRUE(result.capabilities.supports_virtual_hid);
   EXPECT_TRUE(result.capabilities.supports_gamepad);
+  EXPECT_TRUE(result.capabilities.supports_keyboard);
+  EXPECT_TRUE(result.capabilities.supports_mouse);
   EXPECT_TRUE(result.capabilities.supports_output_reports);
 
   ASSERT_TRUE(result.create_status.ok()) << result.create_status.message();
@@ -71,5 +73,11 @@ TEST_F(WindowsBackendTest, UtilityHookCoversEnvironmentErrorAndThreadBranches) {
     result.fallback_error_status.message().find("format unknown Windows error: Windows error 3758096385"),
     std::string::npos
   );
+  EXPECT_TRUE(result.keyboard_create_status.ok()) << result.keyboard_create_status.message();
+  EXPECT_TRUE(result.keyboard_close_status.ok()) << result.keyboard_close_status.message();
+  EXPECT_EQ(result.keyboard_submit_after_close_status.code(), lvh::ErrorCode::device_closed);
+  EXPECT_TRUE(result.mouse_create_status.ok()) << result.mouse_create_status.message();
+  EXPECT_TRUE(result.mouse_close_status.ok()) << result.mouse_close_status.message();
+  EXPECT_EQ(result.mouse_submit_after_close_status.code(), lvh::ErrorCode::device_closed);
   EXPECT_FALSE(result.timeout_result);
 }

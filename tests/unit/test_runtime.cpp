@@ -45,14 +45,18 @@ TEST(RuntimeTest, PlatformDefaultReportsCurrentPlatformCapabilities) {
 #elif defined(_WIN32)
   EXPECT_EQ(runtime->capabilities().backend_name, "windows-umdf");
   EXPECT_TRUE(runtime->capabilities().requires_installed_driver);
-  EXPECT_FALSE(runtime->capabilities().supports_keyboard);
-  EXPECT_FALSE(runtime->capabilities().supports_mouse);
+  EXPECT_TRUE(runtime->capabilities().supports_keyboard);
+  EXPECT_TRUE(runtime->capabilities().supports_mouse);
   EXPECT_FALSE(runtime->capabilities().supports_touchscreen);
   EXPECT_FALSE(runtime->capabilities().supports_trackpad);
   EXPECT_FALSE(runtime->capabilities().supports_pen_tablet);
 
-  EXPECT_EQ(runtime->create_keyboard().status.code(), lvh::ErrorCode::unsupported_profile);
-  EXPECT_EQ(runtime->create_mouse().status.code(), lvh::ErrorCode::unsupported_profile);
+  auto keyboard = runtime->create_keyboard();
+  ASSERT_TRUE(keyboard) << keyboard.status.message();
+  EXPECT_TRUE(keyboard.keyboard->close().ok());
+  auto mouse = runtime->create_mouse();
+  ASSERT_TRUE(mouse) << mouse.status.message();
+  EXPECT_TRUE(mouse.mouse->close().ok());
   EXPECT_EQ(runtime->create_touchscreen().status.code(), lvh::ErrorCode::unsupported_profile);
   EXPECT_EQ(runtime->create_trackpad().status.code(), lvh::ErrorCode::unsupported_profile);
   EXPECT_EQ(runtime->create_pen_tablet().status.code(), lvh::ErrorCode::unsupported_profile);

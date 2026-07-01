@@ -348,6 +348,32 @@ namespace lvh::detail {
       result.fallback_error_status =
         windows_failure(ErrorCode::backend_failure, "format unknown Windows error", 0xE0000001U);
 
+      {
+        WindowsBackend backend {nullptr, nullptr};
+
+        CreateKeyboardOptions keyboard_options;
+        keyboard_options.profile = profiles::keyboard();
+        auto keyboard = backend.create_keyboard(8, keyboard_options);
+        result.keyboard_create_status = keyboard.status;
+        if (keyboard) {
+          result.keyboard_close_status = keyboard.keyboard->close();
+          result.keyboard_submit_after_close_status =
+            keyboard.keyboard->submit({.key_code = 0x41, .pressed = true});
+        }
+
+        CreateMouseOptions mouse_options;
+        mouse_options.profile = profiles::mouse();
+        auto mouse = backend.create_mouse(9, mouse_options);
+        result.mouse_create_status = mouse.status;
+        if (mouse) {
+          result.mouse_close_status = mouse.mouse->close();
+          MouseEvent mouse_event;
+          mouse_event.kind = MouseEventKind::relative_motion;
+          mouse_event.x = 1;
+          result.mouse_submit_after_close_status = mouse.mouse->submit(mouse_event);
+        }
+      }
+
       auto invalid_context = std::make_shared<WindowsBackendContext>(
         std::unique_ptr<WindowsControlChannel> {},
         std::unique_ptr<WindowsControlChannel> {}

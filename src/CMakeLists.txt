@@ -12,8 +12,15 @@ target_sources(${PROJECT_NAME}
 
 if(LIBVIRTUALHID_USES_THREADS)
     find_package(Threads REQUIRED)
-    find_package(PkgConfig REQUIRED)
-    pkg_check_modules(LIBEVDEV REQUIRED IMPORTED_TARGET libevdev)
+    if(LIBEVDEV_CUSTOM_INCLUDE_DIR AND LIBEVDEV_CUSTOM_LIBRARY)
+        add_library(PkgConfig::LIBEVDEV UNKNOWN IMPORTED)
+        set_target_properties(PkgConfig::LIBEVDEV PROPERTIES
+          IMPORTED_LOCATION "${LIBEVDEV_CUSTOM_LIBRARY}"
+          INTERFACE_INCLUDE_DIRECTORIES "${LIBEVDEV_CUSTOM_INCLUDE_DIR}")
+    else()
+        find_package(PkgConfig REQUIRED)
+        pkg_check_modules(LIBEVDEV REQUIRED IMPORTED_TARGET libevdev)
+    endif()
     if(LIBVIRTUALHID_ENABLE_XTEST)
         find_package(X11 QUIET)
     endif()

@@ -47,6 +47,12 @@ namespace lvh::detail::test {
     std::string custom_device_path;
     OperationStatus formatted_error_status;
     OperationStatus fallback_error_status;
+    OperationStatus keyboard_create_status;
+    OperationStatus keyboard_close_status;
+    OperationStatus keyboard_submit_after_close_status;
+    OperationStatus mouse_create_status;
+    OperationStatus mouse_close_status;
+    OperationStatus mouse_submit_after_close_status;
     bool timeout_result = true;
   };
 

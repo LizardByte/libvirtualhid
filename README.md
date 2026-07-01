@@ -99,13 +99,16 @@ be compiler-neutral: prefer a stable C ABI, named pipe, device interface IOCTL,
 or similar control channel over passing C++ STL types across that boundary.
 
 The current Windows backend selects a UMDF control-channel implementation for
-`BackendKind::platform_default`. It probes `\\.\LibVirtualHid`, reports
-`requires_installed_driver = true`, and only advertises gamepad/output-report
-support when the driver package is installed and the control device can be
-opened. The client library stays buildable with MSVC and MinGW/UCRT64 because
-the backend talks to the driver through fixed-size C protocol structures and
-Win32 `DeviceIoControl` calls. The default control device path can be overridden
-for diagnostics with `LIBVIRTUALHID_WINDOWS_CONTROL_DEVICE`.
+`BackendKind::platform_default`. It always exposes keyboard and mouse through
+Win32 `SendInput`, then probes `\\.\LibVirtualHid` for descriptor-driven virtual
+gamepads. It reports `requires_installed_driver = true`, and only advertises
+gamepad/output-report support when the driver package is installed and the
+control device can be opened. Touchscreen, trackpad, and pen tablet support are
+not implemented in the Windows backend yet. The client library stays buildable
+with MSVC and MinGW/UCRT64 because the gamepad path talks to the driver through
+fixed-size C protocol structures and Win32 `DeviceIoControl` calls. The default
+control device path can be overridden for diagnostics with
+`LIBVIRTUALHID_WINDOWS_CONTROL_DEVICE`.
 
 The UMDF driver uses Windows Virtual HID Framework (VHF) for OS-visible gamepad
 devices. Create requests start a VHF child device from the requested descriptor,
