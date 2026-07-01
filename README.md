@@ -118,6 +118,17 @@ callback path. DirectInput, SDL/HIDAPI, Windows.Gaming.Input/GameInput, and the
 browser Gamepad API should therefore see standard HID gamepads after the driver
 is installed. XInput is not a direct target for this HID-only backend because it
 does not emulate the Xbox proprietary bus/API.
+The client protocol uses complete HID reports with the report ID at byte 0. The
+UMDF driver strips that byte when submitting to VHF, where `HID_XFER_PACKET`
+carries the report ID separately, and prepends it again before forwarding output
+reports back to the C++ backend. VHF exposes VID/PID/version and the report
+descriptor for the child HID device; browser tester labels can still fall back
+to generic names when the browser does not assign a standard mapping for that
+descriptor.
+During rapid development reinstalls, the fixed global control symbolic link can
+outlive the previous root device briefly; the driver treats that collision as
+non-fatal so stale object-manager state does not leave the control device in
+Code 31.
 
 Build the UMDF package separately with the Microsoft driver toolchain:
 

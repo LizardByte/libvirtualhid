@@ -381,6 +381,52 @@ namespace {
            request.report_size <= LVH_WINDOWS_MAX_INPUT_REPORT_SIZE;
   }
 
+  bool symbolic_link_already_exists(NTSTATUS status) {
+    constexpr auto status_object_name_collision = static_cast<NTSTATUS>(0xC0000035L);
+    constexpr auto hresult_object_already_exists = static_cast<NTSTATUS>(0x800700B7UL);
+    constexpr auto ntstatus_hresult_object_already_exists = static_cast<NTSTATUS>(0x900700B7UL);
+    return status == status_object_name_collision || status == hresult_object_already_exists ||
+           status == ntstatus_hresult_object_already_exists;
+  }
+
+  std::vector<UCHAR> make_vhf_input_payload(
+    const DeviceRecord &record,
+    const LvhWindowsSubmitInputReportRequest &request
+  ) {
+    const auto report_id = record.request.hardware_ids.report_id;
+    const auto report_begin = request.report;
+    const auto report_end = request.report + request.report_size;
+    if (report_id == 0U) {
+      return {report_begin, report_end};
+    }
+
+    if (request.report_size <= 1U || request.report[0] != report_id) {
+      return {};
+    }
+
+    return {report_begin + 1U, report_end};
+  }
+
+  void copy_vhf_output_payload(
+    LvhWindowsOutputReportEvent &event,
+    const HID_XFER_PACKET &packet
+  ) {
+    const auto report_id = packet.reportId;
+    const auto report_id_size = report_id == 0U ? 0U : 1U;
+    const auto payload_capacity = LVH_WINDOWS_MAX_OUTPUT_REPORT_SIZE - report_id_size;
+    const auto payload_size = std::min(packet.reportBufferLen, static_cast<ULONG>(payload_capacity));
+
+    if (report_id != 0U) {
+      event.report[0] = report_id;
+    }
+
+    if (payload_size > 0U) {
+      std::memcpy(event.report + report_id_size, packet.reportBuffer, payload_size);
+    }
+
+    event.report_size = static_cast<std::uint32_t>(report_id_size + payload_size);
+  }
+
   void set_device_path(std::uint64_t driver_device_id, char (&device_path)[LVH_WINDOWS_MAX_DEVICE_PATH_SIZE]) {
     constexpr auto path_prefix_size = sizeof(LVH_WINDOWS_CONTROL_DEVICE_PATH) - 1U;
     constexpr auto separator_size = 1U;
@@ -495,20 +541,22 @@ namespace {
       return;
     }
 
-    std::vector<UCHAR> report(
-      submit_request->report,
-      submit_request->report + submit_request->report_size
-    );
-    HID_XFER_PACKET packet {};
-    packet.reportBuffer = report.data();
-    packet.reportBufferLen = static_cast<ULONG>(report.size());
-    packet.reportId = report.empty() ? 0 : report.front();
-
     std::lock_guard lock {record->mutex};
     if (record->vhf_handle == nullptr) {
       complete_request(request, STATUS_OBJECT_NAME_NOT_FOUND);
       return;
     }
+
+    auto report = make_vhf_input_payload(*record, *submit_request);
+    if (report.empty()) {
+      complete_request(request, STATUS_INVALID_PARAMETER);
+      return;
+    }
+
+    HID_XFER_PACKET packet {};
+    packet.reportBuffer = report.data();
+    packet.reportBufferLen = static_cast<ULONG>(report.size());
+    packet.reportId = record->request.hardware_ids.report_id;
 
     complete_request(request, VhfReadReportSubmit(record->vhf_handle, &packet));
   }
@@ -575,7 +623,7 @@ NTSTATUS LvhEvtDeviceAdd(WDFDRIVER driver, PWDFDEVICE_INIT device_init) {
   RtlInitUnicodeString(&symbolic_link, global_symbolic_link_name);
   status = WdfDeviceCreateSymbolicLink(device, &symbolic_link);
   trace_status("EvtDeviceAdd WdfDeviceCreateSymbolicLink global", status);
-  if (!NT_SUCCESS(status)) {
+  if (!NT_SUCCESS(status) && !symbolic_link_already_exists(status)) {
     return status;
   }
 
@@ -651,15 +699,7 @@ void LvhEvtVhfWriteReport(
   event.version = LVH_WINDOWS_CONTROL_PROTOCOL_VERSION;
   event.size = sizeof(event);
   event.driver_device_id = record->driver_device_id;
-  event.report_size =
-    std::min(hid_transfer_packet->reportBufferLen, static_cast<ULONG>(LVH_WINDOWS_MAX_OUTPUT_REPORT_SIZE));
-
-  if (event.report_size > 0U) {
-    std::memcpy(event.report, hid_transfer_packet->reportBuffer, event.report_size);
-  } else if (hid_transfer_packet->reportId != 0U) {
-    event.report_size = 1U;
-    event.report[0] = hid_transfer_packet->reportId;
-  }
+  copy_vhf_output_payload(event, *hid_transfer_packet);
 
   queue_output_event(event);
   static_cast<void>(VhfAsyncOperationComplete(vhf_operation_handle, STATUS_SUCCESS));
