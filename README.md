@@ -134,22 +134,41 @@ Developer install/uninstall helpers live under `scripts/windows`:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\windows\install-driver.ps1 `
-  -InfPath .\cmake-build-windows-driver\src\platform\windows\driver\package\Release\libvirtualhid.inf
+  -InfPath .\cmake-build-windows-driver\src\platform\windows\driver\package\Release\libvirtualhid.inf `
+  -LogPath .\cmake-build-windows-driver\install-driver.log
 powershell -ExecutionPolicy Bypass -File .\scripts\windows\uninstall-driver.ps1 `
   -Force -RemoveCertificateSubject "CN=libvirtualhid CI Test Driver Signing"
 ```
 
 The helper stages the INF with `pnputil`, updates an existing
 `ROOT\LIBVIRTUALHID` device when present, and creates that root-enumerated
-device when it is missing. It uses `devcon.exe` when available, otherwise it
-uses SetupAPI/NewDev directly so MSI installs do not require the WDK tools on
-the target machine.
+device when it is missing. It uses SetupAPI/NewDev directly so MSI installs do
+not require the WDK tools on the target machine. Existing devices are detected
+by matching the `ROOT\LIBVIRTUALHID` hardware ID. The SetupAPI path creates a
+root-enumerated instance such as `ROOT\LIBVIRTUALHID\####`.
+The install and uninstall helpers also clean up malformed development devices
+left by earlier installer revisions. The WiX installer writes the helper
+transcript to `C:\ProgramData\libvirtualhid\install-driver.log`.
 
 The driver binary is a UMDF DLL installed through the Windows Driver Store, not
 a libvirtualhid `.sys` copied into `C:\Windows\System32\drivers`. Windows still
 uses its built-in `WUDFRd.sys` and VHF components under `System32\drivers`; the
 libvirtualhid-specific sign that installation completed is the
-`ROOT\LIBVIRTUALHID` device and the `\\.\LibVirtualHid` control device.
+`ROOT\LIBVIRTUALHID` device and the `\\.\LibVirtualHid` control device. The INF
+includes the built-in `WUDFRd` install sections for the root `System` control
+device, appends the VHF lower filter, sets `VhfMode=1` for the UMDF VHF source
+stack, and leaves UMDF dispatcher policy at the framework default to match the
+inbox VHF source-driver shape. The installer also writes `VhfMode=1` onto the
+root device before starting the driver so root-enumerated development installs
+get the same VHF source mode as the INF hardware section. The UMDF control
+device starts without opening VHF; gamepad creation opens VHF lazily so
+target-open failures are reported through the create-device response instead of
+making `\\.\LibVirtualHid` unavailable. The generated INF uses the same UMDF
+library version as the WDF headers and stub library selected by CMake. The
+package defaults to UMDF 2.15, matching the inbox VHF UMDF source driver while
+still exposing the framework APIs used by libvirtualhid. The driver target links
+the MSVC runtime statically to avoid requiring VC runtime DLLs in the UMDF host
+process.
 
 Windows driver packages require a signed catalog for normal installation. Pull
 request builds generate a short-lived self-signed test certificate, sign

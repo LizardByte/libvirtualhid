@@ -11,10 +11,44 @@ param(
 
   [string] $HardwareId = "ROOT\LIBVIRTUALHID",
 
+  [string] $LogPath,
+
   [switch] $StageOnly
 )
 
 $ErrorActionPreference = "Stop"
+$script:LibVirtualHidTranscriptStarted = $false
+
+function Start-LibVirtualHidTranscript {
+  param([string] $Path)
+
+  if (-not $Path) {
+    return
+  }
+
+  try {
+    $logDirectory = Split-Path -Parent $Path
+    if ($logDirectory) {
+      New-Item -ItemType Directory -Path $logDirectory -Force | Out-Null
+    }
+    Start-Transcript -Path $Path -Append | Out-Null
+    $script:LibVirtualHidTranscriptStarted = $true
+  } catch {
+    Write-Warning "Unable to start libvirtualhid install transcript: $($_.Exception.Message)"
+  }
+}
+
+function Stop-LibVirtualHidTranscript {
+  if (-not $script:LibVirtualHidTranscriptStarted) {
+    return
+  }
+
+  try {
+    Stop-Transcript | Out-Null
+  } catch {
+    Write-Warning "Unable to stop libvirtualhid install transcript: $($_.Exception.Message)"
+  }
+}
 
 function Invoke-CheckedCommand {
   param(
@@ -22,36 +56,15 @@ function Invoke-CheckedCommand {
     [string] $FilePath,
 
     [Parameter(Mandatory = $true)]
-    [string[]] $Arguments
+    [string[]] $Arguments,
+
+    [int[]] $SuccessExitCodes = @(0)
   )
 
   & $FilePath @Arguments
-  if ($LASTEXITCODE -ne 0) {
+  if ($LASTEXITCODE -notin $SuccessExitCodes) {
     throw "$FilePath exited with code $LASTEXITCODE"
   }
-}
-
-function Find-Devcon {
-  if ($env:DEVCON_EXE -and (Test-Path -LiteralPath $env:DEVCON_EXE)) {
-    return $env:DEVCON_EXE
-  }
-
-  $roots = @(
-    $env:WDKContentRoot,
-    $env:WindowsSdkDir,
-    "${env:ProgramFiles(x86)}\Windows Kits\10"
-  ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) }
-
-  foreach ($root in $roots) {
-    $candidate = Get-ChildItem -LiteralPath $root -Recurse -Filter devcon.exe -ErrorAction SilentlyContinue |
-      Where-Object { $_.FullName -match "\\x64\\devcon\.exe$" } |
-      Select-Object -First 1
-    if ($candidate) {
-      return $candidate.FullName
-    }
-  }
-
-  return $null
 }
 
 function Import-DriverCertificate {
@@ -121,7 +134,7 @@ namespace LibVirtualHid.SetupApi {
       uint creationFlags,
       ref SpDevinfoData deviceInfoData);
 
-    [DllImport("setupapi.dll", SetLastError = true)]
+    [DllImport("setupapi.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern bool SetupDiSetDeviceRegistryProperty(
       IntPtr deviceInfoSet,
       ref SpDevinfoData deviceInfoData,
@@ -146,8 +159,23 @@ namespace LibVirtualHid.SetupApi {
       uint installFlags,
       out bool rebootRequired);
 
+    public static void Update(string infPath, string hardwareId, out bool rebootRequired) {
+      rebootRequired = false;
+
+      if (!UpdateDriverForPlugAndPlayDevices(
+            IntPtr.Zero,
+            hardwareId,
+            infPath,
+            InstallFlagForce | InstallFlagNonInteractive,
+            out rebootRequired)) {
+        ThrowLastWin32Error("UpdateDriverForPlugAndPlayDevices");
+      }
+    }
+
     public static void Install(string infPath, string hardwareId, out bool rebootRequired) {
       rebootRequired = false;
+
+      string rootDeviceName = GetRootDeviceName(hardwareId);
 
       Guid classGuid;
       uint requiredSize;
@@ -167,7 +195,7 @@ namespace LibVirtualHid.SetupApi {
 
         if (!SetupDiCreateDeviceInfo(
               deviceInfoSet,
-              className.ToString(),
+              rootDeviceName,
               ref classGuid,
               null,
               IntPtr.Zero,
@@ -192,15 +220,22 @@ namespace LibVirtualHid.SetupApi {
       } finally {
         SetupDiDestroyDeviceInfoList(deviceInfoSet);
       }
+    }
 
-      if (!UpdateDriverForPlugAndPlayDevices(
-            IntPtr.Zero,
-            hardwareId,
-            infPath,
-            InstallFlagForce | InstallFlagNonInteractive,
-            out rebootRequired)) {
-        ThrowLastWin32Error("UpdateDriverForPlugAndPlayDevices");
+    private static string GetRootDeviceName(string hardwareId) {
+      const string rootPrefix = "ROOT\\";
+      if (!hardwareId.StartsWith(rootPrefix, StringComparison.OrdinalIgnoreCase)) {
+        throw new ArgumentException("Hardware ID must use the ROOT\\ enumerator.", "hardwareId");
       }
+
+      string rootDeviceName = hardwareId.Substring(rootPrefix.Length);
+      if (rootDeviceName.Length == 0 || rootDeviceName.Contains("\\")) {
+        throw new ArgumentException(
+          "Hardware ID must be a root-enumerated device ID without an instance suffix.",
+          "hardwareId");
+      }
+
+      return rootDeviceName;
     }
 
     private static void ThrowLastWin32Error(string action) {
@@ -217,13 +252,106 @@ function Get-RootDeviceInstanceId {
   param([string] $TargetHardwareId)
 
   try {
+    $devices = & pnputil.exe /enum-devices /deviceid $TargetHardwareId /deviceids
+    if ($LASTEXITCODE -eq 0) {
+      $instanceIds = @($devices |
+        Where-Object { $_ -match "^\s*Instance ID\s*:\s*(.+)$" } |
+        ForEach-Object { $Matches[1].Trim() })
+      if ($instanceIds.Count -gt 0) {
+        return $instanceIds
+      }
+    }
+  } catch {
+    Write-Verbose "Unable to enumerate PnP devices with pnputil: $($_.Exception.Message)"
+  }
+
+  try {
     $prefix = "$TargetHardwareId\"
     @(Get-CimInstance -ClassName Win32_PnPEntity -ErrorAction Stop |
-      Where-Object { $_.PNPDeviceID -like "$prefix*" } |
+      Where-Object { $_.PNPDeviceID -like "$prefix*" -or $_.HardwareID -contains $TargetHardwareId } |
       ForEach-Object { $_.PNPDeviceID })
   } catch {
     Write-Verbose "Unable to enumerate PnP devices: $($_.Exception.Message)"
     @()
+  }
+}
+
+function Get-RegistryRootDevice {
+  param([string] $TargetHardwareId)
+
+  $rootKey = "HKLM:\SYSTEM\CurrentControlSet\Enum\ROOT"
+  Get-ChildItem -LiteralPath $rootKey -ErrorAction SilentlyContinue | ForEach-Object {
+    $rootDeviceId = $_.PSChildName
+    Get-ChildItem -LiteralPath $_.PSPath -ErrorAction SilentlyContinue | ForEach-Object {
+      $instanceId = "ROOT\$rootDeviceId\$($_.PSChildName)"
+      $hardwareIds = @()
+      try {
+        $hardwareIds = @((Get-ItemProperty -LiteralPath $_.PSPath -Name HardwareID -ErrorAction Stop).HardwareID)
+      } catch {
+        $hardwareIds = @()
+      }
+
+      $hasExactHardwareId = $hardwareIds -contains $TargetHardwareId
+      $hasCorruptHardwareId = (
+        $hardwareIds.Count -gt 1 -and
+        -not $hasExactHardwareId -and
+        (($hardwareIds -join "") -ieq $TargetHardwareId)
+      )
+      $hasTargetInstanceId = $instanceId -like "$TargetHardwareId\*"
+
+      if ($hasExactHardwareId -or $hasCorruptHardwareId -or $hasTargetInstanceId) {
+        [pscustomobject]@{
+          InstanceId = $instanceId
+          HasExactHardwareId = $hasExactHardwareId
+          HasCorruptHardwareId = $hasCorruptHardwareId
+        }
+      }
+    }
+  }
+}
+
+function Remove-DeviceInstance {
+  [CmdletBinding(SupportsShouldProcess)]
+  param([string] $InstanceId)
+
+  if ($PSCmdlet.ShouldProcess($InstanceId, "Remove stale libvirtualhid root device")) {
+    Invoke-CheckedCommand -FilePath "pnputil.exe" -Arguments @("/remove-device", $InstanceId)
+  }
+}
+
+function Set-RootDeviceVhfMode {
+  [CmdletBinding(SupportsShouldProcess)]
+  param([string] $InstanceId)
+
+  $deviceRegistryPath = "HKLM:\SYSTEM\CurrentControlSet\Enum\$InstanceId"
+  if (-not (Test-Path -LiteralPath $deviceRegistryPath)) {
+    Write-Verbose "Unable to set VhfMode because $deviceRegistryPath does not exist."
+    return
+  }
+
+  if ($PSCmdlet.ShouldProcess($InstanceId, "Set VhfMode=1 for UMDF VHF source device")) {
+    New-ItemProperty -LiteralPath $deviceRegistryPath -Name "VhfMode" -Value 1 -PropertyType DWord -Force | Out-Null
+    Write-Information "Set VhfMode=1 on $InstanceId." -InformationAction Continue
+  }
+}
+
+function Update-RootDeviceDriverWithSetupApi {
+  [CmdletBinding(SupportsShouldProcess)]
+  param(
+    [Parameter(Mandatory = $true)]
+    [string] $Path,
+
+    [Parameter(Mandatory = $true)]
+    [string] $TargetHardwareId
+  )
+
+  Add-SetupApiRootDeviceInstaller
+  $rebootRequired = $false
+  if ($PSCmdlet.ShouldProcess($TargetHardwareId, "Update libvirtualhid development device driver")) {
+    [LibVirtualHid.SetupApi.RootDeviceInstaller]::Update($Path, $TargetHardwareId, [ref] $rebootRequired)
+  }
+  if ($rebootRequired) {
+    Write-Warning "Windows reported that a reboot is required to finish installing the libvirtualhid driver."
   }
 }
 
@@ -244,30 +372,44 @@ function Install-RootDeviceWithSetupApi {
   }
 }
 
-$resolvedInf = (Resolve-Path -LiteralPath $InfPath).Path
-Import-DriverCertificate -Path $CertificatePath
+Start-LibVirtualHidTranscript -Path $LogPath
 
-if ($PSCmdlet.ShouldProcess($resolvedInf, "Stage libvirtualhid driver package")) {
-  Invoke-CheckedCommand -FilePath "pnputil.exe" -Arguments @("/add-driver", $resolvedInf, "/install")
-}
+try {
+  $resolvedInf = (Resolve-Path -LiteralPath $InfPath).Path
+  Import-DriverCertificate -Path $CertificatePath
 
-if ($StageOnly) {
-  return
-}
-
-if ((Get-RootDeviceInstanceId -TargetHardwareId $HardwareId).Count -gt 0) {
-  Write-Information "The $HardwareId device already exists." -InformationAction Continue
-  return
-}
-
-$devcon = Find-Devcon
-if ($devcon) {
-  if ($PSCmdlet.ShouldProcess($HardwareId, "Create libvirtualhid development device with devcon")) {
-    Invoke-CheckedCommand -FilePath $devcon -Arguments @("install", $resolvedInf, $HardwareId)
+  if ($PSCmdlet.ShouldProcess($resolvedInf, "Stage libvirtualhid driver package")) {
+    Invoke-CheckedCommand -FilePath "pnputil.exe" -Arguments @("/add-driver", $resolvedInf) -SuccessExitCodes @(0, 5)
   }
-  return
-}
 
-if ($PSCmdlet.ShouldProcess($HardwareId, "Create libvirtualhid development device with SetupAPI")) {
-  Install-RootDeviceWithSetupApi -Path $resolvedInf -TargetHardwareId $HardwareId
+  if ($StageOnly) {
+    return
+  }
+
+  $registryRootDevices = @(Get-RegistryRootDevice -TargetHardwareId $HardwareId)
+  foreach ($device in ($registryRootDevices | Where-Object { $_.HasCorruptHardwareId })) {
+    Remove-DeviceInstance -InstanceId $device.InstanceId
+  }
+
+  $rootDevices = @(Get-RootDeviceInstanceId -TargetHardwareId $HardwareId)
+  if ($rootDevices.Count -gt 0) {
+    Write-Information "Updating the existing $HardwareId device driver." -InformationAction Continue
+    foreach ($rootDevice in $rootDevices) {
+      Set-RootDeviceVhfMode -InstanceId $rootDevice
+    }
+    Update-RootDeviceDriverWithSetupApi -Path $resolvedInf -TargetHardwareId $HardwareId
+    return
+  }
+
+  if ($PSCmdlet.ShouldProcess($HardwareId, "Create libvirtualhid development device with SetupAPI")) {
+    Install-RootDeviceWithSetupApi -Path $resolvedInf -TargetHardwareId $HardwareId
+  }
+
+  $rootDevices = @(Get-RootDeviceInstanceId -TargetHardwareId $HardwareId)
+  foreach ($rootDevice in $rootDevices) {
+    Set-RootDeviceVhfMode -InstanceId $rootDevice
+  }
+  Update-RootDeviceDriverWithSetupApi -Path $resolvedInf -TargetHardwareId $HardwareId
+} finally {
+  Stop-LibVirtualHidTranscript
 }

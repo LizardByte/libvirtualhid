@@ -1,11 +1,12 @@
 ;
 ; libvirtualhid UMDF2 control driver package.
+; This package includes UMDF startup file tracing for local driver bring-up.
 ;
 
 [Version]
 Signature="$WINDOWS NT$"
-Class=HIDClass
-ClassGuid={745A17A0-74D3-11D0-B6FE-00A0C90F57DA}
+Class=System
+ClassGuid={4D36E97D-E325-11CE-BFC1-08002BE10318}
 Provider=%ManufacturerName%
 DriverVer=*,@LIBVIRTUALHID_DRIVER_VERSION@
 CatalogFile=libvirtualhid.cat
@@ -28,36 +29,37 @@ libvirtualhid_umdf.dll=1
 
 [DeviceInstall.NT]
 CopyFiles=UMDriverCopy
+Include=wudfrd.inf
+Needs=WUDFRD.NT
 
 [DeviceInstall.NT.HW]
-AddReg=DeviceInstall_AddReg
+AddReg=DeviceInstall_Device_AddReg@LIBVIRTUALHID_DRIVER_VHF_ADDREG@
+Include=wudfrd.inf
+Needs=WUDFRD.NT.HW
 
 [UMDriverCopy]
 libvirtualhid_umdf.dll
 
-[DeviceInstall_AddReg]
-HKR,,"LowerFilters",0x00010000,"vhf"
+[DeviceInstall_Device_AddReg]
+HKR,,Security,,"D:P(A;;GA;;;SY)(A;;GRGWGX;;;BA)(A;;GRGWGX;;;AU)"
+
+[DeviceInstall_Vhf_AddReg]
+HKR,,"LowerFilters",0x00010008,"vhf"
+HKR,,VhfMode,0x00010001,0x1
 
 [DeviceInstall.NT.Services]
-AddService=WUDFRd,0x000001fa,WUDFRD_ServiceInstall
-
-[WUDFRD_ServiceInstall]
-DisplayName=%WudfRdDisplayName%
-ServiceType=1
-StartType=3
-ErrorControl=1
-ServiceBinary=%12%\WUDFRd.sys
+Include=wudfrd.inf
+Needs=WUDFRD.NT.Services
 
 [DeviceInstall.NT.Wdf]
 UmdfService=libvirtualhid_umdf,libvirtualhid_umdf_Install
 UmdfServiceOrder=libvirtualhid_umdf
 
 [libvirtualhid_umdf_Install]
-UmdfLibraryVersion=2.0
+UmdfLibraryVersion=@LIBVIRTUALHID_UMDF_LIBRARY_VERSION@
 ServiceBinary=%13%\libvirtualhid_umdf.dll
 
 [Strings]
 ManufacturerName="LizardByte"
 DiskName="libvirtualhid UMDF Driver Install Disk"
 DeviceName="libvirtualhid Virtual HID Control Device"
-WudfRdDisplayName="Windows Driver Foundation - User-mode Driver Framework Reflector"

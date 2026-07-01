@@ -2,6 +2,9 @@
 # Project configuration
 #
 cmake_minimum_required(VERSION 3.24)
+if(POLICY CMP0091)
+    cmake_policy(SET CMP0091 NEW)
+endif()
 project(libvirtualhid VERSION 0.0.0
         DESCRIPTION "Cross-platform virtual HID device library."
         HOMEPAGE_URL "https://app.lizardbyte.dev"

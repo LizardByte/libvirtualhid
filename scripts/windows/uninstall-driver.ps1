@@ -63,6 +63,7 @@ function Find-PublishedName {
   $drivers = & pnputil.exe /enum-drivers
   $currentPublished = $null
   $currentOriginal = $null
+  $publishedNames = @()
 
   foreach ($line in $drivers) {
     if ($line -match "^\s*Published Name\s*:\s*(.+)$") {
@@ -74,25 +75,69 @@ function Find-PublishedName {
     if ($line -match "^\s*Original Name\s*:\s*(.+)$") {
       $currentOriginal = $Matches[1].Trim()
       if ($currentPublished -and $currentOriginal -ieq $TargetOriginalName) {
-        return $currentPublished
+        $publishedNames += $currentPublished
       }
     }
   }
 
-  return $null
+  return $publishedNames
 }
 
 function Get-RootDeviceInstanceId {
   param([string] $TargetHardwareId)
 
   try {
+    $devices = & pnputil.exe /enum-devices /deviceid $TargetHardwareId /deviceids
+    if ($LASTEXITCODE -eq 0) {
+      $instanceIds = @($devices |
+        Where-Object { $_ -match "^\s*Instance ID\s*:\s*(.+)$" } |
+        ForEach-Object { $Matches[1].Trim() })
+      if ($instanceIds.Count -gt 0) {
+        return $instanceIds
+      }
+    }
+  } catch {
+    Write-Verbose "Unable to enumerate PnP devices with pnputil: $($_.Exception.Message)"
+  }
+
+  try {
     $prefix = "$TargetHardwareId\"
     @(Get-CimInstance -ClassName Win32_PnPEntity -ErrorAction Stop |
-      Where-Object { $_.PNPDeviceID -like "$prefix*" } |
+      Where-Object { $_.PNPDeviceID -like "$prefix*" -or $_.HardwareID -contains $TargetHardwareId } |
       ForEach-Object { $_.PNPDeviceID })
   } catch {
     Write-Verbose "Unable to enumerate PnP devices: $($_.Exception.Message)"
     @()
+  }
+}
+
+function Get-RegistryRootDeviceInstanceId {
+  param([string] $TargetHardwareId)
+
+  $rootKey = "HKLM:\SYSTEM\CurrentControlSet\Enum\ROOT"
+  Get-ChildItem -LiteralPath $rootKey -ErrorAction SilentlyContinue | ForEach-Object {
+    $rootDeviceId = $_.PSChildName
+    Get-ChildItem -LiteralPath $_.PSPath -ErrorAction SilentlyContinue | ForEach-Object {
+      $instanceId = "ROOT\$rootDeviceId\$($_.PSChildName)"
+      $hardwareIds = @()
+      try {
+        $hardwareIds = @((Get-ItemProperty -LiteralPath $_.PSPath -Name HardwareID -ErrorAction Stop).HardwareID)
+      } catch {
+        $hardwareIds = @()
+      }
+
+      $hasExactHardwareId = $hardwareIds -contains $TargetHardwareId
+      $hasCorruptHardwareId = (
+        $hardwareIds.Count -gt 1 -and
+        -not $hasExactHardwareId -and
+        (($hardwareIds -join "") -ieq $TargetHardwareId)
+      )
+      $hasTargetInstanceId = $instanceId -like "$TargetHardwareId\*"
+
+      if ($hasExactHardwareId -or $hasCorruptHardwareId -or $hasTargetInstanceId) {
+        $instanceId
+      }
+    }
   }
 }
 
@@ -127,23 +172,34 @@ foreach ($instanceId in (Get-RootDeviceInstanceId -TargetHardwareId $HardwareId)
   }
 }
 
-if (-not $PublishedName) {
-  $PublishedName = Find-PublishedName -TargetOriginalName $OriginalName
+foreach ($instanceId in (Get-RegistryRootDeviceInstanceId -TargetHardwareId $HardwareId | Select-Object -Unique)) {
+  if ($PSCmdlet.ShouldProcess($instanceId, "Remove libvirtualhid registry-discovered development device with pnputil")) {
+    Invoke-CheckedCommand -FilePath "pnputil.exe" -Arguments @("/remove-device", $instanceId) -IgnoreFailure
+  }
 }
 
-if (-not $PublishedName) {
+$publishedNames = @()
+if ($PublishedName) {
+  $publishedNames += $PublishedName
+} else {
+  $publishedNames = @(Find-PublishedName -TargetOriginalName $OriginalName)
+}
+
+if ($publishedNames.Count -eq 0) {
   Write-Warning "No staged libvirtualhid driver package matching $OriginalName was found."
   Remove-DriverCertificate -Subject $RemoveCertificateSubject
   return
 }
 
-$deleteArgs = @("/delete-driver", $PublishedName, "/uninstall")
-if ($Force) {
-  $deleteArgs += "/force"
-}
+foreach ($driverPackage in $publishedNames) {
+  $deleteArgs = @("/delete-driver", $driverPackage, "/uninstall")
+  if ($Force) {
+    $deleteArgs += "/force"
+  }
 
-if ($PSCmdlet.ShouldProcess($PublishedName, "Delete libvirtualhid driver package")) {
-  Invoke-CheckedCommand -FilePath "pnputil.exe" -Arguments $deleteArgs
+  if ($PSCmdlet.ShouldProcess($driverPackage, "Delete libvirtualhid driver package")) {
+    Invoke-CheckedCommand -FilePath "pnputil.exe" -Arguments $deleteArgs
+  }
 }
 
 Remove-DriverCertificate -Subject $RemoveCertificateSubject

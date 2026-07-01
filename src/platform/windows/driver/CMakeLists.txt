@@ -53,6 +53,12 @@ set(_lvh_wdk_shared_include_candidates)
 set(_lvh_wdf_library_candidates)
 set(_lvh_wdk_um_library_candidates)
 set(_lvh_wdk_tool_candidates)
+set(LIBVIRTUALHID_UMDF_LIBRARY_VERSION "2.15" CACHE STRING
+    "UMDF library version used for the Windows driver package")
+option(LIBVIRTUALHID_WINDOWS_DRIVER_ENABLE_VHF
+       "Attach the Windows driver package to the inbox Virtual HID Framework lower filter"
+       ON)
+string(REGEX REPLACE "\\." "\\\\." _lvh_umdf_library_version_regex "${LIBVIRTUALHID_UMDF_LIBRARY_VERSION}")
 foreach(lvh_wdk_root_cmake IN LISTS _lvh_wdk_roots)
     if(EXISTS "${lvh_wdk_root_cmake}")
         file(GLOB _lvh_wdf_include_glob
@@ -83,12 +89,14 @@ endforeach()
 
 if(_lvh_wdf_include_candidates)
     list(SORT _lvh_wdf_include_candidates COMPARE NATURAL ORDER DESCENDING)
+    list(FILTER _lvh_wdf_include_candidates INCLUDE REGEX "/${_lvh_umdf_library_version_regex}$")
 endif()
 if(_lvh_wdk_shared_include_candidates)
     list(SORT _lvh_wdk_shared_include_candidates COMPARE NATURAL ORDER DESCENDING)
 endif()
 if(_lvh_wdf_library_candidates)
     list(SORT _lvh_wdf_library_candidates COMPARE NATURAL ORDER DESCENDING)
+    list(FILTER _lvh_wdf_library_candidates INCLUDE REGEX "/${_lvh_umdf_library_version_regex}$")
 endif()
 if(_lvh_wdk_um_library_candidates)
     list(SORT _lvh_wdk_um_library_candidates COMPARE NATURAL ORDER DESCENDING)
@@ -141,6 +149,31 @@ message(STATUS "WDF UMDF stub library: ${LIBVIRTUALHID_WDF_DRIVER_STUB_UM_LIBRAR
 message(STATUS "VHF UMDF library: ${LIBVIRTUALHID_VHF_UM_LIBRARY}")
 message(STATUS "NTDLL import library: ${LIBVIRTUALHID_NTDLL_LIBRARY}")
 
+get_filename_component(_lvh_wdf_include_version "${LIBVIRTUALHID_WDF_INCLUDE_DIR}" NAME)
+get_filename_component(_lvh_wdf_stub_directory "${LIBVIRTUALHID_WDF_DRIVER_STUB_UM_LIBRARY}" DIRECTORY)
+get_filename_component(_lvh_wdf_stub_version "${_lvh_wdf_stub_directory}" NAME)
+if(NOT _lvh_wdf_include_version MATCHES "^2\\.[0-9]+$")
+    message(FATAL_ERROR
+            "Could not determine the UMDF library version from ${LIBVIRTUALHID_WDF_INCLUDE_DIR}.")
+endif()
+if(NOT _lvh_wdf_include_version STREQUAL LIBVIRTUALHID_UMDF_LIBRARY_VERSION)
+    message(FATAL_ERROR
+            "UMDF include version ${_lvh_wdf_include_version} does not match requested "
+            "version ${LIBVIRTUALHID_UMDF_LIBRARY_VERSION}.")
+endif()
+if(NOT _lvh_wdf_stub_version STREQUAL LIBVIRTUALHID_UMDF_LIBRARY_VERSION)
+    message(FATAL_ERROR
+            "UMDF stub library version ${_lvh_wdf_stub_version} does not match requested "
+            "version ${LIBVIRTUALHID_UMDF_LIBRARY_VERSION}.")
+endif()
+message(STATUS "UMDF library version: ${LIBVIRTUALHID_UMDF_LIBRARY_VERSION}")
+if(LIBVIRTUALHID_WINDOWS_DRIVER_ENABLE_VHF)
+    set(LIBVIRTUALHID_DRIVER_VHF_ADDREG ",DeviceInstall_Vhf_AddReg")
+else()
+    set(LIBVIRTUALHID_DRIVER_VHF_ADDREG "")
+endif()
+message(STATUS "Windows driver VHF lower filter: ${LIBVIRTUALHID_WINDOWS_DRIVER_ENABLE_VHF}")
+
 find_program(LIBVIRTUALHID_STAMPINF
              NAMES stampinf stampinf.exe
              PATHS ${_lvh_wdk_tool_candidates})
@@ -186,6 +219,7 @@ target_link_libraries(libvirtualhid_umdf
   "${LIBVIRTUALHID_VHF_UM_LIBRARY}"
   "${LIBVIRTUALHID_NTDLL_LIBRARY}")
 set_target_properties(libvirtualhid_umdf PROPERTIES
+  MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
   OUTPUT_NAME libvirtualhid_umdf
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/package")
 

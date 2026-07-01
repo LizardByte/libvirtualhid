@@ -31,7 +31,9 @@
 #include <atomic>
 #include <charconv>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
+#include <cwchar>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -56,6 +58,7 @@ namespace {
 
   constexpr auto symbolic_link_name = L"\\DosDevices\\LibVirtualHid";
   constexpr auto global_symbolic_link_name = L"\\DosDevices\\Global\\LibVirtualHid";
+  constexpr auto trace_file_name = L"libvirtualhid-umdf-driver.log";
 
   struct DeviceRecord {
     std::mutex mutex;
@@ -67,6 +70,7 @@ namespace {
 
   struct DriverState {
     std::atomic<std::uint64_t> next_driver_device_id {1};
+    std::mutex vhf_target_mutex;
     WDFIOTARGET vhf_io_target {};
     std::mutex devices_mutex;
     std::map<std::uint64_t, std::shared_ptr<DeviceRecord>> devices;
@@ -78,6 +82,67 @@ namespace {
   DriverState &driver_state() {
     static DriverState state;
     return state;
+  }
+
+  void trace_status(const char *step, NTSTATUS status = STATUS_SUCCESS) {
+    static std::atomic<unsigned long> sequence {0};
+
+    wchar_t trace_file_path[MAX_PATH] {};
+    constexpr auto trace_file_path_length = static_cast<DWORD>(MAX_PATH);
+    auto trace_path_size = GetTempPathW(trace_file_path_length, trace_file_path);
+    if (trace_path_size == 0U || trace_path_size >= trace_file_path_length) {
+      return;
+    }
+
+    const auto file_name_size = wcslen(trace_file_name);
+    if (trace_path_size + file_name_size >= trace_file_path_length) {
+      return;
+    }
+    std::memcpy(
+      trace_file_path + trace_path_size,
+      trace_file_name,
+      (file_name_size + 1U) * sizeof(wchar_t)
+    );
+
+    const auto file = CreateFileW(
+      trace_file_path,
+      FILE_APPEND_DATA,
+      FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+      nullptr,
+      OPEN_ALWAYS,
+      FILE_ATTRIBUTE_NORMAL,
+      nullptr
+    );
+    if (file == INVALID_HANDLE_VALUE) {
+      return;
+    }
+
+    SYSTEMTIME time {};
+    GetSystemTime(&time);
+
+    char line[320] {};
+    const auto written_chars = std::snprintf(
+      line,
+      sizeof(line),
+      "%04hu-%02hu-%02huT%02hu:%02hu:%02hu.%03huZ [%lu] %s status=0x%08lX\r\n",
+      time.wYear,
+      time.wMonth,
+      time.wDay,
+      time.wHour,
+      time.wMinute,
+      time.wSecond,
+      time.wMilliseconds,
+      sequence.fetch_add(1U) + 1U,
+      step,
+      static_cast<unsigned long>(status)
+    );
+    if (written_chars > 0) {
+      DWORD bytes_written {};
+      const auto bytes_to_write = static_cast<DWORD>(std::min<int>(written_chars, sizeof(line) - 1U));
+      static_cast<void>(WriteFile(file, line, bytes_to_write, &bytes_written, nullptr));
+    }
+
+    static_cast<void>(CloseHandle(file));
   }
 
   bool valid_header(std::uint32_t version, std::uint32_t size, std::uint32_t expected_size) {
@@ -221,6 +286,7 @@ namespace {
 
   NTSTATUS initialize_vhf_target(WDFDEVICE device) {
     auto &state = driver_state();
+    std::lock_guard lock {state.vhf_target_mutex};
     if (state.vhf_io_target != nullptr) {
       return STATUS_SUCCESS;
     }
@@ -259,10 +325,11 @@ namespace {
     }
   }
 
-  NTSTATUS create_vhf_device(const std::shared_ptr<DeviceRecord> &record) {
+  NTSTATUS create_vhf_device(WDFDEVICE device, const std::shared_ptr<DeviceRecord> &record) {
     auto &state = driver_state();
-    if (state.vhf_io_target == nullptr) {
-      return STATUS_DEVICE_NOT_READY;
+    auto status = initialize_vhf_target(device);
+    if (!NT_SUCCESS(status)) {
+      return status;
     }
 
     const auto descriptor_size = record->request.report_sizes.report_descriptor_size;
@@ -284,7 +351,7 @@ namespace {
     vhf_config.VersionNumber = record->request.hardware_ids.device_version;
     vhf_config.EvtVhfAsyncOperationWriteReport = LvhEvtVhfWriteReport;
 
-    auto status = VhfCreate(&vhf_config, &record->vhf_handle);
+    status = VhfCreate(&vhf_config, &record->vhf_handle);
     if (!NT_SUCCESS(status)) {
       record->vhf_handle = nullptr;
       return status;
@@ -334,7 +401,7 @@ namespace {
     }
   }
 
-  void handle_create_gamepad_request(WDFREQUEST request) {
+  void handle_create_gamepad_request(WDFDEVICE device, WDFREQUEST request) {
     auto *create_request = static_cast<LvhWindowsCreateGamepadRequest *>(nullptr);
     auto status = retrieve_input_buffer(request, create_request);
     if (!NT_SUCCESS(status)) {
@@ -365,7 +432,7 @@ namespace {
     record->driver_device_id = driver_device_id;
     record->request = *create_request;
 
-    status = create_vhf_device(record);
+    status = create_vhf_device(device, record);
     if (!NT_SUCCESS(status)) {
       create_response->status = LVH_WINDOWS_STATUS_BACKEND_FAILURE;
       complete_request(request, STATUS_SUCCESS, sizeof(*create_response));
@@ -473,14 +540,20 @@ namespace {
 }  // namespace
 
 extern "C" NTSTATUS DriverEntry(PDRIVER_OBJECT driver_object, PUNICODE_STRING registry_path) {
+  trace_status("DriverEntry begin");
+
   WDF_DRIVER_CONFIG config;
   WDF_DRIVER_CONFIG_INIT(&config, LvhEvtDeviceAdd);
 
-  return WdfDriverCreate(driver_object, registry_path, WDF_NO_OBJECT_ATTRIBUTES, &config, WDF_NO_HANDLE);
+  const auto status = WdfDriverCreate(driver_object, registry_path, WDF_NO_OBJECT_ATTRIBUTES, &config, WDF_NO_HANDLE);
+  trace_status("DriverEntry WdfDriverCreate", status);
+  return status;
 }
 
 NTSTATUS LvhEvtDeviceAdd(WDFDRIVER driver, PWDFDEVICE_INIT device_init) {
   UNREFERENCED_PARAMETER(driver);
+
+  trace_status("EvtDeviceAdd begin");
 
   WDF_PNPPOWER_EVENT_CALLBACKS pnp_callbacks;
   WDF_PNPPOWER_EVENT_CALLBACKS_INIT(&pnp_callbacks);
@@ -493,6 +566,7 @@ NTSTATUS LvhEvtDeviceAdd(WDFDRIVER driver, PWDFDEVICE_INIT device_init) {
   WDF_OBJECT_ATTRIBUTES_INIT(&device_attributes);
   device_attributes.EvtCleanupCallback = LvhEvtDeviceCleanup;
   auto status = WdfDeviceCreate(&device_init, &device_attributes, &device);
+  trace_status("EvtDeviceAdd WdfDeviceCreate", status);
   if (!NT_SUCCESS(status)) {
     return status;
   }
@@ -500,18 +574,22 @@ NTSTATUS LvhEvtDeviceAdd(WDFDRIVER driver, PWDFDEVICE_INIT device_init) {
   UNICODE_STRING symbolic_link;
   RtlInitUnicodeString(&symbolic_link, global_symbolic_link_name);
   status = WdfDeviceCreateSymbolicLink(device, &symbolic_link);
+  trace_status("EvtDeviceAdd WdfDeviceCreateSymbolicLink global", status);
   if (!NT_SUCCESS(status)) {
     return status;
   }
 
   RtlInitUnicodeString(&symbolic_link, symbolic_link_name);
-  static_cast<void>(WdfDeviceCreateSymbolicLink(device, &symbolic_link));
+  status = WdfDeviceCreateSymbolicLink(device, &symbolic_link);
+  trace_status("EvtDeviceAdd WdfDeviceCreateSymbolicLink local", status);
 
   WDF_IO_QUEUE_CONFIG queue_config;
   WDF_IO_QUEUE_CONFIG_INIT_DEFAULT_QUEUE(&queue_config, WdfIoQueueDispatchParallel);
   queue_config.EvtIoDeviceControl = LvhEvtIoDeviceControl;
 
-  return WdfIoQueueCreate(device, &queue_config, WDF_NO_OBJECT_ATTRIBUTES, WDF_NO_HANDLE);
+  status = WdfIoQueueCreate(device, &queue_config, WDF_NO_OBJECT_ATTRIBUTES, WDF_NO_HANDLE);
+  trace_status("EvtDeviceAdd WdfIoQueueCreate", status);
+  return status;
 }
 
 NTSTATUS LvhEvtDevicePrepareHardware(
@@ -519,16 +597,23 @@ NTSTATUS LvhEvtDevicePrepareHardware(
   WDFCMRESLIST resources_raw,
   WDFCMRESLIST resources_translated
 ) {
+  UNREFERENCED_PARAMETER(device);
   UNREFERENCED_PARAMETER(resources_raw);
   UNREFERENCED_PARAMETER(resources_translated);
 
-  return initialize_vhf_target(device);
+  trace_status("EvtDevicePrepareHardware begin");
+
+  // The control device should still start if the local VHF target cannot be
+  // opened yet. Gamepad creation will initialize VHF lazily and report the
+  // backend failure through the IOCTL response if the target is unavailable.
+  return STATUS_SUCCESS;
 }
 
 NTSTATUS LvhEvtDeviceReleaseHardware(WDFDEVICE device, WDFCMRESLIST resources_translated) {
   UNREFERENCED_PARAMETER(device);
   UNREFERENCED_PARAMETER(resources_translated);
 
+  trace_status("EvtDeviceReleaseHardware begin");
   complete_pending_output_requests(STATUS_CANCELLED);
   reset_vhf_target(true);
   return STATUS_SUCCESS;
@@ -537,6 +622,7 @@ NTSTATUS LvhEvtDeviceReleaseHardware(WDFDEVICE device, WDFCMRESLIST resources_tr
 void LvhEvtDeviceCleanup(WDFOBJECT device_object) {
   UNREFERENCED_PARAMETER(device_object);
 
+  trace_status("EvtDeviceCleanup begin");
   complete_pending_output_requests(STATUS_CANCELLED);
   reset_vhf_target(false);
 }
@@ -586,13 +672,12 @@ void LvhEvtIoDeviceControl(
   size_t input_buffer_length,
   ULONG io_control_code
 ) {
-  UNREFERENCED_PARAMETER(queue);
   UNREFERENCED_PARAMETER(output_buffer_length);
   UNREFERENCED_PARAMETER(input_buffer_length);
 
   switch (io_control_code) {
     case LVH_WINDOWS_IOCTL_CREATE_GAMEPAD:
-      handle_create_gamepad_request(request);
+      handle_create_gamepad_request(WdfIoQueueGetDevice(queue), request);
       return;
 
     case LVH_WINDOWS_IOCTL_DESTROY_DEVICE:
