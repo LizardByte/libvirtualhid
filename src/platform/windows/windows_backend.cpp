@@ -149,17 +149,20 @@ namespace lvh::detail {
       return static_cast<LONG>(numerator / dimension);
     }
 
-    std::string resolve_control_device_path() {
+    std::vector<std::string> resolve_control_device_paths() {
       constexpr auto environment_name = "LIBVIRTUALHID_WINDOWS_CONTROL_DEVICE";
       if (const auto required_size = ::GetEnvironmentVariableA(environment_name, nullptr, 0); required_size > 1U) {
         std::string path(required_size - 1U, '\0');
         const auto copied_size = ::GetEnvironmentVariableA(environment_name, path.data(), required_size);
         if (copied_size > 0U && copied_size < required_size) {
-          return path;
+          return {path};
         }
       }
 
-      return std::string {windows::default_control_device_path};
+      return {
+        std::string {windows::default_control_device_path},
+        std::string {windows::global_control_device_path},
+      };
     }
 
     OperationStatus protocol_status(std::uint32_t status, std::string_view operation) {
@@ -437,6 +440,16 @@ namespace lvh::detail {
       std::string path_;
       UniqueHandle handle_;
     };
+
+    std::unique_ptr<WindowsControlChannel> open_control_channel() {
+      for (const auto &path : resolve_control_device_paths()) {
+        if (auto channel = Win32WindowsControlChannel::open(path)) {
+          return channel;
+        }
+      }
+
+      return nullptr;
+    }
 
     class WindowsGamepadState {
     public:
@@ -799,8 +812,8 @@ namespace lvh::detail {
     public:
       WindowsBackend():
           WindowsBackend(
-            Win32WindowsControlChannel::open(resolve_control_device_path()),
-            Win32WindowsControlChannel::open(resolve_control_device_path())
+            open_control_channel(),
+            open_control_channel()
           ) {}
 
       WindowsBackend(

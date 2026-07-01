@@ -326,7 +326,7 @@ namespace lvh::detail {
 
     WindowsBackendUtilityResult windows_backend_fake_channel_utilities() {
       WindowsBackendUtilityResult result;
-      result.default_device_path = resolve_control_device_path();
+      result.default_device_paths = resolve_control_device_paths();
 
       constexpr auto environment_name = "LIBVIRTUALHID_WINDOWS_CONTROL_DEVICE";
       constexpr auto custom_path = R"(\\.\LibVirtualHid-Test)";
@@ -337,7 +337,7 @@ namespace lvh::detail {
         static_cast<DWORD>(original_value.size())
       );
       static_cast<void>(::SetEnvironmentVariableA(environment_name, custom_path));
-      result.custom_device_path = resolve_control_device_path();
+      result.custom_device_paths = resolve_control_device_paths();
       static_cast<void>(::SetEnvironmentVariableA(
         environment_name,
         original_size > 0U && original_size < original_value.size() ? original_value.data() : nullptr

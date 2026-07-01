@@ -43,8 +43,8 @@ namespace lvh::detail::test {
   };
 
   struct WindowsBackendUtilityResult {
-    std::string default_device_path;
-    std::string custom_device_path;
+    std::vector<std::string> default_device_paths;
+    std::vector<std::string> custom_device_paths;
     OperationStatus formatted_error_status;
     OperationStatus fallback_error_status;
     OperationStatus keyboard_create_status;

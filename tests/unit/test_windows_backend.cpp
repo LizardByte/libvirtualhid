@@ -64,8 +64,11 @@ TEST_F(WindowsBackendTest, FakeChannelCoversCreateFailureBranches) {
 TEST_F(WindowsBackendTest, UtilityHookCoversEnvironmentErrorAndThreadBranches) {
   const auto result = lvh::detail::test::windows_backend_fake_channel_utilities();
 
-  EXPECT_EQ(result.default_device_path, R"(\\.\LibVirtualHid)");
-  EXPECT_EQ(result.custom_device_path, R"(\\.\LibVirtualHid-Test)");
+  ASSERT_EQ(result.default_device_paths.size(), 2U);
+  EXPECT_EQ(result.default_device_paths[0], R"(\\.\LibVirtualHid)");
+  EXPECT_EQ(result.default_device_paths[1], R"(\\.\Global\LibVirtualHid)");
+  ASSERT_EQ(result.custom_device_paths.size(), 1U);
+  EXPECT_EQ(result.custom_device_paths[0], R"(\\.\LibVirtualHid-Test)");
   EXPECT_EQ(result.formatted_error_status.code(), lvh::ErrorCode::backend_failure);
   EXPECT_EQ(result.fallback_error_status.code(), lvh::ErrorCode::backend_failure);
   EXPECT_NE(result.formatted_error_status.message().find("format known Windows error:"), std::string::npos);

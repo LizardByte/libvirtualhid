@@ -39,6 +39,7 @@ namespace {
 
 TEST(WindowsProtocolTest, ExposesStableProtocolConstants) {
   EXPECT_STREQ(lvh::detail::windows::default_control_device_path.data(), R"(\\.\LibVirtualHid)");
+  EXPECT_STREQ(lvh::detail::windows::global_control_device_path.data(), R"(\\.\Global\LibVirtualHid)");
 
   EXPECT_EQ(LVH_WINDOWS_IOCTL_CREATE_GAMEPAD, 0x8000E000U);
   EXPECT_EQ(LVH_WINDOWS_IOCTL_DESTROY_DEVICE, 0x8000E004U);
