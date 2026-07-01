@@ -45,6 +45,8 @@ using VhfContext = PVOID;  // NOSONAR(cpp:S5008): VHF callback ABI requires PVOI
 
 extern "C" DRIVER_INITIALIZE DriverEntry;
 EVT_WDF_DRIVER_DEVICE_ADD LvhEvtDeviceAdd;
+EVT_WDF_DEVICE_PREPARE_HARDWARE LvhEvtDevicePrepareHardware;
+EVT_WDF_DEVICE_RELEASE_HARDWARE LvhEvtDeviceReleaseHardware;
 EVT_WDF_IO_QUEUE_IO_DEVICE_CONTROL LvhEvtIoDeviceControl;
 EVT_WDF_OBJECT_CONTEXT_CLEANUP LvhEvtDeviceCleanup;
 EVT_WDF_REQUEST_CANCEL LvhEvtOutputReadCanceled;
@@ -218,6 +220,11 @@ namespace {
   }
 
   NTSTATUS initialize_vhf_target(WDFDEVICE device) {
+    auto &state = driver_state();
+    if (state.vhf_io_target != nullptr) {
+      return STATUS_SUCCESS;
+    }
+
     WDFIOTARGET vhf_io_target = nullptr;
     WDF_OBJECT_ATTRIBUTES target_attributes;
     WDF_OBJECT_ATTRIBUTES_INIT(&target_attributes);
@@ -236,8 +243,20 @@ namespace {
       return status;
     }
 
-    driver_state().vhf_io_target = vhf_io_target;
+    state.vhf_io_target = vhf_io_target;
     return STATUS_SUCCESS;
+  }
+
+  void reset_vhf_target(bool delete_target) {
+    auto &state = driver_state();
+    const auto vhf_io_target = state.vhf_io_target;
+    state.vhf_io_target = nullptr;
+
+    delete_all_vhf_devices();
+
+    if (delete_target && vhf_io_target != nullptr) {
+      WdfObjectDelete(vhf_io_target);
+    }
   }
 
   NTSTATUS create_vhf_device(const std::shared_ptr<DeviceRecord> &record) {
@@ -463,6 +482,12 @@ extern "C" NTSTATUS DriverEntry(PDRIVER_OBJECT driver_object, PUNICODE_STRING re
 NTSTATUS LvhEvtDeviceAdd(WDFDRIVER driver, PWDFDEVICE_INIT device_init) {
   UNREFERENCED_PARAMETER(driver);
 
+  WDF_PNPPOWER_EVENT_CALLBACKS pnp_callbacks;
+  WDF_PNPPOWER_EVENT_CALLBACKS_INIT(&pnp_callbacks);
+  pnp_callbacks.EvtDevicePrepareHardware = LvhEvtDevicePrepareHardware;
+  pnp_callbacks.EvtDeviceReleaseHardware = LvhEvtDeviceReleaseHardware;
+  WdfDeviceInitSetPnpPowerEventCallbacks(device_init, &pnp_callbacks);
+
   WDFDEVICE device = nullptr;
   WDF_OBJECT_ATTRIBUTES device_attributes;
   WDF_OBJECT_ATTRIBUTES_INIT(&device_attributes);
@@ -482,11 +507,6 @@ NTSTATUS LvhEvtDeviceAdd(WDFDRIVER driver, PWDFDEVICE_INIT device_init) {
   RtlInitUnicodeString(&symbolic_link, symbolic_link_name);
   static_cast<void>(WdfDeviceCreateSymbolicLink(device, &symbolic_link));
 
-  status = initialize_vhf_target(device);
-  if (!NT_SUCCESS(status)) {
-    return status;
-  }
-
   WDF_IO_QUEUE_CONFIG queue_config;
   WDF_IO_QUEUE_CONFIG_INIT_DEFAULT_QUEUE(&queue_config, WdfIoQueueDispatchParallel);
   queue_config.EvtIoDeviceControl = LvhEvtIoDeviceControl;
@@ -494,12 +514,31 @@ NTSTATUS LvhEvtDeviceAdd(WDFDRIVER driver, PWDFDEVICE_INIT device_init) {
   return WdfIoQueueCreate(device, &queue_config, WDF_NO_OBJECT_ATTRIBUTES, WDF_NO_HANDLE);
 }
 
+NTSTATUS LvhEvtDevicePrepareHardware(
+  WDFDEVICE device,
+  WDFCMRESLIST resources_raw,
+  WDFCMRESLIST resources_translated
+) {
+  UNREFERENCED_PARAMETER(resources_raw);
+  UNREFERENCED_PARAMETER(resources_translated);
+
+  return initialize_vhf_target(device);
+}
+
+NTSTATUS LvhEvtDeviceReleaseHardware(WDFDEVICE device, WDFCMRESLIST resources_translated) {
+  UNREFERENCED_PARAMETER(device);
+  UNREFERENCED_PARAMETER(resources_translated);
+
+  complete_pending_output_requests(STATUS_CANCELLED);
+  reset_vhf_target(true);
+  return STATUS_SUCCESS;
+}
+
 void LvhEvtDeviceCleanup(WDFOBJECT device_object) {
   UNREFERENCED_PARAMETER(device_object);
 
   complete_pending_output_requests(STATUS_CANCELLED);
-  delete_all_vhf_devices();
-  driver_state().vhf_io_target = nullptr;
+  reset_vhf_target(false);
 }
 
 void LvhEvtOutputReadCanceled(WDFREQUEST request) {

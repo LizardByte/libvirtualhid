@@ -82,6 +82,20 @@ function Find-PublishedName {
   return $null
 }
 
+function Get-RootDeviceInstanceId {
+  param([string] $TargetHardwareId)
+
+  try {
+    $prefix = "$TargetHardwareId\"
+    @(Get-CimInstance -ClassName Win32_PnPEntity -ErrorAction Stop |
+      Where-Object { $_.PNPDeviceID -like "$prefix*" } |
+      ForEach-Object { $_.PNPDeviceID })
+  } catch {
+    Write-Verbose "Unable to enumerate PnP devices: $($_.Exception.Message)"
+    @()
+  }
+}
+
 function Remove-DriverCertificate {
   [CmdletBinding(SupportsShouldProcess)]
   param([string] $Subject)
@@ -105,6 +119,12 @@ function Remove-DriverCertificate {
 $devcon = Find-Devcon
 if ($devcon -and $PSCmdlet.ShouldProcess($HardwareId, "Remove libvirtualhid development device")) {
   Invoke-CheckedCommand -FilePath $devcon -Arguments @("remove", $HardwareId) -IgnoreFailure
+}
+
+foreach ($instanceId in (Get-RootDeviceInstanceId -TargetHardwareId $HardwareId)) {
+  if ($PSCmdlet.ShouldProcess($instanceId, "Remove libvirtualhid development device with pnputil")) {
+    Invoke-CheckedCommand -FilePath "pnputil.exe" -Arguments @("/remove-device", $instanceId) -IgnoreFailure
+  }
 }
 
 if (-not $PublishedName) {
