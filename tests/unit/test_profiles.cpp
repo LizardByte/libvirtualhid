@@ -22,7 +22,7 @@ TEST(ProfileTest, BuiltInProfilesHaveDescriptors) {
     EXPECT_NE(profile.vendor_id, 0);
     EXPECT_NE(profile.product_id, 0);
     EXPECT_NE(profile.report_id, 0);
-    EXPECT_GE(profile.input_report_size, 10U);
+    EXPECT_GE(profile.input_report_size, 23U);
     EXPECT_FALSE(profile.report_descriptor.empty());
   }
 }
@@ -35,8 +35,32 @@ TEST(ProfileTest, StreamingControllerProfilesArePresent) {
 
   EXPECT_EQ(xbox_one.vendor_id, 0x045E);
   EXPECT_EQ(xbox_one.product_id, 0x02EA);
+  EXPECT_EQ(xbox_one.manufacturer, "Microsoft");
   EXPECT_TRUE(xbox_one.capabilities.supports_rumble);
-  EXPECT_EQ(xbox_one.input_report_size, 10U);
+  EXPECT_EQ(xbox_one.input_report_size, 23U);
+
+  const auto xbox_series = lvh::profiles::xbox_series();
+  EXPECT_EQ(xbox_series.vendor_id, 0x045E);
+  EXPECT_EQ(xbox_series.product_id, 0x0B12);
+  EXPECT_EQ(xbox_series.name, "Xbox Wireless Controller");
+  EXPECT_EQ(xbox_series.manufacturer, "Microsoft");
+
+  const std::array<std::uint8_t, 13> standard_button_descriptor {
+    0x19,
+    0x01,
+    0x29,
+    0x12,
+    0x15,
+    0x00,
+    0x26,
+    0xFF,
+    0x00,
+    0x75,
+    0x08,
+    0x95,
+    0x12,
+  };
+  EXPECT_TRUE(std::ranges::search(xbox_one.report_descriptor, standard_button_descriptor).begin() != xbox_one.report_descriptor.end());
 
   const std::array<std::uint8_t, 9> byte_axis_descriptor {
     0x15,
@@ -57,19 +81,11 @@ TEST(ProfileTest, StreamingControllerProfilesArePresent) {
     0x09,
     0x31,
     0x09,
-    0x32,
+    0x33,
     0x09,
-    0x35,
+    0x34,
   };
   EXPECT_TRUE(std::ranges::search(xbox_one.report_descriptor, stick_usage_descriptor).begin() != xbox_one.report_descriptor.end());
-
-  const std::array<std::uint8_t, 4> trigger_slider_descriptor {
-    0x09,
-    0x36,
-    0x09,
-    0x36,
-  };
-  EXPECT_TRUE(std::ranges::search(xbox_one.report_descriptor, trigger_slider_descriptor).begin() != xbox_one.report_descriptor.end());
 
   EXPECT_EQ(dualshock4.vendor_id, 0x054C);
   EXPECT_EQ(dualshock4.product_id, 0x05C4);
@@ -107,6 +123,7 @@ TEST(ProfileTest, StreamingControllerProfilesArePresent) {
 
   EXPECT_EQ(switch_pro.vendor_id, 0x057E);
   EXPECT_EQ(switch_pro.product_id, 0x2009);
+  EXPECT_EQ(switch_pro.manufacturer, "Nintendo Co., Ltd.");
 }
 
 TEST(ProfileTest, RumbleProfilesExposeOutputReports) {

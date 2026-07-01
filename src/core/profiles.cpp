@@ -15,7 +15,11 @@
 namespace lvh::profiles {
   namespace {
 
-    constexpr std::size_t common_report_size = 10;
+    constexpr std::uint8_t common_button_count = 18;
+
+    constexpr std::uint8_t common_axis_count = 4;
+
+    constexpr std::size_t common_report_size = 1 + common_button_count + common_axis_count;
 
     constexpr std::size_t common_output_report_size = 5;
 
@@ -50,50 +54,7 @@ namespace lvh::profiles {
         0x19,
         0x01,  // Usage Minimum (Button 1)
         0x29,
-        0x0C,  // Usage Maximum (Button 12)
-        0x15,
-        0x00,  // Logical Minimum (0)
-        0x25,
-        0x01,  // Logical Maximum (1)
-        0x75,
-        0x01,  // Report Size (1)
-        0x95,
-        0x0C,  // Report Count (12)
-        0x81,
-        0x02,  // Input (Data,Var,Abs)
-        0x75,
-        0x01,  // Report Size (1)
-        0x95,
-        0x04,  // Report Count (4)
-        0x81,
-        0x03,  // Input (Const,Var,Abs)
-        0x05,
-        0x01,  // Usage Page (Generic Desktop)
-        0x09,
-        0x39,  // Usage (Hat switch)
-        0x15,
-        0x00,  // Logical Minimum (0)
-        0x25,
-        0x07,  // Logical Maximum (7)
-        0x35,
-        0x00,  // Physical Minimum (0)
-        0x46,
-        0x3B,
-        0x01,  // Physical Maximum (315)
-        0x65,
-        0x14,  // Unit (Degrees)
-        0x75,
-        0x04,  // Report Size (4)
-        0x95,
-        0x01,  // Report Count (1)
-        0x81,
-        0x42,  // Input (Data,Var,Abs,Null)
-        0x75,
-        0x04,  // Report Size (4)
-        0x95,
-        0x01,  // Report Count (1)
-        0x81,
-        0x03,  // Input (Const,Var,Abs)
+        common_button_count,  // Usage Maximum
         0x15,
         0x00,  // Logical Minimum (0)
         0x26,
@@ -102,30 +63,28 @@ namespace lvh::profiles {
         0x75,
         0x08,  // Report Size (8)
         0x95,
-        0x04,  // Report Count (4)
+        common_button_count,  // Report Count
+        0x81,
+        0x02,  // Input (Data,Var,Abs)
+        0x05,
+        0x01,  // Usage Page (Generic Desktop)
+        0x15,
+        0x00,  // Logical Minimum (0)
+        0x26,
+        0xFF,
+        0x00,  // Logical Maximum (255)
+        0x75,
+        0x08,  // Report Size (8)
+        0x95,
+        common_axis_count,  // Report Count
         0x09,
         0x30,  // Usage (X)
         0x09,
         0x31,  // Usage (Y)
         0x09,
-        0x32,  // Usage (Z)
+        0x33,  // Usage (Rx)
         0x09,
-        0x35,  // Usage (Rz)
-        0x81,
-        0x02,  // Input (Data,Var,Abs)
-        0x15,
-        0x00,  // Logical Minimum (0)
-        0x26,
-        0xFF,
-        0x00,  // Logical Maximum (255)
-        0x75,
-        0x08,  // Report Size (8)
-        0x95,
-        0x02,  // Report Count (2)
-        0x09,
-        0x36,  // Usage (Slider)
-        0x09,
-        0x36,  // Usage (Slider)
+        0x34,  // Usage (Ry)
         0x81,
         0x02,  // Input (Data,Var,Abs)
       };
@@ -1598,6 +1557,7 @@ namespace lvh::profiles {
     DeviceProfile make_gamepad_profile(
       GamepadProfileKind kind,
       std::string name,
+      std::string manufacturer,
       std::uint16_t vendor_id,
       std::uint16_t product_id,
       std::uint16_t version,
@@ -1616,7 +1576,7 @@ namespace lvh::profiles {
         profile.output_report_size = common_output_report_size;
       }
       profile.name = std::move(name);
-      profile.manufacturer = "LizardByte";
+      profile.manufacturer = std::move(manufacturer);
       profile.capabilities = capabilities;
       profile.report_descriptor = make_gamepad_report_descriptor(profile.report_id, profile.capabilities.supports_rumble);
       return profile;
@@ -1695,6 +1655,7 @@ namespace lvh::profiles {
     return make_gamepad_profile(
       GamepadProfileKind::generic,
       "libvirtualhid Generic Gamepad",
+      "LizardByte",
       0x1209,
       0x0001,
       0x0001,
@@ -1706,6 +1667,7 @@ namespace lvh::profiles {
     return make_gamepad_profile(
       GamepadProfileKind::xbox_360,
       "Microsoft X-Box 360 pad",
+      "Microsoft",
       0x045E,
       0x028E,
       0x0114,
@@ -1717,6 +1679,7 @@ namespace lvh::profiles {
     return make_gamepad_profile(
       GamepadProfileKind::xbox_one,
       "Xbox One Controller",
+      "Microsoft",
       0x045E,
       0x02EA,
       0x0408,
@@ -1728,6 +1691,7 @@ namespace lvh::profiles {
     return make_gamepad_profile(
       GamepadProfileKind::xbox_series,
       "Xbox Wireless Controller",
+      "Microsoft",
       0x045E,
       0x0B12,
       0x0500,
@@ -1765,6 +1729,7 @@ namespace lvh::profiles {
     return make_gamepad_profile(
       GamepadProfileKind::switch_pro,
       "Nintendo Switch Pro Controller",
+      "Nintendo Co., Ltd.",
       0x057E,
       0x2009,
       0x8111,

@@ -38,6 +38,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <string>
 #include <vector>
 
 // local includes
@@ -66,6 +67,7 @@ namespace {
     LvhWindowsCreateGamepadRequest request {};
     VHFHANDLE vhf_handle {};
     std::vector<UCHAR> report_descriptor;
+    std::wstring hardware_ids;
   };
 
   struct DriverState {
@@ -325,6 +327,38 @@ namespace {
     }
   }
 
+  wchar_t hex_digit(unsigned value) {
+    constexpr wchar_t digits[] = L"0123456789ABCDEF";
+    return digits[value & 0x0FU];
+  }
+
+  void append_hex4(std::wstring &text, std::uint16_t value) {
+    text.push_back(hex_digit(value >> 12U));
+    text.push_back(hex_digit(value >> 8U));
+    text.push_back(hex_digit(value >> 4U));
+    text.push_back(hex_digit(value));
+  }
+
+  void append_hid_vid_pid(std::wstring &hardware_ids, const LvhWindowsGamepadHardwareIds &ids) {
+    hardware_ids.append(L"HID\\VID_");
+    append_hex4(hardware_ids, ids.vendor_id);
+    hardware_ids.append(L"&PID_");
+    append_hex4(hardware_ids, ids.product_id);
+  }
+
+  std::wstring make_hardware_ids(const LvhWindowsGamepadHardwareIds &ids) {
+    std::wstring hardware_ids;
+    append_hid_vid_pid(hardware_ids, ids);
+    hardware_ids.append(L"&REV_");
+    append_hex4(hardware_ids, ids.device_version);
+    hardware_ids.push_back(L'\0');
+
+    append_hid_vid_pid(hardware_ids, ids);
+    hardware_ids.push_back(L'\0');
+    hardware_ids.push_back(L'\0');
+    return hardware_ids;
+  }
+
   NTSTATUS create_vhf_device(WDFDEVICE device, const std::shared_ptr<DeviceRecord> &record) {
     auto &state = driver_state();
     auto status = initialize_vhf_target(device);
@@ -337,6 +371,7 @@ namespace {
       record->request.report_descriptor,
       record->request.report_descriptor + descriptor_size
     );
+    record->hardware_ids = make_hardware_ids(record->request.hardware_ids);
 
     VHF_CONFIG vhf_config;
     VHF_CONFIG_INIT(
@@ -349,6 +384,8 @@ namespace {
     vhf_config.VendorID = record->request.hardware_ids.vendor_id;
     vhf_config.ProductID = record->request.hardware_ids.product_id;
     vhf_config.VersionNumber = record->request.hardware_ids.device_version;
+    vhf_config.HardwareIDsLength = static_cast<USHORT>(record->hardware_ids.size() * sizeof(wchar_t));
+    vhf_config.HardwareIDs = record->hardware_ids.data();
     vhf_config.EvtVhfAsyncOperationWriteReport = LvhEvtVhfWriteReport;
 
     status = VhfCreate(&vhf_config, &record->vhf_handle);
