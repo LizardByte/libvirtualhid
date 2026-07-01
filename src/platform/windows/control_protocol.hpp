@@ -23,6 +23,7 @@
 namespace lvh::detail::windows {
 
   inline constexpr std::string_view default_control_device_path {LVH_WINDOWS_CONTROL_DEVICE_PATH};
+  inline constexpr std::string_view global_control_device_path {LVH_WINDOWS_GLOBAL_CONTROL_DEVICE_PATH};
 
   inline std::uint32_t gamepad_flags(const GamepadProfileCapabilities &capabilities) {
     std::uint32_t flags = 0;

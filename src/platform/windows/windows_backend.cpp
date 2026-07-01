@@ -17,10 +17,13 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
+#include <limits>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <span>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -44,6 +47,20 @@ namespace lvh::detail {
     class WindowsBackendContext;
 
     using UniqueHandle = std::unique_ptr<void, decltype(&::CloseHandle)>;
+    using SendInputFunction = std::function<UINT(std::span<INPUT>)>;
+
+    UINT send_input_with_win32(std::span<INPUT> inputs) {
+      return ::SendInput(
+        static_cast<UINT>(inputs.size()),
+        inputs.data(),
+        static_cast<int>(sizeof(INPUT))
+      );
+    }
+
+    SendInputFunction &send_input_function() {
+      static SendInputFunction function = send_input_with_win32;
+      return function;
+    }
 
     UniqueHandle make_unique_handle(HANDLE handle) {
       return {handle, &::CloseHandle};
@@ -82,17 +99,80 @@ namespace lvh::detail {
       return OperationStatus::failure(code, message.str());
     }
 
-    std::string resolve_control_device_path() {
+    OperationStatus send_input(std::span<INPUT> inputs, std::string_view operation) {
+      using enum ErrorCode;
+
+      if (const auto sent = send_input_function()(inputs); sent != static_cast<UINT>(inputs.size())) {
+        return windows_failure(backend_failure, operation, ::GetLastError());
+      }
+
+      return OperationStatus::success();
+    }
+
+    OperationStatus send_input(const INPUT &input, std::string_view operation) {
+      std::array inputs {input};
+      return send_input(std::span<INPUT> {inputs}, operation);
+    }
+
+    DWORD mouse_button_flags(MouseButton button, bool pressed) {
+      switch (button) {
+        using enum MouseButton;
+
+        case left:
+          return pressed ? MOUSEEVENTF_LEFTDOWN : MOUSEEVENTF_LEFTUP;
+        case middle:
+          return pressed ? MOUSEEVENTF_MIDDLEDOWN : MOUSEEVENTF_MIDDLEUP;
+        case right:
+          return pressed ? MOUSEEVENTF_RIGHTDOWN : MOUSEEVENTF_RIGHTUP;
+        case side:
+        case extra:
+          return pressed ? MOUSEEVENTF_XDOWN : MOUSEEVENTF_XUP;
+      }
+
+      return 0;
+    }
+
+    DWORD mouse_button_data(MouseButton button) {
+      switch (button) {
+        using enum MouseButton;
+
+        case side:
+          return XBUTTON1;
+        case extra:
+          return XBUTTON2;
+        case left:
+        case middle:
+        case right:
+          return 0;
+      }
+
+      return 0;
+    }
+
+    LONG scale_absolute_axis(std::int32_t value, std::int32_t dimension) {
+      if (dimension <= 1) {
+        return 0;
+      }
+
+      const auto clamped = std::clamp(value, 0, dimension);
+      const auto numerator = static_cast<std::int64_t>(clamped) * std::numeric_limits<std::uint16_t>::max();
+      return static_cast<LONG>(numerator / dimension);
+    }
+
+    std::vector<std::string> resolve_control_device_paths() {
       constexpr auto environment_name = "LIBVIRTUALHID_WINDOWS_CONTROL_DEVICE";
       if (const auto required_size = ::GetEnvironmentVariableA(environment_name, nullptr, 0); required_size > 1U) {
         std::string path(required_size - 1U, '\0');
         const auto copied_size = ::GetEnvironmentVariableA(environment_name, path.data(), required_size);
         if (copied_size > 0U && copied_size < required_size) {
-          return path;
+          return {path};
         }
       }
 
-      return std::string {windows::default_control_device_path};
+      return {
+        std::string {windows::default_control_device_path},
+        std::string {windows::global_control_device_path},
+      };
     }
 
     OperationStatus protocol_status(std::uint32_t status, std::string_view operation) {
@@ -371,6 +451,16 @@ namespace lvh::detail {
       UniqueHandle handle_;
     };
 
+    std::unique_ptr<WindowsControlChannel> open_control_channel() {
+      for (const auto &path : resolve_control_device_paths()) {
+        if (auto channel = Win32WindowsControlChannel::open(path)) {
+          return channel;
+        }
+      }
+
+      return nullptr;
+    }
+
     class WindowsGamepadState {
     public:
       WindowsGamepadState(
@@ -593,12 +683,147 @@ namespace lvh::detail {
       return context_->close_gamepad(state_);
     }
 
+    class WindowsKeyboard final: public BackendKeyboard {
+    public:
+      OperationStatus submit(const KeyboardEvent &event) override {
+        using enum ErrorCode;
+
+        if (!open_) {
+          return OperationStatus::failure(device_closed, "Windows keyboard is closed");
+        }
+
+        INPUT input {};
+        input.type = INPUT_KEYBOARD;
+        input.ki.wVk = event.key_code;
+        if (!event.pressed) {
+          input.ki.dwFlags = KEYEVENTF_KEYUP;
+        }
+
+        return send_input(input, "submit Windows keyboard input");
+      }
+
+      OperationStatus type_text(const KeyboardTextEvent &event) override {
+        using enum ErrorCode;
+
+        if (!open_) {
+          return OperationStatus::failure(device_closed, "Windows keyboard is closed");
+        }
+        if (event.text.empty()) {
+          return OperationStatus::success();
+        }
+
+        const auto required_size = ::MultiByteToWideChar(
+          CP_UTF8,
+          MB_ERR_INVALID_CHARS,
+          event.text.data(),
+          static_cast<int>(event.text.size()),
+          nullptr,
+          0
+        );
+        if (required_size <= 0) {
+          return windows_failure(invalid_argument, "convert UTF-8 text for Windows keyboard input", ::GetLastError());
+        }
+
+        std::vector<WCHAR> wide_text(static_cast<std::size_t>(required_size));
+        const auto converted_size = ::MultiByteToWideChar(
+          CP_UTF8,
+          MB_ERR_INVALID_CHARS,
+          event.text.data(),
+          static_cast<int>(event.text.size()),
+          wide_text.data(),
+          required_size
+        );
+        if (converted_size <= 0) {
+          return windows_failure(invalid_argument, "convert UTF-8 text for Windows keyboard input", ::GetLastError());
+        }
+
+        std::vector<INPUT> inputs;
+        inputs.reserve(static_cast<std::size_t>(converted_size) * 2U);
+        for (const auto character : wide_text) {
+          INPUT input {};
+          input.type = INPUT_KEYBOARD;
+          input.ki.wScan = character;
+          input.ki.dwFlags = KEYEVENTF_UNICODE;
+          inputs.push_back(input);
+        }
+        for (const auto character : wide_text) {
+          INPUT input {};
+          input.type = INPUT_KEYBOARD;
+          input.ki.wScan = character;
+          input.ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP;
+          inputs.push_back(input);
+        }
+
+        return send_input(std::span<INPUT> {inputs}, "submit Windows keyboard text input");
+      }
+
+      OperationStatus close() override {
+        open_ = false;
+        return OperationStatus::success();
+      }
+
+    private:
+      bool open_ = true;
+    };
+
+    class WindowsMouse final: public BackendMouse {
+    public:
+      OperationStatus submit(const MouseEvent &event) override {
+        using enum ErrorCode;
+
+        if (!open_) {
+          return OperationStatus::failure(device_closed, "Windows mouse is closed");
+        }
+
+        INPUT input {};
+        input.type = INPUT_MOUSE;
+        auto &mouse = input.mi;
+
+        switch (event.kind) {
+          using enum MouseEventKind;
+
+          case relative_motion:
+            mouse.dwFlags = MOUSEEVENTF_MOVE;
+            mouse.dx = event.x;
+            mouse.dy = event.y;
+            break;
+          case absolute_motion:
+            mouse.dwFlags = MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK;
+            mouse.dx = scale_absolute_axis(event.x, event.width);
+            mouse.dy = scale_absolute_axis(event.y, event.height);
+            break;
+          case button:
+            mouse.dwFlags = mouse_button_flags(event.button, event.pressed);
+            mouse.mouseData = mouse_button_data(event.button);
+            break;
+          case vertical_scroll:
+            mouse.dwFlags = MOUSEEVENTF_WHEEL;
+            mouse.mouseData = static_cast<DWORD>(event.high_resolution_scroll);
+            break;
+          case horizontal_scroll:
+            mouse.dwFlags = MOUSEEVENTF_HWHEEL;
+            mouse.mouseData = static_cast<DWORD>(event.high_resolution_scroll);
+            break;
+        }
+
+        return send_input(input, "submit Windows mouse input");
+      }
+
+      OperationStatus close() override {
+        open_ = false;
+        return OperationStatus::success();
+      }
+
+    private:
+      bool open_ = true;
+    };
+
     class WindowsBackend final: public Backend {
     public:
       WindowsBackend():
           WindowsBackend(
-            Win32WindowsControlChannel::open(resolve_control_device_path()),
-            Win32WindowsControlChannel::open(resolve_control_device_path())
+            open_control_channel(),
+            open_control_channel()
           ) {}
 
       WindowsBackend(
@@ -607,6 +832,8 @@ namespace lvh::detail {
       ) {
         capabilities_.backend_name = "windows-umdf";
         capabilities_.requires_installed_driver = true;
+        capabilities_.supports_keyboard = true;
+        capabilities_.supports_mouse = true;
 
         if (!command_channel || !event_channel) {
           return;
@@ -656,43 +883,51 @@ namespace lvh::detail {
 
       BackendKeyboardCreationResult create_keyboard(
         DeviceId /*id*/,
-        const CreateKeyboardOptions & /*options*/
+        const CreateKeyboardOptions &options
       ) override {
-        return {unsupported_device_status(), nullptr};
+        if (options.profile.device_type != DeviceType::keyboard) {
+          return {unsupported_device_status("Windows keyboard backend requires a keyboard profile"), nullptr};
+        }
+
+        return {OperationStatus::success(), std::make_unique<WindowsKeyboard>()};
       }
 
-      BackendMouseCreationResult create_mouse(DeviceId /*id*/, const CreateMouseOptions & /*options*/) override {
-        return {unsupported_device_status(), nullptr};
+      BackendMouseCreationResult create_mouse(DeviceId /*id*/, const CreateMouseOptions &options) override {
+        if (options.profile.device_type != DeviceType::mouse) {
+          return {unsupported_device_status("Windows mouse backend requires a mouse profile"), nullptr};
+        }
+
+        return {OperationStatus::success(), std::make_unique<WindowsMouse>()};
       }
 
       BackendTouchscreenCreationResult create_touchscreen(
         DeviceId /*id*/,
         const CreateTouchscreenOptions & /*options*/
       ) override {
-        return {unsupported_device_status(), nullptr};
+        return {unsupported_device_status("Windows backend currently supports gamepad, keyboard, and mouse devices only"), nullptr};
       }
 
       BackendTrackpadCreationResult create_trackpad(
         DeviceId /*id*/,
         const CreateTrackpadOptions & /*options*/
       ) override {
-        return {unsupported_device_status(), nullptr};
+        return {unsupported_device_status("Windows backend currently supports gamepad, keyboard, and mouse devices only"), nullptr};
       }
 
       BackendPenTabletCreationResult create_pen_tablet(
         DeviceId /*id*/,
         const CreatePenTabletOptions & /*options*/
       ) override {
-        return {unsupported_device_status(), nullptr};
+        return {unsupported_device_status("Windows backend currently supports gamepad, keyboard, and mouse devices only"), nullptr};
       }
 
     private:
-      static OperationStatus unsupported_device_status() {
+      static OperationStatus unsupported_device_status(std::string message) {
         using enum ErrorCode;
 
         return OperationStatus::failure(
           unsupported_profile,
-          "Windows MVP backend currently supports gamepad devices only"
+          std::move(message)
         );
       }
 

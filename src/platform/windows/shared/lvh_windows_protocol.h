@@ -10,6 +10,7 @@
 
 inline constexpr uint32_t LVH_WINDOWS_CONTROL_PROTOCOL_VERSION = 1u;
 inline constexpr char LVH_WINDOWS_CONTROL_DEVICE_PATH[] = R"(\\.\LibVirtualHid)";
+inline constexpr char LVH_WINDOWS_GLOBAL_CONTROL_DEVICE_PATH[] = R"(\\.\Global\LibVirtualHid)";
 
 inline constexpr uint32_t LVH_WINDOWS_MAX_REPORT_DESCRIPTOR_SIZE = 1024u;
 inline constexpr uint32_t LVH_WINDOWS_MAX_INPUT_REPORT_SIZE = 256u;
@@ -161,6 +162,7 @@ enum {
 };
 
 static const char LVH_WINDOWS_CONTROL_DEVICE_PATH[] = "\\\\.\\LibVirtualHid";
+static const char LVH_WINDOWS_GLOBAL_CONTROL_DEVICE_PATH[] = "\\\\.\\Global\\LibVirtualHid";
 
 static const uint32_t LVH_WINDOWS_IOCTL_CREATE_GAMEPAD = 0x8000E000u;
 static const uint32_t LVH_WINDOWS_IOCTL_DESTROY_DEVICE = 0x8000E004u;

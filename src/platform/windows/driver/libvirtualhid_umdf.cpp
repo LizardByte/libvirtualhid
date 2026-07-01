@@ -53,6 +53,7 @@ EVT_VHF_ASYNC_OPERATION LvhEvtVhfWriteReport;
 namespace {
 
   constexpr auto symbolic_link_name = L"\\DosDevices\\LibVirtualHid";
+  constexpr auto global_symbolic_link_name = L"\\DosDevices\\Global\\LibVirtualHid";
 
   struct DeviceRecord {
     std::mutex mutex;
@@ -472,11 +473,14 @@ NTSTATUS LvhEvtDeviceAdd(WDFDRIVER driver, PWDFDEVICE_INIT device_init) {
   }
 
   UNICODE_STRING symbolic_link;
-  RtlInitUnicodeString(&symbolic_link, symbolic_link_name);
+  RtlInitUnicodeString(&symbolic_link, global_symbolic_link_name);
   status = WdfDeviceCreateSymbolicLink(device, &symbolic_link);
   if (!NT_SUCCESS(status)) {
     return status;
   }
+
+  RtlInitUnicodeString(&symbolic_link, symbolic_link_name);
+  static_cast<void>(WdfDeviceCreateSymbolicLink(device, &symbolic_link));
 
   status = initialize_vhf_target(device);
   if (!NT_SUCCESS(status)) {
