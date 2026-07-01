@@ -108,9 +108,9 @@ namespace lvh::profiles {
         0x09,
         0x31,  // Usage (Y)
         0x09,
-        0x33,  // Usage (Rx)
+        0x32,  // Usage (Z)
         0x09,
-        0x34,  // Usage (Ry)
+        0x35,  // Usage (Rz)
         0x81,
         0x02,  // Input (Data,Var,Abs)
         0x15,
@@ -123,9 +123,9 @@ namespace lvh::profiles {
         0x95,
         0x02,  // Report Count (2)
         0x09,
-        0x32,  // Usage (Z)
+        0x36,  // Usage (Slider)
         0x09,
-        0x35,  // Usage (Rz)
+        0x36,  // Usage (Slider)
         0x81,
         0x02,  // Input (Data,Var,Abs)
       };

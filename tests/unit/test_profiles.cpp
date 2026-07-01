@@ -51,6 +51,26 @@ TEST(ProfileTest, StreamingControllerProfilesArePresent) {
   };
   EXPECT_TRUE(std::ranges::search(xbox_one.report_descriptor, byte_axis_descriptor).begin() != xbox_one.report_descriptor.end());
 
+  const std::array<std::uint8_t, 8> stick_usage_descriptor {
+    0x09,
+    0x30,
+    0x09,
+    0x31,
+    0x09,
+    0x32,
+    0x09,
+    0x35,
+  };
+  EXPECT_TRUE(std::ranges::search(xbox_one.report_descriptor, stick_usage_descriptor).begin() != xbox_one.report_descriptor.end());
+
+  const std::array<std::uint8_t, 4> trigger_slider_descriptor {
+    0x09,
+    0x36,
+    0x09,
+    0x36,
+  };
+  EXPECT_TRUE(std::ranges::search(xbox_one.report_descriptor, trigger_slider_descriptor).begin() != xbox_one.report_descriptor.end());
+
   EXPECT_EQ(dualshock4.vendor_id, 0x054C);
   EXPECT_EQ(dualshock4.product_id, 0x05C4);
   EXPECT_EQ(dualshock4.input_report_size, 64U);

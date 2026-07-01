@@ -715,9 +715,9 @@ namespace lvh::reports {
     append_u16(report, report_button_bits(normalized.buttons));
     report.push_back(hat_from_buttons(normalized.buttons));
     report.push_back(normalize_u8_axis(normalized.left_stick.x));
-    report.push_back(normalize_u8_axis(normalized.left_stick.y));
+    report.push_back(normalize_u8_axis(-normalized.left_stick.y));
     report.push_back(normalize_u8_axis(normalized.right_stick.x));
-    report.push_back(normalize_u8_axis(normalized.right_stick.y));
+    report.push_back(normalize_u8_axis(-normalized.right_stick.y));
     report.push_back(normalize_trigger(normalized.left_trigger));
     report.push_back(normalize_trigger(normalized.right_trigger));
 

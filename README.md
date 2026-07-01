@@ -126,8 +126,9 @@ descriptor for the child HID device; browser tester labels can still fall back
 to generic names when the browser does not assign a standard mapping for that
 descriptor.
 The built-in generic, Xbox-style, and Switch Pro-style HID profiles use 8-bit
-stick axes in their common descriptor so browser and DirectInput-style generic
-HID consumers do not split 16-bit stick fields into byte-sized axes.
+`X`/`Y` and `Z`/`Rz` stick axes followed by trigger sliders in their common
+descriptor so browser and DirectInput-style generic HID consumers do not split
+stick fields into byte-sized axes or map trigger axes into the right stick.
 During rapid development reinstalls, the fixed global control symbolic link can
 outlive the previous root device briefly; the driver treats that collision as
 non-fatal so stale object-manager state does not leave the control device in

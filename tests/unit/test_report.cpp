@@ -88,9 +88,9 @@ TEST(ReportTest, PacksCommonGamepadReport) {
   EXPECT_EQ(report[2], 0x00);
   EXPECT_EQ(report[3], 6);  // D-pad left
   EXPECT_EQ(report[4], 255);  // Left stick X
-  EXPECT_EQ(report[5], 0);  // Left stick Y
+  EXPECT_EQ(report[5], 255);  // Left stick Y
   EXPECT_EQ(report[6], 191);  // Right stick X
-  EXPECT_EQ(report[7], 64);  // Right stick Y
+  EXPECT_EQ(report[7], 191);  // Right stick Y
   EXPECT_EQ(report[8], 64);  // Left trigger
   EXPECT_EQ(report[9], 255);  // Right trigger
 }
