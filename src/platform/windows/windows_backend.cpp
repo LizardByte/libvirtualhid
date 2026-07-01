@@ -87,19 +87,19 @@ namespace lvh::detail {
     OperationStatus send_input(std::span<INPUT> inputs, std::string_view operation) {
       using enum ErrorCode;
 
-      const auto sent = ::SendInput(
-        static_cast<UINT>(inputs.size()),
-        inputs.data(),
-        static_cast<int>(sizeof(INPUT))
-      );
-      if (sent != static_cast<UINT>(inputs.size())) {
+      if (const auto sent = ::SendInput(
+            static_cast<UINT>(inputs.size()),
+            inputs.data(),
+            static_cast<int>(sizeof(INPUT))
+          );
+          sent != static_cast<UINT>(inputs.size())) {
         return windows_failure(backend_failure, operation, ::GetLastError());
       }
 
       return OperationStatus::success();
     }
 
-    OperationStatus send_input(INPUT &input, std::string_view operation) {
+    OperationStatus send_input(const INPUT &input, std::string_view operation) {
       std::array inputs {input};
       return send_input(std::span<INPUT> {inputs}, operation);
     }
