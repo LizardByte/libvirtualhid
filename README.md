@@ -168,6 +168,9 @@ powershell -ExecutionPolicy Bypass -File .\scripts\windows\install-driver.ps1 `
 powershell -ExecutionPolicy Bypass -File .\scripts\windows\test-installed-driver.ps1 `
   -GamepadAdapterPath .\cmake-build-ci\examples\Debug\gamepad_adapter.exe `
   -Profile x360
+powershell -ExecutionPolicy Bypass -File .\scripts\windows\test-browser-gamepad.ps1 `
+  -GamepadAdapterPath .\cmake-build-ci\examples\Debug\gamepad_adapter.exe `
+  -Profile x360
 powershell -ExecutionPolicy Bypass -File .\scripts\windows\uninstall-driver.ps1 `
   -Force -RemoveCertificateSubject "CN=libvirtualhid CI Test Driver Signing"
 ```
@@ -187,11 +190,14 @@ if `\\.\LibVirtualHid` cannot be opened, or if a held gamepad adapter instance
 does not produce a started HID child device such as
 `HID\VID_045E&PID_028E&IG_00`. That check is also run by the Windows MSVC pull
 request CI leg for every `gamepad_adapter` profile after installing the test
-driver package. For manual browser validation, run the same helper or
+driver package. The browser helper launches a normal desktop Edge or Chrome
+instance at `https://hardwaretester.com/gamepad`, holds a virtual gamepad, and
+fails if the browser Gamepad API does not report a controller matching the
+selected profile or does not observe changing button and axis input. For manual
+browser validation, run the browser helper with `-KeepBrowserOpen`, or run
 `examples/gamepad_adapter x360 --hold-seconds 60`, then open
-`https://app.lizardbyte.dev/gamepad-tester/` in a normal desktop browser and
-press one of the held virtual buttons if the browser needs a gamepad activation
-event.
+`https://hardwaretester.com/gamepad` in a normal desktop browser and press one
+of the held virtual buttons if the browser needs a gamepad activation event.
 
 The driver binary is a UMDF DLL installed through the Windows Driver Store, not
 a libvirtualhid `.sys` copied into `C:\Windows\System32\drivers`. Windows still
