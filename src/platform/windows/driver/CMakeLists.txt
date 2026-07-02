@@ -6,6 +6,14 @@ if(NOT MSVC)
     message(FATAL_ERROR "The libvirtualhid Windows driver package requires the Microsoft WDK/MSVC toolchain.")
 endif()
 
+if(LIBVIRTUALHID_ENABLE_PACKAGING
+   AND NOT CMAKE_CONFIGURATION_TYPES
+   AND CMAKE_BUILD_TYPE STREQUAL "Debug")
+    message(FATAL_ERROR
+            "The libvirtualhid Windows driver package must not be built from a Debug configuration. "
+            "Configure with -DCMAKE_BUILD_TYPE=Release before packaging the UMDF driver.")
+endif()
+
 set(LIBVIRTUALHID_WDK_ARCH "${CMAKE_VS_PLATFORM_NAME}")
 if(NOT LIBVIRTUALHID_WDK_ARCH)
     if(CMAKE_SIZEOF_VOID_P EQUAL 8)

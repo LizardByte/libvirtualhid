@@ -164,18 +164,20 @@ by matching the `ROOT\LIBVIRTUALHID` hardware ID. The SetupAPI path creates a
 root-enumerated instance such as `ROOT\LIBVIRTUALHID\####`.
 The install and uninstall helpers also clean up malformed development devices
 left by earlier installer revisions, including root instances left in the
-failed legacy `System` class or carrying stale `VhfMode` registry state. The WiX
-installer writes the helper transcript to
-`C:\ProgramData\libvirtualhid\install-driver.log`.
+failed `HIDClass` package shape. The WiX installer writes the helper transcript
+to `C:\ProgramData\libvirtualhid\install-driver.log`.
 
 The driver binary is a UMDF DLL installed through the Windows Driver Store, not
 a libvirtualhid `.sys` copied into `C:\Windows\System32\drivers`. Windows still
 uses its built-in `WUDFRd.sys` and VHF components under `System32\drivers`; the
 libvirtualhid-specific sign that installation completed is the
 `ROOT\LIBVIRTUALHID` device and the `\\.\LibVirtualHid` control device. The INF
-installs the root control device in the HIDClass class, registers the built-in
-`WUDFRd` reflector service explicitly, and attaches the inbox VHF lower filter
-so the UMDF driver can create VHF child HID devices on demand. The UMDF control
+includes the built-in `WUDFRd` install sections for the root `System` control
+device, appends the VHF lower filter, sets `VhfMode=1` for the UMDF VHF source
+stack, and leaves UMDF dispatcher policy at the framework default to match the
+inbox VHF source-driver shape. The installer also writes `VhfMode=1` onto the
+root device before starting the driver so root-enumerated development installs
+get the same VHF source mode as the INF hardware section. The UMDF control
 device starts without opening VHF; gamepad creation opens VHF lazily so
 target-open failures are reported through the create-device response instead of
 making `\\.\LibVirtualHid` unavailable. The generated INF uses the same UMDF
