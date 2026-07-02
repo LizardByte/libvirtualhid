@@ -143,6 +143,97 @@ function Assert-ControlDeviceOpens {
   }
 }
 
+function Add-XInputProbeType {
+  if ("LvhXInputProbe" -as [type]) {
+    return
+  }
+
+  Add-Type -TypeDefinition @"
+using System.Runtime.InteropServices;
+
+public static class LvhXInputProbe {
+  [StructLayout(LayoutKind.Sequential)]
+  public struct XInputState {
+    public uint PacketNumber;
+    public XInputGamepad Gamepad;
+  }
+
+  [StructLayout(LayoutKind.Sequential)]
+  public struct XInputGamepad {
+    public ushort Buttons;
+    public byte LeftTrigger;
+    public byte RightTrigger;
+    public short LeftThumbX;
+    public short LeftThumbY;
+    public short RightThumbX;
+    public short RightThumbY;
+  }
+
+  [DllImport("xinput1_4.dll", EntryPoint = "XInputGetState")]
+  public static extern uint XInputGetState(uint userIndex, out XInputState state);
+}
+"@
+}
+
+function Wait-ForXInputReportFlow {
+  if ($Profile -ne "xone" -and $Profile -ne "xseries") {
+    return
+  }
+
+  Add-XInputProbeType
+  $deadline = (Get-Date).AddSeconds($DeviceStartTimeoutSeconds)
+  $observedStates = @{}
+
+  do {
+    for ($index = 0; $index -lt 4; ++$index) {
+      $state = New-Object LvhXInputProbe+XInputState
+      $status = [LvhXInputProbe]::XInputGetState([uint32] $index, [ref] $state)
+      if ($status -ne 0 -or $state.Gamepad.RightTrigger -ne 255) {
+        continue
+      }
+
+      if (-not $observedStates.ContainsKey($index)) {
+        $observedStates[$index] = [pscustomobject] @{
+          InitialButtons = $state.Gamepad.Buttons
+          ButtonChanged = $false
+          LeftThumbXNegative = $false
+          LeftThumbXPositive = $false
+          RightThumbYNegative = $false
+          RightThumbYPositive = $false
+        }
+      }
+
+      $observed = $observedStates[$index]
+      if ($state.Gamepad.Buttons -ne $observed.InitialButtons) {
+        $observed.ButtonChanged = $true
+      }
+      if ($state.Gamepad.LeftThumbX -lt -20000) {
+        $observed.LeftThumbXNegative = $true
+      } elseif ($state.Gamepad.LeftThumbX -gt 20000) {
+        $observed.LeftThumbXPositive = $true
+      }
+      if ($state.Gamepad.RightThumbY -lt -20000) {
+        $observed.RightThumbYNegative = $true
+      } elseif ($state.Gamepad.RightThumbY -gt 20000) {
+        $observed.RightThumbYPositive = $true
+      }
+
+      if ($observed.ButtonChanged -and
+          $observed.LeftThumbXNegative -and
+          $observed.LeftThumbXPositive -and
+          $observed.RightThumbYNegative -and
+          $observed.RightThumbYPositive) {
+        Write-Information "XInput observed changing $Profile input on index ${index}." -InformationAction Continue
+        return
+      }
+    }
+
+    Start-Sleep -Milliseconds 250
+  } while ((Get-Date) -lt $deadline)
+
+  throw "XInput did not observe changing $Profile button, left-stick X, and right-stick Y input from the virtual gamepad."
+}
+
 function Get-ExpectedGamepadHardwareId {
   switch ($Profile) {
     "generic" { return "HID\VID_1209&PID_0001" }
@@ -215,6 +306,7 @@ function Invoke-GamepadAdapterSmoke {
     }
 
     Wait-ForStartedGamepadChild
+    Wait-ForXInputReportFlow
   } finally {
     if (-not $process.HasExited) {
       Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue

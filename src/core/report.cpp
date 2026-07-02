@@ -164,6 +164,10 @@ namespace lvh::reports {
       return static_cast<std::int16_t>(std::lround(scaled));
     }
 
+    std::uint16_t normalize_unsigned_axis(float value) {
+      return static_cast<std::uint16_t>(std::lround((clamp_axis(value) + 1.0F) * 32767.5F));
+    }
+
     std::uint8_t normalize_u8_axis(float value) {
       return static_cast<std::uint8_t>(std::lround((clamp_axis(value) + 1.0F) * 127.5F));
     }
@@ -715,9 +719,14 @@ namespace lvh::reports {
     return static_cast<std::uint16_t>(std::lround(clamp_trigger(value) * 1023.0F));
   }
 
+  std::uint8_t xbox_gip_hat_from_buttons(const ButtonSet &buttons) {
+    const auto hat = hat_from_buttons(buttons);
+    return hat == neutral_hat ? 0 : static_cast<std::uint8_t>(hat + 1U);
+  }
+
   std::uint8_t battery_strength(const std::optional<GamepadBattery> &battery) {
     if (!battery) {
-      return 0;
+      return 0xFF;
     }
 
     return static_cast<std::uint8_t>(std::lround((static_cast<float>(battery->percentage) / 100.0F) * 255.0F));
@@ -732,14 +741,14 @@ namespace lvh::reports {
     const auto normalized = normalize_state(state);
 
     ByteReport report(profile.input_report_size, zero_byte);
-    write_i16(report, 0U, normalize_axis(normalized.left_stick.x));
-    write_i16(report, 2U, normalize_axis(normalized.left_stick.y));
-    write_i16(report, 4U, normalize_axis(normalized.right_stick.x));
-    write_i16(report, 6U, normalize_axis(normalized.right_stick.y));
+    write_u16(report, 0U, normalize_unsigned_axis(normalized.left_stick.x));
+    write_u16(report, 2U, normalize_unsigned_axis(normalized.left_stick.y));
+    write_u16(report, 4U, normalize_unsigned_axis(normalized.right_stick.x));
+    write_u16(report, 6U, normalize_unsigned_axis(normalized.right_stick.y));
     write_u16(report, 8U, normalize_u10_trigger(normalized.left_trigger));
     write_u16(report, 10U, normalize_u10_trigger(normalized.right_trigger));
     write_u16(report, 12U, xbox_gip_button_bits(normalized.buttons));
-    report[14] = to_byte(hat_from_buttons(normalized.buttons));
+    report[14] = to_byte(xbox_gip_hat_from_buttons(normalized.buttons));
     if (normalized.buttons.test(GamepadButton::guide)) {
       report[15] = std::byte {0x01};
     }

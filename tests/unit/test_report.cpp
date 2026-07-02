@@ -116,22 +116,40 @@ TEST(ReportTest, PacksXboxGipReport) {
   const auto read_u16 = [&report](std::size_t offset) {
     return static_cast<std::uint16_t>(report[offset] | static_cast<std::uint16_t>(report[offset + 1U] << 8U));
   };
-  const auto read_i16 = [&read_u16](std::size_t offset) {
-    return static_cast<std::int16_t>(read_u16(offset));
-  };
 
   ASSERT_EQ(report.size(), profile.input_report_size);
   EXPECT_EQ(profile.report_id, 0);
-  EXPECT_EQ(read_i16(0U), 32767);  // Left stick X.
-  EXPECT_EQ(read_i16(2U), -32768);  // Left stick Y.
-  EXPECT_EQ(read_i16(4U), 16384);  // Right stick X.
-  EXPECT_EQ(read_i16(6U), -16384);  // Right stick Y.
+  EXPECT_EQ(read_u16(0U), 0xFFFF);  // Left stick X.
+  EXPECT_EQ(read_u16(2U), 0x0000);  // Left stick Y.
+  EXPECT_EQ(read_u16(4U), 0xBFFF);  // Right stick X.
+  EXPECT_EQ(read_u16(6U), 0x4000);  // Right stick Y.
   EXPECT_EQ(read_u16(8U), 256);  // Left trigger.
   EXPECT_EQ(read_u16(10U), 1023);  // Right trigger.
   EXPECT_EQ(read_u16(12U), 0x0881);  // A, Start, and Share.
-  EXPECT_EQ(report[14], 6);  // D-pad left.
+  EXPECT_EQ(report[14], 7);  // D-pad left.
   EXPECT_EQ(report[15], 1);  // Guide/System Main Menu.
   EXPECT_EQ(report[16], 204);  // Battery strength.
+}
+
+TEST(ReportTest, PacksXboxGipNeutralReport) {
+  const auto profile = lvh::profiles::xbox_series();
+
+  const auto report = lvh::reports::pack_input_report(profile, {});
+  const auto read_u16 = [&report](std::size_t offset) {
+    return static_cast<std::uint16_t>(report[offset] | static_cast<std::uint16_t>(report[offset + 1U] << 8U));
+  };
+
+  ASSERT_EQ(report.size(), profile.input_report_size);
+  EXPECT_EQ(read_u16(0U), 0x8000);  // Left stick X.
+  EXPECT_EQ(read_u16(2U), 0x8000);  // Left stick Y.
+  EXPECT_EQ(read_u16(4U), 0x8000);  // Right stick X.
+  EXPECT_EQ(read_u16(6U), 0x8000);  // Right stick Y.
+  EXPECT_EQ(read_u16(8U), 0x0000);  // Left trigger.
+  EXPECT_EQ(read_u16(10U), 0x0000);  // Right trigger.
+  EXPECT_EQ(read_u16(12U), 0x0000);  // Buttons.
+  EXPECT_EQ(report[14], 0);  // Neutral D-pad.
+  EXPECT_EQ(report[15], 0);  // Guide/System Main Menu.
+  EXPECT_EQ(report[16], 0xFF);  // Unknown battery defaults to full.
 }
 
 TEST(ReportTest, PacksDualSenseUsbReport) {
