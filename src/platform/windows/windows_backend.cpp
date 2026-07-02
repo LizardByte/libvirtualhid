@@ -39,7 +39,10 @@
 #endif
 
 // platform includes
+// clang-format off
 #include <Windows.h>
+#include <setupapi.h>
+// clang-format on
 
 namespace lvh::detail {
   namespace {  // NOSONAR(cpp:S1000): Windows backend internals need internal linkage; tests include this file with the platform factory renamed.
@@ -61,6 +64,13 @@ namespace lvh::detail {
       static SendInputFunction function = send_input_with_win32;
       return function;
     }
+
+    constexpr GUID control_device_interface_guid {
+      0x3890af65,
+      0x2da0,
+      0x443c,
+      {0x84, 0xff, 0x6e, 0x70, 0xe8, 0x41, 0xba, 0x1e}
+    };
 
     UniqueHandle make_unique_handle(HANDLE handle) {
       return {handle, &::CloseHandle};
@@ -112,6 +122,68 @@ namespace lvh::detail {
     OperationStatus send_input(const INPUT &input, std::string_view operation) {
       std::array inputs {input};
       return send_input(std::span<INPUT> {inputs}, operation);
+    }
+
+    std::vector<std::string> enumerate_control_device_interface_paths() {
+      std::vector<std::string> paths;
+
+      const auto device_info_set = ::SetupDiGetClassDevsA(
+        &control_device_interface_guid,
+        nullptr,
+        nullptr,
+        DIGCF_PRESENT | DIGCF_DEVICEINTERFACE
+      );
+      if (device_info_set == INVALID_HANDLE_VALUE) {
+        return paths;
+      }
+
+      const auto cleanup = std::unique_ptr<void, decltype(&::SetupDiDestroyDeviceInfoList)> {
+        device_info_set,
+        &::SetupDiDestroyDeviceInfoList
+      };
+
+      for (DWORD index = 0;; ++index) {
+        SP_DEVICE_INTERFACE_DATA interface_data {};
+        interface_data.cbSize = sizeof(interface_data);
+        if (::SetupDiEnumDeviceInterfaces(
+              device_info_set,
+              nullptr,
+              &control_device_interface_guid,
+              index,
+              &interface_data
+            ) == FALSE) {
+          break;
+        }
+
+        DWORD required_size = 0;
+        static_cast<void>(::SetupDiGetDeviceInterfaceDetailA(
+          device_info_set,
+          &interface_data,
+          nullptr,
+          0,
+          &required_size,
+          nullptr
+        ));
+        if (required_size == 0U || ::GetLastError() != ERROR_INSUFFICIENT_BUFFER) {
+          continue;
+        }
+
+        std::vector<std::byte> buffer(required_size);
+        auto *detail_data = reinterpret_cast<SP_DEVICE_INTERFACE_DETAIL_DATA_A *>(buffer.data());
+        detail_data->cbSize = sizeof(SP_DEVICE_INTERFACE_DETAIL_DATA_A);
+        if (::SetupDiGetDeviceInterfaceDetailA(
+              device_info_set,
+              &interface_data,
+              detail_data,
+              required_size,
+              nullptr,
+              nullptr
+            ) != FALSE) {
+          paths.emplace_back(detail_data->DevicePath);
+        }
+      }
+
+      return paths;
     }
 
     DWORD mouse_button_flags(MouseButton button, bool pressed) {
@@ -169,10 +241,10 @@ namespace lvh::detail {
         }
       }
 
-      return {
-        std::string {windows::default_control_device_path},
-        std::string {windows::global_control_device_path},
-      };
+      auto paths = enumerate_control_device_interface_paths();
+      paths.emplace_back(windows::default_control_device_path);
+      paths.emplace_back(windows::global_control_device_path);
+      return paths;
     }
 
     OperationStatus protocol_status(std::uint32_t status, std::string_view operation) {

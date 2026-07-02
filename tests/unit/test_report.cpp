@@ -86,20 +86,14 @@ TEST(ReportTest, PacksCommonGamepadReport) {
 
   ASSERT_EQ(report.size(), profile.input_report_size);
   EXPECT_EQ(report[0], profile.report_id);
-  EXPECT_EQ(report[1], 255);  // A
-  EXPECT_EQ(report[2], 0);  // B
-  EXPECT_EQ(report[6], 0);  // Right shoulder
-  EXPECT_EQ(report[7], 64);  // Left trigger
-  EXPECT_EQ(report[8], 255);  // Right trigger
-  EXPECT_EQ(report[9], 0);  // Back
-  EXPECT_EQ(report[10], 255);  // Start
-  EXPECT_EQ(report[15], 255);  // D-pad left
-  EXPECT_EQ(report[17], 255);  // Guide
-  EXPECT_EQ(report[18], 255);  // Misc/share
-  EXPECT_EQ(report[19], 255);  // Left stick X
-  EXPECT_EQ(report[20], 255);  // Left stick Y
-  EXPECT_EQ(report[21], 191);  // Right stick X
-  EXPECT_EQ(report[22], 191);  // Right stick Y
+  EXPECT_EQ(report[1], 0x81);  // A and Start.
+  EXPECT_EQ(report[2], 0x4C);  // Guide, Misc/share, and D-pad left.
+  EXPECT_EQ(report[3], 255);  // Left stick X.
+  EXPECT_EQ(report[4], 255);  // Left stick Y.
+  EXPECT_EQ(report[5], 191);  // Right stick X.
+  EXPECT_EQ(report[6], 191);  // Right stick Y.
+  EXPECT_EQ(report[7], 64);  // Left trigger.
+  EXPECT_EQ(report[8], 255);  // Right trigger.
 }
 
 TEST(ReportTest, PacksDualSenseUsbReport) {

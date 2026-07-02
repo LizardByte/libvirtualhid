@@ -50,6 +50,7 @@ extern "C" DRIVER_INITIALIZE DriverEntry;
 EVT_WDF_DRIVER_DEVICE_ADD LvhEvtDeviceAdd;
 EVT_WDF_DEVICE_PREPARE_HARDWARE LvhEvtDevicePrepareHardware;
 EVT_WDF_DEVICE_RELEASE_HARDWARE LvhEvtDeviceReleaseHardware;
+EVT_WDF_FILE_CLEANUP LvhEvtFileCleanup;
 EVT_WDF_IO_QUEUE_IO_DEVICE_CONTROL LvhEvtIoDeviceControl;
 EVT_WDF_OBJECT_CONTEXT_CLEANUP LvhEvtDeviceCleanup;
 EVT_WDF_REQUEST_CANCEL LvhEvtOutputReadCanceled;
@@ -64,6 +65,7 @@ namespace {
   struct DeviceRecord {
     std::mutex mutex;
     std::uint64_t driver_device_id {};
+    WDFFILEOBJECT owner_file {};
     LvhWindowsCreateGamepadRequest request {};
     VHFHANDLE vhf_handle {};
     std::vector<UCHAR> report_descriptor;
@@ -286,6 +288,30 @@ namespace {
     }
   }
 
+  void delete_vhf_devices_for_file(WDFFILEOBJECT file_object) {
+    if (file_object == nullptr) {
+      return;
+    }
+
+    std::vector<std::shared_ptr<DeviceRecord>> devices;
+    {
+      auto &state = driver_state();
+      std::lock_guard lock {state.devices_mutex};
+      for (auto iter = state.devices.begin(); iter != state.devices.end();) {
+        if (iter->second->owner_file == file_object) {
+          devices.push_back(iter->second);
+          iter = state.devices.erase(iter);
+        } else {
+          ++iter;
+        }
+      }
+    }
+
+    for (const auto &record : devices) {
+      delete_vhf_device(record);
+    }
+  }
+
   NTSTATUS initialize_vhf_target(WDFDEVICE device) {
     auto &state = driver_state();
     std::lock_guard lock {state.vhf_target_mutex};
@@ -419,11 +445,28 @@ namespace {
   }
 
   bool symbolic_link_already_exists(NTSTATUS status) {
-    constexpr auto status_object_name_collision = static_cast<NTSTATUS>(0xC0000035L);
-    constexpr auto hresult_object_already_exists = static_cast<NTSTATUS>(0x800700B7UL);
-    constexpr auto ntstatus_hresult_object_already_exists = static_cast<NTSTATUS>(0x900700B7UL);
-    return status == status_object_name_collision || status == hresult_object_already_exists ||
-           status == ntstatus_hresult_object_already_exists;
+    const auto value = static_cast<std::uint32_t>(status);
+    return value == 0xC0000035U || value == 0x800700B7U || value == 0x900700B7U;
+  }
+
+  constexpr GUID control_device_interface_guid {
+    0x3890af65,
+    0x2da0,
+    0x443c,
+    {0x84, 0xff, 0x6e, 0x70, 0xe8, 0x41, 0xba, 0x1e}
+  };
+
+  NTSTATUS create_control_symbolic_link(WDFDEVICE device, const wchar_t *link_name, const char *trace_step) {
+    UNICODE_STRING symbolic_link;
+    RtlInitUnicodeString(&symbolic_link, link_name);
+
+    const auto status = WdfDeviceCreateSymbolicLink(device, &symbolic_link);
+    trace_status(trace_step, status);
+    if (NT_SUCCESS(status) || symbolic_link_already_exists(status)) {
+      return STATUS_SUCCESS;
+    }
+
+    return status;
   }
 
   std::vector<UCHAR> make_vhf_input_payload(
@@ -513,6 +556,7 @@ namespace {
     const auto driver_device_id = state.next_driver_device_id.fetch_add(1);
     auto record = std::make_shared<DeviceRecord>();
     record->driver_device_id = driver_device_id;
+    record->owner_file = WdfRequestGetFileObject(request);
     record->request = *create_request;
 
     status = create_vhf_device(device, record);
@@ -646,6 +690,10 @@ NTSTATUS LvhEvtDeviceAdd(WDFDRIVER driver, PWDFDEVICE_INIT device_init) {
   pnp_callbacks.EvtDeviceReleaseHardware = LvhEvtDeviceReleaseHardware;
   WdfDeviceInitSetPnpPowerEventCallbacks(device_init, &pnp_callbacks);
 
+  WDF_FILEOBJECT_CONFIG file_config;
+  WDF_FILEOBJECT_CONFIG_INIT(&file_config, WDF_NO_EVENT_CALLBACK, WDF_NO_EVENT_CALLBACK, LvhEvtFileCleanup);
+  WdfDeviceInitSetFileObjectConfig(device_init, &file_config, WDF_NO_OBJECT_ATTRIBUTES);
+
   WDFDEVICE device = nullptr;
   WDF_OBJECT_ATTRIBUTES device_attributes;
   WDF_OBJECT_ATTRIBUTES_INIT(&device_attributes);
@@ -656,17 +704,21 @@ NTSTATUS LvhEvtDeviceAdd(WDFDRIVER driver, PWDFDEVICE_INIT device_init) {
     return status;
   }
 
-  UNICODE_STRING symbolic_link;
-  RtlInitUnicodeString(&symbolic_link, global_symbolic_link_name);
-  status = WdfDeviceCreateSymbolicLink(device, &symbolic_link);
-  trace_status("EvtDeviceAdd WdfDeviceCreateSymbolicLink global", status);
-  if (!NT_SUCCESS(status) && !symbolic_link_already_exists(status)) {
+  status = WdfDeviceCreateDeviceInterface(device, &control_device_interface_guid, nullptr);
+  trace_status("EvtDeviceAdd WdfDeviceCreateDeviceInterface", status);
+  if (!NT_SUCCESS(status)) {
     return status;
   }
 
-  RtlInitUnicodeString(&symbolic_link, symbolic_link_name);
-  status = WdfDeviceCreateSymbolicLink(device, &symbolic_link);
-  trace_status("EvtDeviceAdd WdfDeviceCreateSymbolicLink local", status);
+  status =
+    create_control_symbolic_link(device, global_symbolic_link_name, "EvtDeviceAdd WdfDeviceCreateSymbolicLink global");
+  if (!NT_SUCCESS(status)) {
+    return status;
+  }
+
+  static_cast<void>(
+    create_control_symbolic_link(device, symbolic_link_name, "EvtDeviceAdd WdfDeviceCreateSymbolicLink local")
+  );
 
   WDF_IO_QUEUE_CONFIG queue_config;
   WDF_IO_QUEUE_CONFIG_INIT_DEFAULT_QUEUE(&queue_config, WdfIoQueueDispatchParallel);
@@ -710,6 +762,11 @@ void LvhEvtDeviceCleanup(WDFOBJECT device_object) {
   trace_status("EvtDeviceCleanup begin");
   complete_pending_output_requests(STATUS_CANCELLED);
   reset_vhf_target(false);
+}
+
+void LvhEvtFileCleanup(WDFFILEOBJECT file_object) {
+  trace_status("EvtFileCleanup begin");
+  delete_vhf_devices_for_file(file_object);
 }
 
 void LvhEvtOutputReadCanceled(WDFREQUEST request) {

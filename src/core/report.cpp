@@ -121,6 +121,11 @@ namespace lvh::reports {
       return static_cast<std::uint16_t>(low | static_cast<std::uint16_t>(high << 8U));
     }
 
+    void append_u16(std::vector<std::uint8_t> &report, std::uint16_t value) {
+      report.push_back(static_cast<std::uint8_t>(value & 0xFFU));
+      report.push_back(static_cast<std::uint8_t>((value >> 8U) & 0xFFU));
+    }
+
     std::uint32_t read_u32(const ByteReport &report, std::size_t offset) {
       return std::to_integer<std::uint32_t>(report[offset]) |
              (std::to_integer<std::uint32_t>(report[offset + 1U]) << 8U) |
@@ -167,32 +172,31 @@ namespace lvh::reports {
       return static_cast<std::uint16_t>(std::lround((static_cast<float>(value) / 255.0F) * 65535.0F));
     }
 
-    std::uint8_t digital_button_value(const ButtonSet &buttons, GamepadButton button) {
-      return buttons.test(button) ? 255U : 0U;
-    }
+    std::uint16_t common_button_bits(const ButtonSet &buttons) {
+      auto bits = std::uint16_t {};
+      const auto set_bit = [&buttons, &bits](std::uint16_t bit, GamepadButton button) {
+        if (buttons.test(button)) {
+          bits |= static_cast<std::uint16_t>(1U << bit);
+        }
+      };
 
-    void append_common_button_values(
-      std::vector<std::uint8_t> &report,
-      const GamepadState &state
-    ) {
-      report.push_back(digital_button_value(state.buttons, GamepadButton::a));
-      report.push_back(digital_button_value(state.buttons, GamepadButton::b));
-      report.push_back(digital_button_value(state.buttons, GamepadButton::x));
-      report.push_back(digital_button_value(state.buttons, GamepadButton::y));
-      report.push_back(digital_button_value(state.buttons, GamepadButton::left_shoulder));
-      report.push_back(digital_button_value(state.buttons, GamepadButton::right_shoulder));
-      report.push_back(normalize_trigger(state.left_trigger));
-      report.push_back(normalize_trigger(state.right_trigger));
-      report.push_back(digital_button_value(state.buttons, GamepadButton::back));
-      report.push_back(digital_button_value(state.buttons, GamepadButton::start));
-      report.push_back(digital_button_value(state.buttons, GamepadButton::left_stick));
-      report.push_back(digital_button_value(state.buttons, GamepadButton::right_stick));
-      report.push_back(digital_button_value(state.buttons, GamepadButton::dpad_up));
-      report.push_back(digital_button_value(state.buttons, GamepadButton::dpad_down));
-      report.push_back(digital_button_value(state.buttons, GamepadButton::dpad_left));
-      report.push_back(digital_button_value(state.buttons, GamepadButton::dpad_right));
-      report.push_back(digital_button_value(state.buttons, GamepadButton::guide));
-      report.push_back(digital_button_value(state.buttons, GamepadButton::misc1));
+      set_bit(0U, GamepadButton::a);
+      set_bit(1U, GamepadButton::b);
+      set_bit(2U, GamepadButton::x);
+      set_bit(3U, GamepadButton::y);
+      set_bit(4U, GamepadButton::left_shoulder);
+      set_bit(5U, GamepadButton::right_shoulder);
+      set_bit(6U, GamepadButton::back);
+      set_bit(7U, GamepadButton::start);
+      set_bit(8U, GamepadButton::left_stick);
+      set_bit(9U, GamepadButton::right_stick);
+      set_bit(10U, GamepadButton::guide);
+      set_bit(11U, GamepadButton::misc1);
+      set_bit(12U, GamepadButton::dpad_up);
+      set_bit(13U, GamepadButton::dpad_down);
+      set_bit(14U, GamepadButton::dpad_left);
+      set_bit(15U, GamepadButton::dpad_right);
+      return bits;
     }
 
     std::byte dualsense_battery_state(GamepadBatteryState state) {
@@ -700,7 +704,7 @@ namespace lvh::reports {
       }
     }
 
-    constexpr std::size_t common_report_size = 23;
+    constexpr std::size_t common_report_size = 9;
     if (profile.device_type != DeviceType::gamepad || profile.input_report_size < common_report_size) {
       return {};
     }
@@ -710,11 +714,13 @@ namespace lvh::reports {
     std::vector<std::uint8_t> report;
     report.reserve(common_report_size);
     report.push_back(profile.report_id);
-    append_common_button_values(report, normalized);
+    append_u16(report, common_button_bits(normalized.buttons));
     report.push_back(normalize_u8_axis(normalized.left_stick.x));
     report.push_back(normalize_u8_axis(-normalized.left_stick.y));
     report.push_back(normalize_u8_axis(normalized.right_stick.x));
     report.push_back(normalize_u8_axis(-normalized.right_stick.y));
+    report.push_back(normalize_trigger(normalized.left_trigger));
+    report.push_back(normalize_trigger(normalized.right_trigger));
 
     report.resize(profile.input_report_size, 0);
     return report;

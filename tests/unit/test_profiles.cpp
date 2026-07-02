@@ -22,7 +22,7 @@ TEST(ProfileTest, BuiltInProfilesHaveDescriptors) {
     EXPECT_NE(profile.vendor_id, 0);
     EXPECT_NE(profile.product_id, 0);
     EXPECT_NE(profile.report_id, 0);
-    EXPECT_GE(profile.input_report_size, 23U);
+    EXPECT_GE(profile.input_report_size, 9U);
     EXPECT_FALSE(profile.report_descriptor.empty());
   }
 }
@@ -37,7 +37,7 @@ TEST(ProfileTest, StreamingControllerProfilesArePresent) {
   EXPECT_EQ(xbox_one.product_id, 0x02EA);
   EXPECT_EQ(xbox_one.manufacturer, "Microsoft");
   EXPECT_TRUE(xbox_one.capabilities.supports_rumble);
-  EXPECT_EQ(xbox_one.input_report_size, 23U);
+  EXPECT_EQ(xbox_one.input_report_size, 9U);
 
   const auto xbox_series = lvh::profiles::xbox_series();
   EXPECT_EQ(xbox_series.vendor_id, 0x045E);
@@ -45,20 +45,19 @@ TEST(ProfileTest, StreamingControllerProfilesArePresent) {
   EXPECT_EQ(xbox_series.name, "Xbox Wireless Controller");
   EXPECT_EQ(xbox_series.manufacturer, "Microsoft");
 
-  const std::array<std::uint8_t, 13> standard_button_descriptor {
+  const std::array<std::uint8_t, 12> standard_button_descriptor {
     0x19,
     0x01,
     0x29,
-    0x12,
+    0x10,
     0x15,
     0x00,
-    0x26,
-    0xFF,
-    0x00,
+    0x25,
+    0x01,
     0x75,
-    0x08,
+    0x01,
     0x95,
-    0x12,
+    0x10,
   };
   EXPECT_TRUE(std::ranges::search(xbox_one.report_descriptor, standard_button_descriptor).begin() != xbox_one.report_descriptor.end());
 
@@ -71,11 +70,11 @@ TEST(ProfileTest, StreamingControllerProfilesArePresent) {
     0x75,
     0x08,
     0x95,
-    0x04,
+    0x06,
   };
   EXPECT_TRUE(std::ranges::search(xbox_one.report_descriptor, byte_axis_descriptor).begin() != xbox_one.report_descriptor.end());
 
-  const std::array<std::uint8_t, 8> stick_usage_descriptor {
+  const std::array<std::uint8_t, 12> axis_usage_descriptor {
     0x09,
     0x30,
     0x09,
@@ -84,8 +83,12 @@ TEST(ProfileTest, StreamingControllerProfilesArePresent) {
     0x33,
     0x09,
     0x34,
+    0x09,
+    0x32,
+    0x09,
+    0x35,
   };
-  EXPECT_TRUE(std::ranges::search(xbox_one.report_descriptor, stick_usage_descriptor).begin() != xbox_one.report_descriptor.end());
+  EXPECT_TRUE(std::ranges::search(xbox_one.report_descriptor, axis_usage_descriptor).begin() != xbox_one.report_descriptor.end());
 
   EXPECT_EQ(dualshock4.vendor_id, 0x054C);
   EXPECT_EQ(dualshock4.product_id, 0x05C4);

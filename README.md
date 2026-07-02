@@ -100,14 +100,16 @@ or similar control channel over passing C++ STL types across that boundary.
 
 The current Windows backend selects a UMDF control-channel implementation for
 `BackendKind::platform_default`. It always exposes keyboard and mouse through
-Win32 `SendInput`, then probes `\\.\LibVirtualHid` for descriptor-driven virtual
-gamepads. It reports `requires_installed_driver = true`, and only advertises
-gamepad/output-report support when the driver package is installed and the
-control device can be opened. Touchscreen, trackpad, and pen tablet support are
-not implemented in the Windows backend yet. The client library stays buildable
-with MSVC and MinGW/UCRT64 because the gamepad path talks to the driver through
-fixed-size C protocol structures and Win32 `DeviceIoControl` calls. The default
-control device path can be overridden for diagnostics with
+Win32 `SendInput`, then probes the libvirtualhid control device interface for
+descriptor-driven virtual gamepads. It falls back to the legacy fixed
+`\\.\LibVirtualHid` and `\\.\Global\LibVirtualHid` links for diagnostics and
+older driver builds. It reports `requires_installed_driver = true`, and only
+advertises gamepad/output-report support when the driver package is installed
+and the control device can be opened. Touchscreen, trackpad, and pen tablet
+support are not implemented in the Windows backend yet. The client library
+stays buildable with MSVC and MinGW/UCRT64 because the gamepad path talks to the
+driver through fixed-size C protocol structures and Win32 `DeviceIoControl`
+calls. The default control device path can be overridden for diagnostics with
 `LIBVIRTUALHID_WINDOWS_CONTROL_DEVICE`.
 
 The UMDF driver uses Windows Virtual HID Framework (VHF) for OS-visible gamepad
@@ -126,14 +128,18 @@ reports back to the C++ backend. VHF exposes VID/PID/version, explicit
 HID device so Windows and browser consumers can identify the selected profile
 instead of a generic VHF-only device.
 The built-in generic, Xbox-style, and Switch Pro-style HID profiles use a
-standard-gamepad-shaped common descriptor: ordered 8-bit button values first,
-including analog trigger values and d-pad buttons, followed by four 8-bit stick
-axes. This avoids browser and DirectInput-style generic HID consumers treating
-trigger axes as the right stick or leaving the device unmapped.
+standard-gamepad-shaped common descriptor: 16 one-bit digital buttons followed
+by 8-bit `X`, `Y`, `Rx`, `Ry`, `Z`, and `Rz` values for sticks and analog
+triggers. Keeping the buttons as real HID button caps is required for
+DirectInput-style and browser consumers to enumerate the VHF child as a gamepad.
+The UMDF driver also owns each VHF child by the control-file handle that created
+it, so process exits or crashes clean up any virtual gamepads that were not
+explicitly destroyed.
 During rapid development reinstalls, the fixed global control symbolic link can
 outlive the previous root device briefly; the driver treats that collision as
 non-fatal so stale object-manager state does not leave the control device in
-Code 31.
+Code 31. Normal clients discover the PnP control device interface first, so a
+stale fixed link does not block the backend from reaching the current device.
 
 Build the UMDF package separately with the Microsoft driver toolchain:
 
