@@ -4,6 +4,7 @@
  */
 
 // standard includes
+#include <cstddef>
 #include <cstdint>
 #include <span>
 #include <vector>
@@ -87,13 +88,50 @@ TEST(ReportTest, PacksCommonGamepadReport) {
   ASSERT_EQ(report.size(), profile.input_report_size);
   EXPECT_EQ(report[0], profile.report_id);
   EXPECT_EQ(report[1], 0x81);  // A and Start.
-  EXPECT_EQ(report[2], 0x4C);  // Guide, Misc/share, and D-pad left.
+  EXPECT_EQ(report[2], 0x6C);  // Guide, Misc/share, and D-pad-left hat value.
   EXPECT_EQ(report[3], 255);  // Left stick X.
   EXPECT_EQ(report[4], 255);  // Left stick Y.
-  EXPECT_EQ(report[5], 191);  // Right stick X.
-  EXPECT_EQ(report[6], 191);  // Right stick Y.
-  EXPECT_EQ(report[7], 64);  // Left trigger.
+  EXPECT_EQ(report[5], 64);  // Left trigger.
+  EXPECT_EQ(report[6], 191);  // Right stick X.
+  EXPECT_EQ(report[7], 191);  // Right stick Y.
   EXPECT_EQ(report[8], 255);  // Right trigger.
+}
+
+TEST(ReportTest, PacksXboxGipReport) {
+  auto profile = lvh::profiles::xbox_series();
+
+  lvh::GamepadState state;
+  state.buttons.set(lvh::GamepadButton::a);
+  state.buttons.set(lvh::GamepadButton::start);
+  state.buttons.set(lvh::GamepadButton::dpad_left);
+  state.buttons.set(lvh::GamepadButton::guide);
+  state.buttons.set(lvh::GamepadButton::misc1);
+  state.left_stick = {1.0F, -1.0F};
+  state.right_stick = {0.5F, -0.5F};
+  state.left_trigger = 0.25F;
+  state.right_trigger = 1.0F;
+  state.battery = lvh::GamepadBattery {.state = lvh::GamepadBatteryState::discharging, .percentage = 80};
+
+  const auto report = lvh::reports::pack_input_report(profile, state);
+  const auto read_u16 = [&report](std::size_t offset) {
+    return static_cast<std::uint16_t>(report[offset] | static_cast<std::uint16_t>(report[offset + 1U] << 8U));
+  };
+  const auto read_i16 = [&read_u16](std::size_t offset) {
+    return static_cast<std::int16_t>(read_u16(offset));
+  };
+
+  ASSERT_EQ(report.size(), profile.input_report_size);
+  EXPECT_EQ(profile.report_id, 0);
+  EXPECT_EQ(read_i16(0U), 32767);  // Left stick X.
+  EXPECT_EQ(read_i16(2U), -32768);  // Left stick Y.
+  EXPECT_EQ(read_i16(4U), 16384);  // Right stick X.
+  EXPECT_EQ(read_i16(6U), -16384);  // Right stick Y.
+  EXPECT_EQ(read_u16(8U), 256);  // Left trigger.
+  EXPECT_EQ(read_u16(10U), 1023);  // Right trigger.
+  EXPECT_EQ(read_u16(12U), 0x0881);  // A, Start, and Share.
+  EXPECT_EQ(report[14], 6);  // D-pad left.
+  EXPECT_EQ(report[15], 1);  // Guide/System Main Menu.
+  EXPECT_EQ(report[16], 204);  // Battery strength.
 }
 
 TEST(ReportTest, PacksDualSenseUsbReport) {

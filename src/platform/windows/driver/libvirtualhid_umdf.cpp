@@ -65,6 +65,7 @@ namespace {
   struct DeviceRecord {
     std::mutex mutex;
     std::uint64_t driver_device_id {};
+    WDFDEVICE owner_device {};
     WDFFILEOBJECT owner_file {};
     WDFIOTARGET vhf_io_target {};
     LvhWindowsCreateGamepadRequest request {};
@@ -289,16 +290,26 @@ namespace {
     }
   }
 
-  void delete_all_vhf_devices() {
+  void delete_vhf_devices_for_device(WDFDEVICE device) {
+    if (device == nullptr) {
+      return;
+    }
+
+    trace_status("delete_vhf_devices_for_device begin");
+
     std::vector<std::shared_ptr<DeviceRecord>> devices;
     {
       auto &state = driver_state();
       std::lock_guard lock {state.devices_mutex};
-      for (const auto &[driver_device_id, record] : state.devices) {
-        static_cast<void>(driver_device_id);
-        devices.push_back(record);
+      for (auto iter = state.devices.begin(); iter != state.devices.end();) {
+        if (iter->second->owner_device == device) {
+          trace_status("delete_vhf_devices_for_device matched");
+          devices.push_back(iter->second);
+          iter = state.devices.erase(iter);
+        } else {
+          ++iter;
+        }
       }
-      state.devices.clear();
     }
 
     for (const auto &record : devices) {
@@ -358,8 +369,8 @@ namespace {
     return STATUS_SUCCESS;
   }
 
-  void reset_vhf_devices() {
-    delete_all_vhf_devices();
+  void reset_vhf_devices(WDFDEVICE device) {
+    delete_vhf_devices_for_device(device);
   }
 
   wchar_t hex_digit(unsigned value) {
@@ -381,8 +392,20 @@ namespace {
     append_hex4(hardware_ids, ids.product_id);
   }
 
-  std::wstring make_hardware_ids(const LvhWindowsGamepadHardwareIds &ids) {
+  bool is_xbox_gamepad(std::uint32_t gamepad_kind) {
+    return gamepad_kind == LVH_WINDOWS_GAMEPAD_XBOX_360 || gamepad_kind == LVH_WINDOWS_GAMEPAD_XBOX_ONE ||
+           gamepad_kind == LVH_WINDOWS_GAMEPAD_XBOX_SERIES;
+  }
+
+  std::wstring make_hardware_ids(const LvhWindowsCreateGamepadRequest &request) {
+    const auto &ids = request.hardware_ids;
     std::wstring hardware_ids;
+    if (is_xbox_gamepad(request.gamepad_kind)) {
+      append_hid_vid_pid(hardware_ids, ids);
+      hardware_ids.append(L"&IG_00");
+      hardware_ids.push_back(L'\0');
+    }
+
     append_hid_vid_pid(hardware_ids, ids);
     hardware_ids.append(L"&REV_");
     append_hex4(hardware_ids, ids.device_version);
@@ -405,7 +428,7 @@ namespace {
       record->request.report_descriptor,
       record->request.report_descriptor + descriptor_size
     );
-    record->hardware_ids = make_hardware_ids(record->request.hardware_ids);
+    record->hardware_ids = make_hardware_ids(record->request);
 
     VHF_CONFIG vhf_config;
     VHF_CONFIG_INIT(
@@ -569,6 +592,7 @@ namespace {
     const auto driver_device_id = state.next_driver_device_id.fetch_add(1);
     auto record = std::make_shared<DeviceRecord>();
     record->driver_device_id = driver_device_id;
+    record->owner_device = device;
     record->owner_file = WdfRequestGetFileObject(request);
     record->request = *create_request;
     trace_status("create_gamepad begin");
@@ -778,16 +802,14 @@ NTSTATUS LvhEvtDeviceReleaseHardware(WDFDEVICE device, WDFCMRESLIST resources_tr
 
   trace_status("EvtDeviceReleaseHardware begin");
   complete_pending_output_requests(STATUS_CANCELLED);
-  reset_vhf_devices();
+  reset_vhf_devices(device);
   return STATUS_SUCCESS;
 }
 
 void LvhEvtDeviceCleanup(WDFOBJECT device_object) {
-  UNREFERENCED_PARAMETER(device_object);
-
   trace_status("EvtDeviceCleanup begin");
   complete_pending_output_requests(STATUS_CANCELLED);
-  reset_vhf_devices();
+  reset_vhf_devices(WDFDEVICE(device_object));
 }
 
 void LvhEvtFileCleanup(WDFFILEOBJECT file_object) {

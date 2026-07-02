@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <vector>
 
 // local includes
@@ -15,7 +16,7 @@
 namespace lvh::profiles {
   namespace {
 
-    constexpr std::uint8_t common_button_count = 16;
+    constexpr std::uint8_t common_button_count = 12;
 
     constexpr std::uint8_t common_axis_count = 6;
 
@@ -24,6 +25,8 @@ namespace lvh::profiles {
     constexpr std::size_t common_report_size = 1 + common_button_bytes + common_axis_count;
 
     constexpr std::size_t common_output_report_size = 5;
+
+    constexpr std::size_t xbox_gip_input_report_size = 17;
 
     constexpr std::size_t dualshock4_usb_input_report_size = 64;
 
@@ -40,6 +43,47 @@ namespace lvh::profiles {
     constexpr std::size_t dualsense_bluetooth_input_report_size = 78;
 
     constexpr std::size_t dualsense_bluetooth_output_report_size = 78;
+
+    std::uint8_t hex_nibble(char digit) {
+      if (digit >= '0' && digit <= '9') {
+        return static_cast<std::uint8_t>(digit - '0');
+      }
+      if (digit >= 'A' && digit <= 'F') {
+        return static_cast<std::uint8_t>(digit - 'A' + 10);
+      }
+      if (digit >= 'a' && digit <= 'f') {
+        return static_cast<std::uint8_t>(digit - 'a' + 10);
+      }
+      return 0;
+    }
+
+    std::vector<std::uint8_t> bytes_from_hex(std::string_view hex) {
+      std::vector<std::uint8_t> bytes;
+      bytes.reserve(hex.size() / 2U);
+      for (std::size_t index = 0; index + 1U < hex.size(); index += 2U) {
+        bytes.push_back(static_cast<std::uint8_t>((hex_nibble(hex[index]) << 4U) | hex_nibble(hex[index + 1U])));
+      }
+      return bytes;
+    }
+
+    std::vector<std::uint8_t> make_xbox_gip_report_descriptor(bool include_share_button) {
+      constexpr std::string_view xbox_one_descriptor =
+        "05010905a101a10009300931150027ffff0000950275108102c0a10009330934150027ffff0000950275108102c0"
+        "05010932150026ff039501750a81021500250075069501810305010935150026ff039501750a8102150025007506"
+        "9501810305091901290a950a750181021500250075069501810305010939150125083500463b0166140075049501"
+        "814275049501150025003500450065008103a102050f099715002501750495019102150025009103097015002564"
+        "7508950491020950660110550e26ff009501910209a7910265005500097c9102c005010980a100098515002501"
+        "95017501810215002500750795018103c005060920150026ff00750895018102c0";
+      constexpr std::string_view xbox_series_descriptor =
+        "05010905a101a10009300931150027ffff0000950275108102c0a10009330934150027ffff0000950275108102c0"
+        "05010932150026ff039501750a81021500250075069501810305010935150026ff039501750a8102150025007506"
+        "9501810305091901290c950c750181021500250075049501810305010939150125083500463b0166140075049501"
+        "814275049501150025003500450065008103a102050f099715002501750495019102150025009103097015002564"
+        "7508950491020950660110550e26ff009501910209a7910265005500097c9102c005010980a100098515002501"
+        "95017501810215002500750795018103c005060920150026ff00750895018102c0";
+
+      return bytes_from_hex(include_share_button ? xbox_series_descriptor : xbox_one_descriptor);
+    }
 
     std::vector<std::uint8_t> make_gamepad_report_descriptor(std::uint8_t report_id, bool supports_rumble) {
       std::vector<std::uint8_t> descriptor {
@@ -69,6 +113,29 @@ namespace lvh::profiles {
         0x02,  // Input (Data,Var,Abs)
         0x05,
         0x01,  // Usage Page (Generic Desktop)
+        0x09,
+        0x39,  // Usage (Hat switch)
+        0x15,
+        0x00,  // Logical Minimum (0)
+        0x25,
+        0x07,  // Logical Maximum (7)
+        0x35,
+        0x00,  // Physical Minimum (0)
+        0x46,
+        0x3B,
+        0x01,  // Physical Maximum (315)
+        0x65,
+        0x14,  // Unit (Eng Rot:Angular Pos)
+        0x75,
+        0x04,  // Report Size (4)
+        0x95,
+        0x01,  // Report Count (1)
+        0x81,
+        0x42,  // Input (Data,Var,Abs,Null)
+        0x65,
+        0x00,  // Unit (None)
+        0x05,
+        0x01,  // Usage Page (Generic Desktop)
         0x15,
         0x00,  // Logical Minimum (0)
         0x26,
@@ -83,11 +150,11 @@ namespace lvh::profiles {
         0x09,
         0x31,  // Usage (Y)
         0x09,
+        0x32,  // Usage (Z)
+        0x09,
         0x33,  // Usage (Rx)
         0x09,
         0x34,  // Usage (Ry)
-        0x09,
-        0x32,  // Usage (Z)
         0x09,
         0x35,  // Usage (Rz)
         0x81,
@@ -1587,6 +1654,30 @@ namespace lvh::profiles {
       return profile;
     }
 
+    DeviceProfile make_xbox_gip_profile(
+      GamepadProfileKind kind,
+      std::string name,
+      std::uint16_t product_id,
+      std::uint16_t version,
+      bool include_share_button
+    ) {
+      DeviceProfile profile;
+      profile.device_type = DeviceType::gamepad;
+      profile.gamepad_kind = kind;
+      profile.bus_type = include_share_button ? BusType::bluetooth : BusType::usb;
+      profile.vendor_id = 0x045E;
+      profile.product_id = product_id;
+      profile.version = version;
+      profile.report_id = 0;
+      profile.input_report_size = xbox_gip_input_report_size;
+      profile.output_report_size = common_output_report_size;
+      profile.name = std::move(name);
+      profile.manufacturer = "Microsoft";
+      profile.capabilities = {.supports_rumble = true, .supports_battery = include_share_button};
+      profile.report_descriptor = make_xbox_gip_report_descriptor(include_share_button);
+      return profile;
+    }
+
     DeviceProfile make_dualshock4_profile(BusType bus_type) {
       DeviceProfile profile;
       profile.device_type = DeviceType::gamepad;
@@ -1681,26 +1772,22 @@ namespace lvh::profiles {
   }
 
   DeviceProfile xbox_one() {
-    return make_gamepad_profile(
+    return make_xbox_gip_profile(
       GamepadProfileKind::xbox_one,
       "Xbox One Controller",
-      "Microsoft",
-      0x045E,
       0x02EA,
       0x0408,
-      {.supports_rumble = true}
+      false
     );
   }
 
   DeviceProfile xbox_series() {
-    return make_gamepad_profile(
+    return make_xbox_gip_profile(
       GamepadProfileKind::xbox_series,
       "Xbox Wireless Controller",
-      "Microsoft",
-      0x045E,
-      0x0B12,
+      0x0B13,
       0x0500,
-      {.supports_rumble = true, .supports_battery = true}
+      true
     );
   }
 

@@ -345,6 +345,33 @@ function Set-RootDeviceVhfMode {
   }
 }
 
+function Restart-RootDevice {
+  [CmdletBinding(SupportsShouldProcess)]
+  param([string] $InstanceId)
+
+  if (-not $InstanceId) {
+    return
+  }
+
+  if (-not $PSCmdlet.ShouldProcess($InstanceId, "Restart libvirtualhid development device")) {
+    return
+  }
+
+  $output = @(pnputil.exe /restart-device $InstanceId 2>&1)
+  $exitCode = $LASTEXITCODE
+  foreach ($line in $output) {
+    Write-Information $line -InformationAction Continue
+  }
+
+  if ($exitCode -ne 0) {
+    throw "pnputil.exe /restart-device $InstanceId exited with code $exitCode"
+  }
+
+  if ($output -match "reboot is needed") {
+    Write-Warning "Windows reported that a reboot is required to reload the libvirtualhid UMDF driver."
+  }
+}
+
 function Update-RootDeviceDriverWithSetupApi {
   [CmdletBinding(SupportsShouldProcess)]
   param(
@@ -408,6 +435,9 @@ try {
       Set-RootDeviceVhfMode -InstanceId $rootDevice
     }
     Update-RootDeviceDriverWithSetupApi -Path $resolvedInf -TargetHardwareId $HardwareId
+    foreach ($rootDevice in $rootDevices) {
+      Restart-RootDevice -InstanceId $rootDevice
+    }
     return
   }
 
@@ -420,6 +450,9 @@ try {
     Set-RootDeviceVhfMode -InstanceId $rootDevice
   }
   Update-RootDeviceDriverWithSetupApi -Path $resolvedInf -TargetHardwareId $HardwareId
+  foreach ($rootDevice in $rootDevices) {
+    Restart-RootDevice -InstanceId $rootDevice
+  }
 } finally {
   Stop-LibVirtualHidTranscript
 }
