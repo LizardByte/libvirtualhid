@@ -640,7 +640,9 @@ platform-specific calls.
   `Runtime` and `Gamepad` APIs.
 - [x] Preserve Sunshine's asynchronous event shape by caching per-controller
   `GamepadState` and resubmitting after separate button, axis, trigger, touch,
-  motion, and battery updates.
+  motion, and battery updates. Adapter creation submits one neutral input report
+  immediately so operating-system consumers can enumerate the virtual controller
+  before the first client input event arrives.
 - [x] Expand or formally map the public button model so Sunshine's full
   controller flag set is preserved, including guide/home, profile-specific
   misc/share, and rear paddles where the emulated profile can expose them.

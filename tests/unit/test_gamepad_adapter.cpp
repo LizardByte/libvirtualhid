@@ -130,7 +130,7 @@ TEST(GamepadAdapterTest, CachesAndSubmitsPartialUpdates) {
 
   const auto *gamepad = adapter.gamepad();
   ASSERT_NE(gamepad, nullptr);
-  EXPECT_EQ(gamepad->submit_count(), 9U);
+  EXPECT_EQ(gamepad->submit_count(), 10U);
 
   const auto submitted = gamepad->last_submitted_state();
   EXPECT_TRUE(submitted.buttons.test(lvh::GamepadButton::a));
@@ -190,7 +190,7 @@ TEST(GamepadAdapterTest, RejectsUnsupportedPartialUpdates) {
   EXPECT_EQ(adapter.clear_touchpad_contact(0).code(), lvh::ErrorCode::unsupported_profile);
   EXPECT_EQ(adapter.set_button(lvh::GamepadButton::touchpad, true).code(), lvh::ErrorCode::unsupported_profile);
   EXPECT_EQ(adapter.set_button(lvh::GamepadButton::paddle1, true).code(), lvh::ErrorCode::unsupported_profile);
-  EXPECT_EQ(adapter.gamepad()->submit_count(), 0U);
+  EXPECT_EQ(adapter.gamepad()->submit_count(), 1U);
 }
 
 TEST(GamepadAdapterTest, RejectsInvalidCreationAndClosedAdapterUpdates) {
