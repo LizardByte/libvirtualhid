@@ -300,10 +300,22 @@ function Get-RegistryRootDevice {
       $hasTargetInstanceId = $instanceId -like "$TargetHardwareId\*"
 
       if ($hasExactHardwareId -or $hasCorruptHardwareId -or $hasTargetInstanceId) {
+        $classGuid = $null
+        $hasStaleVhfMode = $false
+        try {
+          $deviceProperties = Get-ItemProperty -LiteralPath $_.PSPath -ErrorAction Stop
+          $classGuid = $deviceProperties.ClassGUID
+          $hasStaleVhfMode = $null -ne $deviceProperties.PSObject.Properties["VhfMode"]
+        } catch {
+          Write-Verbose "Unable to read registry properties for $instanceId`: $($_.Exception.Message)"
+        }
+
         [pscustomobject]@{
           InstanceId = $instanceId
           HasExactHardwareId = $hasExactHardwareId
           HasCorruptHardwareId = $hasCorruptHardwareId
+          HasLegacySystemClass = $classGuid -ieq "{4d36e97d-e325-11ce-bfc1-08002be10318}"
+          HasStaleVhfMode = $hasStaleVhfMode
         }
       }
     }
@@ -316,22 +328,6 @@ function Remove-DeviceInstance {
 
   if ($PSCmdlet.ShouldProcess($InstanceId, "Remove stale libvirtualhid root device")) {
     Invoke-CheckedCommand -FilePath "pnputil.exe" -Arguments @("/remove-device", $InstanceId)
-  }
-}
-
-function Set-RootDeviceVhfMode {
-  [CmdletBinding(SupportsShouldProcess)]
-  param([string] $InstanceId)
-
-  $deviceRegistryPath = "HKLM:\SYSTEM\CurrentControlSet\Enum\$InstanceId"
-  if (-not (Test-Path -LiteralPath $deviceRegistryPath)) {
-    Write-Verbose "Unable to set VhfMode because $deviceRegistryPath does not exist."
-    return
-  }
-
-  if ($PSCmdlet.ShouldProcess($InstanceId, "Set VhfMode=1 for UMDF VHF source device")) {
-    New-ItemProperty -LiteralPath $deviceRegistryPath -Name "VhfMode" -Value 1 -PropertyType DWord -Force | Out-Null
-    Write-Information "Set VhfMode=1 on $InstanceId." -InformationAction Continue
   }
 }
 
@@ -387,16 +383,15 @@ try {
   }
 
   $registryRootDevices = @(Get-RegistryRootDevice -TargetHardwareId $HardwareId)
-  foreach ($device in ($registryRootDevices | Where-Object { $_.HasCorruptHardwareId })) {
+  foreach ($device in ($registryRootDevices | Where-Object {
+        $_.HasCorruptHardwareId -or $_.HasLegacySystemClass -or $_.HasStaleVhfMode
+      })) {
     Remove-DeviceInstance -InstanceId $device.InstanceId
   }
 
   $rootDevices = @(Get-RootDeviceInstanceId -TargetHardwareId $HardwareId)
   if ($rootDevices.Count -gt 0) {
     Write-Information "Updating the existing $HardwareId device driver." -InformationAction Continue
-    foreach ($rootDevice in $rootDevices) {
-      Set-RootDeviceVhfMode -InstanceId $rootDevice
-    }
     Update-RootDeviceDriverWithSetupApi -Path $resolvedInf -TargetHardwareId $HardwareId
     return
   }
@@ -406,9 +401,6 @@ try {
   }
 
   $rootDevices = @(Get-RootDeviceInstanceId -TargetHardwareId $HardwareId)
-  foreach ($rootDevice in $rootDevices) {
-    Set-RootDeviceVhfMode -InstanceId $rootDevice
-  }
   Update-RootDeviceDriverWithSetupApi -Path $resolvedInf -TargetHardwareId $HardwareId
 } finally {
   Stop-LibVirtualHidTranscript

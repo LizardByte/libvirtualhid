@@ -55,9 +55,6 @@ set(_lvh_wdk_um_library_candidates)
 set(_lvh_wdk_tool_candidates)
 set(LIBVIRTUALHID_UMDF_LIBRARY_VERSION "2.15" CACHE STRING
     "UMDF library version used for the Windows driver package")
-option(LIBVIRTUALHID_WINDOWS_DRIVER_ENABLE_VHF
-       "Attach the Windows driver package to the inbox Virtual HID Framework lower filter"
-       ON)
 string(REGEX REPLACE "\\." "\\\\." _lvh_umdf_library_version_regex "${LIBVIRTUALHID_UMDF_LIBRARY_VERSION}")
 foreach(lvh_wdk_root_cmake IN LISTS _lvh_wdk_roots)
     if(EXISTS "${lvh_wdk_root_cmake}")
@@ -167,13 +164,6 @@ if(NOT _lvh_wdf_stub_version STREQUAL LIBVIRTUALHID_UMDF_LIBRARY_VERSION)
             "version ${LIBVIRTUALHID_UMDF_LIBRARY_VERSION}.")
 endif()
 message(STATUS "UMDF library version: ${LIBVIRTUALHID_UMDF_LIBRARY_VERSION}")
-if(LIBVIRTUALHID_WINDOWS_DRIVER_ENABLE_VHF)
-    set(LIBVIRTUALHID_DRIVER_VHF_ADDREG ",DeviceInstall_Vhf_AddReg")
-else()
-    set(LIBVIRTUALHID_DRIVER_VHF_ADDREG "")
-endif()
-message(STATUS "Windows driver VHF lower filter: ${LIBVIRTUALHID_WINDOWS_DRIVER_ENABLE_VHF}")
-
 find_program(LIBVIRTUALHID_STAMPINF
              NAMES stampinf stampinf.exe
              PATHS ${_lvh_wdk_tool_candidates})
@@ -251,6 +241,21 @@ add_custom_target(libvirtualhid_windows_catalog
 
 install(TARGETS libvirtualhid_umdf
   RUNTIME DESTINATION "drivers/windows"
+  COMPONENT driver)
+install(CODE
+  "
+  set(lvh_driver_dll \"$<TARGET_FILE:libvirtualhid_umdf>\")
+  set(lvh_driver_inf \"$<TARGET_FILE_DIR:libvirtualhid_umdf>/libvirtualhid.inf\")
+  set(lvh_driver_cat \"$<TARGET_FILE_DIR:libvirtualhid_umdf>/libvirtualhid.cat\")
+  foreach(lvh_driver_file IN ITEMS \"\${lvh_driver_dll}\" \"\${lvh_driver_inf}\" \"\${lvh_driver_cat}\")
+    if(NOT EXISTS \"\${lvh_driver_file}\")
+      message(FATAL_ERROR \"Windows driver package file is missing: \${lvh_driver_file}\")
+    endif()
+  endforeach()
+  if(\"\${lvh_driver_dll}\" IS_NEWER_THAN \"\${lvh_driver_cat}\" OR \"\${lvh_driver_inf}\" IS_NEWER_THAN \"\${lvh_driver_cat}\")
+    message(FATAL_ERROR \"Windows driver catalog is stale; build libvirtualhid_windows_catalog and sign libvirtualhid.cat before packaging.\")
+  endif()
+  "
   COMPONENT driver)
 install(FILES
         "$<TARGET_FILE_DIR:libvirtualhid_umdf>/libvirtualhid.inf"
