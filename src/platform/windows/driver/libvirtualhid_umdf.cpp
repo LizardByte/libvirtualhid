@@ -66,6 +66,7 @@ namespace {
     std::mutex mutex;
     std::uint64_t driver_device_id {};
     WDFFILEOBJECT owner_file {};
+    WDFIOTARGET vhf_io_target {};
     LvhWindowsCreateGamepadRequest request {};
     VHFHANDLE vhf_handle {};
     std::vector<UCHAR> report_descriptor;
@@ -74,8 +75,6 @@ namespace {
 
   struct DriverState {
     std::atomic<std::uint64_t> next_driver_device_id {1};
-    std::mutex vhf_target_mutex;
-    WDFIOTARGET vhf_io_target {};
     std::mutex devices_mutex;
     std::map<std::uint64_t, std::shared_ptr<DeviceRecord>> devices;
     std::mutex output_requests_mutex;
@@ -270,15 +269,23 @@ namespace {
     trace_status("delete_vhf_device begin");
 
     VHFHANDLE vhf_handle = nullptr;
+    WDFIOTARGET vhf_io_target = nullptr;
     {
       std::lock_guard lock {record->mutex};
       vhf_handle = record->vhf_handle;
       record->vhf_handle = nullptr;
+      vhf_io_target = record->vhf_io_target;
+      record->vhf_io_target = nullptr;
     }
 
     if (vhf_handle != nullptr) {
       trace_status("delete_vhf_device VhfDelete");
       VhfDelete(vhf_handle, TRUE);
+    }
+
+    if (vhf_io_target != nullptr) {
+      trace_status("delete_vhf_device WdfObjectDelete target");
+      WdfObjectDelete(vhf_io_target);
     }
   }
 
@@ -326,19 +333,14 @@ namespace {
     }
   }
 
-  NTSTATUS initialize_vhf_target(WDFDEVICE device) {
-    auto &state = driver_state();
-    std::lock_guard lock {state.vhf_target_mutex};
-    if (state.vhf_io_target != nullptr) {
-      return STATUS_SUCCESS;
-    }
-
-    WDFIOTARGET vhf_io_target = nullptr;
+  NTSTATUS initialize_vhf_target(WDFDEVICE device, const std::shared_ptr<DeviceRecord> &record) {
     WDF_OBJECT_ATTRIBUTES target_attributes;
     WDF_OBJECT_ATTRIBUTES_INIT(&target_attributes);
-    target_attributes.ParentObject = device;
+    target_attributes.ParentObject = record->owner_file != nullptr ? WDFOBJECT(record->owner_file) : WDFOBJECT(device);
 
+    WDFIOTARGET vhf_io_target = nullptr;
     auto status = WdfIoTargetCreate(device, &target_attributes, &vhf_io_target);
+    trace_status("initialize_vhf_target WdfIoTargetCreate", status);
     if (!NT_SUCCESS(status)) {
       return status;
     }
@@ -346,25 +348,18 @@ namespace {
     WDF_IO_TARGET_OPEN_PARAMS open_params;
     WDF_IO_TARGET_OPEN_PARAMS_INIT_OPEN_BY_FILE(&open_params, nullptr);
     status = WdfIoTargetOpen(vhf_io_target, &open_params);
+    trace_status("initialize_vhf_target WdfIoTargetOpen", status);
     if (!NT_SUCCESS(status)) {
       WdfObjectDelete(vhf_io_target);
       return status;
     }
 
-    state.vhf_io_target = vhf_io_target;
+    record->vhf_io_target = vhf_io_target;
     return STATUS_SUCCESS;
   }
 
-  void reset_vhf_target(bool delete_target) {
-    auto &state = driver_state();
-    const auto vhf_io_target = state.vhf_io_target;
-    state.vhf_io_target = nullptr;
-
+  void reset_vhf_devices() {
     delete_all_vhf_devices();
-
-    if (delete_target && vhf_io_target != nullptr) {
-      WdfObjectDelete(vhf_io_target);
-    }
   }
 
   wchar_t hex_digit(unsigned value) {
@@ -400,8 +395,7 @@ namespace {
   }
 
   NTSTATUS create_vhf_device(WDFDEVICE device, const std::shared_ptr<DeviceRecord> &record) {
-    auto &state = driver_state();
-    auto status = initialize_vhf_target(device);
+    auto status = initialize_vhf_target(device, record);
     if (!NT_SUCCESS(status)) {
       return status;
     }
@@ -416,7 +410,7 @@ namespace {
     VHF_CONFIG vhf_config;
     VHF_CONFIG_INIT(
       &vhf_config,
-      WdfIoTargetWdmGetTargetFileHandle(state.vhf_io_target),
+      WdfIoTargetWdmGetTargetFileHandle(record->vhf_io_target),
       static_cast<USHORT>(record->report_descriptor.size()),
       record->report_descriptor.data()
     );
@@ -432,6 +426,7 @@ namespace {
     trace_status("create_vhf_device VhfCreate", status);
     if (!NT_SUCCESS(status)) {
       record->vhf_handle = nullptr;
+      delete_vhf_device(record);
       return status;
     }
 
@@ -496,11 +491,11 @@ namespace {
       return {report_begin, report_end};
     }
 
-    if (request.report_size <= 1U || request.report[0] != report_id) {
+    if (request.report[0] != report_id) {
       return {};
     }
 
-    return {report_begin + 1U, report_end};
+    return {report_begin, report_end};
   }
 
   void copy_vhf_output_payload(
@@ -508,11 +503,13 @@ namespace {
     const HID_XFER_PACKET &packet
   ) {
     const auto report_id = packet.reportId;
-    const auto report_id_size = report_id == 0U ? 0U : 1U;
+    const auto packet_includes_report_id =
+      report_id != 0U && packet.reportBufferLen > 0U && packet.reportBuffer[0] == report_id;
+    const auto report_id_size = report_id == 0U || packet_includes_report_id ? 0U : 1U;
     const auto payload_capacity = LVH_WINDOWS_MAX_OUTPUT_REPORT_SIZE - report_id_size;
     const auto payload_size = std::min(packet.reportBufferLen, static_cast<ULONG>(payload_capacity));
 
-    if (report_id != 0U) {
+    if (report_id_size != 0U) {
       event.report[0] = report_id;
     }
 
@@ -781,7 +778,7 @@ NTSTATUS LvhEvtDeviceReleaseHardware(WDFDEVICE device, WDFCMRESLIST resources_tr
 
   trace_status("EvtDeviceReleaseHardware begin");
   complete_pending_output_requests(STATUS_CANCELLED);
-  reset_vhf_target(true);
+  reset_vhf_devices();
   return STATUS_SUCCESS;
 }
 
@@ -790,7 +787,7 @@ void LvhEvtDeviceCleanup(WDFOBJECT device_object) {
 
   trace_status("EvtDeviceCleanup begin");
   complete_pending_output_requests(STATUS_CANCELLED);
-  reset_vhf_target(false);
+  reset_vhf_devices();
 }
 
 void LvhEvtFileCleanup(WDFFILEOBJECT file_object) {

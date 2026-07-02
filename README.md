@@ -121,9 +121,10 @@ browser Gamepad API should therefore see standard HID gamepads after the driver
 is installed. XInput is not a direct target for this HID-only backend because it
 does not emulate the Xbox proprietary bus/API.
 The client protocol uses complete HID reports with the report ID at byte 0. The
-UMDF driver strips that byte when submitting to VHF, where `HID_XFER_PACKET`
-carries the report ID separately, and prepends it again before forwarding output
-reports back to the C++ backend. VHF exposes VID/PID/version, explicit
+UMDF driver passes that complete report buffer to VHF and also sets
+`HID_XFER_PACKET.reportId` for numbered reports. Output reports forwarded by
+VHF are normalized back to the same complete-report shape before delivery to
+the C++ backend. VHF exposes VID/PID/version, explicit
 `HID\VID_....&PID_....` hardware IDs, and the report descriptor for the child
 HID device so Windows and browser consumers can identify the selected profile
 instead of a generic VHF-only device.
@@ -132,9 +133,9 @@ standard-gamepad-shaped common descriptor: 16 one-bit digital buttons followed
 by 8-bit `X`, `Y`, `Rx`, `Ry`, `Z`, and `Rz` values for sticks and analog
 triggers. Keeping the buttons as real HID button caps is required for
 DirectInput-style and browser consumers to enumerate the VHF child as a gamepad.
-The UMDF driver also owns each VHF child by the control-file handle that created
-it, so process exits or crashes clean up any virtual gamepads that were not
-explicitly destroyed.
+The UMDF driver opens a separate VHF source target for each virtual gamepad and
+parents that target to the control-file handle that created it, so process exits
+or crashes clean up any virtual gamepads that were not explicitly destroyed.
 During rapid development reinstalls, the fixed global control symbolic link can
 outlive the previous root device briefly; the driver treats that collision as
 non-fatal so stale object-manager state does not leave the control device in
@@ -186,9 +187,10 @@ using an older in-process UMDF module during development. The installer also
 writes `VhfMode=1` onto the
 root device before starting the driver so root-enumerated development installs
 get the same VHF source mode as the INF hardware section. The UMDF control
-device starts without opening VHF; gamepad creation opens VHF lazily so
-target-open failures are reported through the create-device response instead of
-making `\\.\LibVirtualHid` unavailable. The generated INF uses the same UMDF
+device starts without opening VHF; each gamepad creation opens its own VHF
+target from the creating file handle so target-open failures are reported
+through the create-device response instead of making `\\.\LibVirtualHid`
+unavailable. The generated INF uses the same UMDF
 library version as the WDF headers and stub library selected by CMake. The
 package defaults to UMDF 2.15, matching the inbox VHF UMDF source driver while
 still exposing the framework APIs used by libvirtualhid. The driver target links
