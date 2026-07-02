@@ -84,7 +84,9 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  auto runtime = lvh::Runtime::create();
+  lvh::RuntimeOptions runtime_options;
+  runtime_options.backend = lvh::BackendKind::platform_default;
+  auto runtime = lvh::Runtime::create(runtime_options);
 
   lvh::CreateGamepadOptions options;
   options.profile = *profile;

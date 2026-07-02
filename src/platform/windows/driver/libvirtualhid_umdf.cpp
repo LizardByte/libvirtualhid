@@ -93,15 +93,23 @@ namespace {
 
     wchar_t trace_file_path[MAX_PATH] {};
     constexpr auto trace_file_path_length = static_cast<DWORD>(MAX_PATH);
-    auto trace_path_size = GetTempPathW(trace_file_path_length, trace_file_path);
+    auto trace_path_size = GetWindowsDirectoryW(trace_file_path, trace_file_path_length);
     if (trace_path_size == 0U || trace_path_size >= trace_file_path_length) {
       return;
     }
 
+    constexpr auto trace_directory = L"\\Temp\\";
+    const auto directory_size = wcslen(trace_directory);
     const auto file_name_size = wcslen(trace_file_name);
-    if (trace_path_size + file_name_size >= trace_file_path_length) {
+    if (trace_path_size + directory_size + file_name_size >= trace_file_path_length) {
       return;
     }
+    std::memcpy(
+      trace_file_path + trace_path_size,
+      trace_directory,
+      directory_size * sizeof(wchar_t)
+    );
+    trace_path_size += static_cast<DWORD>(directory_size);
     std::memcpy(
       trace_file_path + trace_path_size,
       trace_file_name,
@@ -259,6 +267,8 @@ namespace {
       return;
     }
 
+    trace_status("delete_vhf_device begin");
+
     VHFHANDLE vhf_handle = nullptr;
     {
       std::lock_guard lock {record->mutex};
@@ -267,6 +277,7 @@ namespace {
     }
 
     if (vhf_handle != nullptr) {
+      trace_status("delete_vhf_device VhfDelete");
       VhfDelete(vhf_handle, TRUE);
     }
   }
@@ -293,12 +304,15 @@ namespace {
       return;
     }
 
+    trace_status("delete_vhf_devices_for_file begin");
+
     std::vector<std::shared_ptr<DeviceRecord>> devices;
     {
       auto &state = driver_state();
       std::lock_guard lock {state.devices_mutex};
       for (auto iter = state.devices.begin(); iter != state.devices.end();) {
         if (iter->second->owner_file == file_object) {
+          trace_status("delete_vhf_devices_for_file matched");
           devices.push_back(iter->second);
           iter = state.devices.erase(iter);
         } else {
@@ -415,12 +429,14 @@ namespace {
     vhf_config.EvtVhfAsyncOperationWriteReport = LvhEvtVhfWriteReport;
 
     status = VhfCreate(&vhf_config, &record->vhf_handle);
+    trace_status("create_vhf_device VhfCreate", status);
     if (!NT_SUCCESS(status)) {
       record->vhf_handle = nullptr;
       return status;
     }
 
     status = VhfStart(record->vhf_handle);
+    trace_status("create_vhf_device VhfStart", status);
     if (!NT_SUCCESS(status)) {
       delete_vhf_device(record);
     }
@@ -558,9 +574,11 @@ namespace {
     record->driver_device_id = driver_device_id;
     record->owner_file = WdfRequestGetFileObject(request);
     record->request = *create_request;
+    trace_status("create_gamepad begin");
 
     status = create_vhf_device(device, record);
     if (!NT_SUCCESS(status)) {
+      trace_status("create_gamepad failed", status);
       create_response->status = LVH_WINDOWS_STATUS_BACKEND_FAILURE;
       complete_request(request, STATUS_SUCCESS, sizeof(*create_response));
       return;
@@ -573,6 +591,7 @@ namespace {
     create_response->status = LVH_WINDOWS_STATUS_SUCCESS;
     create_response->driver_device_id = driver_device_id;
     set_device_path(driver_device_id, create_response->device_path);
+    trace_status("create_gamepad success");
     complete_request(request, STATUS_SUCCESS, sizeof(*create_response));
   }
 
@@ -597,6 +616,9 @@ namespace {
       if (iter != state.devices.end()) {
         record = iter->second;
         state.devices.erase(iter);
+        trace_status("destroy_device found");
+      } else {
+        trace_status("destroy_device missing");
       }
     }
     delete_vhf_device(record);
@@ -616,20 +638,25 @@ namespace {
       return;
     }
 
+    trace_status("submit_input_report begin");
+
     auto record = find_device(submit_request->driver_device_id);
     if (!record) {
+      trace_status("submit_input_report missing device");
       complete_request(request, STATUS_OBJECT_NAME_NOT_FOUND);
       return;
     }
 
     std::lock_guard lock {record->mutex};
     if (record->vhf_handle == nullptr) {
+      trace_status("submit_input_report missing vhf");
       complete_request(request, STATUS_OBJECT_NAME_NOT_FOUND);
       return;
     }
 
     auto report = make_vhf_input_payload(*record, *submit_request);
     if (report.empty()) {
+      trace_status("submit_input_report invalid payload");
       complete_request(request, STATUS_INVALID_PARAMETER);
       return;
     }
@@ -639,7 +666,9 @@ namespace {
     packet.reportBufferLen = static_cast<ULONG>(report.size());
     packet.reportId = record->request.hardware_ids.report_id;
 
-    complete_request(request, VhfReadReportSubmit(record->vhf_handle, &packet));
+    const auto submit_status = VhfReadReportSubmit(record->vhf_handle, &packet);
+    trace_status("submit_input_report VhfReadReportSubmit", submit_status);
+    complete_request(request, submit_status);
   }
 
   void handle_read_output_report_request(WDFREQUEST request) {

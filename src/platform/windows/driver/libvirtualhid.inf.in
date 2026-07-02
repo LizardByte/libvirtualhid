@@ -41,7 +41,7 @@ Needs=WUDFRD.NT.HW
 libvirtualhid_umdf.dll
 
 [DeviceInstall_Device_AddReg]
-HKR,,Security,,"D:P(A;;GA;;;SY)(A;;GRGWGX;;;BA)(A;;GRGWGX;;;AU)"
+HKR,,Security,,"D:P(A;;GA;;;SY)(A;;GRGWGX;;;BA)(A;;GRGWGX;;;BU)(A;;GRGWGX;;;AU)(A;;GRGW;;;WD)(A;;GR;;;RC)"
 
 [DeviceInstall_Vhf_AddReg]
 HKR,,"LowerFilters",0x00010008,"vhf"
@@ -57,6 +57,7 @@ UmdfServiceOrder=libvirtualhid_umdf
 
 [libvirtualhid_umdf_Install]
 UmdfLibraryVersion=@LIBVIRTUALHID_UMDF_LIBRARY_VERSION@
+UmdfHostProcessSharing=ProcessSharingDisabled
 ServiceBinary=%13%\libvirtualhid_umdf.dll
 
 [Strings]

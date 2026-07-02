@@ -180,8 +180,10 @@ libvirtualhid-specific sign that installation completed is the
 `ROOT\LIBVIRTUALHID` device and the `\\.\LibVirtualHid` control device. The INF
 includes the built-in `WUDFRd` install sections for the root `System` control
 device, appends the VHF lower filter, sets `VhfMode=1` for the UMDF VHF source
-stack, and leaves UMDF dispatcher policy at the framework default to match the
-inbox VHF source-driver shape. The installer also writes `VhfMode=1` onto the
+stack, grants non-admin user-mode clients read/write access to the control
+device, and disables UMDF host-process sharing so driver updates do not keep
+using an older in-process UMDF module during development. The installer also
+writes `VhfMode=1` onto the
 root device before starting the driver so root-enumerated development installs
 get the same VHF source mode as the INF hardware section. The UMDF control
 device starts without opening VHF; gamepad creation opens VHF lazily so
@@ -191,7 +193,8 @@ library version as the WDF headers and stub library selected by CMake. The
 package defaults to UMDF 2.15, matching the inbox VHF UMDF source driver while
 still exposing the framework APIs used by libvirtualhid. The driver target links
 the MSVC runtime statically to avoid requiring VC runtime DLLs in the UMDF host
-process.
+process. Development driver builds write a lightweight UMDF trace to
+`C:\Windows\Temp\libvirtualhid-umdf-driver.log`.
 
 Windows driver packages require a signed catalog for normal installation. Pull
 request builds generate a short-lived self-signed test certificate, sign
