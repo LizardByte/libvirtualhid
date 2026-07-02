@@ -38,6 +38,10 @@ namespace {
            (static_cast<std::uint32_t>(bytes[offset + 2U]) << 16U) |
            (static_cast<std::uint32_t>(bytes[offset + 3U]) << 24U);
   }
+
+  std::uint16_t read_u16_le(const std::vector<std::uint8_t> &bytes, std::size_t offset) {
+    return static_cast<std::uint16_t>(bytes[offset] | static_cast<std::uint16_t>(bytes[offset + 1U] << 8U));
+  }
 }  // namespace
 
 TEST(ReportTest, NormalizesAxesAndTriggers) {
@@ -157,6 +161,32 @@ TEST(ReportTest, PacksXboxGipReport) {
   EXPECT_EQ(report[14], 7);  // D-pad left.
   EXPECT_EQ(report[15], 1);  // Guide/System Main Menu.
   EXPECT_EQ(report[16], 204);  // Battery strength.
+}
+
+TEST(ReportTest, PacksSwitchProReport) {
+  auto profile = lvh::profiles::switch_pro();
+
+  lvh::GamepadState state;
+  state.buttons.set(lvh::GamepadButton::a);
+  state.buttons.set(lvh::GamepadButton::b);
+  state.buttons.set(lvh::GamepadButton::start);
+  state.buttons.set(lvh::GamepadButton::guide);
+  state.buttons.set(lvh::GamepadButton::misc1);
+  state.buttons.set(lvh::GamepadButton::dpad_left);
+  state.left_stick = {1.0F, -1.0F};
+  state.right_stick = {0.5F, -0.5F};
+  state.left_trigger = 0.25F;
+
+  const auto report = lvh::reports::pack_input_report(profile, state);
+
+  ASSERT_EQ(report.size(), profile.input_report_size);
+  EXPECT_EQ(report[0], 0x30);
+  EXPECT_EQ(read_u16_le(report, 1U), 0x3243);  // B, A, ZL, Plus, Home, and Capture.
+  EXPECT_EQ(read_u16_le(report, 3U), 0xFFFF);  // Left stick X.
+  EXPECT_EQ(read_u16_le(report, 5U), 0xFFFF);  // Left stick Y.
+  EXPECT_EQ(read_u16_le(report, 7U), 0xBFFF);  // Right stick X.
+  EXPECT_EQ(read_u16_le(report, 9U), 0xBFFF);  // Right stick Y.
+  EXPECT_EQ(report[11] & 0x0F, 6);  // D-pad left.
 }
 
 TEST(ReportTest, PacksXboxGipNeutralReport) {

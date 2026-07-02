@@ -236,6 +236,35 @@ namespace lvh::reports {
       return bits;
     }
 
+    std::uint16_t switch_pro_button_bits(const GamepadState &state) {
+      auto bits = std::uint16_t {};
+      const auto set_bit = [&state, &bits](std::uint16_t bit, GamepadButton button) {
+        if (state.buttons.test(button)) {
+          bits |= static_cast<std::uint16_t>(1U << bit);
+        }
+      };
+
+      set_bit(0U, GamepadButton::a);
+      set_bit(1U, GamepadButton::b);
+      set_bit(2U, GamepadButton::x);
+      set_bit(3U, GamepadButton::y);
+      set_bit(4U, GamepadButton::left_shoulder);
+      set_bit(5U, GamepadButton::right_shoulder);
+      if (state.left_trigger > 0.0F) {
+        bits |= static_cast<std::uint16_t>(1U << 6U);
+      }
+      if (state.right_trigger > 0.0F) {
+        bits |= static_cast<std::uint16_t>(1U << 7U);
+      }
+      set_bit(8U, GamepadButton::back);
+      set_bit(9U, GamepadButton::start);
+      set_bit(10U, GamepadButton::left_stick);
+      set_bit(11U, GamepadButton::right_stick);
+      set_bit(12U, GamepadButton::guide);
+      set_bit(13U, GamepadButton::misc1);
+      return bits;
+    }
+
     std::byte dualsense_battery_state(GamepadBatteryState state) {
       switch (state) {
         using enum GamepadBatteryState;
@@ -797,6 +826,25 @@ namespace lvh::reports {
     return report;
   }
 
+  std::vector<std::uint8_t> pack_switch_pro_input_report(const DeviceProfile &profile, const GamepadState &state) {
+    constexpr std::size_t switch_pro_input_report_size = 64;
+    if (profile.input_report_size < switch_pro_input_report_size) {
+      return {};
+    }
+
+    const auto normalized = normalize_state(state);
+
+    ByteReport report(profile.input_report_size, zero_byte);
+    report[0] = to_byte(profile.report_id);
+    write_u16(report, 1U, switch_pro_button_bits(normalized));
+    write_u16(report, 3U, normalize_unsigned_axis(normalized.left_stick.x));
+    write_u16(report, 5U, normalize_unsigned_axis(-normalized.left_stick.y));
+    write_u16(report, 7U, normalize_unsigned_axis(normalized.right_stick.x));
+    write_u16(report, 9U, normalize_unsigned_axis(-normalized.right_stick.y));
+    report[11] = to_byte(hat_from_buttons(normalized.buttons));
+    return to_uint8_report(report);
+  }
+
   std::vector<std::uint8_t> pack_input_report(const DeviceProfile &profile, const GamepadState &state) {
     if (profile.device_type == DeviceType::gamepad) {
       if (profile.gamepad_kind == GamepadProfileKind::xbox_one || profile.gamepad_kind == GamepadProfileKind::xbox_series) {
@@ -808,7 +856,10 @@ namespace lvh::reports {
       if (profile.gamepad_kind == GamepadProfileKind::dualsense) {
         return pack_dualsense_input_report(profile, state);
       }
-      if (profile.gamepad_kind == GamepadProfileKind::generic || profile.gamepad_kind == GamepadProfileKind::switch_pro) {
+      if (profile.gamepad_kind == GamepadProfileKind::switch_pro) {
+        return pack_switch_pro_input_report(profile, state);
+      }
+      if (profile.gamepad_kind == GamepadProfileKind::generic) {
         return pack_standard_gamepad_input_report(profile, state);
       }
     }

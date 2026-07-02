@@ -16,6 +16,7 @@ TEST(GamepadAdapterTest, ReportsProfileSupport) {
   const auto generic = lvh::profiles::generic_gamepad();
   const auto dualshock4 = lvh::profiles::dualshock4();
   const auto dualsense = lvh::profiles::dualsense();
+  const auto switch_pro = lvh::profiles::switch_pro();
   const auto keyboard = lvh::profiles::keyboard();
 
   const auto generic_support = lvh::gamepad_profile_support(generic);
@@ -44,6 +45,12 @@ TEST(GamepadAdapterTest, ReportsProfileSupport) {
   EXPECT_TRUE(dualsense_support.supports_misc1_button);
   EXPECT_EQ(dualsense_support.supported_rear_paddle_count, 0U);
 
+  const auto switch_pro_support = lvh::gamepad_profile_support(switch_pro);
+  EXPECT_FALSE(switch_pro_support.supports_rumble);
+  EXPECT_TRUE(switch_pro_support.supports_motion);
+  EXPECT_TRUE(switch_pro_support.supports_battery);
+  EXPECT_TRUE(switch_pro_support.supports_misc1_button);
+
   const auto keyboard_support = lvh::gamepad_profile_support(keyboard);
   EXPECT_FALSE(keyboard_support.supports_rumble);
   EXPECT_FALSE(keyboard_support.supports_motion);
@@ -61,6 +68,7 @@ TEST(GamepadAdapterTest, ChecksButtonsAndOutputsByProfile) {
   const auto generic = lvh::profiles::generic_gamepad();
   const auto dualshock4 = lvh::profiles::dualshock4();
   const auto dualsense = lvh::profiles::dualsense();
+  const auto switch_pro = lvh::profiles::switch_pro();
   const auto keyboard = lvh::profiles::keyboard();
 
   EXPECT_TRUE(lvh::supports_gamepad_button(xbox, lvh::GamepadButton::guide));
@@ -83,6 +91,8 @@ TEST(GamepadAdapterTest, ChecksButtonsAndOutputsByProfile) {
   EXPECT_FALSE(lvh::supports_gamepad_output(dualshock4, lvh::GamepadOutputKind::trigger_rumble));
   EXPECT_TRUE(lvh::supports_gamepad_output(dualshock4, lvh::GamepadOutputKind::raw_report));
   EXPECT_TRUE(lvh::supports_gamepad_output(dualsense, lvh::GamepadOutputKind::adaptive_triggers));
+  EXPECT_FALSE(lvh::supports_gamepad_output(switch_pro, lvh::GamepadOutputKind::rumble));
+  EXPECT_TRUE(lvh::supports_gamepad_output(switch_pro, lvh::GamepadOutputKind::raw_report));
   EXPECT_FALSE(lvh::supports_gamepad_output(generic, lvh::GamepadOutputKind::raw_report));
   EXPECT_FALSE(lvh::supports_gamepad_output(keyboard, lvh::GamepadOutputKind::rumble));
   EXPECT_FALSE(lvh::supports_gamepad_output(generic, static_cast<lvh::GamepadOutputKind>(255)));

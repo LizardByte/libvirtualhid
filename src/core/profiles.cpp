@@ -30,6 +30,12 @@ namespace lvh::profiles {
 
     constexpr std::size_t xbox_gip_input_report_size = 17;
 
+    constexpr std::uint8_t switch_pro_report_id = 0x30;
+
+    constexpr std::size_t switch_pro_input_report_size = 64;
+
+    constexpr std::size_t switch_pro_output_report_size = 64;
+
     constexpr std::size_t dualshock4_usb_input_report_size = 64;
 
     constexpr std::size_t dualshock4_usb_output_report_size = 32;
@@ -85,6 +91,17 @@ namespace lvh::profiles {
         "95017501810215002500750795018103c005060920150026ff00750895018102c0";
 
       return bytes_from_hex(include_share_button ? xbox_series_descriptor : xbox_one_descriptor);
+    }
+
+    std::vector<std::uint8_t> make_switch_pro_report_descriptor() {
+      constexpr std::string_view descriptor =
+        "050115000904a1018530050105091901290a150025017501950a5500650081020509190b290e150025017501"
+        "950481027501950281030b01000100a1000b300001000b310001000b320001000b35000100150027ffff0000"
+        "751095048102c00b39000100150025073500463b0165147504950181020509190f291215002501750195048102"
+        "7508953481030600ff852109017508953f8103858109027508953f8103850109037508953f9183851009047508"
+        "953f9183858009057508953f9183858209067508953f9183c0";
+
+      return bytes_from_hex(descriptor);
     }
 
     std::vector<std::uint8_t> make_gamepad_report_descriptor(std::uint8_t report_id, bool supports_rumble) {
@@ -1779,7 +1796,7 @@ namespace lvh::profiles {
       DeviceProfile profile;
       profile.device_type = DeviceType::gamepad;
       profile.gamepad_kind = kind;
-      profile.bus_type = include_share_button ? BusType::bluetooth : BusType::usb;
+      profile.bus_type = BusType::usb;
       profile.vendor_id = 0x045E;
       profile.product_id = product_id;
       profile.version = version;
@@ -1848,6 +1865,24 @@ namespace lvh::profiles {
       return profile;
     }
 
+    DeviceProfile make_switch_pro_profile() {
+      DeviceProfile profile;
+      profile.device_type = DeviceType::gamepad;
+      profile.gamepad_kind = GamepadProfileKind::switch_pro;
+      profile.bus_type = BusType::usb;
+      profile.vendor_id = 0x057E;
+      profile.product_id = 0x2009;
+      profile.version = 0x8111;
+      profile.report_id = switch_pro_report_id;
+      profile.input_report_size = switch_pro_input_report_size;
+      profile.output_report_size = switch_pro_output_report_size;
+      profile.name = "Pro Controller";
+      profile.manufacturer = "Nintendo Co., Ltd.";
+      profile.capabilities = {.supports_motion = true, .supports_battery = true};
+      profile.report_descriptor = make_switch_pro_report_descriptor();
+      return profile;
+    }
+
     DeviceProfile make_simple_profile(DeviceType device_type, std::string name, std::uint16_t product_id) {
       DeviceProfile profile;
       profile.device_type = device_type;
@@ -1890,7 +1925,7 @@ namespace lvh::profiles {
     return make_xbox_gip_profile(
       GamepadProfileKind::xbox_one,
       "Xbox One Controller",
-      0x02FF,
+      0x02EA,
       0x0408,
       false
     );
@@ -1899,8 +1934,8 @@ namespace lvh::profiles {
   DeviceProfile xbox_series() {
     return make_xbox_gip_profile(
       GamepadProfileKind::xbox_series,
-      "Xbox Wireless Controller",
-      0x0B13,
+      "Xbox Controller",
+      0x02FF,
       0x0500,
       true
     );
@@ -1933,15 +1968,7 @@ namespace lvh::profiles {
   }
 
   DeviceProfile switch_pro() {
-    return make_standard_gamepad_profile(
-      GamepadProfileKind::switch_pro,
-      "Pro Controller",
-      "Nintendo Co., Ltd.",
-      0x057E,
-      0x2009,
-      0x8111,
-      {.supports_rumble = true, .supports_motion = true, .supports_battery = true}
-    );
+    return make_switch_pro_profile();
   }
 
   DeviceProfile keyboard() {
