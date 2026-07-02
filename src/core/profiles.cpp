@@ -1935,7 +1935,7 @@ namespace lvh::profiles {
     return make_xbox_gip_profile(
       GamepadProfileKind::xbox_series,
       "Xbox Controller",
-      0x02FF,
+      0x0B12,
       0x0500,
       true
     );

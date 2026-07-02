@@ -385,11 +385,23 @@ namespace {
     text.push_back(hex_digit(value));
   }
 
-  void append_hid_vid_pid(std::wstring &hardware_ids, const LvhWindowsGamepadHardwareIds &ids) {
+  void append_hid_vid_pid(
+    std::wstring &hardware_ids,
+    std::uint16_t vendor_id,
+    std::uint16_t product_id
+  ) {
     hardware_ids.append(L"HID\\VID_");
-    append_hex4(hardware_ids, ids.vendor_id);
+    append_hex4(hardware_ids, vendor_id);
     hardware_ids.append(L"&PID_");
-    append_hex4(hardware_ids, ids.product_id);
+    append_hex4(hardware_ids, product_id);
+  }
+
+  std::uint16_t xinputhid_match_product_id(const LvhWindowsCreateGamepadRequest &request) {
+    if (request.gamepad_kind == LVH_WINDOWS_GAMEPAD_XBOX_SERIES) {
+      return 0x02FF;
+    }
+
+    return request.hardware_ids.product_id;
   }
 
   bool is_xbox_gamepad(std::uint32_t gamepad_kind) {
@@ -401,17 +413,17 @@ namespace {
     const auto &ids = request.hardware_ids;
     std::wstring hardware_ids;
     if (is_xbox_gamepad(request.gamepad_kind)) {
-      append_hid_vid_pid(hardware_ids, ids);
+      append_hid_vid_pid(hardware_ids, ids.vendor_id, xinputhid_match_product_id(request));
       hardware_ids.append(L"&IG_00");
       hardware_ids.push_back(L'\0');
     }
 
-    append_hid_vid_pid(hardware_ids, ids);
+    append_hid_vid_pid(hardware_ids, ids.vendor_id, ids.product_id);
     hardware_ids.append(L"&REV_");
     append_hex4(hardware_ids, ids.device_version);
     hardware_ids.push_back(L'\0');
 
-    append_hid_vid_pid(hardware_ids, ids);
+    append_hid_vid_pid(hardware_ids, ids.vendor_id, ids.product_id);
     hardware_ids.push_back(L'\0');
     hardware_ids.push_back(L'\0');
     return hardware_ids;

@@ -124,8 +124,11 @@ int main(int argc, char *argv[]) {
     std::cout << "Holding " << profile->name << " for " << hold_seconds << " seconds\n";
     for (auto step = 0; step < hold_seconds * 5; ++step) {
       const auto direction = step % 40 < 20 ? 1.0F : -1.0F;
-      adapter.set_left_stick({direction, 0.0F});
-      adapter.set_right_stick({0.0F, -direction});
+      const auto sweep = static_cast<float>(step % 20) / 19.0F;
+      adapter.set_left_stick({direction, direction * 0.5F});
+      adapter.set_right_stick({-direction * 0.5F, -direction});
+      adapter.set_left_trigger(sweep);
+      adapter.set_right_trigger(1.0F - sweep);
       adapter.set_button(lvh::GamepadButton::a, step % 20 < 10);
       std::this_thread::sleep_for(200ms);
     }

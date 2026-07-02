@@ -42,7 +42,7 @@ TEST(ProfileTest, StreamingControllerProfilesArePresent) {
 
   const auto xbox_series = lvh::profiles::xbox_series();
   EXPECT_EQ(xbox_series.vendor_id, 0x045E);
-  EXPECT_EQ(xbox_series.product_id, 0x02FF);
+  EXPECT_EQ(xbox_series.product_id, 0x0B12);
   EXPECT_EQ(xbox_series.bus_type, lvh::BusType::usb);
   EXPECT_EQ(xbox_series.name, "Xbox Controller");
   EXPECT_EQ(xbox_series.manufacturer, "Microsoft");

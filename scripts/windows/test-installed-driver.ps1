@@ -234,27 +234,31 @@ function Wait-ForXInputReportFlow {
   throw "XInput did not observe changing $Profile button, left-stick X, and right-stick Y input from the virtual gamepad."
 }
 
-function Get-ExpectedGamepadHardwareId {
+function Get-ExpectedGamepadHardwareIds {
   switch ($Profile) {
-    "generic" { return "HID\VID_1209&PID_0001" }
-    "x360" { return "HID\VID_045E&PID_028E&IG_00" }
-    "xone" { return "HID\VID_045E&PID_02EA&IG_00" }
-    "xseries" { return "HID\VID_045E&PID_02FF&IG_00" }
-    "ds4" { return "HID\VID_054C&PID_05C4" }
-    "ds5" { return "HID\VID_054C&PID_0CE6" }
-    "switch" { return "HID\VID_057E&PID_2009" }
+    "generic" { return @("HID\VID_1209&PID_0001") }
+    "x360" { return @("HID\VID_045E&PID_028E&IG_00") }
+    "xone" { return @("HID\VID_045E&PID_02EA&IG_00") }
+    "xseries" { return @("HID\VID_045E&PID_0B12&IG_00", "HID\VID_045E&PID_02FF&IG_00") }
+    "ds4" { return @("HID\VID_054C&PID_05C4") }
+    "ds5" { return @("HID\VID_054C&PID_0CE6") }
+    "switch" { return @("HID\VID_057E&PID_2009") }
   }
 
   throw "Unsupported profile: $Profile"
 }
 
 function Wait-ForStartedGamepadChild {
-  $deviceId = Get-ExpectedGamepadHardwareId
+  $deviceIds = @(Get-ExpectedGamepadHardwareIds)
   $deadline = (Get-Date).AddSeconds($DeviceStartTimeoutSeconds)
   $latestRecords = @()
 
   do {
-    $latestRecords = @(Get-PnPUtilDevicesByDeviceId -DeviceId $deviceId)
+    $latestRecords = @()
+    foreach ($deviceId in $deviceIds) {
+      $latestRecords += @(Get-PnPUtilDevicesByDeviceId -DeviceId $deviceId)
+    }
+
     $started = $latestRecords |
       Where-Object {
         $_.Status -eq "Started" -and
@@ -271,11 +275,11 @@ function Wait-ForStartedGamepadChild {
   } while ((Get-Date) -lt $deadline)
 
   if (-not $latestRecords) {
-    throw "No gamepad child device was found for $deviceId."
+    throw "No gamepad child device was found for $($deviceIds -join ', ')."
   }
 
   foreach ($record in $latestRecords) {
-    Assert-StartedPnPRecord -Record $record -Description "Gamepad child device $deviceId"
+    Assert-StartedPnPRecord -Record $record -Description "Gamepad child device $($deviceIds -join ', ')"
   }
 }
 
