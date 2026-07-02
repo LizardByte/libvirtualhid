@@ -165,6 +165,9 @@ Developer install/uninstall helpers live under `scripts/windows`:
 powershell -ExecutionPolicy Bypass -File .\scripts\windows\install-driver.ps1 `
   -InfPath .\cmake-build-windows-driver\src\platform\windows\driver\package\Release\libvirtualhid.inf `
   -LogPath .\cmake-build-windows-driver\install-driver.log
+powershell -ExecutionPolicy Bypass -File .\scripts\windows\test-installed-driver.ps1 `
+  -GamepadAdapterPath .\cmake-build-ci\examples\Debug\gamepad_adapter.exe `
+  -Profile x360
 powershell -ExecutionPolicy Bypass -File .\scripts\windows\uninstall-driver.ps1 `
   -Force -RemoveCertificateSubject "CN=libvirtualhid CI Test Driver Signing"
 ```
@@ -179,6 +182,16 @@ The install and uninstall helpers also clean up malformed development devices
 left by earlier installer revisions, including root instances left in the
 failed `HIDClass` package shape. The WiX installer writes the helper transcript
 to `C:\ProgramData\libvirtualhid\install-driver.log`.
+The test helper fails if the root device is not reported as `Status: Started`,
+if `\\.\LibVirtualHid` cannot be opened, or if a held gamepad adapter instance
+does not produce a started HID child device such as
+`HID\VID_045E&PID_028E&IG_00`. That check is also run by the Windows MSVC pull
+request CI leg for every `gamepad_adapter` profile after installing the test
+driver package. For manual browser validation, run the same helper or
+`examples/gamepad_adapter x360 --hold-seconds 60`, then open
+`https://app.lizardbyte.dev/gamepad-tester/` in a normal desktop browser and
+press one of the held virtual buttons if the browser needs a gamepad activation
+event.
 
 The driver binary is a UMDF DLL installed through the Windows Driver Store, not
 a libvirtualhid `.sys` copied into `C:\Windows\System32\drivers`. Windows still

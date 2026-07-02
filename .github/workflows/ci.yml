@@ -295,6 +295,19 @@ jobs:
             -InfPath (Join-Path $packagePath "libvirtualhid.inf") `
             -CertificatePath $certificatePath
 
+      - name: Verify Windows test driver package
+        if: >-
+          matrix.kind == 'msvc' &&
+          github.event_name == 'pull_request'
+        run: |
+          $profiles = @("generic", "x360", "xone", "xseries", "ds4", "ds5", "switch")
+          foreach ($profile in $profiles) {
+            .\scripts\windows\test-installed-driver.ps1 `
+              -GamepadAdapterPath "$env:GITHUB_WORKSPACE\cmake-build-ci\examples\Debug\gamepad_adapter.exe" `
+              -Profile $profile `
+              -Verbose
+          }
+
       - name: Prepare report directory
         run: cmake -E make_directory cmake-build-ci/reports
 
