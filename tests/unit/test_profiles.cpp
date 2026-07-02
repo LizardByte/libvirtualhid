@@ -33,7 +33,7 @@ TEST(ProfileTest, StreamingControllerProfilesArePresent) {
   const auto switch_pro = lvh::profiles::switch_pro();
 
   EXPECT_EQ(xbox_one.vendor_id, 0x045E);
-  EXPECT_EQ(xbox_one.product_id, 0x02EA);
+  EXPECT_EQ(xbox_one.product_id, 0x02FF);
   EXPECT_EQ(xbox_one.manufacturer, "Microsoft");
   EXPECT_TRUE(xbox_one.capabilities.supports_rumble);
   EXPECT_EQ(xbox_one.report_id, 0);
@@ -146,6 +146,7 @@ TEST(ProfileTest, StreamingControllerProfilesArePresent) {
   EXPECT_NE(dualshock4_bluetooth.report_descriptor, dualshock4.report_descriptor);
 
   EXPECT_EQ(dualsense.vendor_id, 0x054C);
+  EXPECT_EQ(dualsense.name, "Wireless Controller");
   EXPECT_TRUE(dualsense.capabilities.supports_motion);
   EXPECT_TRUE(dualsense.capabilities.supports_touchpad);
   EXPECT_TRUE(dualsense.capabilities.supports_rgb_led);
@@ -156,6 +157,7 @@ TEST(ProfileTest, StreamingControllerProfilesArePresent) {
 
   const auto dualsense_bluetooth = lvh::profiles::dualsense_bluetooth();
   EXPECT_EQ(dualsense_bluetooth.bus_type, lvh::BusType::bluetooth);
+  EXPECT_EQ(dualsense_bluetooth.name, "Wireless Controller");
   EXPECT_EQ(dualsense_bluetooth.report_id, 0x31);
   EXPECT_EQ(dualsense_bluetooth.input_report_size, 78U);
   EXPECT_EQ(dualsense_bluetooth.output_report_size, 78U);
@@ -163,7 +165,51 @@ TEST(ProfileTest, StreamingControllerProfilesArePresent) {
 
   EXPECT_EQ(switch_pro.vendor_id, 0x057E);
   EXPECT_EQ(switch_pro.product_id, 0x2009);
+  EXPECT_EQ(switch_pro.name, "Pro Controller");
   EXPECT_EQ(switch_pro.manufacturer, "Nintendo Co., Ltd.");
+
+  const auto generic = lvh::profiles::generic_gamepad();
+  const std::array<std::uint8_t, 12> standard_button_descriptor {
+    0x05,
+    0x09,
+    0x19,
+    0x01,
+    0x29,
+    0x10,
+    0x15,
+    0x00,
+    0x25,
+    0x01,
+    0x75,
+    0x01,
+  };
+  EXPECT_TRUE(
+    std::ranges::search(generic.report_descriptor, standard_button_descriptor).begin() != generic.report_descriptor.end()
+  );
+  EXPECT_TRUE(
+    std::ranges::search(switch_pro.report_descriptor, standard_button_descriptor).begin() != switch_pro.report_descriptor.end()
+  );
+
+  const std::array<std::uint8_t, 12> standard_axis_order {
+    0x09,
+    0x30,
+    0x09,
+    0x31,
+    0x09,
+    0x33,
+    0x09,
+    0x34,
+    0x09,
+    0x32,
+    0x09,
+    0x35,
+  };
+  EXPECT_TRUE(
+    std::ranges::search(generic.report_descriptor, standard_axis_order).begin() != generic.report_descriptor.end()
+  );
+  EXPECT_TRUE(
+    std::ranges::search(switch_pro.report_descriptor, standard_axis_order).begin() != switch_pro.report_descriptor.end()
+  );
 }
 
 TEST(ProfileTest, RumbleProfilesExposeOutputReports) {

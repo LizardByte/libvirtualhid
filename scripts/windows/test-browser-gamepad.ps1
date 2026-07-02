@@ -8,7 +8,7 @@ param(
   [string] $GamepadAdapterPath,
 
   [ValidateSet("generic", "x360", "xone", "xseries", "ds4", "ds5", "switch")]
-  [string] $Profile = "x360",
+  [string] $Profile = "xseries",
 
   [string] $BrowserPath,
 
@@ -32,7 +32,7 @@ function Get-ExpectedGamepadIdPattern {
   switch ($Profile) {
     "generic" { return "(1209.*0001|vid[_ -]?1209.*pid[_ -]?0001|generic)" }
     "x360" { return "(045e.*028e|vid[_ -]?045e.*pid[_ -]?028e|x-?box.*360)" }
-    "xone" { return "(045e.*02ea|vid[_ -]?045e.*pid[_ -]?02ea|xbox one|x-box one)" }
+    "xone" { return "(045e.*02ff|vid[_ -]?045e.*pid[_ -]?02ff|xbox one|x-box one)" }
     "xseries" { return "(045e.*0b13|vid[_ -]?045e.*pid[_ -]?0b13|xbox wireless|xbox series)" }
     "ds4" { return "(054c.*05c4|vid[_ -]?054c.*pid[_ -]?05c4|dualshock|wireless controller)" }
     "ds5" { return "(054c.*0ce6|vid[_ -]?054c.*pid[_ -]?0ce6|dualsense|wireless controller)" }
@@ -96,21 +96,46 @@ function Wait-ForDevToolsJson {
 function Wait-ForDevToolsPageTarget {
   param(
     [int] $Port,
+    [string] $ExpectedUrl,
     [int] $TimeoutSeconds
   )
 
   $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
   do {
     try {
-      $targets = @(Wait-ForDevToolsJson -Port $Port -Path "/json" -TimeoutSeconds 2)
+      $rawTargets = Wait-ForDevToolsJson -Port $Port -Path "/json" -TimeoutSeconds 2
+      $targets = @($rawTargets)
+      if ($targets.Count -eq 1 -and $targets[0] -is [System.Array]) {
+        $targets = @($targets[0])
+      }
     } catch {
       $targets = @()
     }
     $page = $targets |
-      Where-Object { $_.type -eq "page" -and $_.webSocketDebuggerUrl } |
+      Where-Object {
+        $_.type -eq "page" -and
+          $_.webSocketDebuggerUrl -and
+          $_.url -and
+          $_.url.StartsWith($ExpectedUrl, [System.StringComparison]::OrdinalIgnoreCase)
+      } |
       Select-Object -First 1
+    if (-not $page) {
+      $page = $targets |
+        Where-Object {
+          $_.type -eq "page" -and
+            $_.webSocketDebuggerUrl -and
+            $_.url -and
+            -not $_.url.StartsWith("edge://", [System.StringComparison]::OrdinalIgnoreCase) -and
+            -not $_.url.StartsWith("chrome://", [System.StringComparison]::OrdinalIgnoreCase)
+        } |
+        Select-Object -First 1
+    }
     if ($page) {
-      return $page
+      Write-Verbose "Using browser page target: $($page.url) ($($page.webSocketDebuggerUrl))"
+      return [pscustomobject] @{
+        url = $page.url
+        webSocketDebuggerUrl = $page.webSocketDebuggerUrl
+      }
     }
 
     Start-Sleep -Milliseconds 250
@@ -130,7 +155,8 @@ function Invoke-DevToolsCommand {
   $socket = [System.Net.WebSockets.ClientWebSocket]::new()
   $cancellation = [System.Threading.CancellationTokenSource]::new([TimeSpan]::FromSeconds($TimeoutSeconds))
   try {
-    $socket.ConnectAsync([Uri] $WebSocketDebuggerUrl, $cancellation.Token).GetAwaiter().GetResult()
+    $normalizedWebSocketDebuggerUrl = $WebSocketDebuggerUrl -replace "://localhost(:|/)", '://127.0.0.1$1'
+    $socket.ConnectAsync([Uri] $normalizedWebSocketDebuggerUrl, $cancellation.Token).GetAwaiter().GetResult()
 
     $id = [System.Threading.Interlocked]::Increment([ref] $script:DevToolsCommandId)
     $message = @{
@@ -324,6 +350,9 @@ if ($HoldSeconds -le $TimeoutSeconds) {
 $resolvedGamepadAdapterPath = (Resolve-Path -LiteralPath $GamepadAdapterPath).Path
 $resolvedBrowserPath = Resolve-BrowserPath
 $expectedPattern = if ($ExpectedIdPattern) { $ExpectedIdPattern } else { Get-ExpectedGamepadIdPattern }
+if ($Profile -eq "x360") {
+  throw "The Windows UMDF/VHF backend does not expose Xbox 360 XUSB gamepads. Use the consumer's XUSB fallback for x360."
+}
 $remoteDebuggingPort = Get-FreeTcpPort
 $browserUserDataDir = Join-Path ([System.IO.Path]::GetTempPath()) "libvirtualhid-browser-gamepad-$([Guid]::NewGuid())"
 $adapterStdoutPath = Join-Path ([System.IO.Path]::GetTempPath()) "libvirtualhid-browser-gamepad-adapter.out"
@@ -336,6 +365,7 @@ try {
   $browserArguments = @(
     "--user-data-dir=$browserUserDataDir",
     "--remote-debugging-port=$remoteDebuggingPort",
+    "--remote-allow-origins=*",
     "--no-first-run",
     "--no-default-browser-check",
     "--disable-background-timer-throttling",
@@ -351,12 +381,11 @@ try {
     -PassThru
 
   [void] (Wait-ForDevToolsJson -Port $remoteDebuggingPort -Path "/json/version" -TimeoutSeconds $TimeoutSeconds)
-  $page = Wait-ForDevToolsPageTarget -Port $remoteDebuggingPort -TimeoutSeconds $TimeoutSeconds
+  $page = Wait-ForDevToolsPageTarget -Port $remoteDebuggingPort -ExpectedUrl $Url -TimeoutSeconds $TimeoutSeconds
   [void] (Invoke-DevToolsCommand `
     -WebSocketDebuggerUrl $page.webSocketDebuggerUrl `
     -Method "Page.bringToFront" `
     -TimeoutSeconds 5)
-
   $adapterProcess = Start-Process `
     -FilePath $resolvedGamepadAdapterPath `
     -WorkingDirectory (Split-Path -Parent $resolvedGamepadAdapterPath) `
@@ -372,6 +401,36 @@ try {
     $stderr = Get-Content -LiteralPath $adapterStderrPath -Raw -ErrorAction SilentlyContinue
     throw "gamepad_adapter exited with code $($adapterProcess.ExitCode).`nstdout:`n$stdout`nstderr:`n$stderr"
   }
+
+  [void] (Invoke-DevToolsCommand `
+    -WebSocketDebuggerUrl $page.webSocketDebuggerUrl `
+    -Method "Runtime.evaluate" `
+    -Params @{
+      expression = "window.focus(); document.body && document.body.focus && document.body.focus();"
+    } `
+    -TimeoutSeconds 5)
+  [void] (Invoke-DevToolsCommand `
+    -WebSocketDebuggerUrl $page.webSocketDebuggerUrl `
+    -Method "Input.dispatchMouseEvent" `
+    -Params @{
+      type = "mousePressed"
+      x = 32
+      y = 32
+      button = "left"
+      clickCount = 1
+    } `
+    -TimeoutSeconds 5)
+  [void] (Invoke-DevToolsCommand `
+    -WebSocketDebuggerUrl $page.webSocketDebuggerUrl `
+    -Method "Input.dispatchMouseEvent" `
+    -Params @{
+      type = "mouseReleased"
+      x = 32
+      y = 32
+      button = "left"
+      clickCount = 1
+    } `
+    -TimeoutSeconds 5)
 
   $expression = New-GamepadApiProbeExpression `
     -ExpectedIdPattern $expectedPattern `

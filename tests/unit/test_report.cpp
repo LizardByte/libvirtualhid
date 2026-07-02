@@ -97,6 +97,34 @@ TEST(ReportTest, PacksCommonGamepadReport) {
   EXPECT_EQ(report[8], 255);  // Right trigger.
 }
 
+TEST(ReportTest, PacksStandardGamepadReport) {
+  auto profile = lvh::profiles::generic_gamepad();
+
+  lvh::GamepadState state;
+  state.buttons.set(lvh::GamepadButton::a);
+  state.buttons.set(lvh::GamepadButton::start);
+  state.buttons.set(lvh::GamepadButton::dpad_left);
+  state.buttons.set(lvh::GamepadButton::guide);
+  state.buttons.set(lvh::GamepadButton::misc1);
+  state.left_stick = {1.0F, -1.0F};
+  state.right_stick = {0.5F, -0.5F};
+  state.left_trigger = 0.25F;
+  state.right_trigger = 1.0F;
+
+  const auto report = lvh::reports::pack_input_report(profile, state);
+
+  ASSERT_EQ(report.size(), profile.input_report_size);
+  EXPECT_EQ(report[0], profile.report_id);
+  EXPECT_EQ(report[1], 0x81);  // A and Start.
+  EXPECT_EQ(report[2], 0x4C);  // Guide, Misc/share, and D-pad-left button.
+  EXPECT_EQ(report[3], 255);  // Left stick X.
+  EXPECT_EQ(report[4], 255);  // Left stick Y.
+  EXPECT_EQ(report[5], 191);  // Right stick X.
+  EXPECT_EQ(report[6], 191);  // Right stick Y.
+  EXPECT_EQ(report[7], 64);  // Left trigger.
+  EXPECT_EQ(report[8], 255);  // Right trigger.
+}
+
 TEST(ReportTest, PacksXboxGipReport) {
   auto profile = lvh::profiles::xbox_series();
 
@@ -120,9 +148,9 @@ TEST(ReportTest, PacksXboxGipReport) {
   ASSERT_EQ(report.size(), profile.input_report_size);
   EXPECT_EQ(profile.report_id, 0);
   EXPECT_EQ(read_u16(0U), 0xFFFF);  // Left stick X.
-  EXPECT_EQ(read_u16(2U), 0x0000);  // Left stick Y.
+  EXPECT_EQ(read_u16(2U), 0xFFFF);  // Left stick Y.
   EXPECT_EQ(read_u16(4U), 0xBFFF);  // Right stick X.
-  EXPECT_EQ(read_u16(6U), 0x4000);  // Right stick Y.
+  EXPECT_EQ(read_u16(6U), 0xBFFF);  // Right stick Y.
   EXPECT_EQ(read_u16(8U), 256);  // Left trigger.
   EXPECT_EQ(read_u16(10U), 1023);  // Right trigger.
   EXPECT_EQ(read_u16(12U), 0x0881);  // A, Start, and Share.
@@ -171,7 +199,7 @@ TEST(ReportTest, PacksDualSenseUsbReport) {
   ASSERT_EQ(report.size(), profile.input_report_size);
   EXPECT_EQ(report[0], 1);
   EXPECT_EQ(report[1], 255);
-  EXPECT_EQ(report[2], 0);
+  EXPECT_EQ(report[2], 255);
   EXPECT_EQ(report[5], 255);
   EXPECT_EQ(report[8] & 0x20, 0x20);
   EXPECT_EQ(report[9] & 0x05, 0x05);
@@ -196,7 +224,7 @@ TEST(ReportTest, PacksDualSenseBluetoothReportWithCrc) {
   EXPECT_EQ(report[0], 0x31);
   EXPECT_EQ(report[1], 0x00);
   EXPECT_EQ(report[2], 255);
-  EXPECT_EQ(report[3], 0);
+  EXPECT_EQ(report[3], 255);
   EXPECT_EQ(report[7], 255);
   EXPECT_EQ(report[9] & 0x20, 0x20);
   EXPECT_EQ(report[10] & 0x08, 0x08);
@@ -240,7 +268,7 @@ TEST(ReportTest, PacksDualShock4UsbReport) {
   ASSERT_EQ(report.size(), profile.input_report_size);
   EXPECT_EQ(report[0], 0x01);
   EXPECT_EQ(report[1], 255);
-  EXPECT_EQ(report[2], 0);
+  EXPECT_EQ(report[2], 255);
   EXPECT_EQ(report[3], 128);
   EXPECT_EQ(report[4], 128);
   EXPECT_EQ(report[5], 0xF8);

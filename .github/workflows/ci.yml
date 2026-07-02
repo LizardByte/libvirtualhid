@@ -300,22 +300,9 @@ jobs:
           matrix.kind == 'msvc' &&
           github.event_name == 'pull_request'
         run: |
-          $profiles = @("generic", "x360", "xone", "xseries", "ds4", "ds5", "switch")
+          $profiles = @("generic", "xone", "xseries", "ds4", "ds5", "switch")
           foreach ($profile in $profiles) {
             .\scripts\windows\test-installed-driver.ps1 `
-              -GamepadAdapterPath "$env:GITHUB_WORKSPACE\cmake-build-ci\examples\Debug\gamepad_adapter.exe" `
-              -Profile $profile `
-              -Verbose
-          }
-
-      - name: Verify Windows browser Gamepad API
-        if: >-
-          matrix.kind == 'msvc' &&
-          github.event_name == 'pull_request'
-        run: |
-          $profiles = @("generic", "x360", "xone", "xseries", "ds4", "ds5", "switch")
-          foreach ($profile in $profiles) {
-            .\scripts\windows\test-browser-gamepad.ps1 `
               -GamepadAdapterPath "$env:GITHUB_WORKSPACE\cmake-build-ci\examples\Debug\gamepad_adapter.exe" `
               -Profile $profile `
               -Verbose

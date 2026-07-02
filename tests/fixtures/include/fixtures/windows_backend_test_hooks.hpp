@@ -37,6 +37,7 @@ namespace lvh::detail::test {
     OperationStatus backend_failure_status;
     OperationStatus transport_failure_status;
     OperationStatus unavailable_status;
+    OperationStatus xbox_360_unsupported_status;
     OperationStatus oversized_descriptor_status;
     OperationStatus oversized_input_report_status;
     OperationStatus oversized_output_report_status;

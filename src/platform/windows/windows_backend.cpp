@@ -145,13 +145,7 @@ namespace lvh::detail {
       for (DWORD index = 0;; ++index) {
         SP_DEVICE_INTERFACE_DATA interface_data {};
         interface_data.cbSize = sizeof(interface_data);
-        if (::SetupDiEnumDeviceInterfaces(
-              device_info_set,
-              nullptr,
-              &control_device_interface_guid,
-              index,
-              &interface_data
-            ) == FALSE) {
+        if (::SetupDiEnumDeviceInterfaces(device_info_set, nullptr, &control_device_interface_guid, index, &interface_data) == FALSE) {
           break;
         }
 
@@ -171,14 +165,7 @@ namespace lvh::detail {
         std::vector<std::byte> buffer(required_size);
         auto *detail_data = reinterpret_cast<SP_DEVICE_INTERFACE_DETAIL_DATA_A *>(buffer.data());
         detail_data->cbSize = sizeof(SP_DEVICE_INTERFACE_DETAIL_DATA_A);
-        if (::SetupDiGetDeviceInterfaceDetailA(
-              device_info_set,
-              &interface_data,
-              detail_data,
-              required_size,
-              nullptr,
-              nullptr
-            ) != FALSE) {
+        if (::SetupDiGetDeviceInterfaceDetailA(device_info_set, &interface_data, detail_data, required_size, nullptr, nullptr) != FALSE) {
           paths.emplace_back(detail_data->DevicePath);
         }
       }
@@ -351,14 +338,7 @@ namespace lvh::detail {
 
         auto request_copy = request;
         DWORD bytes_returned = 0;
-        if (const auto status = device_io_control(
-              LVH_WINDOWS_IOCTL_CREATE_GAMEPAD,
-              request_copy,
-              response,
-              &bytes_returned,
-              "create Windows gamepad"
-            );
-            !status.ok()) {
+        if (const auto status = device_io_control(LVH_WINDOWS_IOCTL_CREATE_GAMEPAD, request_copy, response, &bytes_returned, "create Windows gamepad"); !status.ok()) {
           return status;
         }
 
@@ -414,17 +394,7 @@ namespace lvh::detail {
         overlapped.hEvent = operation_event.get();
         DWORD bytes_returned = 0;
 
-        if (const auto started = ::DeviceIoControl(
-              handle_.get(),
-              LVH_WINDOWS_IOCTL_READ_OUTPUT_REPORT,
-              nullptr,
-              0,
-              &event,
-              sizeof(event),
-              &bytes_returned,
-              &overlapped
-            );
-            started == FALSE) {
+        if (const auto started = ::DeviceIoControl(handle_.get(), LVH_WINDOWS_IOCTL_READ_OUTPUT_REPORT, nullptr, 0, &event, sizeof(event), &bytes_returned, &overlapped); started == FALSE) {
           if (const auto error_code = ::GetLastError(); error_code != ERROR_IO_PENDING) {
             return std::nullopt;
           }
@@ -453,9 +423,7 @@ namespace lvh::detail {
           return std::nullopt;
         }
 
-        if (constexpr auto event_header_size =
-              sizeof(event.version) + sizeof(event.size) + sizeof(event.driver_device_id) + sizeof(event.report_size);
-            bytes_returned < event_header_size) {
+        if (constexpr auto event_header_size = sizeof(event.version) + sizeof(event.size) + sizeof(event.driver_device_id) + sizeof(event.report_size); bytes_returned < event_header_size) {
           return std::nullopt;
         }
 
@@ -478,16 +446,7 @@ namespace lvh::detail {
       ) const {
         using enum ErrorCode;
 
-        if (::DeviceIoControl(
-              handle_.get(),
-              control_code,
-              &input,
-              sizeof(input),
-              &output,
-              sizeof(output),
-              bytes_returned,
-              nullptr
-            ) == FALSE) {
+        if (::DeviceIoControl(handle_.get(), control_code, &input, sizeof(input), &output, sizeof(output), bytes_returned, nullptr) == FALSE) {
           return windows_failure(backend_failure, operation, ::GetLastError());
         }
 
@@ -503,16 +462,7 @@ namespace lvh::detail {
       ) const {
         using enum ErrorCode;
 
-        if (::DeviceIoControl(
-              handle_.get(),
-              control_code,
-              &input,
-              sizeof(input),
-              nullptr,
-              0,
-              bytes_returned,
-              nullptr
-            ) == FALSE) {
+        if (::DeviceIoControl(handle_.get(), control_code, &input, sizeof(input), nullptr, 0, bytes_returned, nullptr) == FALSE) {
           return windows_failure(backend_failure, operation, ::GetLastError());
         }
 
@@ -945,6 +895,15 @@ namespace lvh::detail {
             OperationStatus::failure(
               backend_unavailable,
               "Windows UMDF control device is unavailable; install the libvirtualhid driver package"
+            ),
+            nullptr,
+          };
+        }
+
+        if (options.profile.gamepad_kind == GamepadProfileKind::xbox_360) {
+          return {
+            unsupported_device_status(
+              "Windows UMDF/VHF backend cannot expose Xbox 360 XUSB gamepads; use an XUSB fallback for this profile"
             ),
             nullptr,
           };

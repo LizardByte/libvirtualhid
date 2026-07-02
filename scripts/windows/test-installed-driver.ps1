@@ -11,7 +11,7 @@ param(
   [string] $GamepadAdapterPath,
 
   [ValidateSet("generic", "x360", "xone", "xseries", "ds4", "ds5", "switch")]
-  [string] $Profile = "x360",
+  [string] $Profile = "xseries",
 
   [int] $HoldSeconds = 12,
 
@@ -238,7 +238,7 @@ function Get-ExpectedGamepadHardwareId {
   switch ($Profile) {
     "generic" { return "HID\VID_1209&PID_0001" }
     "x360" { return "HID\VID_045E&PID_028E&IG_00" }
-    "xone" { return "HID\VID_045E&PID_02EA&IG_00" }
+    "xone" { return "HID\VID_045E&PID_02FF&IG_00" }
     "xseries" { return "HID\VID_045E&PID_0B13&IG_00" }
     "ds4" { return "HID\VID_054C&PID_05C4" }
     "ds5" { return "HID\VID_054C&PID_0CE6" }
@@ -282,6 +282,10 @@ function Wait-ForStartedGamepadChild {
 function Invoke-GamepadAdapterSmoke {
   if (-not $GamepadAdapterPath) {
     return
+  }
+
+  if ($Profile -eq "x360") {
+    throw "The Windows UMDF/VHF backend does not expose Xbox 360 XUSB gamepads. Use the consumer's XUSB fallback for x360."
   }
 
   $resolvedGamepadAdapterPath = (Resolve-Path -LiteralPath $GamepadAdapterPath).Path

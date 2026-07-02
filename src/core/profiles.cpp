@@ -18,6 +18,8 @@ namespace lvh::profiles {
 
     constexpr std::uint8_t common_button_count = 12;
 
+    constexpr std::uint8_t standard_button_count = 16;
+
     constexpr std::uint8_t common_axis_count = 6;
 
     constexpr std::size_t common_button_bytes = 2;
@@ -155,6 +157,90 @@ namespace lvh::profiles {
         0x33,  // Usage (Rx)
         0x09,
         0x34,  // Usage (Ry)
+        0x09,
+        0x35,  // Usage (Rz)
+        0x81,
+        0x02,  // Input (Data,Var,Abs)
+      };
+
+      if (supports_rumble) {
+        descriptor.insert(
+          descriptor.end(),
+          {
+            0x06,
+            0x00,
+            0xFF,  // Usage Page (Vendor Defined)
+            0x09,
+            0x01,  // Usage (Vendor Usage 1)
+            0x15,
+            0x00,  // Logical Minimum (0)
+            0x26,
+            0xFF,
+            0x00,  // Logical Maximum (255)
+            0x75,
+            0x08,  // Report Size (8)
+            0x95,
+            0x04,  // Report Count (4)
+            0x91,
+            0x02,  // Output (Data,Var,Abs)
+          }
+        );
+      }
+
+      descriptor.push_back(0xC0);  // End Collection
+      return descriptor;
+    }
+
+    std::vector<std::uint8_t> make_standard_gamepad_report_descriptor(
+      std::uint8_t report_id,
+      bool supports_rumble
+    ) {
+      std::vector<std::uint8_t> descriptor {
+        0x05,
+        0x01,  // Usage Page (Generic Desktop)
+        0x09,
+        0x05,  // Usage (Game Pad)
+        0xA1,
+        0x01,  // Collection (Application)
+        0x85,
+        report_id,  // Report ID
+        0x05,
+        0x09,  // Usage Page (Button)
+        0x19,
+        0x01,  // Usage Minimum (Button 1)
+        0x29,
+        standard_button_count,  // Usage Maximum
+        0x15,
+        0x00,  // Logical Minimum (0)
+        0x25,
+        0x01,  // Logical Maximum (1)
+        0x75,
+        0x01,  // Report Size (1)
+        0x95,
+        standard_button_count,  // Report Count
+        0x81,
+        0x02,  // Input (Data,Var,Abs)
+        0x05,
+        0x01,  // Usage Page (Generic Desktop)
+        0x15,
+        0x00,  // Logical Minimum (0)
+        0x26,
+        0xFF,
+        0x00,  // Logical Maximum (255)
+        0x75,
+        0x08,  // Report Size (8)
+        0x95,
+        common_axis_count,  // Report Count
+        0x09,
+        0x30,  // Usage (X)
+        0x09,
+        0x31,  // Usage (Y)
+        0x09,
+        0x33,  // Usage (Rx)
+        0x09,
+        0x34,  // Usage (Ry)
+        0x09,
+        0x32,  // Usage (Z)
         0x09,
         0x35,  // Usage (Rz)
         0x81,
@@ -1654,6 +1740,35 @@ namespace lvh::profiles {
       return profile;
     }
 
+    DeviceProfile make_standard_gamepad_profile(
+      GamepadProfileKind kind,
+      std::string name,
+      std::string manufacturer,
+      std::uint16_t vendor_id,
+      std::uint16_t product_id,
+      std::uint16_t version,
+      GamepadProfileCapabilities capabilities
+    ) {
+      DeviceProfile profile;
+      profile.device_type = DeviceType::gamepad;
+      profile.gamepad_kind = kind;
+      profile.bus_type = BusType::usb;
+      profile.vendor_id = vendor_id;
+      profile.product_id = product_id;
+      profile.version = version;
+      profile.report_id = 1;
+      profile.input_report_size = common_report_size;
+      if (capabilities.supports_rumble) {
+        profile.output_report_size = common_output_report_size;
+      }
+      profile.name = std::move(name);
+      profile.manufacturer = std::move(manufacturer);
+      profile.capabilities = capabilities;
+      profile.report_descriptor =
+        make_standard_gamepad_report_descriptor(profile.report_id, profile.capabilities.supports_rumble);
+      return profile;
+    }
+
     DeviceProfile make_xbox_gip_profile(
       GamepadProfileKind kind,
       std::string name,
@@ -1718,7 +1833,7 @@ namespace lvh::profiles {
         bus_type == BusType::bluetooth ? dualsense_bluetooth_input_report_size : dualsense_usb_input_report_size;
       profile.output_report_size =
         bus_type == BusType::bluetooth ? dualsense_bluetooth_output_report_size : dualsense_usb_output_report_size;
-      profile.name = "DualSense Wireless Controller";
+      profile.name = "Wireless Controller";
       profile.manufacturer = "Sony Interactive Entertainment";
       profile.capabilities = {
         .supports_rumble = true,
@@ -1748,7 +1863,7 @@ namespace lvh::profiles {
   }  // namespace
 
   DeviceProfile generic_gamepad() {
-    return make_gamepad_profile(
+    return make_standard_gamepad_profile(
       GamepadProfileKind::generic,
       "libvirtualhid Generic Gamepad",
       "LizardByte",
@@ -1775,7 +1890,7 @@ namespace lvh::profiles {
     return make_xbox_gip_profile(
       GamepadProfileKind::xbox_one,
       "Xbox One Controller",
-      0x02EA,
+      0x02FF,
       0x0408,
       false
     );
@@ -1813,14 +1928,14 @@ namespace lvh::profiles {
 
   DeviceProfile dualsense_bluetooth() {
     auto profile = make_dualsense_profile(BusType::bluetooth);
-    profile.name = "DualSense Wireless Controller";
+    profile.name = "Wireless Controller";
     return profile;
   }
 
   DeviceProfile switch_pro() {
-    return make_gamepad_profile(
+    return make_standard_gamepad_profile(
       GamepadProfileKind::switch_pro,
-      "Nintendo Switch Pro Controller",
+      "Pro Controller",
       "Nintendo Co., Ltd.",
       0x057E,
       0x2009,

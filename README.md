@@ -132,13 +132,20 @@ descriptor for the child HID device so Windows and browser consumers can
 identify the selected profile instead of a generic VHF-only device.
 The built-in Xbox One and Xbox Series profiles use an XboxGIP-shaped descriptor
 and unnumbered 17-byte input reports derived from HIDMaestro's Xbox profiles,
-with inputtino's Xbox One VID/PID/version retained for that profile. The
-built-in generic and Xbox 360 HID profiles use a standard-gamepad-shaped common
-descriptor: 12 one-bit digital buttons, a hat switch for the d-pad, and 8-bit
-`X`, `Y`, `Z`, `Rx`, `Ry`, and `Rz` values for sticks and analog triggers.
-Keeping the buttons as real HID button caps and the d-pad as a hat switch is
-required for DirectInput-style and browser consumers to enumerate the VHF child
-as a gamepad.
+with WinUHid's Xbox One PID and hardware-ID shape used for that profile. The
+built-in generic and Switch HID profiles use a browser-standard generic
+gamepad descriptor: 16 one-bit digital buttons including the d-pad, followed by
+8-bit `X`, `Y`, `Rx`, `Ry`, `Z`, and `Rz` values so the sticks occupy the first
+four axis slots and the analog triggers follow them. The Switch profile uses
+the `Pro Controller` product name, and the DualSense profiles use the standard
+`Wireless Controller` product name, so browser Gamepad API consumers see the
+same ID strings they expect from physical devices. The Xbox 360 HID profile
+keeps the legacy common descriptor with 12 one-bit digital buttons, a hat
+switch for the d-pad, and 8-bit `X`, `Y`, `Z`, `Rx`, `Ry`, and `Rz` values.
+On Windows, the UMDF/VHF backend rejects the Xbox 360 profile because a real
+Xbox 360 controller is an XUSB device rather than a VHF HID gamepad; consumers
+that still expose an Xbox 360 option should use their XUSB fallback for that
+profile.
 The UMDF driver opens a separate VHF source target for each virtual gamepad and
 parents that target to the control-file handle that created it, so process exits
 or crashes clean up any virtual gamepads that were not explicitly destroyed.
@@ -167,10 +174,10 @@ powershell -ExecutionPolicy Bypass -File .\scripts\windows\install-driver.ps1 `
   -LogPath .\cmake-build-windows-driver\install-driver.log
 powershell -ExecutionPolicy Bypass -File .\scripts\windows\test-installed-driver.ps1 `
   -GamepadAdapterPath .\cmake-build-ci\examples\Debug\gamepad_adapter.exe `
-  -Profile x360
+  -Profile xseries
 powershell -ExecutionPolicy Bypass -File .\scripts\windows\test-browser-gamepad.ps1 `
   -GamepadAdapterPath .\cmake-build-ci\examples\Debug\gamepad_adapter.exe `
-  -Profile x360
+  -Profile xseries
 powershell -ExecutionPolicy Bypass -File .\scripts\windows\uninstall-driver.ps1 `
   -Force -RemoveCertificateSubject "CN=libvirtualhid CI Test Driver Signing"
 ```
@@ -188,14 +195,15 @@ to `C:\ProgramData\libvirtualhid\install-driver.log`.
 The test helper fails if the root device is not reported as `Status: Started`,
 if `\\.\LibVirtualHid` cannot be opened, or if a held gamepad adapter instance
 does not produce a started HID child device such as
-`HID\VID_045E&PID_028E&IG_00`. That check is also run by the Windows MSVC pull
-request CI leg for every `gamepad_adapter` profile after installing the test
-driver package. The browser helper launches a normal desktop Edge or Chrome
-instance at `https://hardwaretester.com/gamepad`, holds a virtual gamepad, and
-fails if the browser Gamepad API does not report a controller matching the
-selected profile or does not observe changing button and axis input. For manual
-browser validation, run the browser helper with `-KeepBrowserOpen`, or run
-`examples/gamepad_adapter x360 --hold-seconds 60`, then open
+`HID\VID_045E&PID_0B13&IG_00`. That check is also run by the Windows MSVC pull
+request CI leg for every Windows UMDF/VHF-supported `gamepad_adapter` profile
+after installing the test driver package. The browser helper is for manual
+diagnostics: it launches a normal desktop Edge or Chrome instance at
+`https://hardwaretester.com/gamepad`, holds a virtual gamepad, and fails if the
+browser Gamepad API does not report a controller matching the selected profile
+or does not observe changing button and axis input. For manual browser
+validation, run the browser helper with `-KeepBrowserOpen`, or run
+`examples/gamepad_adapter xseries --hold-seconds 60`, then open
 `https://hardwaretester.com/gamepad` in a normal desktop browser and press one
 of the held virtual buttons if the browser needs a gamepad activation event.
 
