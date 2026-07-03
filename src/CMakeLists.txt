@@ -58,6 +58,9 @@ elseif(WIN32)
       NOMINMAX
       WIN32_LEAN_AND_MEAN
       _WIN32_WINNT=0x0600)
+    target_link_libraries(${PROJECT_NAME}
+      PRIVATE
+      setupapi)
 else()
     target_sources(${PROJECT_NAME}
       PRIVATE

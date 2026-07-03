@@ -14,6 +14,7 @@ set(LIBVIRTUALHID_DRIVER_TEST_CERTIFICATE "" CACHE FILEPATH
     "Optional public test certificate to include in the Windows driver installer.")
 
 install(FILES
+        "${PROJECT_SOURCE_DIR}/scripts/windows/libvirtualhid-driver-common.ps1"
         "${PROJECT_SOURCE_DIR}/scripts/windows/install-driver.ps1"
         "${PROJECT_SOURCE_DIR}/scripts/windows/uninstall-driver.ps1"
   DESTINATION "scripts/windows"

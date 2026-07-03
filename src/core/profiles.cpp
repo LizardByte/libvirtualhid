@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <vector>
 
 // local includes
@@ -15,9 +16,25 @@
 namespace lvh::profiles {
   namespace {
 
-    constexpr std::size_t common_report_size = 14;
+    constexpr std::uint8_t common_button_count = 12;
+
+    constexpr std::uint8_t standard_button_count = 16;
+
+    constexpr std::uint8_t common_axis_count = 6;
+
+    constexpr std::size_t common_button_bytes = 2;
+
+    constexpr std::size_t common_report_size = 1 + common_button_bytes + common_axis_count;
 
     constexpr std::size_t common_output_report_size = 5;
+
+    constexpr std::size_t xbox_gip_input_report_size = 17;
+
+    constexpr std::uint8_t switch_pro_report_id = 0x30;
+
+    constexpr std::size_t switch_pro_input_report_size = 64;
+
+    constexpr std::size_t switch_pro_output_report_size = 64;
 
     constexpr std::size_t dualshock4_usb_input_report_size = 64;
 
@@ -35,6 +52,70 @@ namespace lvh::profiles {
 
     constexpr std::size_t dualsense_bluetooth_output_report_size = 78;
 
+    std::byte hex_nibble(char digit) {
+      if (digit >= '0' && digit <= '9') {
+        return static_cast<std::byte>(digit - '0');
+      }
+      if (digit >= 'A' && digit <= 'F') {
+        return static_cast<std::byte>(digit - 'A' + 10);
+      }
+      if (digit >= 'a' && digit <= 'f') {
+        return static_cast<std::byte>(digit - 'a' + 10);
+      }
+      return std::byte {0};
+    }
+
+    std::byte byte_from_hex(char high, char low) {
+      const auto high_nibble = hex_nibble(high);
+      const auto low_nibble = hex_nibble(low);
+      return (high_nibble << 4U) | low_nibble;
+    }
+
+    std::vector<std::uint8_t> bytes_from_hex(std::string_view hex) {
+      std::vector<std::byte> parsed_bytes;
+      parsed_bytes.reserve(hex.size() / 2U);
+      for (std::size_t index = 0; index + 1U < hex.size(); index += 2U) {
+        parsed_bytes.push_back(byte_from_hex(hex[index], hex[index + 1U]));
+      }
+
+      std::vector<std::uint8_t> descriptor;
+      descriptor.reserve(parsed_bytes.size());
+      for (const auto byte : parsed_bytes) {
+        descriptor.push_back(std::to_integer<std::uint8_t>(byte));
+      }
+      return descriptor;
+    }
+
+    std::vector<std::uint8_t> make_xbox_gip_report_descriptor(bool include_share_button) {
+      constexpr std::string_view xbox_one_descriptor =
+        "05010905a101a10009300931150027ffff0000950275108102c0a10009330934150027ffff0000950275108102c0"
+        "05010932150026ff039501750a81021500250075069501810305010935150026ff039501750a8102150025007506"
+        "9501810305091901290a950a750181021500250075069501810305010939150125083500463b0166140075049501"
+        "814275049501150025003500450065008103a102050f099715002501750495019102150025009103097015002564"
+        "7508950491020950660110550e26ff009501910209a7910265005500097c9102c005010980a100098515002501"
+        "95017501810215002500750795018103c005060920150026ff00750895018102c0";
+      constexpr std::string_view xbox_series_descriptor =
+        "05010905a101a10009300931150027ffff0000950275108102c0a10009330934150027ffff0000950275108102c0"
+        "05010932150026ff039501750a81021500250075069501810305010935150026ff039501750a8102150025007506"
+        "9501810305091901290c950c750181021500250075049501810305010939150125083500463b0166140075049501"
+        "814275049501150025003500450065008103a102050f099715002501750495019102150025009103097015002564"
+        "7508950491020950660110550e26ff009501910209a7910265005500097c9102c005010980a100098515002501"
+        "95017501810215002500750795018103c005060920150026ff00750895018102c0";
+
+      return bytes_from_hex(include_share_button ? xbox_series_descriptor : xbox_one_descriptor);
+    }
+
+    std::vector<std::uint8_t> make_switch_pro_report_descriptor() {
+      constexpr std::string_view descriptor =
+        "050115000904a1018530050105091901290a150025017501950a5500650081020509190b290e150025017501"
+        "950481027501950281030b01000100a1000b300001000b310001000b320001000b35000100150027ffff0000"
+        "751095048102c00b39000100150025073500463b0165147504950181020509190f291215002501750195048102"
+        "7508953481030600ff852109017508953f8103858109027508953f8103850109037508953f9183851009047508"
+        "953f9183858009057508953f9183858209067508953f9183c0";
+
+      return bytes_from_hex(descriptor);
+    }
+
     std::vector<std::uint8_t> make_gamepad_report_descriptor(std::uint8_t report_id, bool supports_rumble) {
       std::vector<std::uint8_t> descriptor {
         0x05,
@@ -50,7 +131,7 @@ namespace lvh::profiles {
         0x19,
         0x01,  // Usage Minimum (Button 1)
         0x29,
-        0x0C,  // Usage Maximum (Button 12)
+        common_button_count,  // Usage Maximum
         0x15,
         0x00,  // Logical Minimum (0)
         0x25,
@@ -58,15 +139,9 @@ namespace lvh::profiles {
         0x75,
         0x01,  // Report Size (1)
         0x95,
-        0x0C,  // Report Count (12)
+        common_button_count,  // Report Count
         0x81,
         0x02,  // Input (Data,Var,Abs)
-        0x75,
-        0x01,  // Report Size (1)
-        0x95,
-        0x04,  // Report Count (4)
-        0x81,
-        0x03,  // Input (Const,Var,Abs)
         0x05,
         0x01,  // Usage Page (Generic Desktop)
         0x09,
@@ -81,39 +156,17 @@ namespace lvh::profiles {
         0x3B,
         0x01,  // Physical Maximum (315)
         0x65,
-        0x14,  // Unit (Degrees)
+        0x14,  // Unit (Eng Rot:Angular Pos)
         0x75,
         0x04,  // Report Size (4)
         0x95,
         0x01,  // Report Count (1)
         0x81,
         0x42,  // Input (Data,Var,Abs,Null)
-        0x75,
-        0x04,  // Report Size (4)
-        0x95,
-        0x01,  // Report Count (1)
-        0x81,
-        0x03,  // Input (Const,Var,Abs)
-        0x16,
-        0x00,
-        0x80,  // Logical Minimum (-32768)
-        0x26,
-        0xFF,
-        0x7F,  // Logical Maximum (32767)
-        0x75,
-        0x10,  // Report Size (16)
-        0x95,
-        0x04,  // Report Count (4)
-        0x09,
-        0x30,  // Usage (X)
-        0x09,
-        0x31,  // Usage (Y)
-        0x09,
-        0x33,  // Usage (Rx)
-        0x09,
-        0x34,  // Usage (Ry)
-        0x81,
-        0x02,  // Input (Data,Var,Abs)
+        0x65,
+        0x00,  // Unit (None)
+        0x05,
+        0x01,  // Usage Page (Generic Desktop)
         0x15,
         0x00,  // Logical Minimum (0)
         0x26,
@@ -122,7 +175,99 @@ namespace lvh::profiles {
         0x75,
         0x08,  // Report Size (8)
         0x95,
-        0x02,  // Report Count (2)
+        common_axis_count,  // Report Count
+        0x09,
+        0x30,  // Usage (X)
+        0x09,
+        0x31,  // Usage (Y)
+        0x09,
+        0x32,  // Usage (Z)
+        0x09,
+        0x33,  // Usage (Rx)
+        0x09,
+        0x34,  // Usage (Ry)
+        0x09,
+        0x35,  // Usage (Rz)
+        0x81,
+        0x02,  // Input (Data,Var,Abs)
+      };
+
+      if (supports_rumble) {
+        descriptor.insert(
+          descriptor.end(),
+          {
+            0x06,
+            0x00,
+            0xFF,  // Usage Page (Vendor Defined)
+            0x09,
+            0x01,  // Usage (Vendor Usage 1)
+            0x15,
+            0x00,  // Logical Minimum (0)
+            0x26,
+            0xFF,
+            0x00,  // Logical Maximum (255)
+            0x75,
+            0x08,  // Report Size (8)
+            0x95,
+            0x04,  // Report Count (4)
+            0x91,
+            0x02,  // Output (Data,Var,Abs)
+          }
+        );
+      }
+
+      descriptor.push_back(0xC0);  // End Collection
+      return descriptor;
+    }
+
+    std::vector<std::uint8_t> make_standard_gamepad_report_descriptor(
+      std::uint8_t report_id,
+      bool supports_rumble
+    ) {
+      std::vector<std::uint8_t> descriptor {
+        0x05,
+        0x01,  // Usage Page (Generic Desktop)
+        0x09,
+        0x05,  // Usage (Game Pad)
+        0xA1,
+        0x01,  // Collection (Application)
+        0x85,
+        report_id,  // Report ID
+        0x05,
+        0x09,  // Usage Page (Button)
+        0x19,
+        0x01,  // Usage Minimum (Button 1)
+        0x29,
+        standard_button_count,  // Usage Maximum
+        0x15,
+        0x00,  // Logical Minimum (0)
+        0x25,
+        0x01,  // Logical Maximum (1)
+        0x75,
+        0x01,  // Report Size (1)
+        0x95,
+        standard_button_count,  // Report Count
+        0x81,
+        0x02,  // Input (Data,Var,Abs)
+        0x05,
+        0x01,  // Usage Page (Generic Desktop)
+        0x15,
+        0x00,  // Logical Minimum (0)
+        0x26,
+        0xFF,
+        0x00,  // Logical Maximum (255)
+        0x75,
+        0x08,  // Report Size (8)
+        0x95,
+        common_axis_count,  // Report Count
+        0x09,
+        0x30,  // Usage (X)
+        0x09,
+        0x31,  // Usage (Y)
+        0x09,
+        0x33,  // Usage (Rx)
+        0x09,
+        0x34,  // Usage (Ry)
         0x09,
         0x32,  // Usage (Z)
         0x09,
@@ -1596,9 +1741,10 @@ namespace lvh::profiles {
       return descriptor;
     }
 
-    DeviceProfile make_gamepad_profile(
+    DeviceProfile make_base_gamepad_profile(
       GamepadProfileKind kind,
       std::string name,
+      std::string manufacturer,
       std::uint16_t vendor_id,
       std::uint16_t product_id,
       std::uint16_t version,
@@ -1617,9 +1763,77 @@ namespace lvh::profiles {
         profile.output_report_size = common_output_report_size;
       }
       profile.name = std::move(name);
-      profile.manufacturer = "LizardByte";
+      profile.manufacturer = std::move(manufacturer);
       profile.capabilities = capabilities;
+      return profile;
+    }
+
+    DeviceProfile make_gamepad_profile(
+      GamepadProfileKind kind,
+      std::string name,
+      std::string manufacturer,
+      std::uint16_t vendor_id,
+      std::uint16_t product_id,
+      std::uint16_t version,
+      GamepadProfileCapabilities capabilities
+    ) {
+      auto profile = make_base_gamepad_profile(
+        kind,
+        std::move(name),
+        std::move(manufacturer),
+        vendor_id,
+        product_id,
+        version,
+        capabilities
+      );
       profile.report_descriptor = make_gamepad_report_descriptor(profile.report_id, profile.capabilities.supports_rumble);
+      return profile;
+    }
+
+    DeviceProfile make_standard_gamepad_profile(
+      GamepadProfileKind kind,
+      std::string name,
+      std::string manufacturer,
+      std::uint16_t vendor_id,
+      std::uint16_t product_id,
+      std::uint16_t version,
+      GamepadProfileCapabilities capabilities
+    ) {
+      auto profile = make_base_gamepad_profile(
+        kind,
+        std::move(name),
+        std::move(manufacturer),
+        vendor_id,
+        product_id,
+        version,
+        capabilities
+      );
+      profile.report_descriptor =
+        make_standard_gamepad_report_descriptor(profile.report_id, profile.capabilities.supports_rumble);
+      return profile;
+    }
+
+    DeviceProfile make_xbox_gip_profile(
+      GamepadProfileKind kind,
+      std::string name,
+      std::uint16_t product_id,
+      std::uint16_t version,
+      bool include_share_button
+    ) {
+      DeviceProfile profile;
+      profile.device_type = DeviceType::gamepad;
+      profile.gamepad_kind = kind;
+      profile.bus_type = BusType::usb;
+      profile.vendor_id = 0x045E;
+      profile.product_id = product_id;
+      profile.version = version;
+      profile.report_id = 0;
+      profile.input_report_size = xbox_gip_input_report_size;
+      profile.output_report_size = common_output_report_size;
+      profile.name = std::move(name);
+      profile.manufacturer = "Microsoft";
+      profile.capabilities = {.supports_rumble = true, .supports_battery = include_share_button};
+      profile.report_descriptor = make_xbox_gip_report_descriptor(include_share_button);
       return profile;
     }
 
@@ -1630,14 +1844,14 @@ namespace lvh::profiles {
       profile.bus_type = bus_type;
       profile.vendor_id = 0x054C;
       profile.product_id = 0x05C4;
-      profile.version = 0x0000;
+      profile.version = 0x0100;
       profile.report_id = bus_type == BusType::bluetooth ? 0x11 : 1;
       profile.input_report_size =
         bus_type == BusType::bluetooth ? dualshock4_bluetooth_input_report_size : dualshock4_usb_input_report_size;
       profile.output_report_size =
         bus_type == BusType::bluetooth ? dualshock4_bluetooth_output_report_size : dualshock4_usb_output_report_size;
       profile.name = "Wireless Controller";
-      profile.manufacturer = "Sony Interactive Entertainment";
+      profile.manufacturer = "Sony Computer Entertainment";
       profile.capabilities = {
         .supports_rumble = true,
         .supports_motion = true,
@@ -1663,7 +1877,7 @@ namespace lvh::profiles {
         bus_type == BusType::bluetooth ? dualsense_bluetooth_input_report_size : dualsense_usb_input_report_size;
       profile.output_report_size =
         bus_type == BusType::bluetooth ? dualsense_bluetooth_output_report_size : dualsense_usb_output_report_size;
-      profile.name = "DualSense Wireless Controller";
+      profile.name = "Wireless Controller";
       profile.manufacturer = "Sony Interactive Entertainment";
       profile.capabilities = {
         .supports_rumble = true,
@@ -1675,6 +1889,24 @@ namespace lvh::profiles {
       };
       profile.report_descriptor =
         bus_type == BusType::bluetooth ? make_dualsense_bluetooth_report_descriptor() : make_dualsense_usb_report_descriptor();
+      return profile;
+    }
+
+    DeviceProfile make_switch_pro_profile() {
+      DeviceProfile profile;
+      profile.device_type = DeviceType::gamepad;
+      profile.gamepad_kind = GamepadProfileKind::switch_pro;
+      profile.bus_type = BusType::usb;
+      profile.vendor_id = 0x057E;
+      profile.product_id = 0x2009;
+      profile.version = 0x8111;
+      profile.report_id = switch_pro_report_id;
+      profile.input_report_size = switch_pro_input_report_size;
+      profile.output_report_size = switch_pro_output_report_size;
+      profile.name = "Pro Controller";
+      profile.manufacturer = "Nintendo Co., Ltd.";
+      profile.capabilities = {.supports_motion = true, .supports_battery = true};
+      profile.report_descriptor = make_switch_pro_report_descriptor();
       return profile;
     }
 
@@ -1693,9 +1925,10 @@ namespace lvh::profiles {
   }  // namespace
 
   DeviceProfile generic_gamepad() {
-    return make_gamepad_profile(
+    return make_standard_gamepad_profile(
       GamepadProfileKind::generic,
       "libvirtualhid Generic Gamepad",
+      "LizardByte",
       0x1209,
       0x0001,
       0x0001,
@@ -1707,6 +1940,7 @@ namespace lvh::profiles {
     return make_gamepad_profile(
       GamepadProfileKind::xbox_360,
       "Microsoft X-Box 360 pad",
+      "Microsoft",
       0x045E,
       0x028E,
       0x0114,
@@ -1715,24 +1949,22 @@ namespace lvh::profiles {
   }
 
   DeviceProfile xbox_one() {
-    return make_gamepad_profile(
+    return make_xbox_gip_profile(
       GamepadProfileKind::xbox_one,
       "Xbox One Controller",
-      0x045E,
       0x02EA,
       0x0408,
-      {.supports_rumble = true}
+      false
     );
   }
 
   DeviceProfile xbox_series() {
-    return make_gamepad_profile(
+    return make_xbox_gip_profile(
       GamepadProfileKind::xbox_series,
-      "Xbox Wireless Controller",
-      0x045E,
+      "Xbox Controller",
       0x0B12,
       0x0500,
-      {.supports_rumble = true, .supports_battery = true}
+      true
     );
   }
 
@@ -1758,19 +1990,12 @@ namespace lvh::profiles {
 
   DeviceProfile dualsense_bluetooth() {
     auto profile = make_dualsense_profile(BusType::bluetooth);
-    profile.name = "DualSense Wireless Controller";
+    profile.name = "Wireless Controller";
     return profile;
   }
 
   DeviceProfile switch_pro() {
-    return make_gamepad_profile(
-      GamepadProfileKind::switch_pro,
-      "Nintendo Switch Pro Controller",
-      0x057E,
-      0x2009,
-      0x8111,
-      {.supports_rumble = true, .supports_motion = true, .supports_battery = true}
-    );
+    return make_switch_pro_profile();
   }
 
   DeviceProfile keyboard() {

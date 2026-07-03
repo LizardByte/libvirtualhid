@@ -99,15 +99,6 @@ namespace lvh::reports {
       return bytes;
     }
 
-    void append_u16(std::vector<std::uint8_t> &report, std::uint16_t value) {
-      report.push_back(static_cast<std::uint8_t>(value & 0xFFU));
-      report.push_back(static_cast<std::uint8_t>((value >> 8U) & 0xFFU));
-    }
-
-    void append_i16(std::vector<std::uint8_t> &report, std::int16_t value) {
-      append_u16(report, static_cast<std::uint16_t>(value));
-    }
-
     void write_u16(ByteReport &report, std::size_t offset, std::uint16_t value) {
       report[offset] = to_low_byte(value);
       report[offset + 1U] = to_low_byte(value >> 8U);
@@ -125,9 +116,14 @@ namespace lvh::reports {
     }
 
     std::uint16_t read_u16(const std::vector<std::uint8_t> &report, std::size_t offset) {
-      const auto low = static_cast<std::uint16_t>(report[offset]);
-      const auto high = static_cast<std::uint16_t>(report[offset + 1U]);
+      const auto low = std::to_integer<std::uint16_t>(to_byte(report[offset]));
+      const auto high = std::to_integer<std::uint16_t>(to_byte(report[offset + 1U]));
       return static_cast<std::uint16_t>(low | static_cast<std::uint16_t>(high << 8U));
+    }
+
+    void append_u16(std::vector<std::uint8_t> &report, std::uint16_t value) {
+      report.push_back(static_cast<std::uint8_t>(value & 0xFFU));
+      report.push_back(static_cast<std::uint8_t>((value >> 8U) & 0xFFU));
     }
 
     std::uint32_t read_u32(const ByteReport &report, std::size_t offset) {
@@ -168,6 +164,10 @@ namespace lvh::reports {
       return static_cast<std::int16_t>(std::lround(scaled));
     }
 
+    std::uint16_t normalize_unsigned_axis(float value) {
+      return static_cast<std::uint16_t>(std::lround((clamp_axis(value) + 1.0F) * 32767.5F));
+    }
+
     std::uint8_t normalize_u8_axis(float value) {
       return static_cast<std::uint8_t>(std::lround((clamp_axis(value) + 1.0F) * 127.5F));
     }
@@ -176,28 +176,120 @@ namespace lvh::reports {
       return static_cast<std::uint16_t>(std::lround((static_cast<float>(value) / 255.0F) * 65535.0F));
     }
 
-    std::uint16_t report_button_bits(const ButtonSet &buttons) {
-      std::uint16_t bits = 0;
+    struct ButtonBit {
+      std::uint16_t bit;
+      GamepadButton button;
+    };
 
-      const auto add = [&bits, &buttons](GamepadButton button, std::uint16_t bit) {
-        if (buttons.test(button)) {
-          bits |= bit;
-        }
+    constexpr auto face_shoulder_button_map() {
+      using enum GamepadButton;
+
+      return std::array {
+        ButtonBit {0U, a},
+        ButtonBit {1U, b},
+        ButtonBit {2U, x},
+        ButtonBit {3U, y},
+        ButtonBit {4U, left_shoulder},
+        ButtonBit {5U, right_shoulder},
       };
+    }
 
-      add(GamepadButton::a, 1U << 0U);
-      add(GamepadButton::b, 1U << 1U);
-      add(GamepadButton::x, 1U << 2U);
-      add(GamepadButton::y, 1U << 3U);
-      add(GamepadButton::back, 1U << 4U);
-      add(GamepadButton::start, 1U << 5U);
-      add(GamepadButton::guide, 1U << 6U);
-      add(GamepadButton::left_stick, 1U << 7U);
-      add(GamepadButton::right_stick, 1U << 8U);
-      add(GamepadButton::left_shoulder, 1U << 9U);
-      add(GamepadButton::right_shoulder, 1U << 10U);
-      add(GamepadButton::misc1, 1U << 11U);
+    constexpr auto common_menu_button_map() {
+      using enum GamepadButton;
 
+      return std::array {
+        ButtonBit {6U, back},
+        ButtonBit {7U, start},
+        ButtonBit {8U, left_stick},
+        ButtonBit {9U, right_stick},
+      };
+    }
+
+    constexpr auto common_extra_button_map() {
+      using enum GamepadButton;
+
+      return std::array {
+        ButtonBit {10U, guide},
+        ButtonBit {11U, misc1},
+      };
+    }
+
+    constexpr auto standard_dpad_button_map() {
+      using enum GamepadButton;
+
+      return std::array {
+        ButtonBit {12U, dpad_up},
+        ButtonBit {13U, dpad_down},
+        ButtonBit {14U, dpad_left},
+        ButtonBit {15U, dpad_right},
+      };
+    }
+
+    constexpr auto xbox_extra_button_map() {
+      using enum GamepadButton;
+
+      return std::array {
+        ButtonBit {11U, misc1},
+      };
+    }
+
+    constexpr auto switch_menu_button_map() {
+      using enum GamepadButton;
+
+      return std::array {
+        ButtonBit {8U, back},
+        ButtonBit {9U, start},
+        ButtonBit {10U, left_stick},
+        ButtonBit {11U, right_stick},
+        ButtonBit {12U, guide},
+        ButtonBit {13U, misc1},
+      };
+    }
+
+    std::uint16_t button_bits(std::span<const ButtonBit> button_map, const ButtonSet &buttons) {
+      auto bits = std::uint16_t {};
+      for (const auto [bit, button] : button_map) {
+        if (buttons.test(button)) {
+          bits |= static_cast<std::uint16_t>(1U << bit);
+        }
+      }
+      return bits;
+    }
+
+    std::uint16_t common_button_bits(const ButtonSet &buttons) {
+      return static_cast<std::uint16_t>(
+        button_bits(face_shoulder_button_map(), buttons) |
+        button_bits(common_menu_button_map(), buttons) |
+        button_bits(common_extra_button_map(), buttons)
+      );
+    }
+
+    std::uint16_t standard_gamepad_button_bits(const ButtonSet &buttons) {
+      return static_cast<std::uint16_t>(
+        common_button_bits(buttons) |
+        button_bits(standard_dpad_button_map(), buttons)
+      );
+    }
+
+    std::uint16_t xbox_gip_button_bits(const ButtonSet &buttons) {
+      return static_cast<std::uint16_t>(
+        button_bits(face_shoulder_button_map(), buttons) |
+        button_bits(common_menu_button_map(), buttons) |
+        button_bits(xbox_extra_button_map(), buttons)
+      );
+    }
+
+    std::uint16_t switch_pro_button_bits(const GamepadState &state) {
+      auto bits = static_cast<std::uint16_t>(
+        button_bits(face_shoulder_button_map(), state.buttons) |
+        button_bits(switch_menu_button_map(), state.buttons)
+      );
+      if (state.left_trigger > 0.0F) {
+        bits |= static_cast<std::uint16_t>(1U << 6U);
+      }
+      if (state.right_trigger > 0.0F) {
+        bits |= static_cast<std::uint16_t>(1U << 7U);
+      }
       return bits;
     }
 
@@ -303,9 +395,9 @@ namespace lvh::reports {
       report[0] = is_bluetooth ? dualshock4_bt_input_report_id : to_byte(profile.report_id);
 
       report[payload_offset + 0U] = to_byte(normalize_u8_axis(normalized.left_stick.x));
-      report[payload_offset + 1U] = to_byte(normalize_u8_axis(normalized.left_stick.y));
+      report[payload_offset + 1U] = to_byte(normalize_u8_axis(-normalized.left_stick.y));
       report[payload_offset + 2U] = to_byte(normalize_u8_axis(normalized.right_stick.x));
-      report[payload_offset + 3U] = to_byte(normalize_u8_axis(normalized.right_stick.y));
+      report[payload_offset + 3U] = to_byte(normalize_u8_axis(-normalized.right_stick.y));
       report[payload_offset + 4U] = to_byte(hat_from_buttons(normalized.buttons));
 
       if (normalized.buttons.test(GamepadButton::x)) {
@@ -391,9 +483,9 @@ namespace lvh::reports {
       }
 
       report[payload_offset + 0U] = to_byte(normalize_u8_axis(normalized.left_stick.x));
-      report[payload_offset + 1U] = to_byte(normalize_u8_axis(normalized.left_stick.y));
+      report[payload_offset + 1U] = to_byte(normalize_u8_axis(-normalized.left_stick.y));
       report[payload_offset + 2U] = to_byte(normalize_u8_axis(normalized.right_stick.x));
-      report[payload_offset + 3U] = to_byte(normalize_u8_axis(normalized.right_stick.y));
+      report[payload_offset + 3U] = to_byte(normalize_u8_axis(-normalized.right_stick.y));
       report[payload_offset + 4U] = to_byte(normalize_trigger(normalized.left_trigger));
       report[payload_offset + 5U] = to_byte(normalize_trigger(normalized.right_trigger));
       report[payload_offset + 7U] = to_byte(hat_from_buttons(normalized.buttons));
@@ -560,8 +652,7 @@ namespace lvh::reports {
       const auto right_trigger_effect_type = raw_report[offset + 10U];
       const auto left_trigger_effect_type = raw_report[offset + 21U];
 
-      if (const auto valid_flag2 = report[offset + 38U];
-          has_flag(valid_flag0, dualsense_flag0_rumble) || has_flag(valid_flag2, dualsense_flag2_compatible_vibration)) {
+      if (const auto valid_flag2 = report[offset + 38U]; has_flag(valid_flag0, dualsense_flag0_rumble) || has_flag(valid_flag2, dualsense_flag2_compatible_vibration)) {
         GamepadOutput output;
         output.kind = GamepadOutputKind::rumble;
         output.low_frequency_rumble = scale_output_byte(motor_left);
@@ -696,17 +787,117 @@ namespace lvh::reports {
     return neutral_hat;
   }
 
+  std::uint16_t normalize_u10_trigger(float value) {
+    return static_cast<std::uint16_t>(std::lround(clamp_trigger(value) * 1023.0F));
+  }
+
+  std::uint8_t xbox_gip_hat_from_buttons(const ButtonSet &buttons) {
+    const auto hat = hat_from_buttons(buttons);
+    return hat == neutral_hat ? 0 : static_cast<std::uint8_t>(hat + 1U);
+  }
+
+  std::uint8_t battery_strength(const std::optional<GamepadBattery> &battery) {
+    if (!battery) {
+      return 0xFF;
+    }
+
+    return static_cast<std::uint8_t>(std::lround((static_cast<float>(battery->percentage) / 100.0F) * 255.0F));
+  }
+
+  std::uint16_t dpad_hat_bits(const ButtonSet &buttons) {
+    const auto hat = to_byte(hat_from_buttons(buttons));
+    return static_cast<std::uint16_t>(std::to_integer<std::uint16_t>(hat) << 12U);
+  }
+
+  std::vector<std::uint8_t> pack_xbox_gip_input_report(const DeviceProfile &profile, const GamepadState &state) {
+    if (constexpr std::size_t xbox_gip_input_report_size = 17; profile.input_report_size < xbox_gip_input_report_size) {
+      return {};
+    }
+
+    const auto normalized = normalize_state(state);
+
+    ByteReport report(profile.input_report_size, zero_byte);
+    write_u16(report, 0U, normalize_unsigned_axis(normalized.left_stick.x));
+    write_u16(report, 2U, normalize_unsigned_axis(-normalized.left_stick.y));
+    write_u16(report, 4U, normalize_unsigned_axis(normalized.right_stick.x));
+    write_u16(report, 6U, normalize_unsigned_axis(-normalized.right_stick.y));
+    write_u16(report, 8U, normalize_u10_trigger(normalized.left_trigger));
+    write_u16(report, 10U, normalize_u10_trigger(normalized.right_trigger));
+    write_u16(report, 12U, xbox_gip_button_bits(normalized.buttons));
+    report[14] = to_byte(xbox_gip_hat_from_buttons(normalized.buttons));
+    if (normalized.buttons.test(GamepadButton::guide)) {
+      report[15] = std::byte {0x01};
+    }
+    report[16] = to_byte(battery_strength(normalized.battery));
+    return to_uint8_report(report);
+  }
+
+  std::vector<std::uint8_t> pack_standard_gamepad_input_report(
+    const DeviceProfile &profile,
+    const GamepadState &state
+  ) {
+    constexpr std::size_t standard_report_size = 9;
+    if (profile.input_report_size < standard_report_size) {
+      return {};
+    }
+
+    const auto normalized = normalize_state(state);
+
+    std::vector<std::uint8_t> report;
+    report.reserve(standard_report_size);
+    report.push_back(profile.report_id);
+    append_u16(report, standard_gamepad_button_bits(normalized.buttons));
+    report.push_back(normalize_u8_axis(normalized.left_stick.x));
+    report.push_back(normalize_u8_axis(-normalized.left_stick.y));
+    report.push_back(normalize_u8_axis(normalized.right_stick.x));
+    report.push_back(normalize_u8_axis(-normalized.right_stick.y));
+    report.push_back(normalize_trigger(normalized.left_trigger));
+    report.push_back(normalize_trigger(normalized.right_trigger));
+
+    report.resize(profile.input_report_size, 0);
+    return report;
+  }
+
+  std::vector<std::uint8_t> pack_switch_pro_input_report(const DeviceProfile &profile, const GamepadState &state) {
+    if (constexpr std::size_t switch_pro_input_report_size = 64; profile.input_report_size < switch_pro_input_report_size) {
+      return {};
+    }
+
+    const auto normalized = normalize_state(state);
+
+    ByteReport report(profile.input_report_size, zero_byte);
+    report[0] = to_byte(profile.report_id);
+    write_u16(report, 1U, switch_pro_button_bits(normalized));
+    write_u16(report, 3U, normalize_unsigned_axis(normalized.left_stick.x));
+    write_u16(report, 5U, normalize_unsigned_axis(-normalized.left_stick.y));
+    write_u16(report, 7U, normalize_unsigned_axis(normalized.right_stick.x));
+    write_u16(report, 9U, normalize_unsigned_axis(-normalized.right_stick.y));
+    report[11] = to_byte(hat_from_buttons(normalized.buttons));
+    return to_uint8_report(report);
+  }
+
   std::vector<std::uint8_t> pack_input_report(const DeviceProfile &profile, const GamepadState &state) {
     if (profile.device_type == DeviceType::gamepad) {
-      if (profile.gamepad_kind == GamepadProfileKind::dualshock4) {
-        return pack_dualshock4_input_report(profile, state);
-      }
-      if (profile.gamepad_kind == GamepadProfileKind::dualsense) {
-        return pack_dualsense_input_report(profile, state);
+      switch (profile.gamepad_kind) {
+        using enum GamepadProfileKind;
+
+        case xbox_one:
+        case xbox_series:
+          return pack_xbox_gip_input_report(profile, state);
+        case dualshock4:
+          return pack_dualshock4_input_report(profile, state);
+        case dualsense:
+          return pack_dualsense_input_report(profile, state);
+        case switch_pro:
+          return pack_switch_pro_input_report(profile, state);
+        case generic:
+          return pack_standard_gamepad_input_report(profile, state);
+        case xbox_360:
+          break;
       }
     }
 
-    constexpr std::size_t common_report_size = 14;
+    constexpr std::size_t common_report_size = 9;
     if (profile.device_type != DeviceType::gamepad || profile.input_report_size < common_report_size) {
       return {};
     }
@@ -716,13 +907,12 @@ namespace lvh::reports {
     std::vector<std::uint8_t> report;
     report.reserve(common_report_size);
     report.push_back(profile.report_id);
-    append_u16(report, report_button_bits(normalized.buttons));
-    report.push_back(hat_from_buttons(normalized.buttons));
-    append_i16(report, normalize_axis(normalized.left_stick.x));
-    append_i16(report, normalize_axis(normalized.left_stick.y));
-    append_i16(report, normalize_axis(normalized.right_stick.x));
-    append_i16(report, normalize_axis(normalized.right_stick.y));
+    append_u16(report, static_cast<std::uint16_t>(common_button_bits(normalized.buttons) | dpad_hat_bits(normalized.buttons)));
+    report.push_back(normalize_u8_axis(normalized.left_stick.x));
+    report.push_back(normalize_u8_axis(-normalized.left_stick.y));
     report.push_back(normalize_trigger(normalized.left_trigger));
+    report.push_back(normalize_u8_axis(normalized.right_stick.x));
+    report.push_back(normalize_u8_axis(-normalized.right_stick.y));
     report.push_back(normalize_trigger(normalized.right_trigger));
 
     report.resize(profile.input_report_size, 0);

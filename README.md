@@ -100,14 +100,16 @@ or similar control channel over passing C++ STL types across that boundary.
 
 The current Windows backend selects a UMDF control-channel implementation for
 `BackendKind::platform_default`. It always exposes keyboard and mouse through
-Win32 `SendInput`, then probes `\\.\LibVirtualHid` for descriptor-driven virtual
-gamepads. It reports `requires_installed_driver = true`, and only advertises
-gamepad/output-report support when the driver package is installed and the
-control device can be opened. Touchscreen, trackpad, and pen tablet support are
-not implemented in the Windows backend yet. The client library stays buildable
-with MSVC and MinGW/UCRT64 because the gamepad path talks to the driver through
-fixed-size C protocol structures and Win32 `DeviceIoControl` calls. The default
-control device path can be overridden for diagnostics with
+Win32 `SendInput`, then probes the libvirtualhid control device interface for
+descriptor-driven virtual gamepads. It falls back to the legacy fixed
+`\\.\LibVirtualHid` and `\\.\Global\LibVirtualHid` links for diagnostics and
+older driver builds. It reports `requires_installed_driver = true`, and only
+advertises gamepad/output-report support when the driver package is installed
+and the control device can be opened. Touchscreen, trackpad, and pen tablet
+support are not implemented in the Windows backend yet. The client library
+stays buildable with MSVC and MinGW/UCRT64 because the gamepad path talks to the
+driver through fixed-size C protocol structures and Win32 `DeviceIoControl`
+calls. The default control device path can be overridden for diagnostics with
 `LIBVIRTUALHID_WINDOWS_CONTROL_DEVICE`.
 
 The UMDF driver uses Windows Virtual HID Framework (VHF) for OS-visible gamepad
@@ -118,6 +120,56 @@ callback path. DirectInput, SDL/HIDAPI, Windows.Gaming.Input/GameInput, and the
 browser Gamepad API should therefore see standard HID gamepads after the driver
 is installed. XInput is not a direct target for this HID-only backend because it
 does not emulate the Xbox proprietary bus/API.
+The client protocol uses complete HID reports; numbered reports carry the report
+ID at byte 0 and unnumbered reports omit it. The UMDF driver passes that
+complete report buffer to VHF and also sets `HID_XFER_PACKET.reportId` for
+numbered reports. Output reports forwarded by VHF are normalized back to the
+same complete-report shape before delivery to the C++ backend. VHF exposes
+VID/PID/version, explicit
+`HID\VID_....&PID_....` hardware IDs, Xbox
+`HID\VID_....&PID_....&IG_00` hardware IDs where applicable, and the report
+descriptor for the child HID device so Windows and browser consumers can
+match the selected profile by HID attributes and report shape. VHF does not
+provide a product/manufacturer string callback, so consumers that display the
+raw HID product string may still show the Windows VHF product label even when
+the VID/PID and descriptor match the selected controller.
+The built-in Xbox One and Xbox Series profiles use an XboxGIP-shaped descriptor
+and unnumbered 17-byte input reports derived from HIDMaestro's USB Xbox
+profiles. The Xbox One profile uses `VID_045E&PID_02EA`, and the Xbox Series
+profile uses the physical USB identity `VID_045E&PID_0B12`. Bluetooth Xbox
+identities are intentionally not used for the built-in profiles. Windows'
+`xinputhid.inf` does not bind `HID\VID_045E&PID_0B12&IG_00` VHF children to
+XInput, so the UMDF driver also publishes HIDMaestro's GIP HID `driverPid`
+identity `HID\VID_045E&PID_02FF&IG_00` as a driver-matching hardware ID while
+keeping the public profile PID at `0B12`. The built-in generic profile uses a
+browser-standard generic gamepad
+descriptor: 16 one-bit digital buttons including the d-pad, followed by 8-bit
+`X`, `Y`, `Rx`, `Ry`, `Z`, and `Rz` values so the sticks occupy the first four
+axis slots and the analog triggers follow them. The Switch profile uses
+HIDMaestro's Nintendo Switch Pro Controller identity (`VID_057E&PID_2009`,
+product name `Pro Controller`) with Report ID `0x30`, a 64-byte input report, a
+hat d-pad, four 16-bit stick axes, and digital ZL/ZR trigger-click bits rather
+than analog trigger axes. The DualShock 4 profiles use the first-generation
+controller identity (`VID_054C&PID_05C4`, version `0100`, product name
+`Wireless Controller`, manufacturer `Sony Computer Entertainment`) to match the
+ViGEmBus DS4 target and HIDMaestro's DS4 v1 reference. The DualSense profiles
+use the standard `Wireless Controller` product name in the public profile and
+control protocol.
+The Xbox 360 HID profile
+keeps the legacy common descriptor with 12 one-bit digital buttons, a hat switch
+for the d-pad, and 8-bit `X`, `Y`, `Z`, `Rx`, `Ry`, and `Rz` values.
+On Windows, the UMDF/VHF backend rejects the Xbox 360 profile because a real
+Xbox 360 controller is an XUSB device rather than a VHF HID gamepad; consumers
+that still expose an Xbox 360 option should use their XUSB fallback for that
+profile.
+The UMDF driver opens a separate VHF source target for each virtual gamepad and
+parents that target to the control-file handle that created it, so process exits
+or crashes clean up any virtual gamepads that were not explicitly destroyed.
+During rapid development reinstalls, the fixed global control symbolic link can
+outlive the previous root device briefly; the driver treats that collision as
+non-fatal so stale object-manager state does not leave the control device in
+Code 31. Normal clients discover the PnP control device interface first, so a
+stale fixed link does not block the backend from reaching the current device.
 
 Build the UMDF package separately with the Microsoft driver toolchain:
 
@@ -127,29 +179,77 @@ cmake -S . -B cmake-build-windows-driver -G "Visual Studio 17 2022" -A x64 `
   -DBUILD_TESTS=OFF -DBUILD_EXAMPLES=OFF
 cmake --build cmake-build-windows-driver --config Release --target libvirtualhid_umdf
 cmake --build cmake-build-windows-driver --config Release --target libvirtualhid_windows_catalog
-cpack -G WIX --config .\cmake-build-windows-driver\CPackConfig.cmake
+cpack -G WIX -C Release --config .\cmake-build-windows-driver\CPackConfig.cmake
 ```
 
 Developer install/uninstall helpers live under `scripts/windows`:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\windows\install-driver.ps1 `
-  -InfPath .\cmake-build-windows-driver\src\platform\windows\driver\package\Release\libvirtualhid.inf
+  -InfPath .\cmake-build-windows-driver\src\platform\windows\driver\package\Release\libvirtualhid.inf `
+  -LogPath .\cmake-build-windows-driver\install-driver.log
+powershell -ExecutionPolicy Bypass -File .\scripts\windows\test-installed-driver.ps1 `
+  -GamepadAdapterPath .\cmake-build-ci\examples\Debug\gamepad_adapter.exe `
+  -GamepadProfile xseries
+powershell -ExecutionPolicy Bypass -File .\scripts\windows\test-browser-gamepad.ps1 `
+  -GamepadAdapterPath .\cmake-build-ci\examples\Debug\gamepad_adapter.exe `
+  -GamepadProfile xseries
 powershell -ExecutionPolicy Bypass -File .\scripts\windows\uninstall-driver.ps1 `
   -Force -RemoveCertificateSubject "CN=libvirtualhid CI Test Driver Signing"
 ```
 
 The helper stages the INF with `pnputil`, updates an existing
 `ROOT\LIBVIRTUALHID` device when present, and creates that root-enumerated
-device when it is missing. It uses `devcon.exe` when available, otherwise it
-uses SetupAPI/NewDev directly so MSI installs do not require the WDK tools on
-the target machine.
+device when it is missing. It uses SetupAPI/NewDev directly so MSI installs do
+not require the WDK tools on the target machine. Existing devices are detected
+by matching the `ROOT\LIBVIRTUALHID` hardware ID. The SetupAPI path creates a
+root-enumerated instance such as `ROOT\LIBVIRTUALHID\####`.
+The install and uninstall helpers also clean up malformed development devices
+left by earlier installer revisions, including root instances left in the
+failed `HIDClass` package shape. The WiX installer writes the helper transcript
+to `C:\ProgramData\libvirtualhid\install-driver.log`.
+The test helper fails if the root device is not reported as `Status: Started`,
+if `\\.\LibVirtualHid` cannot be opened, or if a held gamepad adapter instance
+does not produce a started HID child device such as
+`HID\VID_045E&PID_0B12&IG_00` or an Xbox Series-compatible HID child such as
+`HID\VID_045E&PID_02FF&IG_00`. That check is also run by the Windows CI legs
+for every Windows UMDF/VHF-supported `gamepad_adapter` profile
+after installing the Windows Driver Installer artifact. The browser helper is for manual
+diagnostics: it launches a normal desktop Edge or Chrome instance at
+`https://hardwaretester.com/gamepad`, holds a virtual gamepad, and fails if the
+browser Gamepad API does not report a controller matching the selected profile
+or does not observe changing button and axis input. For manual browser
+validation, run the browser helper with `-KeepBrowserOpen`, or run
+`examples/gamepad_adapter xseries --hold-seconds 60`, then open
+`https://hardwaretester.com/gamepad` in a normal desktop browser and press one
+of the held virtual buttons if the browser needs a gamepad activation event.
 
 The driver binary is a UMDF DLL installed through the Windows Driver Store, not
 a libvirtualhid `.sys` copied into `C:\Windows\System32\drivers`. Windows still
 uses its built-in `WUDFRd.sys` and VHF components under `System32\drivers`; the
 libvirtualhid-specific sign that installation completed is the
-`ROOT\LIBVIRTUALHID` device and the `\\.\LibVirtualHid` control device.
+`ROOT\LIBVIRTUALHID` device and the `\\.\LibVirtualHid` control device. The INF
+includes the built-in `WUDFRd` install sections for the root `System` control
+device, appends the VHF lower filter, sets `VhfMode=1` for the UMDF VHF source
+stack, grants non-admin user-mode clients read/write access to the control
+device, and disables UMDF host-process sharing so driver updates do not keep
+using an older in-process UMDF module during development. The installer also
+writes `VhfMode=1` onto the
+root device before starting the driver so root-enumerated development installs
+get the same VHF source mode as the INF hardware section. The UMDF control
+device is restarted after install or update so same-version development builds
+load the current UMDF module; if Windows cannot unload the old host, the
+installer reports the reboot requirement. The UMDF control device starts
+without opening VHF; each gamepad creation opens its own VHF target from the
+creating file handle so target-open failures are reported through the
+create-device response instead of making `\\.\LibVirtualHid` unavailable. The
+generated INF uses the same UMDF
+library version as the WDF headers and stub library selected by CMake. The
+package defaults to UMDF 2.15, matching the inbox VHF UMDF source driver while
+still exposing the framework APIs used by libvirtualhid. The driver target links
+the MSVC runtime statically to avoid requiring VC runtime DLLs in the UMDF host
+process. Development driver builds write a lightweight UMDF trace to
+`C:\Windows\Temp\libvirtualhid-umdf-driver.log`.
 
 Windows driver packages require a signed catalog for normal installation. Pull
 request builds generate a short-lived self-signed test certificate, sign
@@ -565,7 +665,9 @@ platform-specific calls.
   `Runtime` and `Gamepad` APIs.
 - [x] Preserve Sunshine's asynchronous event shape by caching per-controller
   `GamepadState` and resubmitting after separate button, axis, trigger, touch,
-  motion, and battery updates.
+  motion, and battery updates. Adapter creation submits one neutral input report
+  immediately so operating-system consumers can enumerate the virtual controller
+  before the first client input event arrives.
 - [x] Expand or formally map the public button model so Sunshine's full
   controller flag set is preserved, including guide/home, profile-specific
   misc/share, and rear paddles where the emulated profile can expose them.

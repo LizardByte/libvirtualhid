@@ -171,7 +171,13 @@ namespace lvh {
       return {std::move(created.status), nullptr};
     }
 
-    return {OperationStatus::success(), std::make_unique<GamepadStateAdapter>(std::move(created.gamepad))};
+    auto adapter = std::make_unique<GamepadStateAdapter>(std::move(created.gamepad));
+    if (const auto status = adapter->submit(); !status.ok()) {
+      static_cast<void>(adapter->close());
+      return {status, nullptr};
+    }
+
+    return {OperationStatus::success(), std::move(adapter)};
   }
 
   Gamepad *GamepadStateAdapter::gamepad() {
