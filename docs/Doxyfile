@@ -44,7 +44,6 @@ INPUT = ../README.md \
         development.md \
         store-review-validation.md \
         ../LICENSES/README.md \
-        ../LICENSES/LicenseRef-LizardByte-SAL-1.0.md \
         ../examples \
         ../third-party/doxyconfig/docs/source_code.md \
         ../src/include

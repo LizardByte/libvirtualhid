@@ -159,7 +159,8 @@ and must not ship the local pull-request test certificate.
 ## License
 
 The Windows UMDF driver source and generated Windows driver package artifacts,
-including the driver MSI, are licensed under the
-[LizardByte Source-Available License 1.0](../LICENSES/LicenseRef-LizardByte-SAL-1.0.md)
-(LB-SAL 1.0). The MSI may also include MIT-licensed helper components from this
-repository, so packaged installs include both license texts.
+including the driver MSI, are licensed under the LizardByte Source-Available
+License 1.0 (LB-SAL 1.0). See the [license map](../LICENSES/README.md) for the
+full repository license split. The MSI may also include MIT-licensed helper
+components from this repository, so packaged installs include both license
+texts.
