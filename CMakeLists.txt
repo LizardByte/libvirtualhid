@@ -38,7 +38,9 @@ option(BUILD_TESTS "Build tests" ${LIBVIRTUALHID_IS_TOP_LEVEL})
 option(BUILD_EXAMPLES "Build examples" ${LIBVIRTUALHID_IS_TOP_LEVEL})
 option(LIBVIRTUALHID_ENABLE_XTEST "Enable X11/XTest keyboard and mouse fallback on Linux" ON)
 option(LIBVIRTUALHID_BUILD_WINDOWS_DRIVER "Build the Windows UMDF2 driver package with the WDK/MSVC toolchain" OFF)
-option(LIBVIRTUALHID_ENABLE_PACKAGING "Enable CPack package metadata" ${LIBVIRTUALHID_IS_TOP_LEVEL})
+option(LIBVIRTUALHID_INSTALL
+        "Install libvirtualhid targets, headers, and CMake package files" ${LIBVIRTUALHID_IS_TOP_LEVEL})
+option(LIBVIRTUALHID_ENABLE_PACKAGING "Enable CPack package metadata" ${LIBVIRTUALHID_INSTALL})
 option(LIBVIRTUALHID_WARNINGS_AS_ERRORS "Treat libvirtualhid warnings as errors" ${LIBVIRTUALHID_IS_TOP_LEVEL})
 
 set(CMAKE_COLOR_MAKEFILE ON)
@@ -114,23 +116,25 @@ endif()
 #
 # Package config
 #
-configure_package_config_file(
-  "${CMAKE_CURRENT_SOURCE_DIR}/cmake/libvirtualhid-config.cmake.in"
-  "${CMAKE_CURRENT_BINARY_DIR}/libvirtualhid-config.cmake"
-  INSTALL_DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/libvirtualhid"
-)
+if(LIBVIRTUALHID_INSTALL)
+    configure_package_config_file(
+      "${CMAKE_CURRENT_SOURCE_DIR}/cmake/libvirtualhid-config.cmake.in"
+      "${CMAKE_CURRENT_BINARY_DIR}/libvirtualhid-config.cmake"
+      INSTALL_DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/libvirtualhid")
 
-write_basic_package_version_file(
-  "${CMAKE_CURRENT_BINARY_DIR}/libvirtualhid-config-version.cmake"
-  VERSION ${PROJECT_VERSION}
-  COMPATIBILITY SameMajorVersion
-)
+    write_basic_package_version_file(
+      "${CMAKE_CURRENT_BINARY_DIR}/libvirtualhid-config-version.cmake"
+      VERSION ${PROJECT_VERSION}
+      COMPATIBILITY SameMajorVersion)
 
-install(FILES
-        "${CMAKE_CURRENT_BINARY_DIR}/libvirtualhid-config.cmake"
-        "${CMAKE_CURRENT_BINARY_DIR}/libvirtualhid-config-version.cmake"
-  DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/libvirtualhid")
+    install(FILES
+            "${CMAKE_CURRENT_BINARY_DIR}/libvirtualhid-config.cmake"
+            "${CMAKE_CURRENT_BINARY_DIR}/libvirtualhid-config-version.cmake"
+      DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/libvirtualhid")
+endif()
 
-if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME AND LIBVIRTUALHID_ENABLE_PACKAGING)
+if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME
+   AND LIBVIRTUALHID_ENABLE_PACKAGING
+   AND LIBVIRTUALHID_INSTALL)
     include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/packaging/common.cmake")
 endif()

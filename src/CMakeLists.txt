@@ -95,15 +95,17 @@ else()
     endif()
 endif()
 
-install(TARGETS ${PROJECT_NAME}
-  EXPORT libvirtualhid-targets
-  ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
-  LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
-  RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+if(LIBVIRTUALHID_INSTALL)
+    install(TARGETS ${PROJECT_NAME}
+      EXPORT libvirtualhid-targets
+      ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+      LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+      RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
 
-install(DIRECTORY "${PROJECT_SOURCE_DIR}/src/include/"
-  DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
+    install(DIRECTORY "${PROJECT_SOURCE_DIR}/src/include/"
+      DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
 
-install(EXPORT libvirtualhid-targets
-  NAMESPACE libvirtualhid::
-  DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/libvirtualhid")
+    install(EXPORT libvirtualhid-targets
+      NAMESPACE libvirtualhid::
+      DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/libvirtualhid")
+endif()

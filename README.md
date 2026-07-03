@@ -419,6 +419,12 @@ target unless they explicitly enable additional options. Linux consumers still
 need the development packages used by the backend, such as `libevdev` and
 `pkg-config`.
 
+Install rules follow the same top-level default. `LIBVIRTUALHID_INSTALL`
+defaults to `ON` when configuring libvirtualhid directly and `OFF` when it is
+added by another project. Consumers that want vendored install rules can opt in
+with `-DLIBVIRTUALHID_INSTALL=ON`; direct builds can skip install/export rules
+with `-DLIBVIRTUALHID_INSTALL=OFF`.
+
 ## 📖 Proposed Public API Shape
 
 The exact names may change during implementation, but the API should center on
