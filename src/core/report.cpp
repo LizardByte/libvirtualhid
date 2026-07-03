@@ -183,67 +183,75 @@ namespace lvh::reports {
     }
 
     std::uint16_t common_button_bits(const ButtonSet &buttons) {
+      using enum GamepadButton;
+
       auto bits = std::uint16_t {};
-      set_button_bit(bits, buttons, 0U, GamepadButton::a);
-      set_button_bit(bits, buttons, 1U, GamepadButton::b);
-      set_button_bit(bits, buttons, 2U, GamepadButton::x);
-      set_button_bit(bits, buttons, 3U, GamepadButton::y);
-      set_button_bit(bits, buttons, 4U, GamepadButton::left_shoulder);
-      set_button_bit(bits, buttons, 5U, GamepadButton::right_shoulder);
-      set_button_bit(bits, buttons, 6U, GamepadButton::back);
-      set_button_bit(bits, buttons, 7U, GamepadButton::start);
-      set_button_bit(bits, buttons, 8U, GamepadButton::left_stick);
-      set_button_bit(bits, buttons, 9U, GamepadButton::right_stick);
-      set_button_bit(bits, buttons, 10U, GamepadButton::guide);
-      set_button_bit(bits, buttons, 11U, GamepadButton::misc1);
+      set_button_bit(bits, buttons, 0U, a);
+      set_button_bit(bits, buttons, 1U, b);
+      set_button_bit(bits, buttons, 2U, x);
+      set_button_bit(bits, buttons, 3U, y);
+      set_button_bit(bits, buttons, 4U, left_shoulder);
+      set_button_bit(bits, buttons, 5U, right_shoulder);
+      set_button_bit(bits, buttons, 6U, back);
+      set_button_bit(bits, buttons, 7U, start);
+      set_button_bit(bits, buttons, 8U, left_stick);
+      set_button_bit(bits, buttons, 9U, right_stick);
+      set_button_bit(bits, buttons, 10U, guide);
+      set_button_bit(bits, buttons, 11U, misc1);
       return bits;
     }
 
     std::uint16_t standard_gamepad_button_bits(const ButtonSet &buttons) {
+      using enum GamepadButton;
+
       auto bits = common_button_bits(buttons);
-      set_button_bit(bits, buttons, 12U, GamepadButton::dpad_up);
-      set_button_bit(bits, buttons, 13U, GamepadButton::dpad_down);
-      set_button_bit(bits, buttons, 14U, GamepadButton::dpad_left);
-      set_button_bit(bits, buttons, 15U, GamepadButton::dpad_right);
+      set_button_bit(bits, buttons, 12U, dpad_up);
+      set_button_bit(bits, buttons, 13U, dpad_down);
+      set_button_bit(bits, buttons, 14U, dpad_left);
+      set_button_bit(bits, buttons, 15U, dpad_right);
       return bits;
     }
 
     std::uint16_t xbox_gip_button_bits(const ButtonSet &buttons) {
+      using enum GamepadButton;
+
       auto bits = std::uint16_t {};
-      set_button_bit(bits, buttons, 0U, GamepadButton::a);
-      set_button_bit(bits, buttons, 1U, GamepadButton::b);
-      set_button_bit(bits, buttons, 2U, GamepadButton::x);
-      set_button_bit(bits, buttons, 3U, GamepadButton::y);
-      set_button_bit(bits, buttons, 4U, GamepadButton::left_shoulder);
-      set_button_bit(bits, buttons, 5U, GamepadButton::right_shoulder);
-      set_button_bit(bits, buttons, 6U, GamepadButton::back);
-      set_button_bit(bits, buttons, 7U, GamepadButton::start);
-      set_button_bit(bits, buttons, 8U, GamepadButton::left_stick);
-      set_button_bit(bits, buttons, 9U, GamepadButton::right_stick);
-      set_button_bit(bits, buttons, 11U, GamepadButton::misc1);
+      set_button_bit(bits, buttons, 0U, a);
+      set_button_bit(bits, buttons, 1U, b);
+      set_button_bit(bits, buttons, 2U, x);
+      set_button_bit(bits, buttons, 3U, y);
+      set_button_bit(bits, buttons, 4U, left_shoulder);
+      set_button_bit(bits, buttons, 5U, right_shoulder);
+      set_button_bit(bits, buttons, 6U, back);
+      set_button_bit(bits, buttons, 7U, start);
+      set_button_bit(bits, buttons, 8U, left_stick);
+      set_button_bit(bits, buttons, 9U, right_stick);
+      set_button_bit(bits, buttons, 11U, misc1);
       return bits;
     }
 
     std::uint16_t switch_pro_button_bits(const GamepadState &state) {
+      using enum GamepadButton;
+
       auto bits = std::uint16_t {};
-      set_button_bit(bits, state.buttons, 0U, GamepadButton::a);
-      set_button_bit(bits, state.buttons, 1U, GamepadButton::b);
-      set_button_bit(bits, state.buttons, 2U, GamepadButton::x);
-      set_button_bit(bits, state.buttons, 3U, GamepadButton::y);
-      set_button_bit(bits, state.buttons, 4U, GamepadButton::left_shoulder);
-      set_button_bit(bits, state.buttons, 5U, GamepadButton::right_shoulder);
+      set_button_bit(bits, state.buttons, 0U, a);
+      set_button_bit(bits, state.buttons, 1U, b);
+      set_button_bit(bits, state.buttons, 2U, x);
+      set_button_bit(bits, state.buttons, 3U, y);
+      set_button_bit(bits, state.buttons, 4U, left_shoulder);
+      set_button_bit(bits, state.buttons, 5U, right_shoulder);
       if (state.left_trigger > 0.0F) {
         bits |= static_cast<std::uint16_t>(1U << 6U);
       }
       if (state.right_trigger > 0.0F) {
         bits |= static_cast<std::uint16_t>(1U << 7U);
       }
-      set_button_bit(bits, state.buttons, 8U, GamepadButton::back);
-      set_button_bit(bits, state.buttons, 9U, GamepadButton::start);
-      set_button_bit(bits, state.buttons, 10U, GamepadButton::left_stick);
-      set_button_bit(bits, state.buttons, 11U, GamepadButton::right_stick);
-      set_button_bit(bits, state.buttons, 12U, GamepadButton::guide);
-      set_button_bit(bits, state.buttons, 13U, GamepadButton::misc1);
+      set_button_bit(bits, state.buttons, 8U, back);
+      set_button_bit(bits, state.buttons, 9U, start);
+      set_button_bit(bits, state.buttons, 10U, left_stick);
+      set_button_bit(bits, state.buttons, 11U, right_stick);
+      set_button_bit(bits, state.buttons, 12U, guide);
+      set_button_bit(bits, state.buttons, 13U, misc1);
       return bits;
     }
 
@@ -856,7 +864,8 @@ namespace lvh::reports {
     std::vector<std::uint8_t> report;
     report.reserve(common_report_size);
     report.push_back(profile.report_id);
-    const auto dpad_hat_bits = static_cast<std::uint16_t>(hat_from_buttons(normalized.buttons) << 12U);
+    const auto dpad_hat = static_cast<std::uint16_t>(hat_from_buttons(normalized.buttons));
+    const auto dpad_hat_bits = static_cast<std::uint16_t>(dpad_hat << 12U);
     append_u16(report, static_cast<std::uint16_t>(common_button_bits(normalized.buttons) | dpad_hat_bits));
     report.push_back(normalize_u8_axis(normalized.left_stick.x));
     report.push_back(normalize_u8_axis(-normalized.left_stick.y));

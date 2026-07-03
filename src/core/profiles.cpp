@@ -52,21 +52,21 @@ namespace lvh::profiles {
 
     constexpr std::size_t dualsense_bluetooth_output_report_size = 78;
 
-    std::uint8_t hex_nibble(char digit) {
+    std::byte hex_nibble(char digit) {
       if (digit >= '0' && digit <= '9') {
-        return static_cast<std::uint8_t>(digit - '0');
+        return static_cast<std::byte>(digit - '0');
       }
       if (digit >= 'A' && digit <= 'F') {
-        return static_cast<std::uint8_t>(digit - 'A' + 10);
+        return static_cast<std::byte>(digit - 'A' + 10);
       }
       if (digit >= 'a' && digit <= 'f') {
-        return static_cast<std::uint8_t>(digit - 'a' + 10);
+        return static_cast<std::byte>(digit - 'a' + 10);
       }
-      return 0;
+      return std::byte {0};
     }
 
     std::byte byte_from_hex(char high, char low) {
-      return static_cast<std::byte>((hex_nibble(high) << 4U) | hex_nibble(low));
+      return (hex_nibble(high) << 4U) | hex_nibble(low);
     }
 
     std::vector<std::uint8_t> bytes_from_hex(std::string_view hex) {
