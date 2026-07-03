@@ -454,7 +454,7 @@ jobs:
           $certificatePath = Join-Path $env:GITHUB_WORKSPACE "cmake-build-driver\certificates\libvirtualhid-ci-test.cer"
           cmake `
             -DBUILD_DOCS=OFF `
-            -DBUILD_EXAMPLES=OFF `
+            -DBUILD_EXAMPLES=ON `
             -DBUILD_TESTS=OFF `
             -DLIBVIRTUALHID_BUILD_WINDOWS_DRIVER=ON `
             -DLIBVIRTUALHID_ENABLE_PACKAGING=ON `
@@ -469,7 +469,7 @@ jobs:
         run: >-
           cmake --build cmake-build-driver
           --config ${{ env.DRIVER_BUILD_CONFIG }}
-          --target libvirtualhid_windows_catalog
+          --target libvirtualhid_windows_catalog gamepad_adapter
           --parallel 2
 
       - name: Validate Azure signing configuration
