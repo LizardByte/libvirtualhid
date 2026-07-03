@@ -103,6 +103,58 @@ The library is designed around gamepad use first because remote streaming hosts
 are the first consumer class. Non-gamepad device types are available through the
 same API where the backend exposes them.
 
+## 🔁 Alternatives
+
+Alternatives exist if `libvirtualhid` does not meet your needs.
+
+| Feature                           | `libvirtualhid`                       | [ViGEmBus](https://github.com/nefarius/ViGEmBus) | [HIDMaestro](https://github.com/hifihedgehog/HIDMaestro) | [inputtino](https://github.com/games-on-whales/inputtino) | [WinUHid](https://github.com/cgutman/WinUHid) |
+|-----------------------------------|---------------------------------------|--------------------------------------------------|----------------------------------------------------------|-----------------------------------------------------------|-----------------------------------------------|
+| Windows support                   | ✅                                     | ✅                                                | ✅                                                        | ❌                                                         | ✅                                             |
+| Linux support                     | ✅                                     | ❌                                                | ❌                                                        | ✅                                                         | ❌                                             |
+| Windows AMD64 support             | ✅                                     | ✅                                                | ✅                                                        | -                                                         | ✅                                             |
+| Windows ARM64 support             | ❌<sup>[5](#alternatives-note-5)</sup> | ✅                                                | ❌<sup>[6](#alternatives-note-6)</sup>                    | -                                                         | ✅                                             |
+| Windows user-mode driver          | ✅                                     | ❌                                                | ✅                                                        | -                                                         | ✅                                             |
+| No Windows kernel-mode driver     | ✅                                     | ❌                                                | ✅                                                        | -                                                         | ✅                                             |
+| Descriptor-defined HID devices    | ✅                                     | ❌                                                | ✅                                                        | ✅<sup>[1](#alternatives-note-1)</sup>                     | ✅                                             |
+| Platform-neutral C++ API          | ✅                                     | ❌<sup>[2](#alternatives-note-2)</sup>            | ❌<sup>[2](#alternatives-note-2)</sup>                    | ❌<sup>[3](#alternatives-note-3)</sup>                     | ❌<sup>[2](#alternatives-note-2)</sup>         |
+| Keyboard                          | ✅                                     | ❌                                                | ❌                                                        | ✅                                                         | ✅<sup>[4](#alternatives-note-4)</sup>         |
+| Mouse                             | ✅                                     | ❌                                                | ❌                                                        | ✅                                                         | ✅<sup>[4](#alternatives-note-4)</sup>         |
+| Touchscreen, trackpad, or pen     | ✅                                     | ❌                                                | ❌                                                        | ✅                                                         | ✅<sup>[4](#alternatives-note-4)</sup>         |
+| Generic HID gamepad               | ✅                                     | ❌                                                | ✅                                                        | ❌                                                         | ✅<sup>[4](#alternatives-note-4)</sup>         |
+| Xbox 360 gamepad                  | ✅                                     | ✅                                                | ✅                                                        | ❌                                                         | ✅<sup>[4](#alternatives-note-4)</sup>         |
+| Xbox One gamepad                  | ✅                                     | ❌                                                | ✅                                                        | ✅                                                         | ✅<sup>[4](#alternatives-note-4)</sup>         |
+| Xbox Series gamepad               | ✅                                     | ❌                                                | ✅                                                        | ❌                                                         | ✅<sup>[4](#alternatives-note-4)</sup>         |
+| DualShock 4 gamepad               | ✅                                     | ✅                                                | ✅                                                        | ❌                                                         | ✅<sup>[4](#alternatives-note-4)</sup>         |
+| DualSense gamepad                 | ✅                                     | ❌                                                | ✅                                                        | ✅                                                         | ✅<sup>[4](#alternatives-note-4)</sup>         |
+| Nintendo Switch Pro-style gamepad | ✅                                     | ❌                                                | ✅                                                        | ✅                                                         | ✅<sup>[4](#alternatives-note-4)</sup>         |
+| Rumble or output callbacks        | ✅                                     | ❌                                                | ✅                                                        | ✅                                                         | ✅<sup>[4](#alternatives-note-4)</sup>         |
+| Data-driven profiles              | ❌                                     | ❌                                                | ✅                                                        | ❌                                                         | ❌                                             |
+| Actively developeed               | ✅                                     | ❌                                                | ✅                                                        | ✅                                                         | ✅                                             |
+
+<a id="alternatives-note-1"></a><sup>1</sup> inputtino uses `uhid` for
+virtual joypads; its other listed device types use Linux input interfaces rather
+than generic HID descriptors.
+
+<a id="alternatives-note-2"></a><sup>2</sup> Windows-only project, so it does
+not provide a platform-neutral API surface.
+
+<a id="alternatives-note-3"></a><sup>3</sup> Linux-only project, so it does not
+provide a platform-neutral API surface.
+
+<a id="alternatives-note-4"></a><sup>4</sup> WinUHid is a framework-level
+virtual HID target; support requires a custom HID descriptor and matching report
+handling rather than a ready-made device profile.
+
+<a id="alternatives-note-5"></a><sup>5</sup> libvirtualhid has
+architecture-aware WiX packaging, but the built Windows
+driver package target is AMD64 today. Windows ARM64 release driver packages
+require a Microsoft dashboard signing path, such as WHQL/Hardware Dev Center
+signing; the current Azure Trusted Signing catalog/MSI flow is not sufficient
+for ARM64 release driver package installation.
+
+<a id="alternatives-note-6"></a><sup>6</sup> HIDMaestro documents a `win-x64`
+test app path and does not currently advertise an ARM64 build.
+
 ## 📄 License
 
 The cross-platform `libvirtualhid` library is licensed under the
