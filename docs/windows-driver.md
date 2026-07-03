@@ -155,3 +155,11 @@ import it into local machine trust stores during install.
 
 Release builds must use Azure Trusted Signing for the catalog and generated MSI
 and must not ship the local pull-request test certificate.
+
+## License
+
+The Windows UMDF driver source and generated Windows driver package artifacts,
+including the driver MSI, are licensed under the
+[LizardByte Source-Available License 1.0](../LICENSES/LicenseRef-LizardByte-SAL-1.0.md)
+(LB-SAL 1.0). The MSI may also include MIT-licensed helper components from this
+repository, so packaged installs include both license texts.

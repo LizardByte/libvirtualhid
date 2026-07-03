@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 David Lane
+// SPDX-License-Identifier: LicenseRef-LizardByte-SAL-1.0
+
 /**
  * @file src/platform/windows/driver/libvirtualhid_umdf.cpp
  * @brief UMDF2 control driver entry points for the Windows libvirtualhid backend.

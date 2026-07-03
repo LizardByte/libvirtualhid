@@ -12,6 +12,8 @@ set(CPACK_INSTALL_CMAKE_PROJECTS "${CMAKE_BINARY_DIR};${CMAKE_PROJECT_NAME};driv
 
 set(LIBVIRTUALHID_DRIVER_TEST_CERTIFICATE "" CACHE FILEPATH
     "Optional public test certificate to include in the Windows driver installer.")
+set(LIBVIRTUALHID_DRIVER_LICENSE_FILE
+    "${PROJECT_SOURCE_DIR}/LICENSES/LicenseRef-LizardByte-SAL-1.0.md")
 
 install(FILES
         "${PROJECT_SOURCE_DIR}/scripts/windows/libvirtualhid-driver-common.ps1"
@@ -39,6 +41,12 @@ if(LIBVIRTUALHID_DRIVER_TEST_CERTIFICATE)
       COMPONENT driver
       OPTIONAL)
 endif()
+
+install(FILES
+        "${PROJECT_SOURCE_DIR}/LICENSE"
+        "${LIBVIRTUALHID_DRIVER_LICENSE_FILE}"
+  DESTINATION "licenses"
+  COMPONENT driver)
 
 set(CPACK_COMPONENT_DRIVER_DISPLAY_NAME "Windows UMDF Driver")
 set(CPACK_COMPONENT_DRIVER_DESCRIPTION "libvirtualhid Windows UMDF virtual HID driver package.")

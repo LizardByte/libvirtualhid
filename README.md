@@ -105,4 +105,9 @@ same API where the backend exposes them.
 
 ## 📄 License
 
-`libvirtualhid` is licensed under the MIT License. See [LICENSE](LICENSE).
+The cross-platform `libvirtualhid` library is licensed under the
+[MIT License](LICENSE). The Windows UMDF driver source and generated Windows
+driver package artifacts, including the driver MSI, are licensed under the
+[LizardByte Source-Available License 1.0](LICENSES/LicenseRef-LizardByte-SAL-1.0.md)
+(LB-SAL 1.0). See the [license map](LICENSES/README.md) for the full repository
+split.
