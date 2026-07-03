@@ -5,6 +5,28 @@ HID Framework. The driver package is separate from the normal C++ library build:
 the library remains consumable from MSVC and MinGW/UCRT64, while the driver
 package is built with the Microsoft SDK/WDK toolchain.
 
+## Microsoft Store Listing Text
+
+The Windows driver package is not the same product surface as the C++ library,
+so Store listing copy should describe the installed driver component.
+
+### Short Description
+
+```text
+User-mode virtual HID driver package that enables compatible apps to create virtual gamepads on Windows.
+```
+
+### Description
+
+```text
+Virtual HID Driver installs the user-mode driver component used by compatible
+applications to create virtual HID gamepads on Windows.
+
+The package has no standalone user interface. After installation, compatible
+applications can request virtual HID gamepads, and Windows applications that
+understand standard HID gamepads can discover those devices.
+```
+
 ## Architecture
 
 The backend opens the libvirtualhid control device and sends fixed-size C
