@@ -269,7 +269,9 @@ jobs:
             $env:PATH = "C:\msys64\${{ matrix.msystem }}\bin;C:\msys64\usr\bin;$env:PATH"
             $gamepadAdapterPath = "$env:GITHUB_WORKSPACE\cmake-build-ci\examples\gamepad_adapter.exe"
           } else {
-            $gamepadAdapterPath = "$env:GITHUB_WORKSPACE\cmake-build-ci\examples\$env:CMAKE_BUILD_CONFIG\gamepad_adapter.exe"
+            $gamepadAdapterPath = Join-Path `
+              "$env:GITHUB_WORKSPACE\cmake-build-ci\examples\$env:CMAKE_BUILD_CONFIG" `
+              "gamepad_adapter.exe"
           }
           $profiles = @("generic", "xone", "xseries", "ds4", "ds5", "switch")
           foreach ($profile in $profiles) {
@@ -464,7 +466,11 @@ jobs:
 
       - name: Build Windows driver package
         shell: pwsh
-        run: cmake --build cmake-build-driver --config ${{ env.DRIVER_BUILD_CONFIG }} --target libvirtualhid_windows_catalog --parallel 2
+        run: >-
+          cmake --build cmake-build-driver
+          --config ${{ env.DRIVER_BUILD_CONFIG }}
+          --target libvirtualhid_windows_catalog
+          --parallel 2
 
       - name: Validate Azure signing configuration
         if: >-
@@ -487,6 +493,18 @@ jobs:
             -PackagePath $packagePath `
             -CertificatePath $certificatePath
 
+      - name: Locate Windows driver catalog
+        id: driver_catalog
+        if: >-
+          github.event_name == 'push' &&
+          vars.AZURE_SIGNING_ACCOUNT != ''
+        shell: pwsh
+        run: |
+          $catalogPath = Join-Path `
+            $env:GITHUB_WORKSPACE `
+            "cmake-build-driver\src\platform\windows\driver\package\$env:DRIVER_BUILD_CONFIG\libvirtualhid.cat"
+          "path=$catalogPath" >> $env:GITHUB_OUTPUT
+
       - name: Sign Windows driver package with Azure Trusted Signing
         if: >-
           github.event_name == 'push' &&
@@ -499,7 +517,7 @@ jobs:
           certificate-profile-name: ${{ vars.AZURE_SIGNING_CERT_PROFILE }}
           endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
           files: |
-            ${{ github.workspace }}/cmake-build-driver/src/platform/windows/driver/package/${{ env.DRIVER_BUILD_CONFIG }}/libvirtualhid.cat
+            ${{ steps.driver_catalog.outputs.path }}
           signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT }}
 
       - name: Package Windows driver installer
