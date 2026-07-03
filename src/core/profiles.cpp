@@ -1817,14 +1817,14 @@ namespace lvh::profiles {
       profile.bus_type = bus_type;
       profile.vendor_id = 0x054C;
       profile.product_id = 0x05C4;
-      profile.version = 0x0000;
+      profile.version = 0x0100;
       profile.report_id = bus_type == BusType::bluetooth ? 0x11 : 1;
       profile.input_report_size =
         bus_type == BusType::bluetooth ? dualshock4_bluetooth_input_report_size : dualshock4_usb_input_report_size;
       profile.output_report_size =
         bus_type == BusType::bluetooth ? dualshock4_bluetooth_output_report_size : dualshock4_usb_output_report_size;
       profile.name = "Wireless Controller";
-      profile.manufacturer = "Sony Interactive Entertainment";
+      profile.manufacturer = "Sony Computer Entertainment";
       profile.capabilities = {
         .supports_rumble = true,
         .supports_motion = true,

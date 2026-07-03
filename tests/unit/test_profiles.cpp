@@ -131,6 +131,8 @@ TEST(ProfileTest, StreamingControllerProfilesArePresent) {
 
   EXPECT_EQ(dualshock4.vendor_id, 0x054C);
   EXPECT_EQ(dualshock4.product_id, 0x05C4);
+  EXPECT_EQ(dualshock4.version, 0x0100);
+  EXPECT_EQ(dualshock4.name, "Wireless Controller");
   EXPECT_EQ(dualshock4.input_report_size, 64U);
   EXPECT_EQ(dualshock4.output_report_size, 32U);
   EXPECT_TRUE(dualshock4.capabilities.supports_motion);
@@ -138,10 +140,13 @@ TEST(ProfileTest, StreamingControllerProfilesArePresent) {
   EXPECT_TRUE(dualshock4.capabilities.supports_rgb_led);
   EXPECT_TRUE(dualshock4.capabilities.supports_battery);
   EXPECT_FALSE(dualshock4.capabilities.supports_adaptive_triggers);
-  EXPECT_EQ(dualshock4.manufacturer, "Sony Interactive Entertainment");
+  EXPECT_EQ(dualshock4.manufacturer, "Sony Computer Entertainment");
 
   const auto dualshock4_bluetooth = lvh::profiles::dualshock4_bluetooth();
   EXPECT_EQ(dualshock4_bluetooth.bus_type, lvh::BusType::bluetooth);
+  EXPECT_EQ(dualshock4_bluetooth.version, 0x0100);
+  EXPECT_EQ(dualshock4_bluetooth.name, "Wireless Controller");
+  EXPECT_EQ(dualshock4_bluetooth.manufacturer, "Sony Computer Entertainment");
   EXPECT_EQ(dualshock4_bluetooth.report_id, 0x11);
   EXPECT_EQ(dualshock4_bluetooth.input_report_size, 78U);
   EXPECT_EQ(dualshock4_bluetooth.output_report_size, 78U);

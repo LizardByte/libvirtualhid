@@ -149,8 +149,12 @@ axis slots and the analog triggers follow them. The Switch profile uses
 HIDMaestro's Nintendo Switch Pro Controller identity (`VID_057E&PID_2009`,
 product name `Pro Controller`) with Report ID `0x30`, a 64-byte input report, a
 hat d-pad, four 16-bit stick axes, and digital ZL/ZR trigger-click bits rather
-than analog trigger axes. The DualSense profiles use the standard
-`Wireless Controller` product name in the public profile and control protocol.
+than analog trigger axes. The DualShock 4 profiles use the first-generation
+controller identity (`VID_054C&PID_05C4`, version `0100`, product name
+`Wireless Controller`, manufacturer `Sony Computer Entertainment`) to match the
+ViGEmBus DS4 target and HIDMaestro's DS4 v1 reference. The DualSense profiles
+use the standard `Wireless Controller` product name in the public profile and
+control protocol.
 The Xbox 360 HID profile
 keeps the legacy common descriptor with 12 one-bit digital buttons, a hat switch
 for the d-pad, and 8-bit `X`, `Y`, `Z`, `Rx`, `Ry`, and `Rz` values.
