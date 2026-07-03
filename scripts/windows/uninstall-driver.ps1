@@ -16,6 +16,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "libvirtualhid-driver-common.ps1")
 
 function Invoke-CheckedCommand {
   param(
@@ -83,64 +84,6 @@ function Find-PublishedName {
   return $publishedNames
 }
 
-function Get-RootDeviceInstanceId {
-  param([string] $TargetHardwareId)
-
-  try {
-    $devices = & pnputil.exe /enum-devices /deviceid $TargetHardwareId /deviceids
-    if ($LASTEXITCODE -eq 0) {
-      $instanceIds = @($devices |
-        Where-Object { $_ -match "^\s*Instance ID\s*:\s*(.+)$" } |
-        ForEach-Object { $Matches[1].Trim() })
-      if ($instanceIds.Count -gt 0) {
-        return $instanceIds
-      }
-    }
-  } catch {
-    Write-Verbose "Unable to enumerate PnP devices with pnputil: $($_.Exception.Message)"
-  }
-
-  try {
-    $prefix = "$TargetHardwareId\"
-    @(Get-CimInstance -ClassName Win32_PnPEntity -ErrorAction Stop |
-      Where-Object { $_.PNPDeviceID -like "$prefix*" -or $_.HardwareID -contains $TargetHardwareId } |
-      ForEach-Object { $_.PNPDeviceID })
-  } catch {
-    Write-Verbose "Unable to enumerate PnP devices: $($_.Exception.Message)"
-    @()
-  }
-}
-
-function Get-RegistryRootDeviceInstanceId {
-  param([string] $TargetHardwareId)
-
-  $rootKey = "HKLM:\SYSTEM\CurrentControlSet\Enum\ROOT"
-  Get-ChildItem -LiteralPath $rootKey -ErrorAction SilentlyContinue | ForEach-Object {
-    $rootDeviceId = $_.PSChildName
-    Get-ChildItem -LiteralPath $_.PSPath -ErrorAction SilentlyContinue | ForEach-Object {
-      $instanceId = "ROOT\$rootDeviceId\$($_.PSChildName)"
-      $hardwareIds = @()
-      try {
-        $hardwareIds = @((Get-ItemProperty -LiteralPath $_.PSPath -Name HardwareID -ErrorAction Stop).HardwareID)
-      } catch {
-        $hardwareIds = @()
-      }
-
-      $hasExactHardwareId = $hardwareIds -contains $TargetHardwareId
-      $hasCorruptHardwareId = (
-        $hardwareIds.Count -gt 1 -and
-        -not $hasExactHardwareId -and
-        (($hardwareIds -join "") -ieq $TargetHardwareId)
-      )
-      $hasTargetInstanceId = $instanceId -like "$TargetHardwareId\*"
-
-      if ($hasExactHardwareId -or $hasCorruptHardwareId -or $hasTargetInstanceId) {
-        $instanceId
-      }
-    }
-  }
-}
-
 function Remove-DriverCertificate {
   [CmdletBinding(SupportsShouldProcess)]
   param([string] $Subject)
@@ -166,13 +109,13 @@ if ($devcon -and $PSCmdlet.ShouldProcess($HardwareId, "Remove libvirtualhid deve
   Invoke-CheckedCommand -FilePath $devcon -Arguments @("remove", $HardwareId) -IgnoreFailure
 }
 
-foreach ($instanceId in (Get-RootDeviceInstanceId -TargetHardwareId $HardwareId)) {
+foreach ($instanceId in (Get-LibVirtualHidRootDeviceInstanceId -TargetHardwareId $HardwareId)) {
   if ($PSCmdlet.ShouldProcess($instanceId, "Remove libvirtualhid development device with pnputil")) {
     Invoke-CheckedCommand -FilePath "pnputil.exe" -Arguments @("/remove-device", $instanceId) -IgnoreFailure
   }
 }
 
-foreach ($instanceId in (Get-RegistryRootDeviceInstanceId -TargetHardwareId $HardwareId | Select-Object -Unique)) {
+foreach ($instanceId in (Get-LibVirtualHidRegistryRootDevice -TargetHardwareId $HardwareId | Select-Object -ExpandProperty InstanceId -Unique)) {
   if ($PSCmdlet.ShouldProcess($instanceId, "Remove libvirtualhid registry-discovered development device with pnputil")) {
     Invoke-CheckedCommand -FilePath "pnputil.exe" -Arguments @("/remove-device", $instanceId) -IgnoreFailure
   }

@@ -18,6 +18,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $script:LibVirtualHidTranscriptStarted = $false
+. (Join-Path $PSScriptRoot "libvirtualhid-driver-common.ps1")
 
 function Start-LibVirtualHidTranscript {
   [CmdletBinding(SupportsShouldProcess)]
@@ -120,62 +121,30 @@ namespace LibVirtualHid.SetupApi {
     }
 
     [DllImport("setupapi.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    private static extern bool SetupDiGetINFClass(
-      string infName,
-      out Guid classGuid,
-      StringBuilder className,
-      uint classNameSize,
-      out uint requiredSize);
+    private static extern bool SetupDiGetINFClass(string infName, out Guid classGuid, StringBuilder className, uint classNameSize, out uint requiredSize);
 
     [DllImport("setupapi.dll", SetLastError = true)]
-    private static extern IntPtr SetupDiCreateDeviceInfoList(
-      ref Guid classGuid,
-      IntPtr hwndParent);
+    private static extern IntPtr SetupDiCreateDeviceInfoList(ref Guid classGuid, IntPtr hwndParent);
 
     [DllImport("setupapi.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    private static extern bool SetupDiCreateDeviceInfo(
-      IntPtr deviceInfoSet,
-      string deviceName,
-      ref Guid classGuid,
-      string deviceDescription,
-      IntPtr hwndParent,
-      uint creationFlags,
-      ref SpDevinfoData deviceInfoData);
+    private static extern bool SetupDiCreateDeviceInfo(IntPtr deviceInfoSet, string deviceName, ref Guid classGuid, string deviceDescription, IntPtr hwndParent, uint creationFlags, ref SpDevinfoData deviceInfoData);
 
     [DllImport("setupapi.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    private static extern bool SetupDiSetDeviceRegistryProperty(
-      IntPtr deviceInfoSet,
-      ref SpDevinfoData deviceInfoData,
-      uint property,
-      byte[] propertyBuffer,
-      uint propertyBufferSize);
+    private static extern bool SetupDiSetDeviceRegistryProperty(IntPtr deviceInfoSet, ref SpDevinfoData deviceInfoData, uint property, byte[] propertyBuffer, uint propertyBufferSize);
 
     [DllImport("setupapi.dll", SetLastError = true)]
-    private static extern bool SetupDiCallClassInstaller(
-      uint installFunction,
-      IntPtr deviceInfoSet,
-      ref SpDevinfoData deviceInfoData);
+    private static extern bool SetupDiCallClassInstaller(uint installFunction, IntPtr deviceInfoSet, ref SpDevinfoData deviceInfoData);
 
     [DllImport("setupapi.dll", SetLastError = true)]
     private static extern bool SetupDiDestroyDeviceInfoList(IntPtr deviceInfoSet);
 
     [DllImport("newdev.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    private static extern bool UpdateDriverForPlugAndPlayDevices(
-      IntPtr hwndParent,
-      string hardwareId,
-      string fullInfPath,
-      uint installFlags,
-      out bool rebootRequired);
+    private static extern bool UpdateDriverForPlugAndPlayDevices(IntPtr hwndParent, string hardwareId, string fullInfPath, uint installFlags, out bool rebootRequired);
 
     public static void Update(string infPath, string hardwareId, out bool rebootRequired) {
       rebootRequired = false;
 
-      if (!UpdateDriverForPlugAndPlayDevices(
-            IntPtr.Zero,
-            hardwareId,
-            infPath,
-            InstallFlagForce | InstallFlagNonInteractive,
-            out rebootRequired)) {
+      if (!UpdateDriverForPlugAndPlayDevices(IntPtr.Zero, hardwareId, infPath, InstallFlagForce | InstallFlagNonInteractive, out rebootRequired)) {
         ThrowLastWin32Error("UpdateDriverForPlugAndPlayDevices");
       }
     }
@@ -198,27 +167,14 @@ namespace LibVirtualHid.SetupApi {
       }
 
       try {
-        var deviceInfoData = new SpDevinfoData();
-        deviceInfoData.cbSize = (uint) Marshal.SizeOf(typeof(SpDevinfoData));
+        var deviceInfoData = new SpDevinfoData { cbSize = (uint) Marshal.SizeOf(typeof(SpDevinfoData)) };
 
-        if (!SetupDiCreateDeviceInfo(
-              deviceInfoSet,
-              rootDeviceName,
-              ref classGuid,
-              null,
-              IntPtr.Zero,
-              DicdGenerateId,
-              ref deviceInfoData)) {
+        if (!SetupDiCreateDeviceInfo(deviceInfoSet, rootDeviceName, ref classGuid, null, IntPtr.Zero, DicdGenerateId, ref deviceInfoData)) {
           ThrowLastWin32Error("SetupDiCreateDeviceInfo");
         }
 
         byte[] hardwareIds = Encoding.Unicode.GetBytes(hardwareId + "\0\0");
-        if (!SetupDiSetDeviceRegistryProperty(
-              deviceInfoSet,
-              ref deviceInfoData,
-              SpdrpHardwareId,
-              hardwareIds,
-              (uint) hardwareIds.Length)) {
+        if (!SetupDiSetDeviceRegistryProperty(deviceInfoSet, ref deviceInfoData, SpdrpHardwareId, hardwareIds, (uint) hardwareIds.Length)) {
           ThrowLastWin32Error("SetupDiSetDeviceRegistryProperty");
         }
 
@@ -254,78 +210,6 @@ namespace LibVirtualHid.SetupApi {
   }
 }
 "@
-}
-
-function Get-RootDeviceInstanceId {
-  param([string] $TargetHardwareId)
-
-  try {
-    $devices = & pnputil.exe /enum-devices /deviceid $TargetHardwareId /deviceids
-    if ($LASTEXITCODE -eq 0) {
-      $instanceIds = @($devices |
-        Where-Object { $_ -match "^\s*Instance ID\s*:\s*(.+)$" } |
-        ForEach-Object { $Matches[1].Trim() })
-      if ($instanceIds.Count -gt 0) {
-        return $instanceIds
-      }
-    }
-  } catch {
-    Write-Verbose "Unable to enumerate PnP devices with pnputil: $($_.Exception.Message)"
-  }
-
-  try {
-    $prefix = "$TargetHardwareId\"
-    @(Get-CimInstance -ClassName Win32_PnPEntity -ErrorAction Stop |
-      Where-Object { $_.PNPDeviceID -like "$prefix*" -or $_.HardwareID -contains $TargetHardwareId } |
-      ForEach-Object { $_.PNPDeviceID })
-  } catch {
-    Write-Verbose "Unable to enumerate PnP devices: $($_.Exception.Message)"
-    @()
-  }
-}
-
-function Get-RegistryRootDevice {
-  param([string] $TargetHardwareId)
-
-  $rootKey = "HKLM:\SYSTEM\CurrentControlSet\Enum\ROOT"
-  Get-ChildItem -LiteralPath $rootKey -ErrorAction SilentlyContinue | ForEach-Object {
-    $rootDeviceId = $_.PSChildName
-    Get-ChildItem -LiteralPath $_.PSPath -ErrorAction SilentlyContinue | ForEach-Object {
-      $instanceId = "ROOT\$rootDeviceId\$($_.PSChildName)"
-      $hardwareIds = @()
-      try {
-        $hardwareIds = @((Get-ItemProperty -LiteralPath $_.PSPath -Name HardwareID -ErrorAction Stop).HardwareID)
-      } catch {
-        $hardwareIds = @()
-      }
-
-      $hasExactHardwareId = $hardwareIds -contains $TargetHardwareId
-      $hasCorruptHardwareId = (
-        $hardwareIds.Count -gt 1 -and
-        -not $hasExactHardwareId -and
-        (($hardwareIds -join "") -ieq $TargetHardwareId)
-      )
-      $hasTargetInstanceId = $instanceId -like "$TargetHardwareId\*"
-
-      if ($hasExactHardwareId -or $hasCorruptHardwareId -or $hasTargetInstanceId) {
-        $classGuid = $null
-        $classGuid = $null
-        try {
-          $deviceProperties = Get-ItemProperty -LiteralPath $_.PSPath -ErrorAction Stop
-          $classGuid = $deviceProperties.ClassGUID
-        } catch {
-          Write-Verbose "Unable to read registry properties for $instanceId`: $($_.Exception.Message)"
-        }
-
-        [pscustomobject]@{
-          InstanceId = $instanceId
-          HasExactHardwareId = $hasExactHardwareId
-          HasCorruptHardwareId = $hasCorruptHardwareId
-          HasLegacyHidClass = $classGuid -ieq "{745a17a0-74d3-11d0-b6fe-00a0c90f57da}"
-        }
-      }
-    }
-  }
 }
 
 function Remove-DeviceInstance {
@@ -431,12 +315,12 @@ try {
     return
   }
 
-  $registryRootDevices = @(Get-RegistryRootDevice -TargetHardwareId $HardwareId)
+  $registryRootDevices = @(Get-LibVirtualHidRegistryRootDevice -TargetHardwareId $HardwareId)
   foreach ($device in ($registryRootDevices | Where-Object { $_.HasCorruptHardwareId -or $_.HasLegacyHidClass })) {
     Remove-DeviceInstance -InstanceId $device.InstanceId
   }
 
-  $rootDevices = @(Get-RootDeviceInstanceId -TargetHardwareId $HardwareId)
+  $rootDevices = @(Get-LibVirtualHidRootDeviceInstanceId -TargetHardwareId $HardwareId)
   if ($rootDevices.Count -gt 0) {
     Write-Information "Updating the existing $HardwareId device driver." -InformationAction Continue
     foreach ($rootDevice in $rootDevices) {
@@ -453,7 +337,7 @@ try {
     Install-RootDeviceWithSetupApi -Path $resolvedInf -TargetHardwareId $HardwareId
   }
 
-  $rootDevices = @(Get-RootDeviceInstanceId -TargetHardwareId $HardwareId)
+  $rootDevices = @(Get-LibVirtualHidRootDeviceInstanceId -TargetHardwareId $HardwareId)
   foreach ($rootDevice in $rootDevices) {
     Set-RootDeviceVhfMode -InstanceId $rootDevice
   }

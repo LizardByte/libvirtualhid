@@ -66,7 +66,9 @@ namespace lvh::profiles {
     }
 
     std::byte byte_from_hex(char high, char low) {
-      return (hex_nibble(high) << 4U) | hex_nibble(low);
+      const auto high_nibble = hex_nibble(high);
+      const auto low_nibble = hex_nibble(low);
+      return (high_nibble << 4U) | low_nibble;
     }
 
     std::vector<std::uint8_t> bytes_from_hex(std::string_view hex) {

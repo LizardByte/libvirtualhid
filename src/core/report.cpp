@@ -176,82 +176,98 @@ namespace lvh::reports {
       return static_cast<std::uint16_t>(std::lround((static_cast<float>(value) / 255.0F) * 65535.0F));
     }
 
-    void set_button_bit(std::uint16_t &bits, const ButtonSet &buttons, std::uint16_t bit, GamepadButton button) {
-      if (buttons.test(button)) {
-        bits |= static_cast<std::uint16_t>(1U << bit);
+    struct ButtonBit {
+      std::uint16_t bit;
+      GamepadButton button;
+    };
+
+    using enum GamepadButton;
+
+    constexpr std::array face_shoulder_button_map {
+      ButtonBit {0U, a},
+      ButtonBit {1U, b},
+      ButtonBit {2U, x},
+      ButtonBit {3U, y},
+      ButtonBit {4U, left_shoulder},
+      ButtonBit {5U, right_shoulder},
+    };
+
+    constexpr std::array common_menu_button_map {
+      ButtonBit {6U, back},
+      ButtonBit {7U, start},
+      ButtonBit {8U, left_stick},
+      ButtonBit {9U, right_stick},
+    };
+
+    constexpr std::array common_extra_button_map {
+      ButtonBit {10U, guide},
+      ButtonBit {11U, misc1},
+    };
+
+    constexpr std::array standard_dpad_button_map {
+      ButtonBit {12U, dpad_up},
+      ButtonBit {13U, dpad_down},
+      ButtonBit {14U, dpad_left},
+      ButtonBit {15U, dpad_right},
+    };
+
+    constexpr std::array xbox_extra_button_map {
+      ButtonBit {11U, misc1},
+    };
+
+    constexpr std::array switch_menu_button_map {
+      ButtonBit {8U, back},
+      ButtonBit {9U, start},
+      ButtonBit {10U, left_stick},
+      ButtonBit {11U, right_stick},
+      ButtonBit {12U, guide},
+      ButtonBit {13U, misc1},
+    };
+
+    std::uint16_t button_bits(std::span<const ButtonBit> button_map, const ButtonSet &buttons) {
+      auto bits = std::uint16_t {};
+      for (const auto [bit, button] : button_map) {
+        if (buttons.test(button)) {
+          bits |= static_cast<std::uint16_t>(1U << bit);
+        }
       }
+      return bits;
     }
 
     std::uint16_t common_button_bits(const ButtonSet &buttons) {
-      using enum GamepadButton;
-
-      auto bits = std::uint16_t {};
-      set_button_bit(bits, buttons, 0U, a);
-      set_button_bit(bits, buttons, 1U, b);
-      set_button_bit(bits, buttons, 2U, x);
-      set_button_bit(bits, buttons, 3U, y);
-      set_button_bit(bits, buttons, 4U, left_shoulder);
-      set_button_bit(bits, buttons, 5U, right_shoulder);
-      set_button_bit(bits, buttons, 6U, back);
-      set_button_bit(bits, buttons, 7U, start);
-      set_button_bit(bits, buttons, 8U, left_stick);
-      set_button_bit(bits, buttons, 9U, right_stick);
-      set_button_bit(bits, buttons, 10U, guide);
-      set_button_bit(bits, buttons, 11U, misc1);
-      return bits;
+      return static_cast<std::uint16_t>(
+        button_bits(face_shoulder_button_map, buttons) |
+        button_bits(common_menu_button_map, buttons) |
+        button_bits(common_extra_button_map, buttons)
+      );
     }
 
     std::uint16_t standard_gamepad_button_bits(const ButtonSet &buttons) {
-      using enum GamepadButton;
-
-      auto bits = common_button_bits(buttons);
-      set_button_bit(bits, buttons, 12U, dpad_up);
-      set_button_bit(bits, buttons, 13U, dpad_down);
-      set_button_bit(bits, buttons, 14U, dpad_left);
-      set_button_bit(bits, buttons, 15U, dpad_right);
-      return bits;
+      return static_cast<std::uint16_t>(
+        common_button_bits(buttons) |
+        button_bits(standard_dpad_button_map, buttons)
+      );
     }
 
     std::uint16_t xbox_gip_button_bits(const ButtonSet &buttons) {
-      using enum GamepadButton;
-
-      auto bits = std::uint16_t {};
-      set_button_bit(bits, buttons, 0U, a);
-      set_button_bit(bits, buttons, 1U, b);
-      set_button_bit(bits, buttons, 2U, x);
-      set_button_bit(bits, buttons, 3U, y);
-      set_button_bit(bits, buttons, 4U, left_shoulder);
-      set_button_bit(bits, buttons, 5U, right_shoulder);
-      set_button_bit(bits, buttons, 6U, back);
-      set_button_bit(bits, buttons, 7U, start);
-      set_button_bit(bits, buttons, 8U, left_stick);
-      set_button_bit(bits, buttons, 9U, right_stick);
-      set_button_bit(bits, buttons, 11U, misc1);
-      return bits;
+      return static_cast<std::uint16_t>(
+        button_bits(face_shoulder_button_map, buttons) |
+        button_bits(common_menu_button_map, buttons) |
+        button_bits(xbox_extra_button_map, buttons)
+      );
     }
 
     std::uint16_t switch_pro_button_bits(const GamepadState &state) {
-      using enum GamepadButton;
-
-      auto bits = std::uint16_t {};
-      set_button_bit(bits, state.buttons, 0U, a);
-      set_button_bit(bits, state.buttons, 1U, b);
-      set_button_bit(bits, state.buttons, 2U, x);
-      set_button_bit(bits, state.buttons, 3U, y);
-      set_button_bit(bits, state.buttons, 4U, left_shoulder);
-      set_button_bit(bits, state.buttons, 5U, right_shoulder);
+      auto bits = static_cast<std::uint16_t>(
+        button_bits(face_shoulder_button_map, state.buttons) |
+        button_bits(switch_menu_button_map, state.buttons)
+      );
       if (state.left_trigger > 0.0F) {
         bits |= static_cast<std::uint16_t>(1U << 6U);
       }
       if (state.right_trigger > 0.0F) {
         bits |= static_cast<std::uint16_t>(1U << 7U);
       }
-      set_button_bit(bits, state.buttons, 8U, back);
-      set_button_bit(bits, state.buttons, 9U, start);
-      set_button_bit(bits, state.buttons, 10U, left_stick);
-      set_button_bit(bits, state.buttons, 11U, right_stick);
-      set_button_bit(bits, state.buttons, 12U, guide);
-      set_button_bit(bits, state.buttons, 13U, misc1);
       return bits;
     }
 
@@ -766,6 +782,11 @@ namespace lvh::reports {
     return static_cast<std::uint8_t>(std::lround((static_cast<float>(battery->percentage) / 100.0F) * 255.0F));
   }
 
+  std::uint16_t dpad_hat_bits(const ButtonSet &buttons) {
+    const auto hat = to_byte(hat_from_buttons(buttons));
+    return static_cast<std::uint16_t>(std::to_integer<std::uint16_t>(hat) << 12U);
+  }
+
   std::vector<std::uint8_t> pack_xbox_gip_input_report(const DeviceProfile &profile, const GamepadState &state) {
     if (constexpr std::size_t xbox_gip_input_report_size = 17; profile.input_report_size < xbox_gip_input_report_size) {
       return {};
@@ -864,9 +885,7 @@ namespace lvh::reports {
     std::vector<std::uint8_t> report;
     report.reserve(common_report_size);
     report.push_back(profile.report_id);
-    const auto dpad_hat = static_cast<std::uint16_t>(hat_from_buttons(normalized.buttons));
-    const auto dpad_hat_bits = static_cast<std::uint16_t>(dpad_hat << 12U);
-    append_u16(report, static_cast<std::uint16_t>(common_button_bits(normalized.buttons) | dpad_hat_bits));
+    append_u16(report, static_cast<std::uint16_t>(common_button_bits(normalized.buttons) | dpad_hat_bits(normalized.buttons)));
     report.push_back(normalize_u8_axis(normalized.left_stick.x));
     report.push_back(normalize_u8_axis(-normalized.left_stick.y));
     report.push_back(normalize_trigger(normalized.left_trigger));
