@@ -6,6 +6,14 @@ if(NOT MSVC)
     message(FATAL_ERROR "The libvirtualhid Windows driver package requires the Microsoft WDK/MSVC toolchain.")
 endif()
 
+if(LIBVIRTUALHID_ENABLE_PACKAGING
+   AND NOT CMAKE_CONFIGURATION_TYPES
+   AND CMAKE_BUILD_TYPE STREQUAL "Debug")
+    message(FATAL_ERROR
+            "The libvirtualhid Windows driver package must not be built from a Debug configuration. "
+            "Configure with -DCMAKE_BUILD_TYPE=Release before packaging the UMDF driver.")
+endif()
+
 set(LIBVIRTUALHID_WDK_ARCH "${CMAKE_VS_PLATFORM_NAME}")
 if(NOT LIBVIRTUALHID_WDK_ARCH)
     if(CMAKE_SIZEOF_VOID_P EQUAL 8)
@@ -53,6 +61,9 @@ set(_lvh_wdk_shared_include_candidates)
 set(_lvh_wdf_library_candidates)
 set(_lvh_wdk_um_library_candidates)
 set(_lvh_wdk_tool_candidates)
+set(LIBVIRTUALHID_UMDF_LIBRARY_VERSION "2.15" CACHE STRING
+    "UMDF library version used for the Windows driver package")
+string(REGEX REPLACE "\\." "\\\\." _lvh_umdf_library_version_regex "${LIBVIRTUALHID_UMDF_LIBRARY_VERSION}")
 foreach(lvh_wdk_root_cmake IN LISTS _lvh_wdk_roots)
     if(EXISTS "${lvh_wdk_root_cmake}")
         file(GLOB _lvh_wdf_include_glob
@@ -83,12 +94,14 @@ endforeach()
 
 if(_lvh_wdf_include_candidates)
     list(SORT _lvh_wdf_include_candidates COMPARE NATURAL ORDER DESCENDING)
+    list(FILTER _lvh_wdf_include_candidates INCLUDE REGEX "/${_lvh_umdf_library_version_regex}$")
 endif()
 if(_lvh_wdk_shared_include_candidates)
     list(SORT _lvh_wdk_shared_include_candidates COMPARE NATURAL ORDER DESCENDING)
 endif()
 if(_lvh_wdf_library_candidates)
     list(SORT _lvh_wdf_library_candidates COMPARE NATURAL ORDER DESCENDING)
+    list(FILTER _lvh_wdf_library_candidates INCLUDE REGEX "/${_lvh_umdf_library_version_regex}$")
 endif()
 if(_lvh_wdk_um_library_candidates)
     list(SORT _lvh_wdk_um_library_candidates COMPARE NATURAL ORDER DESCENDING)
@@ -141,6 +154,24 @@ message(STATUS "WDF UMDF stub library: ${LIBVIRTUALHID_WDF_DRIVER_STUB_UM_LIBRAR
 message(STATUS "VHF UMDF library: ${LIBVIRTUALHID_VHF_UM_LIBRARY}")
 message(STATUS "NTDLL import library: ${LIBVIRTUALHID_NTDLL_LIBRARY}")
 
+get_filename_component(_lvh_wdf_include_version "${LIBVIRTUALHID_WDF_INCLUDE_DIR}" NAME)
+get_filename_component(_lvh_wdf_stub_directory "${LIBVIRTUALHID_WDF_DRIVER_STUB_UM_LIBRARY}" DIRECTORY)
+get_filename_component(_lvh_wdf_stub_version "${_lvh_wdf_stub_directory}" NAME)
+if(NOT _lvh_wdf_include_version MATCHES "^2\\.[0-9]+$")
+    message(FATAL_ERROR
+            "Could not determine the UMDF library version from ${LIBVIRTUALHID_WDF_INCLUDE_DIR}.")
+endif()
+if(NOT _lvh_wdf_include_version STREQUAL LIBVIRTUALHID_UMDF_LIBRARY_VERSION)
+    message(FATAL_ERROR
+            "UMDF include version ${_lvh_wdf_include_version} does not match requested "
+            "version ${LIBVIRTUALHID_UMDF_LIBRARY_VERSION}.")
+endif()
+if(NOT _lvh_wdf_stub_version STREQUAL LIBVIRTUALHID_UMDF_LIBRARY_VERSION)
+    message(FATAL_ERROR
+            "UMDF stub library version ${_lvh_wdf_stub_version} does not match requested "
+            "version ${LIBVIRTUALHID_UMDF_LIBRARY_VERSION}.")
+endif()
+message(STATUS "UMDF library version: ${LIBVIRTUALHID_UMDF_LIBRARY_VERSION}")
 find_program(LIBVIRTUALHID_STAMPINF
              NAMES stampinf stampinf.exe
              PATHS ${_lvh_wdk_tool_candidates})
@@ -186,6 +217,7 @@ target_link_libraries(libvirtualhid_umdf
   "${LIBVIRTUALHID_VHF_UM_LIBRARY}"
   "${LIBVIRTUALHID_NTDLL_LIBRARY}")
 set_target_properties(libvirtualhid_umdf PROPERTIES
+  MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
   OUTPUT_NAME libvirtualhid_umdf
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/package")
 
@@ -217,6 +249,24 @@ add_custom_target(libvirtualhid_windows_catalog
 
 install(TARGETS libvirtualhid_umdf
   RUNTIME DESTINATION "drivers/windows"
+  COMPONENT driver)
+install(CODE
+  "
+  set(lvh_driver_dll \"$<TARGET_FILE:libvirtualhid_umdf>\")
+  set(lvh_driver_inf \"$<TARGET_FILE_DIR:libvirtualhid_umdf>/libvirtualhid.inf\")
+  set(lvh_driver_cat \"$<TARGET_FILE_DIR:libvirtualhid_umdf>/libvirtualhid.cat\")
+  foreach(lvh_driver_file IN ITEMS \"\${lvh_driver_dll}\" \"\${lvh_driver_inf}\" \"\${lvh_driver_cat}\")
+    if(NOT EXISTS \"\${lvh_driver_file}\")
+      message(FATAL_ERROR \"Windows driver package file is missing: \${lvh_driver_file}\")
+    endif()
+  endforeach()
+  if(\"\${lvh_driver_dll}\" IS_NEWER_THAN \"\${lvh_driver_cat}\"
+     OR \"\${lvh_driver_inf}\" IS_NEWER_THAN \"\${lvh_driver_cat}\")
+    message(FATAL_ERROR
+            \"Windows driver catalog is stale; build libvirtualhid_windows_catalog \"
+            \"and sign libvirtualhid.cat before packaging.\")
+  endif()
+  "
   COMPONENT driver)
 install(FILES
         "$<TARGET_FILE_DIR:libvirtualhid_umdf>/libvirtualhid.inf"

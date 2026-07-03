@@ -62,7 +62,7 @@ namespace lvh::reports {
   std::uint8_t hat_from_buttons(const ButtonSet &buttons);
 
   /**
-   * @brief Pack a gamepad state into the profile's common input report format.
+   * @brief Pack a gamepad state into the profile's input report format.
    *
    * @param profile Device profile used for report identity and size.
    * @param state Gamepad state to pack.

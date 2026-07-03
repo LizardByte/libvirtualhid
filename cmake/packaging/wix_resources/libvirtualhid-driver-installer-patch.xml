@@ -1,0 +1,35 @@
+<CPackWiXPatch>
+  <CPackWiXFragment Id="#PRODUCT">
+    <CustomAction Id="CA_LibVirtualHidInstallDriver"
+                  Directory="INSTALL_ROOT"
+                  ExeCommand="&quot;[WindowsFolder]System32\WindowsPowerShell\v1.0\powershell.exe&quot; -WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File &quot;[INSTALL_ROOT]scripts\windows\install-driver.ps1&quot; -InfPath &quot;[INSTALL_ROOT]drivers\windows\libvirtualhid.inf&quot; -CertificatePath &quot;[INSTALL_ROOT]certificates\libvirtualhid-ci-test.cer&quot; -LogPath &quot;[CommonAppDataFolder]libvirtualhid\install-driver.log&quot;"
+                  Execute="deferred"
+                  Return="check"
+                  Impersonate="no" />
+    <CustomAction Id="CA_LibVirtualHidInstallDriverSilent"
+                  Directory="INSTALL_ROOT"
+                  ExeCommand="&quot;[WindowsFolder]System32\WindowsPowerShell\v1.0\powershell.exe&quot; -WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File &quot;[INSTALL_ROOT]scripts\windows\install-driver.ps1&quot; -InfPath &quot;[INSTALL_ROOT]drivers\windows\libvirtualhid.inf&quot; -CertificatePath &quot;[INSTALL_ROOT]certificates\libvirtualhid-ci-test.cer&quot; -LogPath &quot;[CommonAppDataFolder]libvirtualhid\install-driver.log&quot;"
+                  Execute="deferred"
+                  Return="check"
+                  Impersonate="no" />
+    <CustomAction Id="CA_LibVirtualHidUninstallDriver"
+                  Directory="INSTALL_ROOT"
+                  ExeCommand="&quot;[WindowsFolder]System32\WindowsPowerShell\v1.0\powershell.exe&quot; -WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File &quot;[INSTALL_ROOT]scripts\windows\uninstall-driver.ps1&quot; -Force -RemoveCertificateSubject &quot;CN=libvirtualhid CI Test Driver Signing&quot;"
+                  Execute="deferred"
+                  Return="ignore"
+                  Impersonate="no" />
+    <CustomAction Id="CA_LibVirtualHidUninstallDriverSilent"
+                  Directory="INSTALL_ROOT"
+                  ExeCommand="&quot;[WindowsFolder]System32\WindowsPowerShell\v1.0\powershell.exe&quot; -WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File &quot;[INSTALL_ROOT]scripts\windows\uninstall-driver.ps1&quot; -Force -RemoveCertificateSubject &quot;CN=libvirtualhid CI Test Driver Signing&quot;"
+                  Execute="deferred"
+                  Return="ignore"
+                  Impersonate="no" />
+
+    <InstallExecuteSequence>
+      <Custom Action="CA_LibVirtualHidInstallDriver" After="InstallFiles" Condition="(&amp;ProductFeature=3 OR REINSTALL) AND NOT REMOVE=&quot;ALL&quot; AND UILevel &gt; 3" />
+      <Custom Action="CA_LibVirtualHidInstallDriverSilent" After="InstallFiles" Condition="(&amp;ProductFeature=3 OR REINSTALL) AND NOT REMOVE=&quot;ALL&quot; AND UILevel &lt;= 3" />
+      <Custom Action="CA_LibVirtualHidUninstallDriver" Before="RemoveFiles" Condition="REMOVE=&quot;ALL&quot; AND UILevel &gt; 3" />
+      <Custom Action="CA_LibVirtualHidUninstallDriverSilent" Before="RemoveFiles" Condition="REMOVE=&quot;ALL&quot; AND UILevel &lt;= 3" />
+    </InstallExecuteSequence>
+  </CPackWiXFragment>
+</CPackWiXPatch>

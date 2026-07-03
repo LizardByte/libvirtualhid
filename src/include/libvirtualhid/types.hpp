@@ -303,7 +303,7 @@ namespace lvh {
     std::uint16_t version = 0;
 
     /**
-     * @brief Primary input report identifier.
+     * @brief Primary input report identifier, or `0` for unnumbered HID reports.
      */
     std::uint8_t report_id = 1;
 

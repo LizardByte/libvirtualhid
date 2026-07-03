@@ -134,9 +134,12 @@ namespace lvh::profiles {
   std::optional<DeviceProfile> gamepad_profile(GamepadProfileKind kind);
 
   /**
-   * @brief Get every built-in gamepad profile.
+   * @brief Get the default built-in gamepad profile set.
    *
-   * @return Built-in gamepad profiles.
+   * Transport-specific variants, such as explicit Bluetooth PlayStation profiles,
+   * are available through their named profile constructors.
+   *
+   * @return Default built-in gamepad profiles.
    */
   std::vector<DeviceProfile> built_in_gamepad_profiles();
 

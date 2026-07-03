@@ -42,7 +42,9 @@ jobs:
 
   build:
     name: Build (${{ matrix.name }})
-    needs: setup_release
+    needs:
+      - setup_release
+      - windows_driver
     permissions:
       contents: read
     runs-on: ${{ matrix.os }}
@@ -235,65 +237,50 @@ jobs:
         if: matrix.kind == 'msvc'
         run: cmake --build cmake-build-ci --config Debug --parallel 2
 
-      - name: Configure Windows test driver package
-        if: >-
-          matrix.kind == 'msvc' &&
-          github.event_name == 'pull_request'
-        env:
-          BRANCH: ${{ github.head_ref || github.ref_name }}
-          BUILD_VERSION: ${{ needs.setup_release.outputs.release_version }}
-          COMMIT: ${{ needs.setup_release.outputs.release_commit }}
-        run: |
-          $certificatePath = Join-Path `
-            $env:GITHUB_WORKSPACE `
-            "cmake-build-driver-test\certificates\libvirtualhid-ci-test.cer"
-          cmake `
-            -DBUILD_DOCS=OFF `
-            -DBUILD_EXAMPLES=OFF `
-            -DBUILD_TESTS=OFF `
-            -DLIBVIRTUALHID_BUILD_WINDOWS_DRIVER=ON `
-            -DLIBVIRTUALHID_ENABLE_PACKAGING=OFF `
-            "-DLIBVIRTUALHID_DRIVER_TEST_CERTIFICATE=$certificatePath" `
-            -A x64 `
-            -B cmake-build-driver-test `
-            -G "Visual Studio 17 2022" `
-            -S .
+      - name: Download Windows driver installer artifact
+        if: runner.os == 'Windows'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: windows-driver-installer
+          path: windows-driver-installer
 
-      - name: Build Windows test driver package
-        if: >-
-          matrix.kind == 'msvc' &&
-          github.event_name == 'pull_request'
-        run: cmake --build cmake-build-driver-test --config Release --target libvirtualhid_windows_catalog --parallel 2
-
-      - name: Sign Windows test driver package
-        if: >-
-          matrix.kind == 'msvc' &&
-          github.event_name == 'pull_request'
+      - name: Install Windows driver installer
+        if: runner.os == 'Windows'
+        shell: pwsh
         run: |
-          $packagePath = Join-Path `
-            $env:GITHUB_WORKSPACE `
-            "cmake-build-driver-test\src\platform\windows\driver\package\Release"
-          $certificatePath = Join-Path `
-            $env:GITHUB_WORKSPACE `
-            "cmake-build-driver-test\certificates\libvirtualhid-ci-test.cer"
-          .\scripts\windows\sign-driver-package.ps1 `
-            -PackagePath $packagePath `
-            -CertificatePath $certificatePath
+          $installer = Get-ChildItem -LiteralPath .\windows-driver-installer -Filter *.msi | Select-Object -First 1
+          if (!$installer) {
+            throw "Windows driver installer artifact did not contain an MSI."
+          }
+          $logPath = Join-Path $env:RUNNER_TEMP "libvirtualhid-driver-install.log"
+          $process = Start-Process `
+            -FilePath msiexec.exe `
+            -ArgumentList @("/i", $installer.FullName, "/qn", "/norestart", "/L*v", $logPath) `
+            -Wait `
+            -PassThru `
+            -NoNewWindow
+          if ($process.ExitCode -notin @(0, 3010)) {
+            Get-Content -LiteralPath $logPath -ErrorAction SilentlyContinue
+            throw "Windows driver installer exited with code $($process.ExitCode)."
+          }
 
-      - name: Install Windows test driver package
-        if: >-
-          matrix.kind == 'msvc' &&
-          github.event_name == 'pull_request'
+      - name: Verify Windows test driver package
+        if: runner.os == 'Windows'
+        shell: pwsh
         run: |
-          $packagePath = Join-Path `
-            $env:GITHUB_WORKSPACE `
-            "cmake-build-driver-test\src\platform\windows\driver\package\Release"
-          $certificatePath = Join-Path `
-            $env:GITHUB_WORKSPACE `
-            "cmake-build-driver-test\certificates\libvirtualhid-ci-test.cer"
-          .\scripts\windows\install-driver.ps1 `
-            -InfPath (Join-Path $packagePath "libvirtualhid.inf") `
-            -CertificatePath $certificatePath
+          if ("${{ matrix.kind }}" -eq "msys2") {
+            $env:PATH = "C:\msys64\${{ matrix.msystem }}\bin;C:\msys64\usr\bin;$env:PATH"
+            $gamepadAdapterPath = "$env:GITHUB_WORKSPACE\cmake-build-ci\examples\gamepad_adapter.exe"
+          } else {
+            $gamepadAdapterPath = "$env:GITHUB_WORKSPACE\cmake-build-ci\examples\Debug\gamepad_adapter.exe"
+          }
+          $profiles = @("generic", "xone", "xseries", "ds4", "ds5", "switch")
+          foreach ($profile in $profiles) {
+            .\scripts\windows\test-installed-driver.ps1 `
+              -GamepadAdapterPath $gamepadAdapterPath `
+              -Profile $profile `
+              -Verbose
+          }
 
       - name: Prepare report directory
         run: cmake -E make_directory cmake-build-ci/reports
@@ -378,28 +365,44 @@ jobs:
             -o reports/coverage.xml
 
       - name: Run gamepad adapter example
-        if: matrix.kind != 'msvc'
+        if: runner.os == 'Linux'
         run: |
-          if [[ "${RUNNER_OS}" == "Windows" ]]; then
-            ./cmake-build-ci/examples/gamepad_adapter.exe
-          else
-            ./cmake-build-ci/examples/gamepad_adapter
-          fi
+          ./cmake-build-ci/examples/gamepad_adapter
 
-      - name: Run gamepad adapter example MSVC
-        if: matrix.kind == 'msvc'
-        run: .\cmake-build-ci\examples\Debug\gamepad_adapter.exe
+      - name: Run gamepad adapter example Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if ("${{ matrix.kind }}" -eq "msys2") {
+            $env:PATH = "C:\msys64\${{ matrix.msystem }}\bin;C:\msys64\usr\bin;$env:PATH"
+            & .\cmake-build-ci\examples\gamepad_adapter.exe
+          } else {
+            & .\cmake-build-ci\examples\Debug\gamepad_adapter.exe
+          }
 
-      - name: Uninstall Windows test driver package
+      - name: Uninstall Windows driver installer
         if: >-
           always() &&
-          matrix.kind == 'msvc' &&
-          github.event_name == 'pull_request'
+          runner.os == 'Windows'
+        shell: pwsh
         run: |
-          .\scripts\windows\uninstall-driver.ps1 `
-            -OriginalName "libvirtualhid.inf" `
-            -RemoveCertificateSubject "CN=libvirtualhid CI Test Driver Signing" `
-            -Force
+          $installer = Get-ChildItem -LiteralPath .\windows-driver-installer `
+            -Filter *.msi `
+            -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+          if ($installer) {
+            $logPath = Join-Path $env:RUNNER_TEMP "libvirtualhid-driver-uninstall.log"
+            $process = Start-Process `
+              -FilePath msiexec.exe `
+              -ArgumentList @("/x", $installer.FullName, "/qn", "/norestart", "/L*v", $logPath) `
+              -Wait `
+              -PassThru `
+              -NoNewWindow
+            if ($process.ExitCode -notin @(0, 3010)) {
+              Get-Content -LiteralPath $logPath -ErrorAction SilentlyContinue
+              throw "Windows driver installer uninstall exited with code $($process.ExitCode)."
+            }
+          }
 
       - name: Install
         if: matrix.kind != 'msvc'

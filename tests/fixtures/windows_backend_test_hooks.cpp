@@ -226,7 +226,7 @@ namespace lvh::detail {
       auto backend = make_fake_windows_backend(command_state, std::make_shared<FakeWindowsControlChannelState>());
 
       CreateGamepadOptions options;
-      options.profile = profiles::xbox_360();
+      options.profile = profiles::xbox_series();
       return backend->create_gamepad(1, options).status;
     }
 
@@ -299,7 +299,7 @@ namespace lvh::detail {
       result.capabilities = backend->capabilities();
 
       CreateGamepadOptions options;
-      options.profile = profiles::xbox_360();
+      options.profile = profiles::xbox_series();
       auto created = backend->create_gamepad(7, options);
       result.create_status = created.status;
       if (created) {
@@ -351,7 +351,7 @@ namespace lvh::detail {
         auto backend = make_fake_windows_backend(command_state, std::make_shared<FakeWindowsControlChannelState>());
 
         CreateGamepadOptions options;
-        options.profile = profiles::xbox_360();
+        options.profile = profiles::xbox_series();
         result.transport_failure_status = backend->create_gamepad(2, options).status;
       }
 
@@ -359,7 +359,7 @@ namespace lvh::detail {
         WindowsBackend backend {nullptr, nullptr};
 
         CreateGamepadOptions options;
-        options.profile = profiles::xbox_360();
+        options.profile = profiles::xbox_series();
         result.unavailable_status = backend.create_gamepad(3, options).status;
 
         auto oversized_descriptor_options = options;
@@ -376,11 +376,22 @@ namespace lvh::detail {
       }
 
       {
+        auto backend = make_fake_windows_backend(
+          std::make_shared<FakeWindowsControlChannelState>(),
+          std::make_shared<FakeWindowsControlChannelState>()
+        );
+
+        CreateGamepadOptions options;
+        options.profile = profiles::xbox_360();
+        result.xbox_360_unsupported_status = backend->create_gamepad(20, options).status;
+      }
+
+      {
         auto command_state = std::make_shared<FakeWindowsControlChannelState>("", "");
         auto backend = make_fake_windows_backend(command_state, std::make_shared<FakeWindowsControlChannelState>());
 
         CreateGamepadOptions options;
-        options.profile = profiles::xbox_360();
+        options.profile = profiles::xbox_series();
         auto created = backend->create_gamepad(4, options);
         result.empty_nodes_create_status = created.status;
         if (created) {
