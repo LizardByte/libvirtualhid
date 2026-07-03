@@ -179,7 +179,7 @@ cmake -S . -B cmake-build-windows-driver -G "Visual Studio 17 2022" -A x64 `
   -DBUILD_TESTS=OFF -DBUILD_EXAMPLES=OFF
 cmake --build cmake-build-windows-driver --config Release --target libvirtualhid_umdf
 cmake --build cmake-build-windows-driver --config Release --target libvirtualhid_windows_catalog
-cpack -G WIX --config .\cmake-build-windows-driver\CPackConfig.cmake
+cpack -G WIX -C Release --config .\cmake-build-windows-driver\CPackConfig.cmake
 ```
 
 Developer install/uninstall helpers live under `scripts/windows`:

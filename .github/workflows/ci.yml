@@ -13,6 +13,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  CMAKE_BUILD_CONFIG: Debug
+  DRIVER_BUILD_CONFIG: Release
   OPENCPPCOVERAGE_VERSION: '0.9.9.0'
   PYTHON_VERSION: '3.14'
 
@@ -208,7 +210,7 @@ jobs:
             -DBUILD_DOCS=OFF \
             -DBUILD_EXAMPLES=ON \
             -DBUILD_TESTS=ON \
-            -DCMAKE_BUILD_TYPE:STRING=Debug \
+            -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_CONFIG} \
             -B cmake-build-ci \
             -G Ninja \
             -S .
@@ -230,12 +232,7 @@ jobs:
             -S .
 
       - name: Build
-        if: matrix.kind != 'msvc'
-        run: cmake --build cmake-build-ci -- -j2
-
-      - name: Build MSVC
-        if: matrix.kind == 'msvc'
-        run: cmake --build cmake-build-ci --config Debug --parallel 2
+        run: cmake --build cmake-build-ci --config ${{ env.CMAKE_BUILD_CONFIG }} --parallel 2
 
       - name: Download Windows driver installer artifact
         if: runner.os == 'Windows'
@@ -272,7 +269,7 @@ jobs:
             $env:PATH = "C:\msys64\${{ matrix.msystem }}\bin;C:\msys64\usr\bin;$env:PATH"
             $gamepadAdapterPath = "$env:GITHUB_WORKSPACE\cmake-build-ci\examples\gamepad_adapter.exe"
           } else {
-            $gamepadAdapterPath = "$env:GITHUB_WORKSPACE\cmake-build-ci\examples\Debug\gamepad_adapter.exe"
+            $gamepadAdapterPath = "$env:GITHUB_WORKSPACE\cmake-build-ci\examples\$env:CMAKE_BUILD_CONFIG\gamepad_adapter.exe"
           }
           $profiles = @("generic", "xone", "xseries", "ds4", "ds5", "switch")
           foreach ($profile in $profiles) {
@@ -312,7 +309,7 @@ jobs:
             "--export_type=cobertura:$env:GITHUB_WORKSPACE\cmake-build-ci\reports\coverage.xml" `
             --working_dir "$env:GITHUB_WORKSPACE\cmake-build-ci\tests" `
             -- `
-            "$env:GITHUB_WORKSPACE\cmake-build-ci\tests\Debug\test_libvirtualhid.exe" `
+            "$env:GITHUB_WORKSPACE\cmake-build-ci\tests\$env:CMAKE_BUILD_CONFIG\test_libvirtualhid.exe" `
             --gtest_color=yes `
             "--gtest_output=xml:$env:GITHUB_WORKSPACE\cmake-build-ci\reports\junit.xml"
 
@@ -377,7 +374,7 @@ jobs:
             $env:PATH = "C:\msys64\${{ matrix.msystem }}\bin;C:\msys64\usr\bin;$env:PATH"
             & .\cmake-build-ci\examples\gamepad_adapter.exe
           } else {
-            & .\cmake-build-ci\examples\Debug\gamepad_adapter.exe
+            & ".\cmake-build-ci\examples\$env:CMAKE_BUILD_CONFIG\gamepad_adapter.exe"
           }
 
       - name: Uninstall Windows driver installer
@@ -405,12 +402,7 @@ jobs:
           }
 
       - name: Install
-        if: matrix.kind != 'msvc'
-        run: cmake --install cmake-build-ci --prefix cmake-build-ci/install
-
-      - name: Install MSVC
-        if: matrix.kind == 'msvc'
-        run: cmake --install cmake-build-ci --config Debug --prefix cmake-build-ci/install
+        run: cmake --install cmake-build-ci --config ${{ env.CMAKE_BUILD_CONFIG }} --prefix cmake-build-ci/install
 
       - name: Upload install artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
@@ -472,7 +464,7 @@ jobs:
 
       - name: Build Windows driver package
         shell: pwsh
-        run: cmake --build cmake-build-driver --config Release --target libvirtualhid_windows_catalog --parallel 2
+        run: cmake --build cmake-build-driver --config ${{ env.DRIVER_BUILD_CONFIG }} --target libvirtualhid_windows_catalog --parallel 2
 
       - name: Validate Azure signing configuration
         if: >-
@@ -487,7 +479,7 @@ jobs:
         run: |
           $packagePath = Join-Path `
             $env:GITHUB_WORKSPACE `
-            "cmake-build-driver\src\platform\windows\driver\package\Release"
+            "cmake-build-driver\src\platform\windows\driver\package\$env:DRIVER_BUILD_CONFIG"
           $certificatePath = Join-Path `
             $env:GITHUB_WORKSPACE `
             "cmake-build-driver\certificates\libvirtualhid-ci-test.cer"
@@ -507,14 +499,14 @@ jobs:
           certificate-profile-name: ${{ vars.AZURE_SIGNING_CERT_PROFILE }}
           endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
           files: |
-            ${{ github.workspace }}/cmake-build-driver/src/platform/windows/driver/package/Release/libvirtualhid.cat
+            ${{ github.workspace }}/cmake-build-driver/src/platform/windows/driver/package/${{ env.DRIVER_BUILD_CONFIG }}/libvirtualhid.cat
           signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT }}
 
       - name: Package Windows driver installer
         shell: pwsh
         run: |
           Push-Location .\cmake-build-driver
-          cpack -G WIX
+          cpack -G WIX -C $env:DRIVER_BUILD_CONFIG
           $packageExitCode = $LASTEXITCODE
           Pop-Location
           if ($packageExitCode -ne 0) {
