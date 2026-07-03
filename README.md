@@ -211,7 +211,7 @@ to `C:\ProgramData\libvirtualhid\install-driver.log`.
 The test helper fails if the root device is not reported as `Status: Started`,
 if `\\.\LibVirtualHid` cannot be opened, or if a held gamepad adapter instance
 does not produce a started HID child device such as
-`HID\VID_045E&PID_0B12&IG_00` or the Xbox Series xinputhid match identity
+`HID\VID_045E&PID_0B12&IG_00` or an Xbox Series-compatible HID child such as
 `HID\VID_045E&PID_02FF&IG_00`. That check is also run by the Windows CI legs
 for every Windows UMDF/VHF-supported `gamepad_adapter` profile
 after installing the Windows Driver Installer artifact. The browser helper is for manual

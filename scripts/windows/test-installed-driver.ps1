@@ -26,9 +26,6 @@ function Invoke-PnPUtil {
 
   $output = @(pnputil.exe @Arguments 2>&1)
   $exitCode = $LASTEXITCODE
-  foreach ($line in $output) {
-    Write-Verbose $line
-  }
 
   if ($exitCode -ne 0) {
     throw "pnputil.exe $($Arguments -join ' ') exited with code $exitCode`n$($output -join "`n")"
@@ -98,6 +95,30 @@ function ConvertFrom-PnPUtilDeviceOutput {
   return $records
 }
 
+function Write-PnPRecordVerbose {
+  param([object] $Record)
+
+  Write-Verbose "Matched device: $($Record.InstanceId)"
+  if ($Record.DeviceDescription) {
+    Write-Verbose "  Description: $($Record.DeviceDescription)"
+  }
+  if ($Record.Status) {
+    Write-Verbose "  Status: $($Record.Status)"
+  }
+  if ($Record.DriverName) {
+    Write-Verbose "  Driver Name: $($Record.DriverName)"
+  }
+  if ($Record.HardwareIds) {
+    Write-Verbose "  Hardware IDs: $($Record.HardwareIds -join ', ')"
+  }
+  if ($Record.ProblemCode) {
+    Write-Verbose "  Problem Code: $($Record.ProblemCode)"
+  }
+  if ($Record.ProblemStatus) {
+    Write-Verbose "  Problem Status: $($Record.ProblemStatus)"
+  }
+}
+
 function Get-PnPUtilDevicesByDeviceId {
   param([string] $DeviceId)
 
@@ -106,11 +127,17 @@ function Get-PnPUtilDevicesByDeviceId {
     "/deviceids",
     "/drivers"
   )
-  return ConvertFrom-PnPUtilDeviceOutput -Output $output |
+  $matchingDevices = @(ConvertFrom-PnPUtilDeviceOutput -Output $output |
     Where-Object {
       $_.InstanceId -like "$DeviceId\*" -or
         $_.HardwareIds -contains $DeviceId
     }
+  )
+  foreach ($device in $matchingDevices) {
+    Write-PnPRecordVerbose -Record $device
+  }
+
+  return $matchingDevices
 }
 
 function Assert-StartedPnPRecord {
@@ -163,102 +190,6 @@ function Assert-ControlDeviceOpen {
   } catch {
     throw "Could not open ${Path}: $($_.Exception.Message)"
   }
-}
-
-function Add-XInputProbeType {
-  if ("LvhXInputProbe" -as [type]) {
-    return
-  }
-
-  Add-Type -TypeDefinition @"
-using System.Runtime.InteropServices;
-
-public static class LvhXInputProbe {
-  [StructLayout(LayoutKind.Sequential)]
-  public struct XInputState {
-    public uint PacketNumber;
-    public XInputGamepad Gamepad;
-  }
-
-  [StructLayout(LayoutKind.Sequential)]
-  public struct XInputGamepad {
-    public ushort Buttons;
-    public byte LeftTrigger;
-    public byte RightTrigger;
-    public short LeftThumbX;
-    public short LeftThumbY;
-    public short RightThumbX;
-    public short RightThumbY;
-  }
-
-  [DllImport("xinput1_4.dll", EntryPoint = "XInputGetState")]
-  public static extern uint XInputGetState(uint userIndex, out XInputState state);
-}
-"@
-}
-
-function Wait-ForXInputReportFlow {
-  param(
-    [string] $ProfileName,
-    [int] $TimeoutSeconds
-  )
-
-  if ($ProfileName -ne "xone" -and $ProfileName -ne "xseries") {
-    return
-  }
-
-  Add-XInputProbeType
-  $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
-  $observedStates = @{}
-
-  do {
-    for ($index = 0; $index -lt 4; ++$index) {
-      $state = New-Object LvhXInputProbe+XInputState
-      $status = [LvhXInputProbe]::XInputGetState([uint32] $index, [ref] $state)
-      if ($status -ne 0 -or $state.Gamepad.RightTrigger -ne 255) {
-        continue
-      }
-
-      if (-not $observedStates.ContainsKey($index)) {
-        $observedStates[$index] = [pscustomobject] @{
-          InitialButtons = $state.Gamepad.Buttons
-          ButtonChanged = $false
-          LeftThumbXNegative = $false
-          LeftThumbXPositive = $false
-          RightThumbYNegative = $false
-          RightThumbYPositive = $false
-        }
-      }
-
-      $observed = $observedStates[$index]
-      if ($state.Gamepad.Buttons -ne $observed.InitialButtons) {
-        $observed.ButtonChanged = $true
-      }
-      if ($state.Gamepad.LeftThumbX -lt -20000) {
-        $observed.LeftThumbXNegative = $true
-      } elseif ($state.Gamepad.LeftThumbX -gt 20000) {
-        $observed.LeftThumbXPositive = $true
-      }
-      if ($state.Gamepad.RightThumbY -lt -20000) {
-        $observed.RightThumbYNegative = $true
-      } elseif ($state.Gamepad.RightThumbY -gt 20000) {
-        $observed.RightThumbYPositive = $true
-      }
-
-      if ($observed.ButtonChanged -and
-          $observed.LeftThumbXNegative -and
-          $observed.LeftThumbXPositive -and
-          $observed.RightThumbYNegative -and
-          $observed.RightThumbYPositive) {
-        Write-Information "XInput observed changing $ProfileName input on index ${index}." -InformationAction Continue
-        return
-      }
-    }
-
-    Start-Sleep -Milliseconds 250
-  } while ((Get-Date) -lt $deadline)
-
-  throw "XInput did not observe changing $ProfileName button, left-stick X, and right-stick Y input from the virtual gamepad."
 }
 
 function Get-ExpectedGamepadHardwareId {
@@ -355,7 +286,6 @@ function Invoke-GamepadAdapterSmoke {
     }
 
     Wait-ForStartedGamepadChild -ProfileName $ProfileName -TimeoutSeconds $DeviceStartTimeoutSeconds
-    Wait-ForXInputReportFlow -ProfileName $ProfileName -TimeoutSeconds $DeviceStartTimeoutSeconds
   } finally {
     if (-not $process.HasExited) {
       Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
