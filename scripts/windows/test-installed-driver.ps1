@@ -11,7 +11,8 @@ param(
   [string] $GamepadAdapterPath,
 
   [ValidateSet("generic", "x360", "xone", "xseries", "ds4", "ds5", "switch")]
-  [string] $Profile = "xseries",
+  [Alias("Profile")]
+  [string] $GamepadProfile = "xseries",
 
   [int] $HoldSeconds = 12,
 
@@ -50,10 +51,12 @@ function ConvertFrom-PnPUtilDeviceOutput {
         InstanceId = $Matches[1].Trim()
         DeviceDescription = $null
         DriverName = $null
+        HardwareIds = @()
         Status = $null
         ProblemCode = $null
         ProblemStatus = $null
       }
+      $section = $null
       continue
     }
 
@@ -62,15 +65,29 @@ function ConvertFrom-PnPUtilDeviceOutput {
     }
 
     if ($line -match "^\s{0,2}Device Description:\s*(.+)\s*$") {
+      $section = $null
       $current.DeviceDescription = $Matches[1].Trim()
     } elseif ($line -match "^\s{0,2}Driver Name:\s*(.+)\s*$") {
+      $section = $null
       $current.DriverName = $Matches[1].Trim()
+    } elseif ($line -match "^\s{0,2}Hardware IDs:\s*(.*)\s*$") {
+      $section = "HardwareIds"
+      if ($Matches[1].Trim()) {
+        $current.HardwareIds += $Matches[1].Trim()
+      }
     } elseif ($line -match "^\s*Status:\s*(.+)\s*$") {
+      $section = $null
       $current.Status = $Matches[1].Trim()
     } elseif ($line -match "^\s*Problem Code:\s*(.+)\s*$") {
+      $section = $null
       $current.ProblemCode = $Matches[1].Trim()
     } elseif ($line -match "^\s*Problem Status:\s*(.+)\s*$") {
+      $section = $null
       $current.ProblemStatus = $Matches[1].Trim()
+    } elseif ($line -match "^\s{0,2}[^:]+:\s*.*$") {
+      $section = $null
+    } elseif ($section -eq "HardwareIds" -and $line -match "^\s+(.+)\s*$") {
+      $current.HardwareIds += $Matches[1].Trim()
     }
   }
 
@@ -86,13 +103,14 @@ function Get-PnPUtilDevicesByDeviceId {
 
   $output = Invoke-PnPUtil -Arguments @(
     "/enum-devices",
-    "/deviceid",
-    $DeviceId,
     "/deviceids",
-    "/services",
     "/drivers"
   )
-  return ConvertFrom-PnPUtilDeviceOutput -Output $output
+  return ConvertFrom-PnPUtilDeviceOutput -Output $output |
+    Where-Object {
+      $_.InstanceId -like "$DeviceId\*" -or
+        $_.HardwareIds -contains $DeviceId
+    }
 }
 
 function Assert-StartedPnPRecord {
@@ -119,9 +137,11 @@ function Assert-StartedPnPRecord {
 }
 
 function Assert-RootDeviceStarted {
-  $rootDevices = @(Get-PnPUtilDevicesByDeviceId -DeviceId $HardwareId)
+  param([string] $TargetHardwareId)
+
+  $rootDevices = @(Get-PnPUtilDevicesByDeviceId -DeviceId $TargetHardwareId)
   if (-not $rootDevices) {
-    throw "No installed libvirtualhid root device was found for $HardwareId."
+    throw "No installed libvirtualhid root device was found for $TargetHardwareId."
   }
 
   foreach ($device in $rootDevices) {
@@ -129,17 +149,19 @@ function Assert-RootDeviceStarted {
   }
 }
 
-function Assert-ControlDeviceOpens {
+function Assert-ControlDeviceOpen {
+  param([string] $Path)
+
   try {
     $stream = [System.IO.File]::Open(
-      $ControlDevicePath,
+      $Path,
       [System.IO.FileMode]::Open,
       [System.IO.FileAccess]::ReadWrite,
       [System.IO.FileShare]::ReadWrite
     )
     $stream.Dispose()
   } catch {
-    throw "Could not open ${ControlDevicePath}: $($_.Exception.Message)"
+    throw "Could not open ${Path}: $($_.Exception.Message)"
   }
 }
 
@@ -176,12 +198,17 @@ public static class LvhXInputProbe {
 }
 
 function Wait-ForXInputReportFlow {
-  if ($Profile -ne "xone" -and $Profile -ne "xseries") {
+  param(
+    [string] $ProfileName,
+    [int] $TimeoutSeconds
+  )
+
+  if ($ProfileName -ne "xone" -and $ProfileName -ne "xseries") {
     return
   }
 
   Add-XInputProbeType
-  $deadline = (Get-Date).AddSeconds($DeviceStartTimeoutSeconds)
+  $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
   $observedStates = @{}
 
   do {
@@ -223,7 +250,7 @@ function Wait-ForXInputReportFlow {
           $observed.LeftThumbXPositive -and
           $observed.RightThumbYNegative -and
           $observed.RightThumbYPositive) {
-        Write-Information "XInput observed changing $Profile input on index ${index}." -InformationAction Continue
+        Write-Information "XInput observed changing $ProfileName input on index ${index}." -InformationAction Continue
         return
       }
     }
@@ -231,11 +258,13 @@ function Wait-ForXInputReportFlow {
     Start-Sleep -Milliseconds 250
   } while ((Get-Date) -lt $deadline)
 
-  throw "XInput did not observe changing $Profile button, left-stick X, and right-stick Y input from the virtual gamepad."
+  throw "XInput did not observe changing $ProfileName button, left-stick X, and right-stick Y input from the virtual gamepad."
 }
 
-function Get-ExpectedGamepadHardwareIds {
-  switch ($Profile) {
+function Get-ExpectedGamepadHardwareId {
+  param([string] $ProfileName)
+
+  switch ($ProfileName) {
     "generic" { return @("HID\VID_1209&PID_0001") }
     "x360" { return @("HID\VID_045E&PID_028E&IG_00") }
     "xone" { return @("HID\VID_045E&PID_02EA&IG_00") }
@@ -245,12 +274,17 @@ function Get-ExpectedGamepadHardwareIds {
     "switch" { return @("HID\VID_057E&PID_2009") }
   }
 
-  throw "Unsupported profile: $Profile"
+  throw "Unsupported profile: $ProfileName"
 }
 
 function Wait-ForStartedGamepadChild {
-  $deviceIds = @(Get-ExpectedGamepadHardwareIds)
-  $deadline = (Get-Date).AddSeconds($DeviceStartTimeoutSeconds)
+  param(
+    [string] $ProfileName,
+    [int] $TimeoutSeconds
+  )
+
+  $deviceIds = @(Get-ExpectedGamepadHardwareId -ProfileName $ProfileName)
+  $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
   $latestRecords = @()
 
   do {
@@ -284,22 +318,29 @@ function Wait-ForStartedGamepadChild {
 }
 
 function Invoke-GamepadAdapterSmoke {
-  if (-not $GamepadAdapterPath) {
+  param(
+    [string] $Path,
+    [string] $ProfileName,
+    [int] $HoldSeconds,
+    [int] $DeviceStartTimeoutSeconds
+  )
+
+  if (-not $Path) {
     return
   }
 
-  if ($Profile -eq "x360") {
+  if ($ProfileName -eq "x360") {
     throw "The Windows UMDF/VHF backend does not expose Xbox 360 XUSB gamepads. Use the consumer's XUSB fallback for x360."
   }
 
-  $resolvedGamepadAdapterPath = (Resolve-Path -LiteralPath $GamepadAdapterPath).Path
+  $resolvedGamepadAdapterPath = (Resolve-Path -LiteralPath $Path).Path
   $stdoutPath = Join-Path ([System.IO.Path]::GetTempPath()) "libvirtualhid-gamepad-adapter.out"
   $stderrPath = Join-Path ([System.IO.Path]::GetTempPath()) "libvirtualhid-gamepad-adapter.err"
   Remove-Item -LiteralPath $stdoutPath, $stderrPath -Force -ErrorAction SilentlyContinue
 
   $process = Start-Process `
     -FilePath $resolvedGamepadAdapterPath `
-    -ArgumentList @($Profile, "--hold-seconds", "$HoldSeconds") `
+    -ArgumentList @($ProfileName, "--hold-seconds", "$HoldSeconds") `
     -PassThru `
     -RedirectStandardOutput $stdoutPath `
     -RedirectStandardError $stderrPath `
@@ -313,8 +354,8 @@ function Invoke-GamepadAdapterSmoke {
       throw "gamepad_adapter exited with code $($process.ExitCode).`nstdout:`n$stdout`nstderr:`n$stderr"
     }
 
-    Wait-ForStartedGamepadChild
-    Wait-ForXInputReportFlow
+    Wait-ForStartedGamepadChild -ProfileName $ProfileName -TimeoutSeconds $DeviceStartTimeoutSeconds
+    Wait-ForXInputReportFlow -ProfileName $ProfileName -TimeoutSeconds $DeviceStartTimeoutSeconds
   } finally {
     if (-not $process.HasExited) {
       Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
@@ -323,6 +364,10 @@ function Invoke-GamepadAdapterSmoke {
   }
 }
 
-Assert-RootDeviceStarted
-Assert-ControlDeviceOpens
-Invoke-GamepadAdapterSmoke
+Assert-RootDeviceStarted -TargetHardwareId $HardwareId
+Assert-ControlDeviceOpen -Path $ControlDevicePath
+Invoke-GamepadAdapterSmoke `
+  -Path $GamepadAdapterPath `
+  -ProfileName $GamepadProfile `
+  -HoldSeconds $HoldSeconds `
+  -DeviceStartTimeoutSeconds $DeviceStartTimeoutSeconds

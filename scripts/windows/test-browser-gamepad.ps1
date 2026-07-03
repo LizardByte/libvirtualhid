@@ -8,7 +8,8 @@ param(
   [string] $GamepadAdapterPath,
 
   [ValidateSet("generic", "x360", "xone", "xseries", "ds4", "ds5", "switch")]
-  [string] $Profile = "xseries",
+  [Alias("Profile")]
+  [string] $GamepadProfile = "xseries",
 
   [string] $BrowserPath,
 
@@ -29,7 +30,9 @@ $ErrorActionPreference = "Stop"
 $script:DevToolsCommandId = 0
 
 function Get-ExpectedGamepadIdPattern {
-  switch ($Profile) {
+  param([string] $ProfileName)
+
+  switch ($ProfileName) {
     "generic" { return "(1209.*0001|vid[_ -]?1209.*pid[_ -]?0001|generic)" }
     "x360" { return "(045e.*028e|vid[_ -]?045e.*pid[_ -]?028e|x-?box.*360)" }
     "xone" { return "(045e.*02ea|vid[_ -]?045e.*pid[_ -]?02ea|xbox one|x-box one)" }
@@ -39,12 +42,14 @@ function Get-ExpectedGamepadIdPattern {
     "switch" { return "(057e.*2009|vid[_ -]?057e.*pid[_ -]?2009|switch|pro controller)" }
   }
 
-  throw "Unsupported profile: $Profile"
+  throw "Unsupported profile: $ProfileName"
 }
 
 function Resolve-BrowserPath {
-  if ($BrowserPath) {
-    return (Resolve-Path -LiteralPath $BrowserPath).Path
+  param([string] $Path)
+
+  if ($Path) {
+    return (Resolve-Path -LiteralPath $Path).Path
   }
 
   $candidates = @(
@@ -205,7 +210,7 @@ function Invoke-DevToolsCommand {
   }
 }
 
-function New-GamepadApiProbeExpression {
+function Get-GamepadApiProbeExpression {
   param(
     [string] $ExpectedIdPattern,
     [bool] $AllowAnyGamepad,
@@ -348,9 +353,13 @@ if ($HoldSeconds -le $TimeoutSeconds) {
 }
 
 $resolvedGamepadAdapterPath = (Resolve-Path -LiteralPath $GamepadAdapterPath).Path
-$resolvedBrowserPath = Resolve-BrowserPath
-$expectedPattern = if ($ExpectedIdPattern) { $ExpectedIdPattern } else { Get-ExpectedGamepadIdPattern }
-if ($Profile -eq "x360") {
+$resolvedBrowserPath = Resolve-BrowserPath -Path $BrowserPath
+$expectedPattern = if ($ExpectedIdPattern) {
+  $ExpectedIdPattern
+} else {
+  Get-ExpectedGamepadIdPattern -ProfileName $GamepadProfile
+}
+if ($GamepadProfile -eq "x360") {
   throw "The Windows UMDF/VHF backend does not expose Xbox 360 XUSB gamepads. Use the consumer's XUSB fallback for x360."
 }
 $remoteDebuggingPort = Get-FreeTcpPort
@@ -389,7 +398,7 @@ try {
   $adapterProcess = Start-Process `
     -FilePath $resolvedGamepadAdapterPath `
     -WorkingDirectory (Split-Path -Parent $resolvedGamepadAdapterPath) `
-    -ArgumentList @($Profile, "--hold-seconds", "$HoldSeconds") `
+    -ArgumentList @($GamepadProfile, "--hold-seconds", "$HoldSeconds") `
     -PassThru `
     -RedirectStandardOutput $adapterStdoutPath `
     -RedirectStandardError $adapterStderrPath `
@@ -432,7 +441,7 @@ try {
     } `
     -TimeoutSeconds 5)
 
-  $expression = New-GamepadApiProbeExpression `
+  $expression = Get-GamepadApiProbeExpression `
     -ExpectedIdPattern $expectedPattern `
     -AllowAnyGamepad:$AllowAnyGamepad `
     -TimeoutSeconds $TimeoutSeconds
@@ -462,7 +471,7 @@ try {
   }
 
   Write-Information `
-    "Browser Gamepad API observed $Profile as '$($probe.matched.id)' with mapping '$($probe.matched.mapping)'." `
+    "Browser Gamepad API observed $GamepadProfile as '$($probe.matched.id)' with mapping '$($probe.matched.mapping)'." `
     -InformationAction Continue
 } finally {
   if ($adapterProcess -and -not $adapterProcess.HasExited) {

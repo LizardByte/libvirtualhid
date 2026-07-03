@@ -20,6 +20,7 @@ $ErrorActionPreference = "Stop"
 $script:LibVirtualHidTranscriptStarted = $false
 
 function Start-LibVirtualHidTranscript {
+  [CmdletBinding(SupportsShouldProcess)]
   param([string] $Path)
 
   if (-not $Path) {
@@ -31,20 +32,27 @@ function Start-LibVirtualHidTranscript {
     if ($logDirectory) {
       New-Item -ItemType Directory -Path $logDirectory -Force | Out-Null
     }
-    Start-Transcript -Path $Path -Append | Out-Null
-    $script:LibVirtualHidTranscriptStarted = $true
+    if ($PSCmdlet.ShouldProcess($Path, "Start libvirtualhid install transcript")) {
+      Start-Transcript -Path $Path -Append | Out-Null
+      $script:LibVirtualHidTranscriptStarted = $true
+    }
   } catch {
     Write-Warning "Unable to start libvirtualhid install transcript: $($_.Exception.Message)"
   }
 }
 
 function Stop-LibVirtualHidTranscript {
+  [CmdletBinding(SupportsShouldProcess)]
+  param()
+
   if (-not $script:LibVirtualHidTranscriptStarted) {
     return
   }
 
   try {
-    Stop-Transcript | Out-Null
+    if ($PSCmdlet.ShouldProcess("libvirtualhid install transcript", "Stop transcript")) {
+      Stop-Transcript | Out-Null
+    }
   } catch {
     Write-Warning "Unable to stop libvirtualhid install transcript: $($_.Exception.Message)"
   }

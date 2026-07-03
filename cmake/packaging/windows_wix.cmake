@@ -27,6 +27,7 @@ if(NOT WIX_INSTALL_RESULT EQUAL 0)
     message(FATAL_ERROR "Failed to install WiX tools locally: ${WIX_INSTALL_OUTPUT}")
 endif()
 
+# Ensure a WiX extension is installed in the local tool cache.
 function(libvirtualhid_wix_ensure_extension extension_name extension_version)
     execute_process(
             COMMAND "${WIX_TOOL_PATH}/wix" extension list --global

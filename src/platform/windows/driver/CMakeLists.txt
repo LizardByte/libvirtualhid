@@ -260,8 +260,11 @@ install(CODE
       message(FATAL_ERROR \"Windows driver package file is missing: \${lvh_driver_file}\")
     endif()
   endforeach()
-  if(\"\${lvh_driver_dll}\" IS_NEWER_THAN \"\${lvh_driver_cat}\" OR \"\${lvh_driver_inf}\" IS_NEWER_THAN \"\${lvh_driver_cat}\")
-    message(FATAL_ERROR \"Windows driver catalog is stale; build libvirtualhid_windows_catalog and sign libvirtualhid.cat before packaging.\")
+  if(\"\${lvh_driver_dll}\" IS_NEWER_THAN \"\${lvh_driver_cat}\"
+     OR \"\${lvh_driver_inf}\" IS_NEWER_THAN \"\${lvh_driver_cat}\")
+    message(FATAL_ERROR
+            \"Windows driver catalog is stale; build libvirtualhid_windows_catalog \"
+            \"and sign libvirtualhid.cat before packaging.\")
   endif()
   "
   COMPONENT driver)
