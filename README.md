@@ -176,9 +176,9 @@ Build the UMDF package separately with the Microsoft driver toolchain:
 ```powershell
 cmake -S . -B cmake-build-windows-driver -G "Visual Studio 17 2022" -A x64 `
   -DLIBVIRTUALHID_BUILD_WINDOWS_DRIVER=ON -DLIBVIRTUALHID_ENABLE_PACKAGING=ON `
-  -DBUILD_TESTS=OFF -DBUILD_EXAMPLES=OFF
-cmake --build cmake-build-windows-driver --config Release --target libvirtualhid_umdf
-cmake --build cmake-build-windows-driver --config Release --target libvirtualhid_windows_catalog
+  -DBUILD_TESTS=OFF -DBUILD_EXAMPLES=ON
+cmake --build cmake-build-windows-driver --config Release `
+  --target libvirtualhid_windows_catalog gamepad_adapter
 cpack -G WIX -C Release --config .\cmake-build-windows-driver\CPackConfig.cmake
 ```
 
@@ -189,14 +189,21 @@ powershell -ExecutionPolicy Bypass -File .\scripts\windows\install-driver.ps1 `
   -InfPath .\cmake-build-windows-driver\src\platform\windows\driver\package\Release\libvirtualhid.inf `
   -LogPath .\cmake-build-windows-driver\install-driver.log
 powershell -ExecutionPolicy Bypass -File .\scripts\windows\test-installed-driver.ps1 `
-  -GamepadAdapterPath .\cmake-build-ci\examples\Debug\gamepad_adapter.exe `
+  -GamepadAdapterPath .\cmake-build-windows-driver\examples\Release\gamepad_adapter.exe `
   -GamepadProfile xseries
 powershell -ExecutionPolicy Bypass -File .\scripts\windows\test-browser-gamepad.ps1 `
-  -GamepadAdapterPath .\cmake-build-ci\examples\Debug\gamepad_adapter.exe `
+  -GamepadAdapterPath .\cmake-build-windows-driver\examples\Release\gamepad_adapter.exe `
   -GamepadProfile xseries
 powershell -ExecutionPolicy Bypass -File .\scripts\windows\uninstall-driver.ps1 `
   -Force -RemoveCertificateSubject "CN=libvirtualhid CI Test Driver Signing"
 ```
+
+The WiX driver installer also installs validation files under the default
+install root, `C:\Program Files\libvirtualhid`:
+
+- `scripts\windows\test-installed-driver.ps1`
+- `scripts\windows\test-browser-gamepad.ps1`
+- `tools\windows\gamepad_adapter.exe`
 
 The helper stages the INF with `pnputil`, updates an existing
 `ROOT\LIBVIRTUALHID` device when present, and creates that root-enumerated
@@ -213,22 +220,22 @@ if `\\.\LibVirtualHid` cannot be opened, or if a held gamepad adapter instance
 does not produce a started HID child device such as
 `HID\VID_045E&PID_0B12&IG_00` or an Xbox Series-compatible HID child such as
 `HID\VID_045E&PID_02FF&IG_00`. That check is also run by the Windows CI legs
-for every Windows UMDF/VHF-supported `gamepad_adapter` profile
-after installing the Windows Driver Installer artifact. The browser helper is for manual
+for every Windows UMDF/VHF-supported `gamepad_adapter` profile after installing
+the Windows Driver Installer artifact. The browser helper is for manual
 diagnostics: it launches a normal desktop Edge or Chrome instance at
 `https://hardwaretester.com/gamepad`, holds a virtual gamepad, and fails if the
 browser Gamepad API does not report a controller matching the selected profile
 or does not observe changing button and axis input. For manual browser
 validation, run the browser helper with `-KeepBrowserOpen`, or run
-`examples/gamepad_adapter xseries --hold-seconds 60`, then open
+`tools\windows\gamepad_adapter.exe xseries --hold-seconds 60`, then open
 `https://hardwaretester.com/gamepad` in a normal desktop browser and press one
 of the held virtual buttons if the browser needs a gamepad activation event.
 
-The driver binary is a UMDF DLL installed through the Windows Driver Store, not
-a libvirtualhid `.sys` copied into `C:\Windows\System32\drivers`. Windows still
-uses its built-in `WUDFRd.sys` and VHF components under `System32\drivers`; the
-libvirtualhid-specific sign that installation completed is the
-`ROOT\LIBVIRTUALHID` device and the `\\.\LibVirtualHid` control device. The INF
+The driver binary is a user-mode UMDF DLL installed through the Windows Driver
+Store, not a libvirtualhid `.sys` copied into `C:\Windows\System32\drivers`.
+Windows still uses its built-in `WUDFRd.sys` and VHF components under
+`System32\drivers`; the libvirtualhid-specific sign that installation completed
+is the `ROOT\LIBVIRTUALHID` device and the `\\.\LibVirtualHid` control device. The INF
 includes the built-in `WUDFRd` install sections for the root `System` control
 device, appends the VHF lower filter, sets `VhfMode=1` for the UMDF VHF source
 stack, grants non-admin user-mode clients read/write access to the control

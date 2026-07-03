@@ -78,6 +78,10 @@ target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_23)
 set_target_properties(${PROJECT_NAME} PROPERTIES
   EXPORT_NAME libvirtualhid
   OUTPUT_NAME virtualhid)
+if(MSVC AND LIBVIRTUALHID_BUILD_WINDOWS_DRIVER)
+    set_property(TARGET ${PROJECT_NAME} PROPERTY
+      MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
 
 if(MSVC)
     target_compile_options(${PROJECT_NAME} PRIVATE /W4)

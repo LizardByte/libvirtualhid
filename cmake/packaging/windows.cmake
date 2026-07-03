@@ -16,8 +16,20 @@ set(LIBVIRTUALHID_DRIVER_TEST_CERTIFICATE "" CACHE FILEPATH
 install(FILES
         "${PROJECT_SOURCE_DIR}/scripts/windows/libvirtualhid-driver-common.ps1"
         "${PROJECT_SOURCE_DIR}/scripts/windows/install-driver.ps1"
+        "${PROJECT_SOURCE_DIR}/scripts/windows/test-browser-gamepad.ps1"
+        "${PROJECT_SOURCE_DIR}/scripts/windows/test-installed-driver.ps1"
         "${PROJECT_SOURCE_DIR}/scripts/windows/uninstall-driver.ps1"
   DESTINATION "scripts/windows"
+  COMPONENT driver)
+
+if(NOT TARGET gamepad_adapter)
+    message(FATAL_ERROR
+            "The Windows driver installer requires BUILD_EXAMPLES=ON so the "
+            "gamepad_adapter validation tool can be packaged.")
+endif()
+
+install(TARGETS gamepad_adapter
+  RUNTIME DESTINATION "tools/windows"
   COMPONENT driver)
 
 if(LIBVIRTUALHID_DRIVER_TEST_CERTIFICATE)
