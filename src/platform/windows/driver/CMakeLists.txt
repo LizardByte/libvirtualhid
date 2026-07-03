@@ -7,6 +7,7 @@ if(NOT MSVC)
 endif()
 
 if(LIBVIRTUALHID_ENABLE_PACKAGING
+   AND LIBVIRTUALHID_INSTALL
    AND NOT CMAKE_CONFIGURATION_TYPES
    AND CMAKE_BUILD_TYPE STREQUAL "Debug")
     message(FATAL_ERROR
@@ -247,29 +248,31 @@ add_custom_target(libvirtualhid_windows_catalog
   COMMENT "Generating libvirtualhid driver catalog"
   VERBATIM)
 
-install(TARGETS libvirtualhid_umdf
-  RUNTIME DESTINATION "drivers/windows"
-  COMPONENT driver)
-install(CODE
-  "
-  set(lvh_driver_dll \"$<TARGET_FILE:libvirtualhid_umdf>\")
-  set(lvh_driver_inf \"$<TARGET_FILE_DIR:libvirtualhid_umdf>/libvirtualhid.inf\")
-  set(lvh_driver_cat \"$<TARGET_FILE_DIR:libvirtualhid_umdf>/libvirtualhid.cat\")
-  foreach(lvh_driver_file IN ITEMS \"\${lvh_driver_dll}\" \"\${lvh_driver_inf}\" \"\${lvh_driver_cat}\")
-    if(NOT EXISTS \"\${lvh_driver_file}\")
-      message(FATAL_ERROR \"Windows driver package file is missing: \${lvh_driver_file}\")
-    endif()
-  endforeach()
-  if(\"\${lvh_driver_dll}\" IS_NEWER_THAN \"\${lvh_driver_cat}\"
-     OR \"\${lvh_driver_inf}\" IS_NEWER_THAN \"\${lvh_driver_cat}\")
-    message(FATAL_ERROR
-            \"Windows driver catalog is stale; build libvirtualhid_windows_catalog \"
-            \"and sign libvirtualhid.cat before packaging.\")
-  endif()
-  "
-  COMPONENT driver)
-install(FILES
-        "$<TARGET_FILE_DIR:libvirtualhid_umdf>/libvirtualhid.inf"
-        "$<TARGET_FILE_DIR:libvirtualhid_umdf>/libvirtualhid.cat"
-  DESTINATION "drivers/windows"
-  COMPONENT driver)
+if(LIBVIRTUALHID_INSTALL)
+    install(TARGETS libvirtualhid_umdf
+      RUNTIME DESTINATION "drivers/windows"
+      COMPONENT driver)
+    install(CODE
+      "
+      set(lvh_driver_dll \"$<TARGET_FILE:libvirtualhid_umdf>\")
+      set(lvh_driver_inf \"$<TARGET_FILE_DIR:libvirtualhid_umdf>/libvirtualhid.inf\")
+      set(lvh_driver_cat \"$<TARGET_FILE_DIR:libvirtualhid_umdf>/libvirtualhid.cat\")
+      foreach(lvh_driver_file IN ITEMS \"\${lvh_driver_dll}\" \"\${lvh_driver_inf}\" \"\${lvh_driver_cat}\")
+        if(NOT EXISTS \"\${lvh_driver_file}\")
+          message(FATAL_ERROR \"Windows driver package file is missing: \${lvh_driver_file}\")
+        endif()
+      endforeach()
+      if(\"\${lvh_driver_dll}\" IS_NEWER_THAN \"\${lvh_driver_cat}\"
+         OR \"\${lvh_driver_inf}\" IS_NEWER_THAN \"\${lvh_driver_cat}\")
+        message(FATAL_ERROR
+                \"Windows driver catalog is stale; build libvirtualhid_windows_catalog \"
+                \"and sign libvirtualhid.cat before packaging.\")
+      endif()
+      "
+      COMPONENT driver)
+    install(FILES
+            "$<TARGET_FILE_DIR:libvirtualhid_umdf>/libvirtualhid.inf"
+            "$<TARGET_FILE_DIR:libvirtualhid_umdf>/libvirtualhid.cat"
+      DESTINATION "drivers/windows"
+      COMPONENT driver)
+endif()
