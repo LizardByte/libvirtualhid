@@ -65,6 +65,13 @@ namespace {
   }
 }  // namespace
 
+/**
+ * @brief Run the minimal virtual gamepad adapter example.
+ * @param argc Number of command-line arguments.
+ * @param argv Command-line arguments; the first positional argument selects
+ * the gamepad profile, and `--hold` keeps the device active for validation.
+ * @return Zero on success; nonzero when setup or input submission fails.
+ */
 int main(int argc, char *argv[]) {
   auto profile_name = std::string_view {"ds5"};
   auto hold = false;

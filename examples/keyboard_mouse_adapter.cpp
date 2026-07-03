@@ -9,6 +9,11 @@
 // local includes
 #include <libvirtualhid/libvirtualhid.hpp>
 
+/**
+ * @brief Run the minimal keyboard and mouse input example.
+ * @return Zero on success; nonzero when device creation or input submission
+ * fails.
+ */
 int main() {
   auto runtime = lvh::Runtime::create();
 

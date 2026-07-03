@@ -117,7 +117,7 @@ state.right_trigger = 1.0F;
 gamepad.submit(state);
 ```
 
-The [gamepad adapter example](../examples/gamepad_adapter.cpp) shows the
+The `examples/gamepad_adapter.cpp` example shows the
 streaming-host-oriented adapter path. It maps incremental button, axis, trigger,
 touch, motion, battery, feedback, and lifecycle updates onto the platform-neutral
 `Runtime` and `Gamepad` APIs.

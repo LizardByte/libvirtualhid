@@ -27,7 +27,7 @@ schema, configuration model, controller assignment policy, or status API.
 
 ## Adapter Pattern
 
-The [gamepad adapter example](../examples/gamepad_adapter.cpp) demonstrates the
+The `examples/gamepad_adapter.cpp` example demonstrates the
 intended shape:
 
 - Choose a built-in `DeviceProfile` from a host-facing profile name.
