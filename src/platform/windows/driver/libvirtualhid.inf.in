@@ -1,4 +1,8 @@
 ;
+;
+; SPDX-FileCopyrightText: 2026 David Lane
+; SPDX-License-Identifier: LicenseRef-LizardByte-SAL-1.0
+;
 ; libvirtualhid UMDF2 control driver package.
 ; This package includes UMDF startup file tracing for local driver bring-up.
 ;

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 David Lane
+# SPDX-License-Identifier: LicenseRef-LizardByte-SAL-1.0
+
 if(NOT WIN32)
     message(FATAL_ERROR "The libvirtualhid Windows driver package can only be built on Windows.")
 endif()
