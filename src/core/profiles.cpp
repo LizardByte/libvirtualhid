@@ -65,13 +65,23 @@ namespace lvh::profiles {
       return 0;
     }
 
+    std::byte byte_from_hex(char high, char low) {
+      return static_cast<std::byte>((hex_nibble(high) << 4U) | hex_nibble(low));
+    }
+
     std::vector<std::uint8_t> bytes_from_hex(std::string_view hex) {
-      std::vector<std::uint8_t> bytes;
-      bytes.reserve(hex.size() / 2U);
+      std::vector<std::byte> parsed_bytes;
+      parsed_bytes.reserve(hex.size() / 2U);
       for (std::size_t index = 0; index + 1U < hex.size(); index += 2U) {
-        bytes.push_back(static_cast<std::uint8_t>((hex_nibble(hex[index]) << 4U) | hex_nibble(hex[index + 1U])));
+        parsed_bytes.push_back(byte_from_hex(hex[index], hex[index + 1U]));
       }
-      return bytes;
+
+      std::vector<std::uint8_t> descriptor;
+      descriptor.reserve(parsed_bytes.size());
+      for (const auto byte : parsed_bytes) {
+        descriptor.push_back(std::to_integer<std::uint8_t>(byte));
+      }
+      return descriptor;
     }
 
     std::vector<std::uint8_t> make_xbox_gip_report_descriptor(bool include_share_button) {
@@ -1729,7 +1739,7 @@ namespace lvh::profiles {
       return descriptor;
     }
 
-    DeviceProfile make_gamepad_profile(
+    DeviceProfile make_base_gamepad_profile(
       GamepadProfileKind kind,
       std::string name,
       std::string manufacturer,
@@ -1753,6 +1763,27 @@ namespace lvh::profiles {
       profile.name = std::move(name);
       profile.manufacturer = std::move(manufacturer);
       profile.capabilities = capabilities;
+      return profile;
+    }
+
+    DeviceProfile make_gamepad_profile(
+      GamepadProfileKind kind,
+      std::string name,
+      std::string manufacturer,
+      std::uint16_t vendor_id,
+      std::uint16_t product_id,
+      std::uint16_t version,
+      GamepadProfileCapabilities capabilities
+    ) {
+      auto profile = make_base_gamepad_profile(
+        kind,
+        std::move(name),
+        std::move(manufacturer),
+        vendor_id,
+        product_id,
+        version,
+        capabilities
+      );
       profile.report_descriptor = make_gamepad_report_descriptor(profile.report_id, profile.capabilities.supports_rumble);
       return profile;
     }
@@ -1766,21 +1797,15 @@ namespace lvh::profiles {
       std::uint16_t version,
       GamepadProfileCapabilities capabilities
     ) {
-      DeviceProfile profile;
-      profile.device_type = DeviceType::gamepad;
-      profile.gamepad_kind = kind;
-      profile.bus_type = BusType::usb;
-      profile.vendor_id = vendor_id;
-      profile.product_id = product_id;
-      profile.version = version;
-      profile.report_id = 1;
-      profile.input_report_size = common_report_size;
-      if (capabilities.supports_rumble) {
-        profile.output_report_size = common_output_report_size;
-      }
-      profile.name = std::move(name);
-      profile.manufacturer = std::move(manufacturer);
-      profile.capabilities = capabilities;
+      auto profile = make_base_gamepad_profile(
+        kind,
+        std::move(name),
+        std::move(manufacturer),
+        vendor_id,
+        product_id,
+        version,
+        capabilities
+      );
       profile.report_descriptor =
         make_standard_gamepad_report_descriptor(profile.report_id, profile.capabilities.supports_rumble);
       return profile;

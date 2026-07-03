@@ -16,6 +16,10 @@
 #include <libvirtualhid/report.hpp>
 
 namespace {
+  std::byte to_byte(std::uint8_t value) {
+    return static_cast<std::byte>(value);
+  }
+
   std::uint32_t test_crc32(std::span<const std::uint8_t> buffer, std::uint32_t seed = 0) {
     auto crc = seed ^ 0xFFFFFFFFU;
     for (const auto byte : buffer) {
@@ -39,8 +43,26 @@ namespace {
            (static_cast<std::uint32_t>(bytes[offset + 3U]) << 24U);
   }
 
-  std::uint16_t read_u16_le(const std::vector<std::uint8_t> &bytes, std::size_t offset) {
-    return static_cast<std::uint16_t>(bytes[offset] | static_cast<std::uint16_t>(bytes[offset + 1U] << 8U));
+  std::uint16_t read_u16_le(std::span<const std::uint8_t> bytes, std::size_t offset) {
+    const auto low = std::to_integer<std::uint16_t>(to_byte(bytes[offset]));
+    const auto high = std::to_integer<std::uint16_t>(to_byte(bytes[offset + 1U]));
+    return static_cast<std::uint16_t>(low | static_cast<std::uint16_t>(high << 8U));
+  }
+
+  lvh::GamepadState make_active_gamepad_state() {
+    using enum lvh::GamepadButton;
+
+    lvh::GamepadState state;
+    state.buttons.set(a);
+    state.buttons.set(start);
+    state.buttons.set(dpad_left);
+    state.buttons.set(guide);
+    state.buttons.set(misc1);
+    state.left_stick = {1.0F, -1.0F};
+    state.right_stick = {0.5F, -0.5F};
+    state.left_trigger = 0.25F;
+    state.right_trigger = 1.0F;
+    return state;
   }
 }  // namespace
 
@@ -76,16 +98,7 @@ TEST(ReportTest, EncodesHatSwitch) {
 TEST(ReportTest, PacksCommonGamepadReport) {
   auto profile = lvh::profiles::xbox_360();
 
-  lvh::GamepadState state;
-  state.buttons.set(lvh::GamepadButton::a);
-  state.buttons.set(lvh::GamepadButton::start);
-  state.buttons.set(lvh::GamepadButton::dpad_left);
-  state.buttons.set(lvh::GamepadButton::guide);
-  state.buttons.set(lvh::GamepadButton::misc1);
-  state.left_stick = {1.0F, -1.0F};
-  state.right_stick = {0.5F, -0.5F};
-  state.left_trigger = 0.25F;
-  state.right_trigger = 1.0F;
+  auto state = make_active_gamepad_state();
 
   const auto report = lvh::reports::pack_input_report(profile, state);
 
@@ -104,16 +117,7 @@ TEST(ReportTest, PacksCommonGamepadReport) {
 TEST(ReportTest, PacksStandardGamepadReport) {
   auto profile = lvh::profiles::generic_gamepad();
 
-  lvh::GamepadState state;
-  state.buttons.set(lvh::GamepadButton::a);
-  state.buttons.set(lvh::GamepadButton::start);
-  state.buttons.set(lvh::GamepadButton::dpad_left);
-  state.buttons.set(lvh::GamepadButton::guide);
-  state.buttons.set(lvh::GamepadButton::misc1);
-  state.left_stick = {1.0F, -1.0F};
-  state.right_stick = {0.5F, -0.5F};
-  state.left_trigger = 0.25F;
-  state.right_trigger = 1.0F;
+  auto state = make_active_gamepad_state();
 
   const auto report = lvh::reports::pack_input_report(profile, state);
 
@@ -132,47 +136,37 @@ TEST(ReportTest, PacksStandardGamepadReport) {
 TEST(ReportTest, PacksXboxGipReport) {
   auto profile = lvh::profiles::xbox_series();
 
-  lvh::GamepadState state;
-  state.buttons.set(lvh::GamepadButton::a);
-  state.buttons.set(lvh::GamepadButton::start);
-  state.buttons.set(lvh::GamepadButton::dpad_left);
-  state.buttons.set(lvh::GamepadButton::guide);
-  state.buttons.set(lvh::GamepadButton::misc1);
-  state.left_stick = {1.0F, -1.0F};
-  state.right_stick = {0.5F, -0.5F};
-  state.left_trigger = 0.25F;
-  state.right_trigger = 1.0F;
+  auto state = make_active_gamepad_state();
   state.battery = lvh::GamepadBattery {.state = lvh::GamepadBatteryState::discharging, .percentage = 80};
 
   const auto report = lvh::reports::pack_input_report(profile, state);
-  const auto read_u16 = [&report](std::size_t offset) {
-    return static_cast<std::uint16_t>(report[offset] | static_cast<std::uint16_t>(report[offset + 1U] << 8U));
-  };
 
   ASSERT_EQ(report.size(), profile.input_report_size);
   EXPECT_EQ(profile.report_id, 0);
-  EXPECT_EQ(read_u16(0U), 0xFFFF);  // Left stick X.
-  EXPECT_EQ(read_u16(2U), 0xFFFF);  // Left stick Y.
-  EXPECT_EQ(read_u16(4U), 0xBFFF);  // Right stick X.
-  EXPECT_EQ(read_u16(6U), 0xBFFF);  // Right stick Y.
-  EXPECT_EQ(read_u16(8U), 256);  // Left trigger.
-  EXPECT_EQ(read_u16(10U), 1023);  // Right trigger.
-  EXPECT_EQ(read_u16(12U), 0x0881);  // A, Start, and Share.
+  EXPECT_EQ(read_u16_le(report, 0U), 0xFFFF);  // Left stick X.
+  EXPECT_EQ(read_u16_le(report, 2U), 0xFFFF);  // Left stick Y.
+  EXPECT_EQ(read_u16_le(report, 4U), 0xBFFF);  // Right stick X.
+  EXPECT_EQ(read_u16_le(report, 6U), 0xBFFF);  // Right stick Y.
+  EXPECT_EQ(read_u16_le(report, 8U), 256);  // Left trigger.
+  EXPECT_EQ(read_u16_le(report, 10U), 1023);  // Right trigger.
+  EXPECT_EQ(read_u16_le(report, 12U), 0x0881);  // A, Start, and Share.
   EXPECT_EQ(report[14], 7);  // D-pad left.
   EXPECT_EQ(report[15], 1);  // Guide/System Main Menu.
   EXPECT_EQ(report[16], 204);  // Battery strength.
 }
 
 TEST(ReportTest, PacksSwitchProReport) {
+  using enum lvh::GamepadButton;
+
   auto profile = lvh::profiles::switch_pro();
 
   lvh::GamepadState state;
-  state.buttons.set(lvh::GamepadButton::a);
-  state.buttons.set(lvh::GamepadButton::b);
-  state.buttons.set(lvh::GamepadButton::start);
-  state.buttons.set(lvh::GamepadButton::guide);
-  state.buttons.set(lvh::GamepadButton::misc1);
-  state.buttons.set(lvh::GamepadButton::dpad_left);
+  state.buttons.set(a);
+  state.buttons.set(b);
+  state.buttons.set(start);
+  state.buttons.set(guide);
+  state.buttons.set(misc1);
+  state.buttons.set(dpad_left);
   state.left_stick = {1.0F, -1.0F};
   state.right_stick = {0.5F, -0.5F};
   state.left_trigger = 0.25F;
@@ -193,18 +187,15 @@ TEST(ReportTest, PacksXboxGipNeutralReport) {
   const auto profile = lvh::profiles::xbox_series();
 
   const auto report = lvh::reports::pack_input_report(profile, {});
-  const auto read_u16 = [&report](std::size_t offset) {
-    return static_cast<std::uint16_t>(report[offset] | static_cast<std::uint16_t>(report[offset + 1U] << 8U));
-  };
 
   ASSERT_EQ(report.size(), profile.input_report_size);
-  EXPECT_EQ(read_u16(0U), 0x8000);  // Left stick X.
-  EXPECT_EQ(read_u16(2U), 0x8000);  // Left stick Y.
-  EXPECT_EQ(read_u16(4U), 0x8000);  // Right stick X.
-  EXPECT_EQ(read_u16(6U), 0x8000);  // Right stick Y.
-  EXPECT_EQ(read_u16(8U), 0x0000);  // Left trigger.
-  EXPECT_EQ(read_u16(10U), 0x0000);  // Right trigger.
-  EXPECT_EQ(read_u16(12U), 0x0000);  // Buttons.
+  EXPECT_EQ(read_u16_le(report, 0U), 0x8000);  // Left stick X.
+  EXPECT_EQ(read_u16_le(report, 2U), 0x8000);  // Left stick Y.
+  EXPECT_EQ(read_u16_le(report, 4U), 0x8000);  // Right stick X.
+  EXPECT_EQ(read_u16_le(report, 6U), 0x8000);  // Right stick Y.
+  EXPECT_EQ(read_u16_le(report, 8U), 0x0000);  // Left trigger.
+  EXPECT_EQ(read_u16_le(report, 10U), 0x0000);  // Right trigger.
+  EXPECT_EQ(read_u16_le(report, 12U), 0x0000);  // Buttons.
   EXPECT_EQ(report[14], 0);  // Neutral D-pad.
   EXPECT_EQ(report[15], 0);  // Guide/System Main Menu.
   EXPECT_EQ(report[16], 0xFF);  // Unknown battery defaults to full.

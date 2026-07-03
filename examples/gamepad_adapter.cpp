@@ -45,17 +45,20 @@ namespace {
 
   lvh::ClientControllerType client_type_for_profile(lvh::GamepadProfileKind kind) {
     switch (kind) {
-      case lvh::GamepadProfileKind::xbox_360:
-      case lvh::GamepadProfileKind::xbox_one:
-      case lvh::GamepadProfileKind::xbox_series:
-        return lvh::ClientControllerType::xbox;
-      case lvh::GamepadProfileKind::dualshock4:
-      case lvh::GamepadProfileKind::dualsense:
-        return lvh::ClientControllerType::playstation;
-      case lvh::GamepadProfileKind::switch_pro:
-        return lvh::ClientControllerType::nintendo;
-      case lvh::GamepadProfileKind::generic:
-        return lvh::ClientControllerType::unknown;
+      using enum lvh::ClientControllerType;
+      using enum lvh::GamepadProfileKind;
+
+      case xbox_360:
+      case xbox_one:
+      case xbox_series:
+        return xbox;
+      case dualshock4:
+      case dualsense:
+        return playstation;
+      case switch_pro:
+        return nintendo;
+      case generic:
+        return unknown;
     }
 
     return lvh::ClientControllerType::unknown;
@@ -66,13 +69,16 @@ int main(int argc, char *argv[]) {
   auto profile_name = std::string_view {"ds5"};
   auto hold = false;
   auto hold_seconds = 60;
-  for (auto index = 1; index < argc; ++index) {
+  auto index = 1;
+  while (index < argc) {
     const auto argument = std::string_view {argv[index]};
+    ++index;
     if (argument == "--hold") {
       hold = true;
-    } else if (argument == "--hold-seconds" && index + 1 < argc) {
+    } else if (argument == "--hold-seconds" && index < argc) {
       hold = true;
-      hold_seconds = std::stoi(argv[++index]);
+      hold_seconds = std::stoi(argv[index]);
+      ++index;
     } else {
       profile_name = argument;
     }

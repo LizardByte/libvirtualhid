@@ -34,6 +34,58 @@ function Invoke-PnPUtil {
   return $output
 }
 
+function ConvertTo-PnPUtilDeviceRecord {
+  param([string] $InstanceId)
+
+  return @{
+    InstanceId = $InstanceId.Trim()
+    DeviceDescription = $null
+    DriverName = $null
+    HardwareIds = @()
+    Status = $null
+    ProblemCode = $null
+    ProblemStatus = $null
+  }
+}
+
+function ConvertFrom-PnPUtilDeviceLine {
+  param(
+    [hashtable] $Record,
+    [string] $Line,
+    [string] $Section
+  )
+
+  $singleValueLabels = @{
+    "Device Description" = "DeviceDescription"
+    "Driver Name" = "DriverName"
+    "Status" = "Status"
+    "Problem Code" = "ProblemCode"
+    "Problem Status" = "ProblemStatus"
+  }
+
+  if ($Line -match "^\s{0,2}([^:]+):\s*(.*)\s*$") {
+    $label = $Matches[1].Trim()
+    $value = $Matches[2].Trim()
+    if ($label -eq "Hardware IDs") {
+      if ($value) {
+        $Record.HardwareIds += $value
+      }
+      return "HardwareIds"
+    }
+
+    if ($singleValueLabels.ContainsKey($label)) {
+      $Record[$singleValueLabels[$label]] = $value
+    }
+    return $null
+  }
+
+  if ($Section -eq "HardwareIds" -and $Line -match "^\s+(.+)\s*$") {
+    $Record.HardwareIds += $Matches[1].Trim()
+  }
+
+  return $Section
+}
+
 function ConvertFrom-PnPUtilDeviceOutput {
   param([string[]] $Output)
 
@@ -44,15 +96,7 @@ function ConvertFrom-PnPUtilDeviceOutput {
       if ($current) {
         $records += [pscustomobject] $current
       }
-      $current = @{
-        InstanceId = $Matches[1].Trim()
-        DeviceDescription = $null
-        DriverName = $null
-        HardwareIds = @()
-        Status = $null
-        ProblemCode = $null
-        ProblemStatus = $null
-      }
+      $current = ConvertTo-PnPUtilDeviceRecord -InstanceId $Matches[1]
       $section = $null
       continue
     }
@@ -61,31 +105,7 @@ function ConvertFrom-PnPUtilDeviceOutput {
       continue
     }
 
-    if ($line -match "^\s{0,2}Device Description:\s*(.+)\s*$") {
-      $section = $null
-      $current.DeviceDescription = $Matches[1].Trim()
-    } elseif ($line -match "^\s{0,2}Driver Name:\s*(.+)\s*$") {
-      $section = $null
-      $current.DriverName = $Matches[1].Trim()
-    } elseif ($line -match "^\s{0,2}Hardware IDs:\s*(.*)\s*$") {
-      $section = "HardwareIds"
-      if ($Matches[1].Trim()) {
-        $current.HardwareIds += $Matches[1].Trim()
-      }
-    } elseif ($line -match "^\s*Status:\s*(.+)\s*$") {
-      $section = $null
-      $current.Status = $Matches[1].Trim()
-    } elseif ($line -match "^\s*Problem Code:\s*(.+)\s*$") {
-      $section = $null
-      $current.ProblemCode = $Matches[1].Trim()
-    } elseif ($line -match "^\s*Problem Status:\s*(.+)\s*$") {
-      $section = $null
-      $current.ProblemStatus = $Matches[1].Trim()
-    } elseif ($line -match "^\s{0,2}[^:]+:\s*.*$") {
-      $section = $null
-    } elseif ($section -eq "HardwareIds" -and $line -match "^\s+(.+)\s*$") {
-      $current.HardwareIds += $Matches[1].Trim()
-    }
+    $section = ConvertFrom-PnPUtilDeviceLine -Record $current -Line $line -Section $section
   }
 
   if ($current) {

@@ -41,7 +41,7 @@
 // platform includes
 // clang-format off
 #include <Windows.h>
-#include <setupapi.h>
+#include <SetupAPI.h>
 // clang-format on
 
 namespace lvh::detail {
@@ -162,8 +162,8 @@ namespace lvh::detail {
           continue;
         }
 
-        std::vector<std::byte> buffer(required_size);
-        auto *detail_data = reinterpret_cast<SP_DEVICE_INTERFACE_DETAIL_DATA_A *>(buffer.data());
+        auto buffer = std::make_unique_for_overwrite<std::byte[]>(required_size);
+        auto *detail_data = static_cast<SP_DEVICE_INTERFACE_DETAIL_DATA_A *>(static_cast<void *>(buffer.get()));
         detail_data->cbSize = sizeof(SP_DEVICE_INTERFACE_DETAIL_DATA_A);
         if (::SetupDiGetDeviceInterfaceDetailA(device_info_set, &interface_data, detail_data, required_size, nullptr, nullptr) != FALSE) {
           paths.emplace_back(detail_data->DevicePath);

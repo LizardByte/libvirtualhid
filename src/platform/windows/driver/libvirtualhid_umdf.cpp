@@ -31,14 +31,15 @@
 #include <atomic>
 #include <charconv>
 #include <cstdint>
-#include <cstdio>
 #include <cstring>
-#include <cwchar>
+#include <format>
+#include <limits>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 // local includes
@@ -60,7 +61,7 @@ namespace {
 
   constexpr auto symbolic_link_name = L"\\DosDevices\\LibVirtualHid";
   constexpr auto global_symbolic_link_name = L"\\DosDevices\\Global\\LibVirtualHid";
-  constexpr auto trace_file_name = L"libvirtualhid-umdf-driver.log";
+  constexpr auto trace_file_name = std::wstring_view {L"libvirtualhid-umdf-driver.log"};
 
   struct DeviceRecord {
     std::mutex mutex;
@@ -91,33 +92,25 @@ namespace {
   void trace_status(const char *step, NTSTATUS status = STATUS_SUCCESS) {
     static std::atomic<unsigned long> sequence {0};
 
-    wchar_t trace_file_path[MAX_PATH] {};
     constexpr auto trace_file_path_length = static_cast<DWORD>(MAX_PATH);
-    auto trace_path_size = GetWindowsDirectoryW(trace_file_path, trace_file_path_length);
+    std::wstring trace_file_path(trace_file_path_length, L'\0');
+    auto trace_path_size = GetWindowsDirectoryW(trace_file_path.data(), trace_file_path_length);
     if (trace_path_size == 0U || trace_path_size >= trace_file_path_length) {
       return;
     }
 
-    constexpr auto trace_directory = L"\\Temp\\";
-    const auto directory_size = wcslen(trace_directory);
-    const auto file_name_size = wcslen(trace_file_name);
-    if (trace_path_size + directory_size + file_name_size >= trace_file_path_length) {
+    constexpr auto trace_directory = std::wstring_view {L"\\Temp\\"};
+    const auto required_path_size =
+      static_cast<std::size_t>(trace_path_size) + trace_directory.size() + trace_file_name.size();
+    if (required_path_size >= trace_file_path_length) {
       return;
     }
-    std::memcpy(
-      trace_file_path + trace_path_size,
-      trace_directory,
-      directory_size * sizeof(wchar_t)
-    );
-    trace_path_size += static_cast<DWORD>(directory_size);
-    std::memcpy(
-      trace_file_path + trace_path_size,
-      trace_file_name,
-      (file_name_size + 1U) * sizeof(wchar_t)
-    );
+    trace_file_path.resize(trace_path_size);
+    trace_file_path.append(trace_directory);
+    trace_file_path.append(trace_file_name);
 
     const auto file = CreateFileW(
-      trace_file_path,
+      trace_file_path.c_str(),
       FILE_APPEND_DATA,
       FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
       nullptr,
@@ -132,11 +125,8 @@ namespace {
     SYSTEMTIME time {};
     GetSystemTime(&time);
 
-    char line[320] {};
-    const auto written_chars = std::snprintf(
-      line,
-      sizeof(line),
-      "%04hu-%02hu-%02huT%02hu:%02hu:%02hu.%03huZ [%lu] %s status=0x%08lX\r\n",
+    const auto line = std::format(
+      "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:03}Z [{}] {} status=0x{:08X}\r\n",
       time.wYear,
       time.wMonth,
       time.wDay,
@@ -148,11 +138,10 @@ namespace {
       step,
       static_cast<unsigned long>(status)
     );
-    if (written_chars > 0) {
-      DWORD bytes_written {};
-      const auto bytes_to_write = static_cast<DWORD>(std::min<int>(written_chars, sizeof(line) - 1U));
-      static_cast<void>(WriteFile(file, line, bytes_to_write, &bytes_written, nullptr));
-    }
+    DWORD bytes_written {};
+    const auto bytes_to_write =
+      static_cast<DWORD>(std::min(line.size(), static_cast<std::size_t>(std::numeric_limits<DWORD>::max())));
+    static_cast<void>(WriteFile(file, line.data(), bytes_to_write, &bytes_written, nullptr));
 
     static_cast<void>(CloseHandle(file));
   }
@@ -301,15 +290,18 @@ namespace {
     {
       auto &state = driver_state();
       std::lock_guard lock {state.devices_mutex};
-      for (auto iter = state.devices.begin(); iter != state.devices.end();) {
-        if (iter->second->owner_device == device) {
+      static_cast<void>(std::erase_if(
+        state.devices,
+        [&](const auto &entry) {
+          if (entry.second->owner_device != device) {
+            return false;
+          }
+
           trace_status("delete_vhf_devices_for_device matched");
-          devices.push_back(iter->second);
-          iter = state.devices.erase(iter);
-        } else {
-          ++iter;
+          devices.push_back(entry.second);
+          return true;
         }
-      }
+      ));
     }
 
     for (const auto &record : devices) {
@@ -328,15 +320,18 @@ namespace {
     {
       auto &state = driver_state();
       std::lock_guard lock {state.devices_mutex};
-      for (auto iter = state.devices.begin(); iter != state.devices.end();) {
-        if (iter->second->owner_file == file_object) {
+      static_cast<void>(std::erase_if(
+        state.devices,
+        [&](const auto &entry) {
+          if (entry.second->owner_file != file_object) {
+            return false;
+          }
+
           trace_status("delete_vhf_devices_for_file matched");
-          devices.push_back(iter->second);
-          iter = state.devices.erase(iter);
-        } else {
-          ++iter;
+          devices.push_back(entry.second);
+          return true;
         }
-      }
+      ));
     }
 
     for (const auto &record : devices) {

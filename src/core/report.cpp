@@ -116,8 +116,8 @@ namespace lvh::reports {
     }
 
     std::uint16_t read_u16(const std::vector<std::uint8_t> &report, std::size_t offset) {
-      const auto low = static_cast<std::uint16_t>(report[offset]);
-      const auto high = static_cast<std::uint16_t>(report[offset + 1U]);
+      const auto low = std::to_integer<std::uint16_t>(to_byte(report[offset]));
+      const auto high = std::to_integer<std::uint16_t>(to_byte(report[offset + 1U]));
       return static_cast<std::uint16_t>(low | static_cast<std::uint16_t>(high << 8U));
     }
 
@@ -176,92 +176,74 @@ namespace lvh::reports {
       return static_cast<std::uint16_t>(std::lround((static_cast<float>(value) / 255.0F) * 65535.0F));
     }
 
+    void set_button_bit(std::uint16_t &bits, const ButtonSet &buttons, std::uint16_t bit, GamepadButton button) {
+      if (buttons.test(button)) {
+        bits |= static_cast<std::uint16_t>(1U << bit);
+      }
+    }
+
     std::uint16_t common_button_bits(const ButtonSet &buttons) {
       auto bits = std::uint16_t {};
-      const auto set_bit = [&buttons, &bits](std::uint16_t bit, GamepadButton button) {
-        if (buttons.test(button)) {
-          bits |= static_cast<std::uint16_t>(1U << bit);
-        }
-      };
-
-      set_bit(0U, GamepadButton::a);
-      set_bit(1U, GamepadButton::b);
-      set_bit(2U, GamepadButton::x);
-      set_bit(3U, GamepadButton::y);
-      set_bit(4U, GamepadButton::left_shoulder);
-      set_bit(5U, GamepadButton::right_shoulder);
-      set_bit(6U, GamepadButton::back);
-      set_bit(7U, GamepadButton::start);
-      set_bit(8U, GamepadButton::left_stick);
-      set_bit(9U, GamepadButton::right_stick);
-      set_bit(10U, GamepadButton::guide);
-      set_bit(11U, GamepadButton::misc1);
+      set_button_bit(bits, buttons, 0U, GamepadButton::a);
+      set_button_bit(bits, buttons, 1U, GamepadButton::b);
+      set_button_bit(bits, buttons, 2U, GamepadButton::x);
+      set_button_bit(bits, buttons, 3U, GamepadButton::y);
+      set_button_bit(bits, buttons, 4U, GamepadButton::left_shoulder);
+      set_button_bit(bits, buttons, 5U, GamepadButton::right_shoulder);
+      set_button_bit(bits, buttons, 6U, GamepadButton::back);
+      set_button_bit(bits, buttons, 7U, GamepadButton::start);
+      set_button_bit(bits, buttons, 8U, GamepadButton::left_stick);
+      set_button_bit(bits, buttons, 9U, GamepadButton::right_stick);
+      set_button_bit(bits, buttons, 10U, GamepadButton::guide);
+      set_button_bit(bits, buttons, 11U, GamepadButton::misc1);
       return bits;
     }
 
     std::uint16_t standard_gamepad_button_bits(const ButtonSet &buttons) {
       auto bits = common_button_bits(buttons);
-      const auto set_bit = [&buttons, &bits](std::uint16_t bit, GamepadButton button) {
-        if (buttons.test(button)) {
-          bits |= static_cast<std::uint16_t>(1U << bit);
-        }
-      };
-
-      set_bit(12U, GamepadButton::dpad_up);
-      set_bit(13U, GamepadButton::dpad_down);
-      set_bit(14U, GamepadButton::dpad_left);
-      set_bit(15U, GamepadButton::dpad_right);
+      set_button_bit(bits, buttons, 12U, GamepadButton::dpad_up);
+      set_button_bit(bits, buttons, 13U, GamepadButton::dpad_down);
+      set_button_bit(bits, buttons, 14U, GamepadButton::dpad_left);
+      set_button_bit(bits, buttons, 15U, GamepadButton::dpad_right);
       return bits;
     }
 
     std::uint16_t xbox_gip_button_bits(const ButtonSet &buttons) {
       auto bits = std::uint16_t {};
-      const auto set_bit = [&buttons, &bits](std::uint16_t bit, GamepadButton button) {
-        if (buttons.test(button)) {
-          bits |= static_cast<std::uint16_t>(1U << bit);
-        }
-      };
-
-      set_bit(0U, GamepadButton::a);
-      set_bit(1U, GamepadButton::b);
-      set_bit(2U, GamepadButton::x);
-      set_bit(3U, GamepadButton::y);
-      set_bit(4U, GamepadButton::left_shoulder);
-      set_bit(5U, GamepadButton::right_shoulder);
-      set_bit(6U, GamepadButton::back);
-      set_bit(7U, GamepadButton::start);
-      set_bit(8U, GamepadButton::left_stick);
-      set_bit(9U, GamepadButton::right_stick);
-      set_bit(11U, GamepadButton::misc1);
+      set_button_bit(bits, buttons, 0U, GamepadButton::a);
+      set_button_bit(bits, buttons, 1U, GamepadButton::b);
+      set_button_bit(bits, buttons, 2U, GamepadButton::x);
+      set_button_bit(bits, buttons, 3U, GamepadButton::y);
+      set_button_bit(bits, buttons, 4U, GamepadButton::left_shoulder);
+      set_button_bit(bits, buttons, 5U, GamepadButton::right_shoulder);
+      set_button_bit(bits, buttons, 6U, GamepadButton::back);
+      set_button_bit(bits, buttons, 7U, GamepadButton::start);
+      set_button_bit(bits, buttons, 8U, GamepadButton::left_stick);
+      set_button_bit(bits, buttons, 9U, GamepadButton::right_stick);
+      set_button_bit(bits, buttons, 11U, GamepadButton::misc1);
       return bits;
     }
 
     std::uint16_t switch_pro_button_bits(const GamepadState &state) {
       auto bits = std::uint16_t {};
-      const auto set_bit = [&state, &bits](std::uint16_t bit, GamepadButton button) {
-        if (state.buttons.test(button)) {
-          bits |= static_cast<std::uint16_t>(1U << bit);
-        }
-      };
-
-      set_bit(0U, GamepadButton::a);
-      set_bit(1U, GamepadButton::b);
-      set_bit(2U, GamepadButton::x);
-      set_bit(3U, GamepadButton::y);
-      set_bit(4U, GamepadButton::left_shoulder);
-      set_bit(5U, GamepadButton::right_shoulder);
+      set_button_bit(bits, state.buttons, 0U, GamepadButton::a);
+      set_button_bit(bits, state.buttons, 1U, GamepadButton::b);
+      set_button_bit(bits, state.buttons, 2U, GamepadButton::x);
+      set_button_bit(bits, state.buttons, 3U, GamepadButton::y);
+      set_button_bit(bits, state.buttons, 4U, GamepadButton::left_shoulder);
+      set_button_bit(bits, state.buttons, 5U, GamepadButton::right_shoulder);
       if (state.left_trigger > 0.0F) {
         bits |= static_cast<std::uint16_t>(1U << 6U);
       }
       if (state.right_trigger > 0.0F) {
         bits |= static_cast<std::uint16_t>(1U << 7U);
       }
-      set_bit(8U, GamepadButton::back);
-      set_bit(9U, GamepadButton::start);
-      set_bit(10U, GamepadButton::left_stick);
-      set_bit(11U, GamepadButton::right_stick);
-      set_bit(12U, GamepadButton::guide);
-      set_bit(13U, GamepadButton::misc1);
+      set_button_bit(bits, state.buttons, 8U, GamepadButton::back);
+      set_button_bit(bits, state.buttons, 9U, GamepadButton::start);
+      set_button_bit(bits, state.buttons, 10U, GamepadButton::left_stick);
+      set_button_bit(bits, state.buttons, 11U, GamepadButton::right_stick);
+      set_button_bit(bits, state.buttons, 12U, GamepadButton::guide);
+      set_button_bit(bits, state.buttons, 13U, GamepadButton::misc1);
       return bits;
     }
 
@@ -777,8 +759,7 @@ namespace lvh::reports {
   }
 
   std::vector<std::uint8_t> pack_xbox_gip_input_report(const DeviceProfile &profile, const GamepadState &state) {
-    constexpr std::size_t xbox_gip_input_report_size = 17;
-    if (profile.input_report_size < xbox_gip_input_report_size) {
+    if (constexpr std::size_t xbox_gip_input_report_size = 17; profile.input_report_size < xbox_gip_input_report_size) {
       return {};
     }
 
@@ -827,8 +808,7 @@ namespace lvh::reports {
   }
 
   std::vector<std::uint8_t> pack_switch_pro_input_report(const DeviceProfile &profile, const GamepadState &state) {
-    constexpr std::size_t switch_pro_input_report_size = 64;
-    if (profile.input_report_size < switch_pro_input_report_size) {
+    if (constexpr std::size_t switch_pro_input_report_size = 64; profile.input_report_size < switch_pro_input_report_size) {
       return {};
     }
 
@@ -847,20 +827,22 @@ namespace lvh::reports {
 
   std::vector<std::uint8_t> pack_input_report(const DeviceProfile &profile, const GamepadState &state) {
     if (profile.device_type == DeviceType::gamepad) {
-      if (profile.gamepad_kind == GamepadProfileKind::xbox_one || profile.gamepad_kind == GamepadProfileKind::xbox_series) {
-        return pack_xbox_gip_input_report(profile, state);
-      }
-      if (profile.gamepad_kind == GamepadProfileKind::dualshock4) {
-        return pack_dualshock4_input_report(profile, state);
-      }
-      if (profile.gamepad_kind == GamepadProfileKind::dualsense) {
-        return pack_dualsense_input_report(profile, state);
-      }
-      if (profile.gamepad_kind == GamepadProfileKind::switch_pro) {
-        return pack_switch_pro_input_report(profile, state);
-      }
-      if (profile.gamepad_kind == GamepadProfileKind::generic) {
-        return pack_standard_gamepad_input_report(profile, state);
+      switch (profile.gamepad_kind) {
+        using enum GamepadProfileKind;
+
+        case xbox_one:
+        case xbox_series:
+          return pack_xbox_gip_input_report(profile, state);
+        case dualshock4:
+          return pack_dualshock4_input_report(profile, state);
+        case dualsense:
+          return pack_dualsense_input_report(profile, state);
+        case switch_pro:
+          return pack_switch_pro_input_report(profile, state);
+        case generic:
+          return pack_standard_gamepad_input_report(profile, state);
+        case xbox_360:
+          break;
       }
     }
 
@@ -874,12 +856,8 @@ namespace lvh::reports {
     std::vector<std::uint8_t> report;
     report.reserve(common_report_size);
     report.push_back(profile.report_id);
-    append_u16(
-      report,
-      static_cast<std::uint16_t>(
-        common_button_bits(normalized.buttons) | static_cast<std::uint16_t>(hat_from_buttons(normalized.buttons) << 12U)
-      )
-    );
+    const auto dpad_hat_bits = static_cast<std::uint16_t>(hat_from_buttons(normalized.buttons) << 12U);
+    append_u16(report, static_cast<std::uint16_t>(common_button_bits(normalized.buttons) | dpad_hat_bits));
     report.push_back(normalize_u8_axis(normalized.left_stick.x));
     report.push_back(normalize_u8_axis(-normalized.left_stick.y));
     report.push_back(normalize_trigger(normalized.left_trigger));
