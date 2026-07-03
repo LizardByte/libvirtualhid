@@ -1,7 +1,7 @@
 <div align="center">
   <img
-    src="https://raw.githubusercontent.com/LizardByte/.github/refs/heads/master/branding/logos/logo.svg"
-    alt="LizardByte icon"
+    src="libvirtualhid.svg"
+    alt="libvirtualhid icon"
     width="256"
   />
   <h1 align="center">libvirtualhid</h1>

@@ -25,6 +25,8 @@
 DOCSET_BUNDLE_ID = dev.lizardbyte.libvirtualhid
 DOCSET_PUBLISHER_ID = dev.lizardbyte.libvirtualhid.documentation
 PROJECT_BRIEF = "Cross-platform C++ library for virtual HID devices."
+PROJECT_ICON = ../libvirtualhid.svg
+PROJECT_LOGO = ../libvirtualhid.svg
 PROJECT_NAME = libvirtualhid
 
 # project specific settings

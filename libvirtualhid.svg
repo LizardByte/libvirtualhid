@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">libvirtualhid dashed D-pad icon</title>
+  <desc id="desc">A transparent virtual gamepad icon with a solid left half, dashed right half, and dashed D-pad in a green gradient.</desc>
+  <defs>
+    <linearGradient id="lizardbyte-green" x1="32" y1="104" x2="480" y2="408" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#9be33d"/>
+      <stop offset="0.52" stop-color="#41c957"/>
+      <stop offset="1" stop-color="#079646"/>
+    </linearGradient>
+  </defs>
+
+  <g fill="none" stroke="url(#lizardbyte-green)" stroke-linecap="round" stroke-linejoin="round">
+    <path
+      d="M256 132c-29 2-65-15-103-15-50 0-82 45-103 119-17 61-21 129 10 161 24 25 63 13 108-29 32-30 55-43 88-43"
+      stroke-width="18"/>
+    <path
+      d="M256 325c33 0 56 13 88 43 45 42 84 54 108 29 31-32 27-100 10-161-21-74-53-119-103-119-38 0-74 17-103 15"
+      stroke-width="18"
+      stroke-dasharray="28 22"/>
+
+    <path d="M111 250h24" stroke-width="18"/>
+    <path d="M171 250h24" stroke-width="18"/>
+    <path d="M153 208v24" stroke-width="18"/>
+    <path d="M153 268v24" stroke-width="18"/>
+
+    <circle cx="352" cy="198" r="19" stroke-width="17"/>
+    <circle cx="304" cy="246" r="19" stroke-width="17"/>
+    <circle cx="400" cy="246" r="19" stroke-width="17"/>
+    <circle cx="352" cy="294" r="19" stroke-width="17"/>
+  </g>
+</svg>
