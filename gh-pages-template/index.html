@@ -1,0 +1,108 @@
+---
+title: libvirtualhid
+subtitle: A LizardByte project
+layout: page
+full-width: true
+after-content:
+  - donate.html
+  - support.html
+cover-img:
+  - /libvirtualhid/assets/img/banners/libvirtualhid.jpeg
+---
+
+<!-- About section-->
+<section class="py-5" id="About">
+    <div class="container px-auto">
+        <p class="lead text-center mx-auto mt-0 mb-5">
+            libvirtualhid is a cross-platform C++ library for creating virtual input devices. It focuses on
+            gamepad support for remote streaming hosts, while keeping the public API portable and hiding
+            platform-specific virtual HID details behind backend implementations.
+        </p>
+    </div>
+</section>
+
+<!-- Features section-->
+<section class="py-5" id="Features">
+    <div class="container px-auto">
+        <h2 class="text-center fw-bolder my-5">Features</h2>
+        <div class="row gx-5">
+            {% for feature in site.data.features %}
+            <div class="col-md-6 col-lg-4 mb-5">
+                <div class="card-custom h-100 shadow border-0 rounded-0">
+                    <div class="card-body p-4">
+                        <div class="d-flex align-items-center">
+                            <div class="icon">
+                                {% if feature.icon_fa %}
+                                <i class="fa-fw fa-2x {{ feature.icon_fa }}"></i>
+                                {% elsif feature.icon_img %}
+                                <img {% if feature.icon_img_invert %}class="invert"{% endif %} src="{{ feature.icon_img }}" alt="{{ feature.icon_img_alt | default: feature.title }}"/>
+                                {% endif %}
+                            </div>
+                            <div class="ms-3">
+                                <h5 class="fw-bolder mb-0">{{ feature.title }}</h5>
+                                <p class="mb-0">{{ feature.description }}</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+
+<!-- More cards -->
+<div class="container py-5 px-auto">
+    <div class="container col-md-10">
+        <!-- Docs section -->
+        <section class="py-4" id="Docs">
+            <div class="card-custom shadow border-0 rounded-0">
+                <div class="card-body p-4">
+                    <div class="d-flex align-items-center">
+                        <i class="fa-fw fa-2x fas fa-book"></i>
+                        <div class="ms-3">
+                            <h2 class="fw-bolder mb-0">Documentation</h2>
+                            <p class="mb-0">
+                                Read the documentation to learn how to build, use, and integrate libvirtualhid.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-footer p-3 px-4">
+                    <a class="btn btn-outline-theme me-3 mb-3" href="https://docs.lizardbyte.dev/projects/libvirtualhid" target="_blank">
+                        <img class="icon-sm invert" src="https://cdn.jsdelivr.net/npm/simple-icons@16/icons/readthedocs.svg" alt="ReadTheDocs"/>
+                        Read the Docs
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- Source section -->
+        <section class="py-4" id="Source">
+            <div class="card-custom shadow border-0 rounded-0">
+                <div class="card-body p-4">
+                    <div class="d-flex align-items-center">
+                        <i class="fa-fw fa-2x fas fa-code-branch"></i>
+                        <div class="ms-3">
+                            <h2 class="fw-bolder mb-0">Source</h2>
+                            <p class="mb-0">
+                                Browse the library source, public headers, and streaming-host-oriented examples.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-footer p-3 px-4">
+                    <a class="btn btn-outline-theme me-3 mb-3" href="https://github.com/LizardByte/libvirtualhid" target="_blank">
+                        <img class="icon-sm invert" src="https://cdn.jsdelivr.net/npm/simple-icons@16/icons/github.svg" alt="GitHub"/>
+                        GitHub
+                    </a>
+                    <a class="btn btn-outline-theme me-3 mb-3" href="https://github.com/LizardByte/libvirtualhid/tree/master/examples" target="_blank">
+                        <i class="fa-fw fa-lg fas fa-puzzle-piece"></i>
+                        Examples
+                    </a>
+                </div>
+            </div>
+        </section>
+
+    </div>
+</div>
