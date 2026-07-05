@@ -1,0 +1,40 @@
+---
+- title: "Platform-neutral C++ API"
+  icon_fa: "fas fa-code"
+  description: >
+    Build against portable runtime, profile, device, and report concepts while
+    backend-specific HID details stay behind the library implementation.
+
+- title: "Gamepad-first profiles"
+  icon_fa: "fas fa-gamepad"
+  description: >
+    Create virtual gamepads that model generic HID, Xbox, DualShock, DualSense,
+    and Nintendo Switch Pro-style controller layouts.
+
+- title: "Remote streaming ready"
+  icon_fa: "fas fa-tower-broadcast"
+  description: >
+    Designed for low-latency streaming hosts that need predictable lifecycle,
+    normalized input state, and output feedback callbacks.
+
+- title: "User-mode Windows support"
+  icon_img: "https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/icons/windows.svg"
+  icon_img_alt: "Windows"
+  icon_img_invert: true
+  description: >
+    Windows gamepads are exposed through a user-mode UMDF2 control driver backed
+    by Virtual HID Framework, without requiring a custom kernel-mode driver.
+
+- title: "Linux HID backends"
+  icon_img: "https://cdn.jsdelivr.net/npm/simple-icons@16/icons/linux.svg"
+  icon_img_alt: "Linux"
+  icon_img_invert: true
+  description: >
+    Linux gamepads use descriptor-driven uhid devices, with uinput available for
+    keyboard, mouse, touchscreen, trackpad, and pen tablet devices.
+
+- title: "CMake friendly"
+  icon_fa: "fas fa-screwdriver-wrench"
+  description: >
+    Consume libvirtualhid through installed packages, vendored source,
+    add_subdirectory, or FetchContent in CMake-based projects.
