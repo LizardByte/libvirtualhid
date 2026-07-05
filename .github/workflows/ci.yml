@@ -244,20 +244,28 @@ jobs:
       - name: Install Windows driver installer
         if: runner.os == 'Windows'
         shell: pwsh
+        timeout-minutes: 10
         run: |
           $installer = Get-ChildItem -LiteralPath .\windows-driver-installer -Filter *.msi | Select-Object -First 1
           if (!$installer) {
             throw "Windows driver installer artifact did not contain an MSI."
           }
           $logPath = Join-Path $env:RUNNER_TEMP "libvirtualhid-driver-install.log"
+          $driverLogPath = Join-Path $env:ProgramData "libvirtualhid\install-driver.log"
           $process = Start-Process `
             -FilePath msiexec.exe `
             -ArgumentList @("/i", $installer.FullName, "/qn", "/norestart", "/L*v", $logPath) `
-            -Wait `
             -PassThru `
             -NoNewWindow
+          if (!$process.WaitForExit([int] [TimeSpan]::FromMinutes(5).TotalMilliseconds)) {
+            Get-Content -LiteralPath $logPath -Tail 200 -ErrorAction SilentlyContinue
+            Get-Content -LiteralPath $driverLogPath -Tail 200 -ErrorAction SilentlyContinue
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+            throw "Windows driver installer timed out after 5 minutes."
+          }
           if ($process.ExitCode -notin @(0, 3010)) {
             Get-Content -LiteralPath $logPath -ErrorAction SilentlyContinue
+            Get-Content -LiteralPath $driverLogPath -ErrorAction SilentlyContinue
             throw "Windows driver installer exited with code $($process.ExitCode)."
           }
 
@@ -394,9 +402,13 @@ jobs:
             $process = Start-Process `
               -FilePath msiexec.exe `
               -ArgumentList @("/x", $installer.FullName, "/qn", "/norestart", "/L*v", $logPath) `
-              -Wait `
               -PassThru `
               -NoNewWindow
+            if (!$process.WaitForExit([int] [TimeSpan]::FromMinutes(5).TotalMilliseconds)) {
+              Get-Content -LiteralPath $logPath -Tail 200 -ErrorAction SilentlyContinue
+              Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+              throw "Windows driver installer uninstall timed out after 5 minutes."
+            }
             if ($process.ExitCode -notin @(0, 3010)) {
               Get-Content -LiteralPath $logPath -ErrorAction SilentlyContinue
               throw "Windows driver installer uninstall exited with code $($process.ExitCode)."
@@ -475,12 +487,15 @@ jobs:
       - name: Validate Azure signing configuration
         if: >-
           github.event_name == 'push' &&
+          needs.setup_release.outputs.publish_release == 'true' &&
           vars.AZURE_SIGNING_ACCOUNT == ''
         shell: pwsh
-        run: throw "Push builds must use Azure Trusted Signing for the Windows driver package."
+        run: throw "Release builds must use Azure Trusted Signing for the Windows driver package."
 
       - name: Sign Windows driver package with local test certificate
-        if: github.event_name == 'pull_request'
+        if: >-
+          github.event_name == 'pull_request' ||
+          needs.setup_release.outputs.publish_release != 'true'
         shell: pwsh
         run: |
           $packagePath = Join-Path `
@@ -497,6 +512,7 @@ jobs:
         id: driver_catalog
         if: >-
           github.event_name == 'push' &&
+          needs.setup_release.outputs.publish_release == 'true' &&
           vars.AZURE_SIGNING_ACCOUNT != ''
         shell: pwsh
         run: |
@@ -508,6 +524,7 @@ jobs:
       - name: Sign Windows driver package with Azure Trusted Signing
         if: >-
           github.event_name == 'push' &&
+          needs.setup_release.outputs.publish_release == 'true' &&
           vars.AZURE_SIGNING_ACCOUNT != ''
         uses: azure/trusted-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82  # v2.0.0
         with:
@@ -538,6 +555,7 @@ jobs:
       - name: Sign Windows driver installer with Azure Trusted Signing
         if: >-
           github.event_name == 'push' &&
+          needs.setup_release.outputs.publish_release == 'true' &&
           vars.AZURE_SIGNING_ACCOUNT != ''
         uses: azure/trusted-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82  # v2.0.0
         with:
