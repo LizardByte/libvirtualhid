@@ -241,6 +241,27 @@ jobs:
           name: windows-driver-installer
           path: windows-driver-installer
 
+      - name: Trust Windows driver catalog signer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $certificate = Get-ChildItem `
+            -LiteralPath .\windows-driver-installer `
+            -Filter *.cer `
+            -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+          if (!$certificate) {
+            Write-Host "No separate driver signing certificate artifact was provided."
+            return
+          }
+
+          $imported = Import-Certificate `
+            -FilePath $certificate.FullName `
+            -CertStoreLocation "Cert:\LocalMachine\TrustedPublisher"
+          foreach ($cert in $imported) {
+            Write-Host "Trusted driver publisher certificate $($cert.Subject) [$($cert.Thumbprint)]."
+          }
+
       - name: Install Windows driver installer
         if: runner.os == 'Windows'
         shell: pwsh
@@ -252,6 +273,7 @@ jobs:
           }
           $logPath = Join-Path $env:RUNNER_TEMP "libvirtualhid-driver-install.log"
           $driverLogPath = Join-Path $env:ProgramData "libvirtualhid\install-driver.log"
+          $setupApiLogPath = Join-Path $env:windir "inf\setupapi.dev.log"
           $process = Start-Process `
             -FilePath msiexec.exe `
             -ArgumentList @("/i", $installer.FullName, "/qn", "/norestart", "/L*v", $logPath) `
@@ -260,12 +282,14 @@ jobs:
           if (!$process.WaitForExit([int] [TimeSpan]::FromMinutes(5).TotalMilliseconds)) {
             Get-Content -LiteralPath $logPath -Tail 200 -ErrorAction SilentlyContinue
             Get-Content -LiteralPath $driverLogPath -Tail 200 -ErrorAction SilentlyContinue
+            Get-Content -LiteralPath $setupApiLogPath -Tail 300 -ErrorAction SilentlyContinue
             Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
             throw "Windows driver installer timed out after 5 minutes."
           }
           if ($process.ExitCode -notin @(0, 3010)) {
             Get-Content -LiteralPath $logPath -ErrorAction SilentlyContinue
             Get-Content -LiteralPath $driverLogPath -ErrorAction SilentlyContinue
+            Get-Content -LiteralPath $setupApiLogPath -Tail 300 -ErrorAction SilentlyContinue
             throw "Windows driver installer exited with code $($process.ExitCode)."
           }
 
@@ -552,6 +576,32 @@ jobs:
             -LiteralPath .\cmake-build-driver\cpack_artifacts\libvirtualhid.msi `
             -Destination .\artifacts\libvirtualhid-Windows-Driver-installer.msi
 
+      - name: Export Azure driver signing certificate
+        if: >-
+          github.event_name == 'push' &&
+          needs.setup_release.outputs.publish_release == 'true' &&
+          vars.AZURE_SIGNING_ACCOUNT != ''
+        shell: pwsh
+        run: |
+          $catalogPath = Join-Path `
+            $env:GITHUB_WORKSPACE `
+            "cmake-build-driver\src\platform\windows\driver\package\$env:DRIVER_BUILD_CONFIG\libvirtualhid.cat"
+          $signature = Get-AuthenticodeSignature -FilePath $catalogPath
+          if ($signature.Status -ne "Valid") {
+            throw "Azure signed driver catalog is not valid: $($signature.StatusMessage)"
+          }
+          if (!$signature.SignerCertificate) {
+            throw "Azure signed driver catalog did not expose a signer certificate."
+          }
+
+          $certificatePath = Join-Path $env:GITHUB_WORKSPACE "artifacts\libvirtualhid-driver-signing.cer"
+          New-Item -ItemType Directory -Force -Path (Split-Path -Parent $certificatePath) | Out-Null
+          Export-Certificate -Cert $signature.SignerCertificate -FilePath $certificatePath -Force | Out-Null
+          Write-Host (
+            "Exported Azure driver signing certificate " +
+            "$($signature.SignerCertificate.Subject) [$($signature.SignerCertificate.Thumbprint)]."
+          )
+
       - name: Sign Windows driver installer with Azure Trusted Signing
         if: >-
           github.event_name == 'push' &&
@@ -709,7 +759,7 @@ jobs:
               "artifacts/libvirtualhid-${{ needs.setup_release.outputs.release_tag }}-${name}.zip" \
               "install-${name}"
           done
-          cp windows-driver-installer/* artifacts/
+          cp windows-driver-installer/*.msi artifacts/
 
       - name: Create/Update GitHub Release
         if: needs.setup_release.outputs.publish_release == 'true'
