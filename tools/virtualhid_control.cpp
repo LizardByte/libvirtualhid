@@ -72,23 +72,23 @@ namespace {
     axis_base = 3000,
   };
 
-  constexpr auto profile_combo_id = static_cast<int>(ControlId::profile_combo);
-  constexpr auto create_button_id = static_cast<int>(ControlId::create_button);
-  constexpr auto device_list_id = static_cast<int>(ControlId::device_list);
-  constexpr auto reset_button_id = static_cast<int>(ControlId::reset_button);
-  constexpr auto remove_selected_button_id = static_cast<int>(ControlId::remove_selected_button);
-  constexpr auto remove_all_button_id = static_cast<int>(ControlId::remove_all_button);
-  constexpr auto lock_buttons_check_id = static_cast<int>(ControlId::lock_buttons_check);
-  constexpr auto state_text_id = static_cast<int>(ControlId::state_text);
-  constexpr auto feature_text_id = static_cast<int>(ControlId::feature_text);
-  constexpr auto battery_state_combo_id = static_cast<int>(ControlId::battery_state_combo);
-  constexpr auto battery_slider_id = static_cast<int>(ControlId::battery_slider);
-  constexpr auto clear_battery_button_id = static_cast<int>(ControlId::clear_battery_button);
-  constexpr auto output_summary_text_id = static_cast<int>(ControlId::output_summary_text);
-  constexpr auto node_list_id = static_cast<int>(ControlId::node_list);
-  constexpr auto output_list_id = static_cast<int>(ControlId::output_list);
-  constexpr auto button_base_id = static_cast<int>(ControlId::button_base);
-  constexpr auto axis_base_id = static_cast<int>(ControlId::axis_base);
+  constexpr auto profile_combo_id = std::to_underlying(ControlId::profile_combo);
+  constexpr auto create_button_id = std::to_underlying(ControlId::create_button);
+  constexpr auto device_list_id = std::to_underlying(ControlId::device_list);
+  constexpr auto reset_button_id = std::to_underlying(ControlId::reset_button);
+  constexpr auto remove_selected_button_id = std::to_underlying(ControlId::remove_selected_button);
+  constexpr auto remove_all_button_id = std::to_underlying(ControlId::remove_all_button);
+  constexpr auto lock_buttons_check_id = std::to_underlying(ControlId::lock_buttons_check);
+  constexpr auto state_text_id = std::to_underlying(ControlId::state_text);
+  constexpr auto feature_text_id = std::to_underlying(ControlId::feature_text);
+  constexpr auto battery_state_combo_id = std::to_underlying(ControlId::battery_state_combo);
+  constexpr auto battery_slider_id = std::to_underlying(ControlId::battery_slider);
+  constexpr auto clear_battery_button_id = std::to_underlying(ControlId::clear_battery_button);
+  constexpr auto output_summary_text_id = std::to_underlying(ControlId::output_summary_text);
+  constexpr auto node_list_id = std::to_underlying(ControlId::node_list);
+  constexpr auto output_list_id = std::to_underlying(ControlId::output_list);
+  constexpr auto button_base_id = std::to_underlying(ControlId::button_base);
+  constexpr auto axis_base_id = std::to_underlying(ControlId::axis_base);
 
   struct ProfileChoice {
     std::wstring_view id;
