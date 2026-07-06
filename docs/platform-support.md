@@ -56,14 +56,14 @@ reports, and output reports matter for controller compatibility. Keyboard and
 pointer devices prefer `uinput` because those devices map naturally to Linux
 input devices.
 
-The optional `virtualhid_control` diagnostic UI is currently implemented with
-native Windows controls. A future Linux UI should use a native toolkit that can
-be packaged as a release asset. Static Linux linking is possible only when the
-target distribution provides static archives for all selected backend and UI
-dependencies, including `libevdev` and any enabled X11/XTest libraries. Many
-distro toolchains intentionally omit some static archives, so release packaging
-should keep full static linking as a packaging-mode choice rather than an
-unconditional default.
+The optional `virtualhid_control` diagnostic UI uses SDL3 and Dear ImGui through
+the repository CPM lockfile. It is intended to stay on the same UI framework for
+Windows, Linux, and future macOS support. Static Linux linking is possible only
+when the target distribution provides static archives for all selected backend
+and UI dependencies, including SDL3, `libevdev`, and any enabled X11/XTest
+libraries. Many distro toolchains intentionally omit some static archives, so
+release packaging should keep full static linking as a packaging-mode choice
+rather than an unconditional default.
 
 ### Permissions
 

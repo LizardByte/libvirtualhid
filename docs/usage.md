@@ -67,6 +67,8 @@ unless they explicitly enable additional options.
 - `LIBVIRTUALHID_TOOLS_FULLY_STATIC`: pass full static link flags for
   diagnostic tools. On Linux this also requires static archives for backend
   dependencies such as `libevdev`, and may not be supported by every distro.
+- `LIBVIRTUALHID_TOOLS_STATIC_SDL3`: prefer SDL3's static library target for
+  the diagnostic UI when it is available. This defaults to on.
 - `LIBVIRTUALHID_INSTALL`: install targets, headers, and CMake package files.
   This defaults to on for direct builds and off when consumed by another CMake
   project.
@@ -84,20 +86,25 @@ artifact.
 
 ## Diagnostic UI
 
-`virtualhid_control` is an optional native diagnostic UI binary:
+`virtualhid_control` is an optional SDL3 and Dear ImGui diagnostic UI binary:
 
 ```bash
 virtualhid_control
 ```
 
-The current Windows UI can create and remove gamepads from the built-in
-profiles, submit buttons, sticks, triggers, and battery state, show backend and
-profile capabilities, list device nodes reported for UI-created devices, and
-display normalized gamepad output such as rumble, RGB LED, adaptive trigger,
-trigger rumble, and raw report events delivered through the normal callback
-path. Button controls are momentary by default so they behave like physical
-gamepad buttons; enable `Lock buttons` to keep the old click-to-toggle behavior
-for held inputs.
+The UI is built from the repository CPM lockfile so Windows, Linux, and future
+macOS builds share the same frontend stack. Builds prefer static SDL3 by
+default when a static target is available.
+
+The UI can create and remove gamepads from the built-in profiles, submit
+buttons, sticks, triggers, and battery state, show backend and profile
+capabilities, list device nodes reported for UI-created devices, and display
+normalized gamepad output such as rumble, RGB LED, adaptive trigger, trigger
+rumble, and raw report events delivered through the normal callback path. Button
+controls are momentary by default so they behave like physical gamepad buttons;
+enable `Lock buttons` to keep the old click-to-toggle behavior for held inputs.
+The UI intentionally does not use gamepad navigation so virtual devices created
+by the tool cannot drive the tool's own controls.
 
 External devices created by another process, such as Sunshine, are not
 enumerated yet. That requires backend protocol support so the Windows driver or
