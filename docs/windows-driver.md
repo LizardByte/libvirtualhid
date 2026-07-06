@@ -84,10 +84,13 @@ powershell -ExecutionPolicy Bypass -File .\scripts\windows\uninstall-driver.ps1 
 The WiX installer also places validation files under the default install root,
 `C:\Program Files\libvirtualhid`:
 
-- `scripts\windows\test-installed-driver.ps1`
-- `scripts\windows\test-browser-gamepad.ps1`
 - `tools\windows\gamepad_adapter.exe`
 - `tools\windows\virtualhid_control.exe`
+
+The source-tree validation scripts remain developer and CI helpers. They are not
+packaged as reviewer-facing MSI validation scripts because the native
+`virtualhid_control.exe` tool can create, exercise, and inspect virtual
+gamepads interactively.
 
 The install helper stages the INF with `pnputil`, updates an existing
 `ROOT\LIBVIRTUALHID` device when present, and creates that root-enumerated
@@ -101,7 +104,7 @@ desktop browser at `https://hardwaretester.com/gamepad` and validates that the
 browser Gamepad API observes the held virtual controller.
 
 For manual browser validation, run the browser helper with `-KeepBrowserOpen`,
-or run:
+run the interactive UI, or run:
 
 ```powershell
 tools\windows\gamepad_adapter.exe xseries --hold-seconds 60

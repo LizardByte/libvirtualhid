@@ -162,6 +162,8 @@ TEST(VirtualHidControlModelTest, UpdatesVisibleControlsForProfiles) {
 }
 
 TEST(VirtualHidControlModelTest, SummarizesOutputState) {
+  using enum lvh::GamepadOutputKind;
+
   const auto generic = lvh::profiles::generic_gamepad();
   const auto dualsense = lvh::profiles::dualsense();
 
@@ -172,23 +174,23 @@ TEST(VirtualHidControlModelTest, SummarizesOutputState) {
   );
   EXPECT_EQ(control::output_summary(state, dualsense), L"Output: no reports received");
 
-  state.outputs.push_back({.sequence = 1, .output = output(lvh::GamepadOutputKind::raw_report)});
+  state.outputs.push_back({.sequence = 1, .output = output(raw_report)});
   EXPECT_EQ(control::output_summary(state, dualsense), L"Output: reports received");
 
-  state.latest_raw_report = output(lvh::GamepadOutputKind::raw_report);
+  state.latest_raw_report = output(raw_report);
   EXPECT_EQ(control::output_summary(state, dualsense), L"Output: raw report");
 
-  state.latest_rumble = output(lvh::GamepadOutputKind::rumble);
+  state.latest_rumble = output(rumble);
   state.latest_rumble->low_frequency_rumble = 10;
   state.latest_rumble->high_frequency_rumble = 20;
-  state.latest_trigger_rumble = output(lvh::GamepadOutputKind::trigger_rumble);
+  state.latest_trigger_rumble = output(trigger_rumble);
   state.latest_trigger_rumble->left_trigger_rumble = 30;
   state.latest_trigger_rumble->right_trigger_rumble = 40;
-  state.latest_rgb_led = output(lvh::GamepadOutputKind::rgb_led);
+  state.latest_rgb_led = output(rgb_led);
   state.latest_rgb_led->red = 1;
   state.latest_rgb_led->green = 2;
   state.latest_rgb_led->blue = 3;
-  state.latest_adaptive_triggers = output(lvh::GamepadOutputKind::adaptive_triggers);
+  state.latest_adaptive_triggers = output(adaptive_triggers);
   state.latest_adaptive_triggers->adaptive_trigger_flags = 4;
 
   EXPECT_EQ(

@@ -18,8 +18,6 @@ set(LIBVIRTUALHID_DRIVER_LICENSE_FILE
 install(FILES
         "${PROJECT_SOURCE_DIR}/scripts/windows/libvirtualhid-driver-common.ps1"
         "${PROJECT_SOURCE_DIR}/scripts/windows/install-driver.ps1"
-        "${PROJECT_SOURCE_DIR}/scripts/windows/test-browser-gamepad.ps1"
-        "${PROJECT_SOURCE_DIR}/scripts/windows/test-installed-driver.ps1"
         "${PROJECT_SOURCE_DIR}/scripts/windows/uninstall-driver.ps1"
   DESTINATION "scripts/windows"
   COMPONENT driver)
