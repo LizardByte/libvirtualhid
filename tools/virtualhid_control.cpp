@@ -372,7 +372,7 @@ namespace {
         0,
         window_class.lpszClassName,
         L"libvirtualhid control",
-        WS_OVERLAPPEDWINDOW,
+        WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
         CW_USEDEFAULT,
         CW_USEDEFAULT,
         980,
@@ -482,6 +482,7 @@ namespace {
           return 0;
         case WM_SIZE:
           layout_controls(LOWORD(lparam), HIWORD(lparam));
+          redraw_window();
           return 0;
         case WM_GETMINMAXINFO:
           handle_min_max_info(reinterpret_cast<MINMAXINFO *>(lparam));
@@ -516,7 +517,7 @@ namespace {
         0,
         class_name,
         text,
-        WS_CHILD | WS_VISIBLE | style,
+        WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | style,
         0,
         0,
         10,
@@ -545,7 +546,7 @@ namespace {
       feature_text_ = create_child(L"STATIC", L"", SS_LEFT, feature_text_id);
       battery_label_ = create_child(L"STATIC", L"Battery", SS_LEFT, 0);
       battery_state_combo_ = create_child(WC_COMBOBOXW, L"", CBS_DROPDOWNLIST | WS_VSCROLL, battery_state_combo_id);
-      battery_slider_ = create_child(TRACKBAR_CLASSW, L"", TBS_AUTOTICKS, battery_slider_id);
+      battery_slider_ = create_child(TRACKBAR_CLASSW, L"", TBS_NOTICKS, battery_slider_id);
       clear_battery_button_ = create_child(L"BUTTON", L"Clear", BS_PUSHBUTTON, clear_battery_button_id);
       output_summary_text_ = create_child(L"STATIC", L"", SS_LEFT, output_summary_text_id);
       nodes_label_ = create_child(L"STATIC", L"Device nodes", SS_LEFT, 0);
@@ -585,7 +586,7 @@ namespace {
         axis_sliders_[index] = create_child(
           TRACKBAR_CLASSW,
           L"",
-          TBS_AUTOTICKS,
+          TBS_NOTICKS,
           axis_base_id + static_cast<int>(index)
         );
         ::SendMessageW(
@@ -603,6 +604,9 @@ namespace {
       constexpr auto gap = 8;
       constexpr auto row = 28;
       constexpr auto label_height = 18;
+      constexpr auto axis_label_height = 22;
+      constexpr auto axis_slider_height = 34;
+      constexpr auto axis_row_height = 64;
       constexpr auto button_width = 108;
       constexpr auto button_height = 28;
       constexpr auto state_height = 72;
@@ -662,13 +666,13 @@ namespace {
         const auto column = static_cast<int>(index % static_cast<std::size_t>(slider_columns));
         const auto row_index = static_cast<int>(index / static_cast<std::size_t>(slider_columns));
         const auto x = right_x + column * (slider_width + gap);
-        const auto y = slider_top + row_index * 54;
-        move(axis_labels_[index], x, y, slider_width, 18);
-        move(axis_sliders_[index], x, y + 18, slider_width, 34);
+        const auto y = slider_top + row_index * axis_row_height;
+        move(axis_labels_[index], x, y, slider_width, axis_label_height);
+        move(axis_sliders_[index], x, y + axis_label_height, slider_width, axis_slider_height);
       }
 
       const auto slider_rows = static_cast<int>((axis_sliders_.size() + static_cast<std::size_t>(slider_columns) - 1U) / static_cast<std::size_t>(slider_columns));
-      auto next_top = slider_top + slider_rows * 54 + gap;
+      auto next_top = slider_top + slider_rows * axis_row_height + gap;
       const auto show_battery = battery_controls_visible_;
       ::ShowWindow(battery_label_, show_battery ? SW_SHOW : SW_HIDE);
       ::ShowWindow(battery_state_combo_, show_battery ? SW_SHOW : SW_HIDE);
@@ -676,15 +680,16 @@ namespace {
       ::ShowWindow(clear_battery_button_, show_battery ? SW_SHOW : SW_HIDE);
       if (show_battery) {
         const auto clear_width = 70;
+        const auto battery_label_width = 84;
         const auto combo_width = std::min(220, std::max(150, right_width / 3));
-        move(battery_label_, right_x, next_top + 5, 58, label_height);
-        move(battery_state_combo_, right_x + 64, next_top, combo_width, 180);
+        move(battery_label_, right_x, next_top + 5, battery_label_width, label_height);
+        move(battery_state_combo_, right_x + battery_label_width + gap, next_top, combo_width, 180);
         move(clear_battery_button_, right_x + right_width - clear_width, next_top, clear_width, row);
         move(
           battery_slider_,
-          right_x + 64 + combo_width + gap,
+          right_x + battery_label_width + gap + combo_width + gap,
           next_top,
-          std::max(120, right_width - 64 - combo_width - gap - clear_width - gap),
+          std::max(120, right_width - battery_label_width - combo_width - clear_width - (gap * 3)),
           row
         );
         next_top += row + gap;
@@ -703,7 +708,7 @@ namespace {
 
     static void move(HWND control, int x, int y, int width, int height) {
       if (control != nullptr) {
-        ::SetWindowPos(control, nullptr, x, y, width, height, SWP_NOZORDER | SWP_NOACTIVATE);
+        ::SetWindowPos(control, nullptr, x, y, width, height, SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOCOPYBITS);
       }
     }
 
@@ -712,8 +717,8 @@ namespace {
         return;
       }
 
-      info->ptMinTrackSize.x = 900;
-      info->ptMinTrackSize.y = 660;
+      info->ptMinTrackSize.x = 980;
+      info->ptMinTrackSize.y = 740;
     }
 
     bool buttons_locked() const {
@@ -728,6 +733,15 @@ namespace {
       layout_controls(rect.right - rect.left, rect.bottom - rect.top);
     }
 
+    void relayout_and_redraw() {
+      layout_current_client();
+      redraw_window();
+    }
+
+    void redraw_window() {
+      ::RedrawWindow(window_, nullptr, nullptr, RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_ERASE);
+    }
+
     void handle_command(int id, int notification) {
       if (id == create_button_id && notification == BN_CLICKED) {
         create_gamepad();
@@ -735,7 +749,7 @@ namespace {
       }
       if (id == profile_combo_id && notification == CBN_SELCHANGE) {
         refresh_selected_device();
-        layout_current_client();
+        relayout_and_redraw();
         return;
       }
       if (id == reset_button_id && notification == BN_CLICKED) {
@@ -1073,11 +1087,16 @@ namespace {
       return profile_for_choice(profile_choices[static_cast<std::size_t>(selection)]);
     }
 
-    void update_visible_controls_for_profile(const lvh::DeviceProfile &profile) {
+    bool update_visible_controls_for_profile(const lvh::DeviceProfile &profile) {
+      auto changed = false;
       for (std::size_t index = 0; index < button_choices.size(); ++index) {
-        visible_buttons_[index] = lvh::supports_gamepad_button(profile, button_choices[index].button);
+        const auto visible = lvh::supports_gamepad_button(profile, button_choices[index].button);
+        changed = changed || visible_buttons_[index] != visible;
+        visible_buttons_[index] = visible;
       }
+      changed = changed || battery_controls_visible_ != profile.capabilities.supports_battery;
       battery_controls_visible_ = profile.capabilities.supports_battery;
+      return changed;
     }
 
     std::wstring profile_feature_summary(const lvh::DeviceProfile &profile) const {
@@ -1136,6 +1155,7 @@ namespace {
     void refresh_selected_device() {
       std::lock_guard lock {mutex_};
       auto *device = selected_device_locked();
+      auto relayout_needed = false;
       const auto enabled = device != nullptr;
       ::EnableWindow(reset_button_, enabled);
       ::EnableWindow(remove_selected_button_, enabled);
@@ -1146,10 +1166,13 @@ namespace {
 
       if (device == nullptr) {
         if (const auto profile = current_combo_profile()) {
-          update_visible_controls_for_profile(*profile);
+          relayout_needed = update_visible_controls_for_profile(*profile);
           ::SetWindowTextW(feature_text_, profile_feature_summary(*profile).c_str());
         }
         else {
+          relayout_needed = std::any_of(visible_buttons_.begin(), visible_buttons_.end(), [](bool visible) {
+            return visible;
+          }) || battery_controls_visible_;
           visible_buttons_.fill(false);
           battery_controls_visible_ = false;
           ::SetWindowTextW(feature_text_, L"");
@@ -1168,14 +1191,16 @@ namespace {
         ::SendMessageW(output_list_, LB_RESETCONTENT, 0, 0);
         reset_sliders();
         refresh_battery_controls({}, false);
-        layout_current_client();
+        if (relayout_needed) {
+          relayout_and_redraw();
+        }
         return;
       }
 
       const auto *gamepad = device->adapter->gamepad();
       const auto &profile = gamepad->profile();
       const auto state = device->adapter->state();
-      update_visible_controls_for_profile(profile);
+      relayout_needed = update_visible_controls_for_profile(profile);
 
       std::wostringstream state_text;
       state_text << device->profile_label << L" #" << gamepad->device_id() << L"\r\n"
@@ -1210,7 +1235,9 @@ namespace {
 
       refresh_nodes(*gamepad);
       refresh_outputs(*device);
-      layout_current_client();
+      if (relayout_needed) {
+        relayout_and_redraw();
+      }
     }
 
     void reset_sliders() {
