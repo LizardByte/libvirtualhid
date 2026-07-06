@@ -13,7 +13,8 @@ if(WIN32)
       "${CMAKE_CURRENT_SOURCE_DIR}/windows/virtualhid_control.rc")
     target_include_directories(virtualhid_control
       PRIVATE
-      "${CMAKE_CURRENT_SOURCE_DIR}/windows")
+      "${CMAKE_CURRENT_SOURCE_DIR}/windows"
+      "${PROJECT_SOURCE_DIR}")
     target_compile_definitions(virtualhid_control
       PRIVATE
       NOMINMAX
