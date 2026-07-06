@@ -39,8 +39,10 @@
 
   #include "resource.h"
 
-  #include <commctrl.h>
-  #include <windows.h>
+// clang-format off
+  #include <Windows.h>
+  #include <CommCtrl.h>
+// clang-format on
 
 namespace {
 

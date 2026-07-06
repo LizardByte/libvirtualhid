@@ -61,7 +61,9 @@ unless they explicitly enable additional options.
 - `LIBVIRTUALHID_TOOLS_STATIC_RUNTIME`: link diagnostic tools against static
   compiler runtimes where supported. This is enabled by default so the Windows
   MinGW/UCRT64 `virtualhid_control.exe` does not need adjacent MinGW runtime
-  DLLs.
+  DLLs. MSVC uses the static runtime for tools in the Windows driver package
+  build, where the packaged library, examples, and tools are all built with the
+  same runtime setting.
 - `LIBVIRTUALHID_TOOLS_FULLY_STATIC`: pass full static link flags for
   diagnostic tools. On Linux this also requires static archives for backend
   dependencies such as `libevdev`, and may not be supported by every distro.
