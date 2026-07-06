@@ -40,6 +40,8 @@ behind backend implementations.
   HID Framework, with keyboard and mouse support through normal Win32 APIs.
 - Output callbacks for profile-specific feedback such as rumble, LEDs,
   adaptive triggers, and raw HID output reports when available.
+- An optional `virtualhid_control` native UI tool for creating, removing,
+  controlling, and inspecting test gamepads through the public C++ API.
 - CMake consumption through installed packages, vendored source,
   `add_subdirectory`, or `FetchContent`.
 

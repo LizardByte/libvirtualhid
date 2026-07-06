@@ -22,9 +22,10 @@ User-mode virtual HID driver package that enables compatible apps to create virt
 Virtual HID Driver installs the user-mode driver component used by compatible
 applications to create virtual HID gamepads on Windows.
 
-The package has no standalone user interface. After installation, compatible
-applications can request virtual HID gamepads, and Windows applications that
-understand standard HID gamepads can discover those devices.
+The package includes a local diagnostic UI for creating and testing virtual
+gamepads. Compatible applications can also request virtual HID gamepads, and
+Windows applications that understand standard HID gamepads can discover those
+devices.
 ```
 
 ## Architecture
@@ -51,9 +52,9 @@ Build the UMDF package with a Visual Studio generator and the WDK installed:
 ```powershell
 cmake -S . -B cmake-build-windows-driver -G "Visual Studio 17 2022" -A x64 `
   -DLIBVIRTUALHID_BUILD_WINDOWS_DRIVER=ON -DLIBVIRTUALHID_ENABLE_PACKAGING=ON `
-  -DBUILD_TESTS=OFF -DBUILD_EXAMPLES=ON
+  -DBUILD_TESTS=OFF -DBUILD_EXAMPLES=ON -DLIBVIRTUALHID_BUILD_TOOLS=ON
 cmake --build cmake-build-windows-driver --config Release `
-  --target libvirtualhid_windows_catalog gamepad_adapter
+  --target libvirtualhid_windows_catalog gamepad_adapter virtualhid_control
 cpack -G WIX -C Release --config .\cmake-build-windows-driver\CPackConfig.cmake
 ```
 
@@ -83,9 +84,13 @@ powershell -ExecutionPolicy Bypass -File .\scripts\windows\uninstall-driver.ps1 
 The WiX installer also places validation files under the default install root,
 `C:\Program Files\libvirtualhid`:
 
-- `scripts\windows\test-installed-driver.ps1`
-- `scripts\windows\test-browser-gamepad.ps1`
 - `tools\windows\gamepad_adapter.exe`
+- `tools\windows\virtualhid_control.exe`
+
+The source-tree validation scripts remain developer and CI helpers. They are not
+packaged as reviewer-facing MSI validation scripts because the native
+`virtualhid_control.exe` tool can create, exercise, and inspect virtual
+gamepads interactively.
 
 The install helper stages the INF with `pnputil`, updates an existing
 `ROOT\LIBVIRTUALHID` device when present, and creates that root-enumerated
@@ -99,7 +104,7 @@ desktop browser at `https://hardwaretester.com/gamepad` and validates that the
 browser Gamepad API observes the held virtual controller.
 
 For manual browser validation, run the browser helper with `-KeepBrowserOpen`,
-or run:
+run the interactive UI, or run:
 
 ```powershell
 tools\windows\gamepad_adapter.exe xseries --hold-seconds 60
@@ -108,6 +113,20 @@ tools\windows\gamepad_adapter.exe xseries --hold-seconds 60
 Then open `https://hardwaretester.com/gamepad` in a normal desktop browser and
 press one of the held virtual buttons if the browser requires a gamepad
 activation event.
+
+For interactive local validation, run:
+
+```powershell
+tools\windows\virtualhid_control.exe
+```
+
+The native UI can create, remove, control, and monitor gamepads that it owns.
+Buttons are momentary by default, with an explicit lock mode for held inputs.
+The UI also shows supported profile features, battery input state, device nodes,
+and normalized feedback reports such as rumble, RGB LED, adaptive trigger, and
+raw output events. Devices created by another process are not listed yet; that
+requires a future Windows control-protocol extension for cross-process
+diagnostics.
 
 ## Installation Notes
 

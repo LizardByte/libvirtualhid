@@ -18,8 +18,6 @@ set(LIBVIRTUALHID_DRIVER_LICENSE_FILE
 install(FILES
         "${PROJECT_SOURCE_DIR}/scripts/windows/libvirtualhid-driver-common.ps1"
         "${PROJECT_SOURCE_DIR}/scripts/windows/install-driver.ps1"
-        "${PROJECT_SOURCE_DIR}/scripts/windows/test-browser-gamepad.ps1"
-        "${PROJECT_SOURCE_DIR}/scripts/windows/test-installed-driver.ps1"
         "${PROJECT_SOURCE_DIR}/scripts/windows/uninstall-driver.ps1"
   DESTINATION "scripts/windows"
   COMPONENT driver)
@@ -30,7 +28,17 @@ if(NOT TARGET gamepad_adapter)
             "gamepad_adapter validation tool can be packaged.")
 endif()
 
+if(NOT TARGET virtualhid_control)
+    message(FATAL_ERROR
+            "The Windows driver installer requires LIBVIRTUALHID_BUILD_TOOLS=ON "
+            "so the virtualhid_control UI tool can be packaged.")
+endif()
+
 install(TARGETS gamepad_adapter
+  RUNTIME DESTINATION "tools/windows"
+  COMPONENT driver)
+
+install(TARGETS virtualhid_control
   RUNTIME DESTINATION "tools/windows"
   COMPONENT driver)
 

@@ -66,6 +66,8 @@ code and tests provide a better source of truth.
 - `test_libvirtualhid`: shared GoogleTest binary under the build directory's
   `tests` directory.
 - `gamepad_adapter`: example executable for profile and lifecycle diagnostics.
+- `run_gamepad_adapter_example`: CMake target that runs `gamepad_adapter` from
+  its generator-specific output path when a platform backend is available.
 - Windows driver helper scripts under `scripts/windows`.
 - Linux consumer tests through SDL2, libinput, `uhid`, and `uinput` where the
   host environment supports real virtual devices.

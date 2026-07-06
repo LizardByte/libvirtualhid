@@ -211,6 +211,7 @@ jobs:
             -DBUILD_EXAMPLES=ON \
             -DBUILD_TESTS=ON \
             -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_CONFIG} \
+            -DLIBVIRTUALHID_BUILD_TOOLS=ON \
             -B cmake-build-ci \
             -G Ninja \
             -S .
@@ -226,6 +227,7 @@ jobs:
             -DBUILD_DOCS=OFF `
             -DBUILD_EXAMPLES=ON `
             -DBUILD_TESTS=ON `
+            -DLIBVIRTUALHID_BUILD_TOOLS=ON `
             -A x64 `
             -B cmake-build-ci `
             -G "Visual Studio 17 2022" `
@@ -339,7 +341,9 @@ jobs:
           }
 
           & $openCppCoverage `
+            --sources "$env:GITHUB_WORKSPACE\examples" `
             --sources "$env:GITHUB_WORKSPACE\src" `
+            --sources "$env:GITHUB_WORKSPACE\tools" `
             "--export_type=cobertura:$env:GITHUB_WORKSPACE\cmake-build-ci\reports\coverage.xml" `
             --working_dir "$env:GITHUB_WORKSPACE\cmake-build-ci\tests" `
             -- `
@@ -375,6 +379,9 @@ jobs:
 
           $coverage.Save($coveragePath)
 
+      - name: Run gamepad adapter example
+        run: cmake --build cmake-build-ci --config ${{ env.CMAKE_BUILD_CONFIG }} --target run_gamepad_adapter_example
+
       - name: Generate gcov report
         id: test_report
         if: >-
@@ -386,30 +393,19 @@ jobs:
           GCOV_EXECUTABLE: ${{ matrix.gcov_executable }}
           MSYS2_PATH_TYPE: inherit
         run: |
-          uv run --project ../third-party/lizardbyte-common --locked --no-sync gcovr . -r ../src \
+          uv run --project ../third-party/lizardbyte-common --locked --no-sync gcovr . -r .. \
+            --filter ../examples/ \
+            --filter ../src/ \
+            --filter ../tools/ \
             --gcov-executable "${GCOV_EXECUTABLE}" \
+            --exclude ../tests/ \
+            --exclude ../third-party/ \
             --exclude-noncode-lines \
             --exclude-throw-branches \
             --exclude-unreachable-branches \
             --verbose \
             --xml-pretty \
             -o reports/coverage.xml
-
-      - name: Run gamepad adapter example
-        if: runner.os == 'Linux'
-        run: |
-          ./cmake-build-ci/examples/gamepad_adapter
-
-      - name: Run gamepad adapter example Windows
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          if ("${{ matrix.kind }}" -eq "msys2") {
-            $env:PATH = "C:\msys64\${{ matrix.msystem }}\bin;C:\msys64\usr\bin;$env:PATH"
-            & .\cmake-build-ci\examples\gamepad_adapter.exe
-          } else {
-            & ".\cmake-build-ci\examples\$env:CMAKE_BUILD_CONFIG\gamepad_adapter.exe"
-          }
 
       - name: Uninstall Windows driver installer
         if: >-
@@ -505,7 +501,7 @@ jobs:
         run: >-
           cmake --build cmake-build-driver
           --config ${{ env.DRIVER_BUILD_CONFIG }}
-          --target libvirtualhid_windows_catalog gamepad_adapter
+          --target libvirtualhid_windows_catalog gamepad_adapter virtualhid_control
           --parallel 2
 
       - name: Validate Azure signing configuration

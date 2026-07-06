@@ -36,6 +36,9 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/build_version.cmake")
 option(BUILD_DOCS "Build documentation" ${LIBVIRTUALHID_IS_TOP_LEVEL})
 option(BUILD_TESTS "Build tests" ${LIBVIRTUALHID_IS_TOP_LEVEL})
 option(BUILD_EXAMPLES "Build examples" ${LIBVIRTUALHID_IS_TOP_LEVEL})
+option(LIBVIRTUALHID_BUILD_TOOLS "Build libvirtualhid diagnostic tools" ${LIBVIRTUALHID_IS_TOP_LEVEL})
+option(LIBVIRTUALHID_TOOLS_STATIC_RUNTIME "Link libvirtualhid tools to static compiler runtimes where supported" ON)
+option(LIBVIRTUALHID_TOOLS_FULLY_STATIC "Attempt to link libvirtualhid tools as fully static binaries" OFF)
 option(LIBVIRTUALHID_ENABLE_XTEST "Enable X11/XTest keyboard and mouse fallback on Linux" ON)
 option(LIBVIRTUALHID_BUILD_WINDOWS_DRIVER "Build the Windows UMDF2 driver package with the WDK/MSVC toolchain" OFF)
 option(LIBVIRTUALHID_INSTALL
@@ -105,6 +108,10 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
 
     if(BUILD_EXAMPLES)
         add_subdirectory(examples)
+    endif()
+
+    if(LIBVIRTUALHID_BUILD_TOOLS)
+        add_subdirectory(tools)
     endif()
 
     if(BUILD_TESTS)
