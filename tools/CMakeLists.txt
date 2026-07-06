@@ -1,9 +1,20 @@
+add_library(virtualhid_control_model STATIC
+  "${CMAKE_CURRENT_SOURCE_DIR}/virtualhid_control_model.cpp")
+
+target_include_directories(virtualhid_control_model
+  PUBLIC
+  "${CMAKE_CURRENT_SOURCE_DIR}")
+
+target_link_libraries(virtualhid_control_model
+  PUBLIC
+  libvirtualhid::libvirtualhid)
+
 add_executable(virtualhid_control
   "${CMAKE_CURRENT_SOURCE_DIR}/virtualhid_control.cpp")
 
 target_link_libraries(virtualhid_control
   PRIVATE
-  libvirtualhid::libvirtualhid)
+  virtualhid_control_model)
 
 if(WIN32)
     set_target_properties(virtualhid_control PROPERTIES
@@ -28,7 +39,7 @@ if(WIN32)
 endif()
 
 if(MSVC AND LIBVIRTUALHID_TOOLS_STATIC_RUNTIME AND LIBVIRTUALHID_BUILD_WINDOWS_DRIVER)
-    set_property(TARGET virtualhid_control PROPERTY
+    set_property(TARGET virtualhid_control virtualhid_control_model PROPERTY
       MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 

@@ -6,9 +6,7 @@
 // standard includes
 #include <algorithm>
 #include <array>
-#include <cmath>
 #include <cstdint>
-#include <iomanip>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -20,7 +18,7 @@
 #include <vector>
 
 // local includes
-#include <libvirtualhid/libvirtualhid.hpp>
+#include "virtualhid_control_model.hpp"
 
 #if defined(_WIN32)
 
@@ -46,11 +44,28 @@
 // clang-format on
 
 namespace {
+  using lvh::tools::virtualhid_control::axis_choices;
+  using lvh::tools::virtualhid_control::axis_to_slider;
+  using lvh::tools::virtualhid_control::battery_choice_index;
+  using lvh::tools::virtualhid_control::battery_choices;
+  using lvh::tools::virtualhid_control::battery_state_name;
+  using lvh::tools::virtualhid_control::button_choices;
+  using lvh::tools::virtualhid_control::device_type_name;
+  using lvh::tools::virtualhid_control::node_kind_name;
+  using lvh::tools::virtualhid_control::output_kind_name;
+  using lvh::tools::virtualhid_control::output_summary;
+  using lvh::tools::virtualhid_control::OutputState;
+  using lvh::tools::virtualhid_control::profile_choices;
+  using lvh::tools::virtualhid_control::profile_feature_summary;
+  using lvh::tools::virtualhid_control::profile_for_choice;
+  using lvh::tools::virtualhid_control::raw_hex;
+  using lvh::tools::virtualhid_control::slider_to_float;
+  using lvh::tools::virtualhid_control::trigger_to_slider;
+  using lvh::tools::virtualhid_control::update_visible_controls_for_profile;
 
   constexpr auto output_changed_message = WM_APP + 1U;
   constexpr auto button_subclass_id = 1U;
   constexpr auto icon_resource_id = 101;
-  constexpr auto slider_scale = 100;
 
   enum class ControlId : int {
     profile_combo = 1000,
@@ -90,96 +105,9 @@ namespace {
   constexpr auto button_base_id = std::to_underlying(ControlId::button_base);
   constexpr auto axis_base_id = std::to_underlying(ControlId::axis_base);
 
-  struct ProfileChoice {
-    std::wstring_view id;
-    std::wstring_view label;
-    lvh::GamepadProfileKind kind;
-    lvh::ClientControllerType client_type;
-  };
-
-  struct ButtonChoice {
-    std::wstring_view label;
-    lvh::GamepadButton button;
-  };
-
-  struct AxisChoice {
-    std::wstring_view label;
-    int minimum;
-    int maximum;
-  };
-
-  struct BatteryChoice {
-    std::wstring_view label;
-    lvh::GamepadBatteryState state;
-  };
-
-  constexpr std::array profile_choices {
-    ProfileChoice {L"generic", L"Generic HID", lvh::GamepadProfileKind::generic, lvh::ClientControllerType::unknown},
-    ProfileChoice {L"x360", L"Xbox 360", lvh::GamepadProfileKind::xbox_360, lvh::ClientControllerType::xbox},
-    ProfileChoice {L"xone", L"Xbox One", lvh::GamepadProfileKind::xbox_one, lvh::ClientControllerType::xbox},
-    ProfileChoice {L"xseries", L"Xbox Series", lvh::GamepadProfileKind::xbox_series, lvh::ClientControllerType::xbox},
-    ProfileChoice {L"ds4", L"DualShock 4", lvh::GamepadProfileKind::dualshock4, lvh::ClientControllerType::playstation},
-    ProfileChoice {L"ds5", L"DualSense", lvh::GamepadProfileKind::dualsense, lvh::ClientControllerType::playstation},
-    ProfileChoice {L"switch", L"Switch Pro", lvh::GamepadProfileKind::switch_pro, lvh::ClientControllerType::nintendo},
-  };
-
-  constexpr std::array button_choices {
-    ButtonChoice {L"A", lvh::GamepadButton::a},
-    ButtonChoice {L"B", lvh::GamepadButton::b},
-    ButtonChoice {L"X", lvh::GamepadButton::x},
-    ButtonChoice {L"Y", lvh::GamepadButton::y},
-    ButtonChoice {L"Back", lvh::GamepadButton::back},
-    ButtonChoice {L"Start", lvh::GamepadButton::start},
-    ButtonChoice {L"Guide", lvh::GamepadButton::guide},
-    ButtonChoice {L"L3", lvh::GamepadButton::left_stick},
-    ButtonChoice {L"R3", lvh::GamepadButton::right_stick},
-    ButtonChoice {L"LB", lvh::GamepadButton::left_shoulder},
-    ButtonChoice {L"RB", lvh::GamepadButton::right_shoulder},
-    ButtonChoice {L"D-pad Up", lvh::GamepadButton::dpad_up},
-    ButtonChoice {L"D-pad Down", lvh::GamepadButton::dpad_down},
-    ButtonChoice {L"D-pad Left", lvh::GamepadButton::dpad_left},
-    ButtonChoice {L"D-pad Right", lvh::GamepadButton::dpad_right},
-    ButtonChoice {L"Misc", lvh::GamepadButton::misc1},
-    ButtonChoice {L"Touchpad", lvh::GamepadButton::touchpad},
-    ButtonChoice {L"Paddle 1", lvh::GamepadButton::paddle1},
-    ButtonChoice {L"Paddle 2", lvh::GamepadButton::paddle2},
-    ButtonChoice {L"Paddle 3", lvh::GamepadButton::paddle3},
-    ButtonChoice {L"Paddle 4", lvh::GamepadButton::paddle4},
-  };
-
-  constexpr std::array axis_choices {
-    AxisChoice {L"Left X", -slider_scale, slider_scale},
-    AxisChoice {L"Left Y", -slider_scale, slider_scale},
-    AxisChoice {L"Right X", -slider_scale, slider_scale},
-    AxisChoice {L"Right Y", -slider_scale, slider_scale},
-    AxisChoice {L"Left Trigger", 0, slider_scale},
-    AxisChoice {L"Right Trigger", 0, slider_scale},
-  };
-
-  constexpr std::array battery_choices {
-    BatteryChoice {L"Unknown", lvh::GamepadBatteryState::unknown},
-    BatteryChoice {L"Discharging", lvh::GamepadBatteryState::discharging},
-    BatteryChoice {L"Charging", lvh::GamepadBatteryState::charging},
-    BatteryChoice {L"Full", lvh::GamepadBatteryState::full},
-    BatteryChoice {L"Voltage/temperature error", lvh::GamepadBatteryState::voltage_or_temperature_error},
-    BatteryChoice {L"Temperature error", lvh::GamepadBatteryState::temperature_error},
-    BatteryChoice {L"Charging error", lvh::GamepadBatteryState::charging_error},
-  };
-
-  struct OutputLogEntry {
-    std::uint64_t sequence = 0;
-    lvh::GamepadOutput output;
-  };
-
-  struct ControlledGamepad {
+  struct ControlledGamepad: OutputState {
     std::wstring profile_label;
     std::unique_ptr<lvh::GamepadStateAdapter> adapter;
-    std::vector<OutputLogEntry> outputs;
-    std::optional<lvh::GamepadOutput> latest_rumble;
-    std::optional<lvh::GamepadOutput> latest_trigger_rumble;
-    std::optional<lvh::GamepadOutput> latest_rgb_led;
-    std::optional<lvh::GamepadOutput> latest_adaptive_triggers;
-    std::optional<lvh::GamepadOutput> latest_raw_report;
   };
 
   struct MainControls {
@@ -264,213 +192,6 @@ namespace {
     return result;
   }
 
-  std::wstring device_type_name(lvh::DeviceType type) {
-    switch (type) {
-      using enum lvh::DeviceType;
-
-      case gamepad:
-        return L"gamepad";
-      case keyboard:
-        return L"keyboard";
-      case mouse:
-        return L"mouse";
-      case touchscreen:
-        return L"touchscreen";
-      case trackpad:
-        return L"trackpad";
-      case pen_tablet:
-        return L"pen tablet";
-    }
-    return L"unknown";
-  }
-
-  std::wstring node_kind_name(lvh::DeviceNodeKind kind) {
-    switch (kind) {
-      using enum lvh::DeviceNodeKind;
-
-      case input_event:
-        return L"input";
-      case joystick:
-        return L"joystick";
-      case hidraw:
-        return L"hidraw";
-      case sysfs:
-        return L"sysfs";
-      case other:
-        return L"other";
-    }
-    return L"other";
-  }
-
-  std::wstring output_kind_name(lvh::GamepadOutputKind kind) {
-    switch (kind) {
-      using enum lvh::GamepadOutputKind;
-
-      case rumble:
-        return L"rumble";
-      case rgb_led:
-        return L"rgb led";
-      case adaptive_triggers:
-        return L"adaptive triggers";
-      case raw_report:
-        return L"raw report";
-      case trigger_rumble:
-        return L"trigger rumble";
-    }
-    return L"raw report";
-  }
-
-  std::wstring battery_state_name(lvh::GamepadBatteryState state) {
-    switch (state) {
-      using enum lvh::GamepadBatteryState;
-
-      case unknown:
-        return L"unknown";
-      case discharging:
-        return L"discharging";
-      case charging:
-        return L"charging";
-      case full:
-        return L"full";
-      case voltage_or_temperature_error:
-        return L"voltage/temperature error";
-      case temperature_error:
-        return L"temperature error";
-      case charging_error:
-        return L"charging error";
-    }
-    return L"unknown";
-  }
-
-  int battery_choice_index(lvh::GamepadBatteryState state) {
-    for (std::size_t index = 0; index < battery_choices.size(); ++index) {
-      if (battery_choices[index].state == state) {
-        return static_cast<int>(index);
-      }
-    }
-    return 0;
-  }
-
-  std::wstring raw_hex(const std::vector<std::uint8_t> &bytes) {
-    std::wostringstream stream;
-    stream << std::hex << std::setfill(L'0');
-    for (const auto value : bytes) {
-      stream << std::setw(2) << static_cast<unsigned>(value);
-    }
-    return stream.str();
-  }
-
-  std::optional<lvh::DeviceProfile> profile_for_choice(const ProfileChoice &choice) {
-    switch (choice.kind) {
-      using enum lvh::GamepadProfileKind;
-
-      case generic:
-        return lvh::profiles::generic_gamepad();
-      case xbox_360:
-        return lvh::profiles::xbox_360();
-      case xbox_one:
-        return lvh::profiles::xbox_one();
-      case xbox_series:
-        return lvh::profiles::xbox_series();
-      case dualshock4:
-        return lvh::profiles::dualshock4();
-      case dualsense:
-        return lvh::profiles::dualsense();
-      case switch_pro:
-        return lvh::profiles::switch_pro();
-    }
-    return std::nullopt;
-  }
-
-  int axis_to_slider(float value) {
-    return static_cast<int>(std::lround(std::clamp(value, -1.0F, 1.0F) * static_cast<float>(slider_scale)));
-  }
-
-  int trigger_to_slider(float value) {
-    return static_cast<int>(std::lround(std::clamp(value, 0.0F, 1.0F) * static_cast<float>(slider_scale)));
-  }
-
-  float slider_to_float(LRESULT value) {
-    return static_cast<float>(value) / static_cast<float>(slider_scale);
-  }
-
-  std::wstring yes_no(bool value) {
-    return value ? L"yes" : L"no";
-  }
-
-  bool supports_normalized_feedback(const lvh::DeviceProfile &profile) {
-    using enum lvh::GamepadOutputKind;
-
-    return lvh::supports_gamepad_output(profile, rumble) ||
-           lvh::supports_gamepad_output(profile, rgb_led) ||
-           lvh::supports_gamepad_output(profile, adaptive_triggers) ||
-           lvh::supports_gamepad_output(profile, trigger_rumble);
-  }
-
-  std::wstring profile_feature_summary(const lvh::DeviceProfile &profile) {
-    using enum lvh::GamepadOutputKind;
-
-    const auto support = lvh::gamepad_profile_support(profile);
-    std::wostringstream stream;
-    stream << L"Features: battery " << yes_no(support.supports_battery)
-           << L" | rumble " << yes_no(lvh::supports_gamepad_output(profile, rumble))
-           << L" | trigger rumble " << yes_no(lvh::supports_gamepad_output(profile, trigger_rumble))
-           << L" | RGB LED " << yes_no(lvh::supports_gamepad_output(profile, rgb_led))
-           << L" | adaptive triggers " << yes_no(lvh::supports_gamepad_output(profile, adaptive_triggers))
-           << L" | raw output " << yes_no(lvh::supports_gamepad_output(profile, raw_report));
-    return stream.str();
-  }
-
-  void append_summary_separator(std::wostringstream &stream, bool wrote) {
-    if (wrote) {
-      stream << L" | ";
-    }
-  }
-
-  bool append_latest_output_summary(std::wostringstream &stream, const ControlledGamepad &device) {
-    auto wrote = false;
-    if (device.latest_rumble) {
-      stream << L"rumble low=" << device.latest_rumble->low_frequency_rumble << L" high=" << device.latest_rumble->high_frequency_rumble;
-      wrote = true;
-    }
-    if (device.latest_trigger_rumble) {
-      append_summary_separator(stream, wrote);
-      stream << L"trigger rumble L=" << device.latest_trigger_rumble->left_trigger_rumble << L" R=" << device.latest_trigger_rumble->right_trigger_rumble;
-      wrote = true;
-    }
-    if (device.latest_rgb_led) {
-      append_summary_separator(stream, wrote);
-      stream << L"RGB " << static_cast<unsigned>(device.latest_rgb_led->red) << L"," << static_cast<unsigned>(device.latest_rgb_led->green)
-             << L"," << static_cast<unsigned>(device.latest_rgb_led->blue);
-      wrote = true;
-    }
-    if (device.latest_adaptive_triggers) {
-      append_summary_separator(stream, wrote);
-      stream << L"adaptive flags=" << static_cast<unsigned>(device.latest_adaptive_triggers->adaptive_trigger_flags);
-      wrote = true;
-    }
-    if (!wrote && device.latest_raw_report) {
-      stream << L"raw report";
-      wrote = true;
-    }
-    return wrote;
-  }
-
-  std::wstring output_summary(const ControlledGamepad &device, const lvh::DeviceProfile &profile) {
-    std::wostringstream stream;
-    stream << L"Output: ";
-    if (device.outputs.empty()) {
-      stream << L"no reports received";
-    } else if (!append_latest_output_summary(stream, device)) {
-      stream << L"reports received";
-    }
-
-    if (!supports_normalized_feedback(profile)) {
-      stream << L" | profile has no normalized feedback categories";
-    }
-    return stream.str();
-  }
-
   std::optional<lvh::DeviceProfile> current_combo_profile(HWND profile_combo) {
     const auto selection = ::SendMessageW(profile_combo, CB_GETCURSEL, 0, 0);
     if (selection == CB_ERR || selection < 0 || static_cast<std::size_t>(selection) >= profile_choices.size()) {
@@ -478,22 +199,6 @@ namespace {
     }
 
     return profile_for_choice(profile_choices[static_cast<std::size_t>(selection)]);
-  }
-
-  bool update_visible_controls_for_profile(
-    const lvh::DeviceProfile &profile,
-    std::array<bool, button_choices.size()> &visible_buttons,
-    bool &battery_controls_visible
-  ) {
-    auto changed = false;
-    for (std::size_t index = 0; index < button_choices.size(); ++index) {
-      const auto visible = lvh::supports_gamepad_button(profile, button_choices[index].button);
-      changed = changed || visible_buttons[index] != visible;
-      visible_buttons[index] = visible;
-    }
-    changed = changed || battery_controls_visible != profile.capabilities.supports_battery;
-    battery_controls_visible = profile.capabilities.supports_battery;
-    return changed;
   }
 
   void move_control(HWND control, int x, int y, int width, int height) {
@@ -1418,31 +1123,7 @@ namespace {
           return;
         }
 
-        auto &outputs = iter->second.outputs;
-        outputs.push_back({.sequence = next_output_sequence_++, .output = output});
-        if (outputs.size() > max_output_events_) {
-          outputs.erase(outputs.begin(), outputs.begin() + static_cast<std::ptrdiff_t>(outputs.size() - max_output_events_));
-        }
-
-        switch (output.kind) {
-          using enum lvh::GamepadOutputKind;
-
-          case rumble:
-            iter->second.latest_rumble = output;
-            break;
-          case trigger_rumble:
-            iter->second.latest_trigger_rumble = output;
-            break;
-          case rgb_led:
-            iter->second.latest_rgb_led = output;
-            break;
-          case adaptive_triggers:
-            iter->second.latest_adaptive_triggers = output;
-            break;
-          case raw_report:
-            iter->second.latest_raw_report = output;
-            break;
-        }
+        lvh::tools::virtualhid_control::record_output(iter->second, output, next_output_sequence_, max_output_events_);
       }
       if (window_ != nullptr) {
         ::PostMessageW(window_, output_changed_message, 0, 0);

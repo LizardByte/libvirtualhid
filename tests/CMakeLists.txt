@@ -31,6 +31,11 @@ set(LIBVIRTUALHID_TEST_SOURCES
   "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_runtime.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_windows_protocol.cpp")
 
+if(TARGET virtualhid_control_model)
+    list(APPEND LIBVIRTUALHID_TEST_SOURCES
+         "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_virtualhid_control_model.cpp")
+endif()
+
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(LIBEVDEV REQUIRED IMPORTED_TARGET libevdev)
@@ -63,6 +68,12 @@ target_link_libraries(${TEST_BINARY}
   gmock_main
   libvirtualhid::libvirtualhid
   lizardbyte::test_support)
+
+if(TARGET virtualhid_control_model)
+    target_link_libraries(${TEST_BINARY}
+      PRIVATE
+      virtualhid_control_model)
+endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_libraries(${TEST_BINARY}
