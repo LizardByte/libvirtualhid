@@ -19,3 +19,20 @@ endif()
 
 libvirtualhid_copy_mingw_runtime(gamepad_adapter)
 libvirtualhid_copy_mingw_runtime(keyboard_mouse_adapter)
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR WIN32)
+    set(RUN_GAMEPAD_EXAMPLE_COMMAND "$<TARGET_FILE:gamepad_adapter>")
+    set(RUN_GAMEPAD_EXAMPLE_COMMENT "Running gamepad_adapter example")
+else()
+    set(RUN_GAMEPAD_EXAMPLE_COMMAND
+      "${CMAKE_COMMAND}" -E echo
+      "Skipping gamepad_adapter example: no ${CMAKE_SYSTEM_NAME} backend")
+    set(RUN_GAMEPAD_EXAMPLE_COMMENT "Skipping gamepad_adapter example")
+endif()
+
+add_custom_target(run_gamepad_adapter_example
+  COMMAND ${RUN_GAMEPAD_EXAMPLE_COMMAND}
+  COMMENT "${RUN_GAMEPAD_EXAMPLE_COMMENT}"
+  DEPENDS gamepad_adapter
+  VERBATIM
+  USES_TERMINAL)
