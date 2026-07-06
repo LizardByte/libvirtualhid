@@ -56,6 +56,15 @@ unless they explicitly enable additional options.
   level project.
 - `BUILD_DOCS`: build Doxygen documentation when this repository is the top
   level project.
+- `LIBVIRTUALHID_BUILD_TOOLS`: build diagnostic tool binaries, including
+  `virtualhid_control`, when this repository is the top level project.
+- `LIBVIRTUALHID_TOOLS_STATIC_RUNTIME`: link diagnostic tools against static
+  compiler runtimes where supported. This is enabled by default so the Windows
+  MinGW/UCRT64 `virtualhid_control.exe` does not need adjacent MinGW runtime
+  DLLs.
+- `LIBVIRTUALHID_TOOLS_FULLY_STATIC`: pass full static link flags for
+  diagnostic tools. On Linux this also requires static archives for backend
+  dependencies such as `libevdev`, and may not be supported by every distro.
 - `LIBVIRTUALHID_INSTALL`: install targets, headers, and CMake package files.
   This defaults to on for direct builds and off when consumed by another CMake
   project.
@@ -70,6 +79,24 @@ Linux consumers need the backend development packages used by the build, such as
 `libevdev` and `pkg-config`. Windows consumers can build the normal C++ library
 with MSVC or MinGW/UCRT64; the UMDF driver package is a separate WDK/MSVC build
 artifact.
+
+## Diagnostic UI
+
+`virtualhid_control` is an optional native diagnostic UI binary:
+
+```bash
+virtualhid_control
+```
+
+The current Windows UI can create gamepads from the built-in profiles, submit
+buttons, sticks, and triggers, show backend capabilities, list device nodes
+reported for UI-created devices, and display gamepad output reports delivered
+through the normal callback path.
+
+External devices created by another process, such as Sunshine, are not
+enumerated yet. That requires backend protocol support so the Windows driver or
+Linux backend can expose cross-process device snapshots without letting two
+processes race to control the same virtual device.
 
 ## Public API Shape
 

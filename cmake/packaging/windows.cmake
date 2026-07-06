@@ -30,7 +30,17 @@ if(NOT TARGET gamepad_adapter)
             "gamepad_adapter validation tool can be packaged.")
 endif()
 
+if(NOT TARGET virtualhid_control)
+    message(FATAL_ERROR
+            "The Windows driver installer requires LIBVIRTUALHID_BUILD_TOOLS=ON "
+            "so the virtualhid_control UI tool can be packaged.")
+endif()
+
 install(TARGETS gamepad_adapter
+  RUNTIME DESTINATION "tools/windows"
+  COMPONENT driver)
+
+install(TARGETS virtualhid_control
   RUNTIME DESTINATION "tools/windows"
   COMPONENT driver)
 
