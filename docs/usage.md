@@ -88,10 +88,14 @@ artifact.
 virtualhid_control
 ```
 
-The current Windows UI can create gamepads from the built-in profiles, submit
-buttons, sticks, and triggers, show backend capabilities, list device nodes
-reported for UI-created devices, and display gamepad output reports delivered
-through the normal callback path.
+The current Windows UI can create and remove gamepads from the built-in
+profiles, submit buttons, sticks, triggers, and battery state, show backend and
+profile capabilities, list device nodes reported for UI-created devices, and
+display normalized gamepad output such as rumble, RGB LED, adaptive trigger,
+trigger rumble, and raw report events delivered through the normal callback
+path. Button controls are momentary by default so they behave like physical
+gamepad buttons; enable `Lock buttons` to keep the old click-to-toggle behavior
+for held inputs.
 
 External devices created by another process, such as Sunshine, are not
 enumerated yet. That requires backend protocol support so the Windows driver or

@@ -117,9 +117,13 @@ For interactive local validation, run:
 tools\windows\virtualhid_control.exe
 ```
 
-The native UI can create, control, and monitor gamepads that it owns. Devices
-created by another process are not listed yet; that requires a future Windows
-control-protocol extension for cross-process diagnostics.
+The native UI can create, remove, control, and monitor gamepads that it owns.
+Buttons are momentary by default, with an explicit lock mode for held inputs.
+The UI also shows supported profile features, battery input state, device nodes,
+and normalized feedback reports such as rumble, RGB LED, adaptive trigger, and
+raw output events. Devices created by another process are not listed yet; that
+requires a future Windows control-protocol extension for cross-process
+diagnostics.
 
 ## Installation Notes
 

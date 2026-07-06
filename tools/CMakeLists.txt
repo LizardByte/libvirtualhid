@@ -8,6 +8,12 @@ target_link_libraries(virtualhid_control
 if(WIN32)
     set_target_properties(virtualhid_control PROPERTIES
       WIN32_EXECUTABLE TRUE)
+    target_sources(virtualhid_control
+      PRIVATE
+      "${CMAKE_CURRENT_SOURCE_DIR}/windows/virtualhid_control.rc")
+    target_include_directories(virtualhid_control
+      PRIVATE
+      "${CMAKE_CURRENT_SOURCE_DIR}/windows")
     target_compile_definitions(virtualhid_control
       PRIVATE
       NOMINMAX
