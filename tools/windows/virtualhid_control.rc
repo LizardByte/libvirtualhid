@@ -1,3 +1,1 @@
-#include "resource.h"
-
-IDI_VIRTUALHID ICON "libvirtualhid.ico"
+101 ICON "libvirtualhid.ico"
