@@ -505,7 +505,7 @@ jobs:
         run: >-
           cmake --build cmake-build-driver
           --config ${{ env.DRIVER_BUILD_CONFIG }}
-          --target libvirtualhid_windows_catalog gamepad_adapter
+          --target libvirtualhid_windows_catalog gamepad_adapter virtualhid_control
           --parallel 2
 
       - name: Validate Azure signing configuration
