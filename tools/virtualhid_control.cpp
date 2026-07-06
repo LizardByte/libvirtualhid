@@ -6,8 +6,8 @@
 // standard includes
 #include <algorithm>
 #include <array>
-#include <cstdint>
 #include <cmath>
+#include <cstdint>
 #include <iomanip>
 #include <map>
 #include <memory>
@@ -37,10 +37,10 @@
     #define _UNICODE
   #endif
 
-  #include <windows.h>
-  #include <commctrl.h>
-
   #include "resource.h"
+
+  #include <commctrl.h>
+  #include <windows.h>
 
 namespace {
 
@@ -1116,8 +1116,7 @@ namespace {
       stream << L"Output: ";
       if (device.outputs.empty()) {
         stream << L"no reports received";
-      }
-      else {
+      } else {
         auto wrote = false;
         if (device.latest_rumble) {
           stream << L"rumble low=" << device.latest_rumble->low_frequency_rumble << L" high=" << device.latest_rumble->high_frequency_rumble;
@@ -1168,11 +1167,11 @@ namespace {
         if (const auto profile = current_combo_profile()) {
           relayout_needed = update_visible_controls_for_profile(*profile);
           ::SetWindowTextW(feature_text_, profile_feature_summary(*profile).c_str());
-        }
-        else {
+        } else {
           relayout_needed = std::any_of(visible_buttons_.begin(), visible_buttons_.end(), [](bool visible) {
-            return visible;
-          }) || battery_controls_visible_;
+                              return visible;
+                            }) ||
+                            battery_controls_visible_;
           visible_buttons_.fill(false);
           battery_controls_visible_ = false;
           ::SetWindowTextW(feature_text_, L"");
@@ -1210,12 +1209,11 @@ namespace {
                  << L"LT " << state.left_trigger << L" RT " << state.right_trigger << L"\r\n";
       if (state.battery) {
         state_text << L"Battery " << battery_state_name(state.battery->state) << L" " << static_cast<unsigned>(state.battery->percentage) << L"% | ";
-      }
-      else {
+      } else {
         state_text << L"Battery unset | ";
       }
       state_text
-                 << gamepad->submit_count() << L" submits";
+        << gamepad->submit_count() << L" submits";
       ::SetWindowTextW(state_text_, state_text.str().c_str());
       ::SetWindowTextW(feature_text_, profile_feature_summary(profile).c_str());
       ::SetWindowTextW(output_summary_text_, output_summary(*device, profile).c_str());
@@ -1445,8 +1443,8 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int) {
 
 #else
 
-// standard includes
-#include <iostream>
+  // standard includes
+  #include <iostream>
 
 /**
  * @brief Report that the native UI is not implemented on this platform yet.
