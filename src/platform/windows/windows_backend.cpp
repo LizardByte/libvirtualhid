@@ -166,6 +166,10 @@ namespace lvh::detail {
       return api.create && api.inject && api.destroy;
     }
 
+    OperationStatus unsupported_profile_status(std::string message) {
+      return OperationStatus::failure(ErrorCode::unsupported_profile, std::move(message));
+    }
+
     constexpr GUID control_device_interface_guid {
       0x3890af65,
       0x2da0,
@@ -1058,14 +1062,105 @@ namespace lvh::detail {
     };
 
     /**
+     * @brief Shared lifecycle and refresh support for Windows synthetic pointer devices.
+     */
+    class WindowsSyntheticPointerDevice {
+    protected:
+      WindowsSyntheticPointerDevice(SyntheticPointerApi api, HSYNTHETICPOINTERDEVICE device):
+          api_ {std::move(api)},
+          device_ {device} {}
+
+      WindowsSyntheticPointerDevice(const WindowsSyntheticPointerDevice &) = delete;
+      WindowsSyntheticPointerDevice &operator=(const WindowsSyntheticPointerDevice &) = delete;
+      WindowsSyntheticPointerDevice(WindowsSyntheticPointerDevice &&) noexcept = delete;
+      WindowsSyntheticPointerDevice &operator=(WindowsSyntheticPointerDevice &&) noexcept = delete;
+
+      virtual ~WindowsSyntheticPointerDevice() = default;
+
+      /**
+       * @brief Start periodic synthetic pointer refreshes while input is active.
+       *
+       * @param operation Operation description used for failure reporting.
+       */
+      void start_repeat_thread(std::string_view operation) {
+        repeat_thread_ = std::jthread {[this, operation = std::string {operation}](std::stop_token stop_token) {
+          while (!stop_token.stop_requested()) {
+            std::this_thread::sleep_for(synthetic_pointer_repeat_interval);
+            if (stop_token.stop_requested()) {
+              break;
+            }
+
+            std::lock_guard lock {mutex_};
+            if (!open_ || !has_repeat_input_locked()) {
+              continue;
+            }
+            static_cast<void>(inject_locked(operation));
+          }
+        }};
+      }
+
+      /**
+       * @brief Close the device and release the synthetic pointer handle.
+       *
+       * @return Success status after the device is closed.
+       */
+      OperationStatus close_device() {
+        stop_repeat_thread();
+
+        std::lock_guard lock {mutex_};
+        close_device_locked();
+        return OperationStatus::success();
+      }
+
+      /**
+       * @brief Close the device from the destructor without allowing exceptions to escape.
+       */
+      void close_device_noexcept() noexcept {
+        stop_repeat_thread();
+
+        std::lock_guard lock {mutex_};
+        close_device_locked();
+      }
+
+      SyntheticPointerApi api_;
+      HSYNTHETICPOINTERDEVICE device_ {};
+      mutable std::mutex mutex_;
+      bool open_ = true;
+
+    private:
+      virtual bool has_repeat_input_locked() const = 0;
+      virtual OperationStatus inject_locked(std::string_view operation) = 0;
+
+      void stop_repeat_thread() {
+        if (repeat_thread_.joinable()) {
+          repeat_thread_.request_stop();
+          repeat_thread_.join();
+        }
+      }
+
+      void close_device_locked() {
+        if (!open_) {
+          return;
+        }
+
+        open_ = false;
+        if (device_) {
+          api_.destroy(device_);
+          device_ = nullptr;
+        }
+      }
+
+      std::jthread repeat_thread_;
+    };
+
+    /**
      * @brief Backend touchscreen implemented with Windows synthetic pointer injection.
      */
-    class WindowsTouchscreen final: public BackendTouchscreen {
+    class WindowsTouchscreen final: public WindowsSyntheticPointerDevice, public BackendTouchscreen {
     public:
       WindowsTouchscreen(SyntheticPointerApi api, HSYNTHETICPOINTERDEVICE device):
-          api_ {std::move(api)},
-          device_ {device} {
-        start_repeat_thread();
+          WindowsSyntheticPointerDevice {std::move(api), device} {
+        start_repeat_thread("refresh Windows touchscreen contacts");
       }
 
       WindowsTouchscreen(const WindowsTouchscreen &) = delete;
@@ -1074,14 +1169,14 @@ namespace lvh::detail {
       WindowsTouchscreen &operator=(WindowsTouchscreen &&) noexcept = delete;
 
       ~WindowsTouchscreen() noexcept override {
-        close_noexcept();
+        close_device_noexcept();
       }
 
       static BackendTouchscreenCreationResult create(const SyntheticPointerApi &api, const CreateTouchscreenOptions &options) {
         using enum ErrorCode;
 
         if (options.profile.device_type != DeviceType::touchscreen) {
-          return {unsupported_device_status("Windows touchscreen backend requires a touchscreen profile"), nullptr};
+          return {unsupported_profile_status("Windows touchscreen backend requires a touchscreen profile"), nullptr};
         }
         if (!synthetic_pointer_available(api)) {
           return {
@@ -1198,27 +1293,11 @@ namespace lvh::detail {
       }
 
       OperationStatus close() override {
-        stop_repeat_thread();
-
-        std::lock_guard lock {mutex_};
-        if (!open_) {
-          return OperationStatus::success();
-        }
-
-        open_ = false;
-        if (device_) {
-          api_.destroy(device_);
-          device_ = nullptr;
-        }
-        return OperationStatus::success();
+        return close_device();
       }
 
     private:
       static constexpr UINT32 max_contacts = 10;  ///< Windows synthetic touchscreen contact capacity.
-
-      static OperationStatus unsupported_device_status(std::string message) {
-        return OperationStatus::failure(ErrorCode::unsupported_profile, std::move(message));
-      }
 
       static void update_contact_area(POINTER_TOUCH_INFO &touch_info, const TouchContact &contact) {
         if (contact.contact_major_axis <= 0.0F || contact.contact_minor_axis <= 0.0F) {
@@ -1280,7 +1359,11 @@ namespace lvh::detail {
         --active_contacts_;
       }
 
-      OperationStatus inject_locked(std::string_view operation) {
+      bool has_repeat_input_locked() const override {
+        return active_contacts_ != 0U;
+      }
+
+      OperationStatus inject_locked(std::string_view operation) override {
         return inject_synthetic_pointer_input(
           api_,
           device_,
@@ -1290,72 +1373,24 @@ namespace lvh::detail {
         );
       }
 
-      void start_repeat_thread() {
-        repeat_thread_ = std::jthread {[this](std::stop_token stop_token) {
-          while (!stop_token.stop_requested()) {
-            std::this_thread::sleep_for(synthetic_pointer_repeat_interval);
-            if (stop_token.stop_requested()) {
-              break;
-            }
-
-            std::lock_guard lock {mutex_};
-            if (!open_ || active_contacts_ == 0U) {
-              continue;
-            }
-            static_cast<void>(inject_locked("refresh Windows touchscreen contacts"));
-          }
-        }};
-      }
-
-      void stop_repeat_thread() {
-        if (repeat_thread_.joinable()) {
-          repeat_thread_.request_stop();
-          repeat_thread_.join();
-        }
-      }
-
-      /**
-       * @brief Close the device from the destructor without allowing exceptions to escape.
-       */
-      void close_noexcept() noexcept {
-        stop_repeat_thread();
-
-        std::lock_guard lock {mutex_};
-        if (!open_) {
-          return;
-        }
-
-        open_ = false;
-        if (device_) {
-          api_.destroy(device_);
-          device_ = nullptr;
-        }
-      }
-
-      SyntheticPointerApi api_;
-      HSYNTHETICPOINTERDEVICE device_ {};
-      mutable std::mutex mutex_;
       std::array<POINTER_TYPE_INFO, max_contacts> contacts_ {};
       std::array<std::optional<std::int32_t>, max_contacts> contact_ids_ {};
       std::array<bool, max_contacts> contact_touching_ {};
       std::size_t active_contacts_ = 0;
       bool new_slot_ = false;
-      bool open_ = true;
-      std::jthread repeat_thread_;
     };
 
     /**
      * @brief Backend pen tablet implemented with Windows synthetic pointer injection.
      */
-    class WindowsPenTablet final: public BackendPenTablet {
+    class WindowsPenTablet final: public WindowsSyntheticPointerDevice, public BackendPenTablet {
     public:
       WindowsPenTablet(SyntheticPointerApi api, HSYNTHETICPOINTERDEVICE device):
-          api_ {std::move(api)},
-          device_ {device} {
+          WindowsSyntheticPointerDevice {std::move(api), device} {
         pointer_.type = PT_PEN;
         pointer_.penInfo.pointerInfo.pointerType = PT_PEN;
         pointer_.penInfo.pointerInfo.pointerId = 0;
-        start_repeat_thread();
+        start_repeat_thread("refresh Windows pen tablet tool");
       }
 
       WindowsPenTablet(const WindowsPenTablet &) = delete;
@@ -1364,14 +1399,14 @@ namespace lvh::detail {
       WindowsPenTablet &operator=(WindowsPenTablet &&) noexcept = delete;
 
       ~WindowsPenTablet() noexcept override {
-        close_noexcept();
+        close_device_noexcept();
       }
 
       static BackendPenTabletCreationResult create(const SyntheticPointerApi &api, const CreatePenTabletOptions &options) {
         using enum ErrorCode;
 
         if (options.profile.device_type != DeviceType::pen_tablet) {
-          return {unsupported_device_status("Windows pen tablet backend requires a pen tablet profile"), nullptr};
+          return {unsupported_profile_status("Windows pen tablet backend requires a pen tablet profile"), nullptr};
         }
         if (!synthetic_pointer_available(api)) {
           return {
@@ -1485,26 +1520,10 @@ namespace lvh::detail {
       }
 
       OperationStatus close() override {
-        stop_repeat_thread();
-
-        std::lock_guard lock {mutex_};
-        if (!open_) {
-          return OperationStatus::success();
-        }
-
-        open_ = false;
-        if (device_) {
-          api_.destroy(device_);
-          device_ = nullptr;
-        }
-        return OperationStatus::success();
+        return close_device();
       }
 
     private:
-      static OperationStatus unsupported_device_status(std::string message) {
-        return OperationStatus::failure(ErrorCode::unsupported_profile, std::move(message));
-      }
-
       static void update_tool_flags(POINTER_PEN_INFO &pen_info, PenToolType tool) {
         switch (tool) {
           case PenToolType::eraser:
@@ -1518,61 +1537,18 @@ namespace lvh::detail {
         }
       }
 
-      OperationStatus inject_locked(std::string_view operation) {
+      bool has_repeat_input_locked() const override {
+        return active_;
+      }
+
+      OperationStatus inject_locked(std::string_view operation) override {
         return inject_synthetic_pointer_input(api_, device_, &pointer_, 1, operation);
       }
 
-      void start_repeat_thread() {
-        repeat_thread_ = std::jthread {[this](std::stop_token stop_token) {
-          while (!stop_token.stop_requested()) {
-            std::this_thread::sleep_for(synthetic_pointer_repeat_interval);
-            if (stop_token.stop_requested()) {
-              break;
-            }
-
-            std::lock_guard lock {mutex_};
-            if (!open_ || !active_) {
-              continue;
-            }
-            static_cast<void>(inject_locked("refresh Windows pen tablet tool"));
-          }
-        }};
-      }
-
-      void stop_repeat_thread() {
-        if (repeat_thread_.joinable()) {
-          repeat_thread_.request_stop();
-          repeat_thread_.join();
-        }
-      }
-
-      /**
-       * @brief Close the device from the destructor without allowing exceptions to escape.
-       */
-      void close_noexcept() noexcept {
-        stop_repeat_thread();
-
-        std::lock_guard lock {mutex_};
-        if (!open_) {
-          return;
-        }
-
-        open_ = false;
-        if (device_) {
-          api_.destroy(device_);
-          device_ = nullptr;
-        }
-      }
-
-      SyntheticPointerApi api_;
-      HSYNTHETICPOINTERDEVICE device_ {};
-      mutable std::mutex mutex_;
       POINTER_TYPE_INFO pointer_ {};
       bool barrel_pressed_ = false;
       bool active_ = false;
       bool contacting_ = false;
-      bool open_ = true;
-      std::jthread repeat_thread_;
     };
 
     class WindowsBackend final: public Backend {
@@ -1639,7 +1615,7 @@ namespace lvh::detail {
 
         if (options.profile.gamepad_kind == GamepadProfileKind::xbox_360) {
           return {
-            unsupported_device_status(
+            unsupported_profile_status(
               "Windows UMDF/VHF backend cannot expose Xbox 360 XUSB gamepads; use an XUSB fallback for this profile"
             ),
             nullptr,
@@ -1654,7 +1630,7 @@ namespace lvh::detail {
         const CreateKeyboardOptions &options
       ) override {
         if (options.profile.device_type != DeviceType::keyboard) {
-          return {unsupported_device_status("Windows keyboard backend requires a keyboard profile"), nullptr};
+          return {unsupported_profile_status("Windows keyboard backend requires a keyboard profile"), nullptr};
         }
 
         return {OperationStatus::success(), std::make_unique<WindowsKeyboard>()};
@@ -1662,7 +1638,7 @@ namespace lvh::detail {
 
       BackendMouseCreationResult create_mouse(DeviceId /*id*/, const CreateMouseOptions &options) override {
         if (options.profile.device_type != DeviceType::mouse) {
-          return {unsupported_device_status("Windows mouse backend requires a mouse profile"), nullptr};
+          return {unsupported_profile_status("Windows mouse backend requires a mouse profile"), nullptr};
         }
 
         return {OperationStatus::success(), std::make_unique<WindowsMouse>()};
@@ -1679,7 +1655,7 @@ namespace lvh::detail {
         DeviceId /*id*/,
         const CreateTrackpadOptions & /*options*/
       ) override {
-        return {unsupported_device_status("Windows backend currently supports gamepad, keyboard, and mouse devices only"), nullptr};
+        return {unsupported_profile_status("Windows backend currently supports gamepad, keyboard, and mouse devices only"), nullptr};
       }
 
       BackendPenTabletCreationResult create_pen_tablet(
@@ -1690,15 +1666,6 @@ namespace lvh::detail {
       }
 
     private:
-      static OperationStatus unsupported_device_status(std::string message) {
-        using enum ErrorCode;
-
-        return OperationStatus::failure(
-          unsupported_profile,
-          std::move(message)
-        );
-      }
-
       BackendCapabilities capabilities_;
       std::shared_ptr<WindowsBackendContext> context_;
     };
