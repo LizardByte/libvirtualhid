@@ -8,6 +8,7 @@
 #include <array>
 #include <cfloat>
 #include <cstdint>
+#include <exception>
 #include <format>
 #include <map>
 #include <memory>
@@ -114,21 +115,37 @@ namespace {
     }
   }
 
+  bool is_high_surrogate(char32_t codepoint) {
+    return codepoint >= 0xD800 && codepoint <= 0xDBFF;
+  }
+
+  bool is_low_surrogate(char32_t codepoint) {
+    return codepoint >= 0xDC00 && codepoint <= 0xDFFF;
+  }
+
+  char32_t next_wide_codepoint(std::wstring_view value, std::size_t &index) {
+    auto codepoint = static_cast<char32_t>(value[index]);
+    ++index;
+
+    if constexpr (sizeof(wchar_t) == 2) {
+      if (is_high_surrogate(codepoint) && index < value.size()) {
+        const auto low = static_cast<char32_t>(value[index]);
+        if (is_low_surrogate(low)) {
+          ++index;
+          return 0x10000 + ((codepoint - 0xD800) << 10U) + (low - 0xDC00);
+        }
+      }
+    }
+
+    return codepoint;
+  }
+
   std::string to_utf8(std::wstring_view value) {
     std::string result;
     result.reserve(value.size());
-    for (std::size_t index = 0; index < value.size(); ++index) {
-      auto codepoint = static_cast<char32_t>(value[index]);
-      if constexpr (sizeof(wchar_t) == 2) {
-        if (codepoint >= 0xD800 && codepoint <= 0xDBFF && index + 1U < value.size()) {
-          const auto low = static_cast<char32_t>(value[index + 1U]);
-          if (low >= 0xDC00 && low <= 0xDFFF) {
-            codepoint = 0x10000 + ((codepoint - 0xD800) << 10U) + (low - 0xDC00);
-            ++index;
-          }
-        }
-      }
-      append_utf8(result, codepoint);
+    std::size_t index = 0;
+    while (index < value.size()) {
+      append_utf8(result, next_wide_codepoint(value, index));
     }
     return result;
   }
@@ -147,6 +164,38 @@ namespace {
     return line.str();
   }
 
+  void render_device_nodes(const SelectedSnapshot &selected) {
+    if (!selected.has_device) {
+      ImGui::TextDisabled("No selected device.");
+      return;
+    }
+    if (selected.nodes.empty()) {
+      ImGui::TextDisabled("No device nodes reported yet.");
+      return;
+    }
+
+    for (const auto &node : selected.nodes) {
+      const auto line = to_utf8(node_kind_name(node.kind)) + ": " + node.path;
+      ImGui::TextWrapped("%s", line.c_str());
+    }
+  }
+
+  void render_output_reports(const SelectedSnapshot &selected) {
+    if (!selected.has_device) {
+      ImGui::TextDisabled("No selected device.");
+      return;
+    }
+    if (selected.outputs.empty()) {
+      ImGui::TextDisabled("No output reports received.");
+      return;
+    }
+
+    for (const auto &entry : selected.outputs) {
+      const auto line = output_line(entry);
+      ImGui::TextWrapped("%s", line.c_str());
+    }
+  }
+
   int scaled_window_dimension(int value, float scale) {
     return std::max(value, static_cast<int>(static_cast<float>(value) * scale));
   }
@@ -157,6 +206,37 @@ namespace {
            battery_choices[static_cast<std::size_t>(state_index)].state == lvh::GamepadBatteryState::full;
   }
 
+  std::string backend_text(const lvh::Runtime &runtime) {
+    const auto &caps = runtime.capabilities();
+    auto text = std::string {"Backend: "} + caps.backend_name;
+    text += caps.supports_gamepad ? " | gamepad available" : " | gamepad unavailable";
+    text += caps.supports_output_reports ? " | output reports available" : " | output reports unavailable";
+    return text;
+  }
+
+  int axis_position(const SelectedSnapshot &selected, std::size_t index) {
+    if (!selected.has_device) {
+      return 0;
+    }
+
+    switch (index) {
+      case 0:
+        return axis_to_slider(selected.state.left_stick.x);
+      case 1:
+        return axis_to_slider(selected.state.left_stick.y);
+      case 2:
+        return axis_to_slider(selected.state.right_stick.x);
+      case 3:
+        return axis_to_slider(selected.state.right_stick.y);
+      case 4:
+        return trigger_to_slider(selected.state.left_trigger);
+      case 5:
+        return trigger_to_slider(selected.state.right_trigger);
+      default:
+        return 0;
+    }
+  }
+
   class ControlApp {
   public:
     ControlApp() {
@@ -165,8 +245,14 @@ namespace {
       runtime_ = lvh::Runtime::create(options);
     }
 
-    ~ControlApp() {
-      close_all_devices();
+    ~ControlApp() noexcept {
+      try {
+        close_all_devices();
+      } catch (const std::exception &ex) {
+        SDL_Log("Failed to close virtual gamepads: %s", ex.what());
+      } catch (...) {
+        SDL_Log("Failed to close virtual gamepads.");
+      }
     }
 
     ControlApp(const ControlApp &) = delete;
@@ -184,7 +270,7 @@ namespace {
                                     ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus;
       ImGui::Begin("libvirtualhid control", nullptr, window_flags);
 
-      const auto backend = backend_text();
+      const auto backend = backend_text(*runtime_);
       ImGui::TextUnformatted(backend.c_str());
       ImGui::Separator();
 
@@ -254,14 +340,6 @@ namespace {
       return snapshot;
     }
 
-    std::string backend_text() const {
-      const auto &caps = runtime_->capabilities();
-      auto text = std::string {"Backend: "} + caps.backend_name;
-      text += caps.supports_gamepad ? " | gamepad available" : " | gamepad unavailable";
-      text += caps.supports_output_reports ? " | output reports available" : " | output reports unavailable";
-      return text;
-    }
-
     const lvh::tools::virtualhid_control::ProfileChoice *current_profile_choice() const {
       if (profile_index_ >= profile_choices.size()) {
         return nullptr;
@@ -287,8 +365,8 @@ namespace {
     void render_device_panel(const std::vector<DeviceListItem> &devices) {
       ImGui::TextUnformatted("Profile");
       const auto *choice = current_profile_choice();
-      const auto preview = choice == nullptr ? std::string {"Select profile"} : to_utf8(choice->label);
-      if (ImGui::BeginCombo("##profile", preview.c_str())) {
+      if (const auto preview = choice == nullptr ? std::string {"Select profile"} : to_utf8(choice->label);
+          ImGui::BeginCombo("##profile", preview.c_str())) {
         for (std::size_t index = 0; index < profile_choices.size(); ++index) {
           const auto label = to_utf8(profile_choices[index].label);
           const auto selected = index == profile_index_;
@@ -388,38 +466,40 @@ namespace {
             continue;
           }
 
-          ImGui::TableNextColumn();
-          ImGui::PushID(static_cast<int>(index));
-
-          const auto pressed = selected.has_device && selected.state.buttons.test(button_choices[index].button);
-          if (pressed) {
-            ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
-          }
-
-          {
-            ScopedDisabled disabled {!selected.has_device};
-            const auto label = to_utf8(button_choices[index].label);
-            const auto clicked = ImGui::Button(label.c_str(), {-FLT_MIN, 30.0F});
-            if (lock_buttons_) {
-              if (clicked) {
-                toggle_selected_button(index);
-              }
-            } else {
-              const auto active = ImGui::IsItemActive() && ImGui::IsMouseDown(ImGuiMouseButton_Left);
-              if (button_active_[index] != active) {
-                button_active_[index] = active;
-                set_selected_button(index, active);
-              }
-            }
-          }
-
-          if (pressed) {
-            ImGui::PopStyleColor();
-          }
-          ImGui::PopID();
+          render_button_control(selected, index);
         }
         ImGui::EndTable();
       }
+    }
+
+    void render_button_control(const SelectedSnapshot &selected, std::size_t index) {
+      ImGui::TableNextColumn();
+      ImGui::PushID(static_cast<int>(index));
+
+      const auto pressed = selected.has_device && selected.state.buttons.test(button_choices[index].button);
+      if (pressed) {
+        ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+      }
+
+      {
+        ScopedDisabled disabled {!selected.has_device};
+        const auto label = to_utf8(button_choices[index].label);
+        if (const auto clicked = ImGui::Button(label.c_str(), {-FLT_MIN, 30.0F}); lock_buttons_ && clicked) {
+          toggle_selected_button(index);
+        }
+        if (!lock_buttons_) {
+          const auto active = ImGui::IsItemActive() && ImGui::IsMouseDown(ImGuiMouseButton_Left);
+          if (button_active_[index] != active) {
+            button_active_[index] = active;
+            set_selected_button(index, active);
+          }
+        }
+      }
+
+      if (pressed) {
+        ImGui::PopStyleColor();
+      }
+      ImGui::PopID();
     }
 
     void render_axis_controls(const SelectedSnapshot &selected) {
@@ -441,29 +521,6 @@ namespace {
           ImGui::PopID();
         }
         ImGui::EndTable();
-      }
-    }
-
-    int axis_position(const SelectedSnapshot &selected, std::size_t index) const {
-      if (!selected.has_device) {
-        return 0;
-      }
-
-      switch (index) {
-        case 0:
-          return axis_to_slider(selected.state.left_stick.x);
-        case 1:
-          return axis_to_slider(selected.state.left_stick.y);
-        case 2:
-          return axis_to_slider(selected.state.right_stick.x);
-        case 3:
-          return axis_to_slider(selected.state.right_stick.y);
-        case 4:
-          return trigger_to_slider(selected.state.left_trigger);
-        case 5:
-          return trigger_to_slider(selected.state.right_trigger);
-        default:
-          return 0;
       }
     }
 
@@ -492,16 +549,14 @@ namespace {
 
       {
         ScopedDisabled disabled {!enabled};
-        const auto state_label = to_utf8(battery_choices[static_cast<std::size_t>(battery_state_index_)].label);
-        if (ImGui::BeginCombo("State", state_label.c_str())) {
+        if (const auto state_label = to_utf8(battery_choices[static_cast<std::size_t>(battery_state_index_)].label);
+            ImGui::BeginCombo("State", state_label.c_str())) {
           for (std::size_t index = 0; index < battery_choices.size(); ++index) {
             const auto label = to_utf8(battery_choices[index].label);
             const auto selected_state = static_cast<int>(index) == battery_state_index_;
             if (ImGui::Selectable(label.c_str(), selected_state)) {
               battery_state_index_ = static_cast<int>(index);
-              if (selected_battery_state_is_full(battery_state_index_)) {
-                battery_percentage_ = 100;
-              }
+              battery_percentage_ = selected_battery_state_is_full(battery_state_index_) ? 100 : battery_percentage_;
               set_selected_battery_from_controls();
             }
             if (selected_state) {
@@ -527,7 +582,7 @@ namespace {
       }
     }
 
-    void render_output_controls(const SelectedSnapshot &selected) {
+    void render_output_controls(const SelectedSnapshot &selected) const {
       ImGui::TextWrapped("%s", selected.has_device ? selected.output_text.c_str() : "Output: no selected device.");
       if (ImGui::BeginTable("diagnostics", 2, ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_SizingStretchSame)) {
         ImGui::TableSetupColumn("Device nodes");
@@ -537,31 +592,13 @@ namespace {
 
         ImGui::TableSetColumnIndex(0);
         if (ImGui::BeginChild("device-nodes", {0.0F, 170.0F}, ImGuiChildFlags_Borders)) {
-          if (!selected.has_device) {
-            ImGui::TextDisabled("No selected device.");
-          } else if (selected.nodes.empty()) {
-            ImGui::TextDisabled("No device nodes reported yet.");
-          } else {
-            for (const auto &node : selected.nodes) {
-              const auto line = to_utf8(node_kind_name(node.kind)) + ": " + node.path;
-              ImGui::TextWrapped("%s", line.c_str());
-            }
-          }
+          render_device_nodes(selected);
         }
         ImGui::EndChild();
 
         ImGui::TableSetColumnIndex(1);
         if (ImGui::BeginChild("output-reports", {0.0F, 170.0F}, ImGuiChildFlags_Borders)) {
-          if (!selected.has_device) {
-            ImGui::TextDisabled("No selected device.");
-          } else if (selected.outputs.empty()) {
-            ImGui::TextDisabled("No output reports received.");
-          } else {
-            for (const auto &entry : selected.outputs) {
-              const auto line = output_line(entry);
-              ImGui::TextWrapped("%s", line.c_str());
-            }
-          }
+          render_output_reports(selected);
         }
         ImGui::EndChild();
 
