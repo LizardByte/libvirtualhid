@@ -426,6 +426,17 @@ namespace lvh {
     OperationStatus move_absolute(std::int32_t x, std::int32_t y, std::int32_t width, std::int32_t height);
 
     /**
+     * @brief Submit absolute pointer movement with fractional coordinates.
+     *
+     * @param x Absolute X coordinate.
+     * @param y Absolute Y coordinate.
+     * @param width Width of the absolute coordinate space.
+     * @param height Height of the absolute coordinate space.
+     * @return Submit operation status.
+     */
+    OperationStatus move_absolute(float x, float y, std::int32_t width, std::int32_t height);
+
+    /**
      * @brief Submit a mouse button transition.
      *
      * @param button Mouse button.
@@ -553,6 +564,22 @@ namespace lvh {
      * @return Submit operation status.
      */
     OperationStatus release_contact(std::int32_t contact_id);
+
+    /**
+     * @brief Cancel a touch contact.
+     *
+     * @param contact_id Consumer-stable contact identifier.
+     * @return Submit operation status.
+     */
+    OperationStatus cancel_contact(std::int32_t contact_id);
+
+    /**
+     * @brief Mark a touch contact as leaving range.
+     *
+     * @param contact_id Consumer-stable contact identifier.
+     * @return Submit operation status.
+     */
+    OperationStatus leave_contact(std::int32_t contact_id);
 
     /**
      * @brief Get the most recently submitted touch contact.

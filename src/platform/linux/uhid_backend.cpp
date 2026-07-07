@@ -1759,7 +1759,7 @@ namespace lvh::detail {
         return place_touch_contact(contact, false);
       }
 
-      OperationStatus release_contact(std::int32_t contact_id) override {
+      OperationStatus release_contact(std::int32_t contact_id, PointerTransition /*transition*/) override {
         return release_touch_contact(contact_id, false);
       }
 
@@ -1792,7 +1792,7 @@ namespace lvh::detail {
         return place_touch_contact(contact, true);
       }
 
-      OperationStatus release_contact(std::int32_t contact_id) override {
+      OperationStatus release_contact(std::int32_t contact_id, PointerTransition /*transition*/) override {
         return release_touch_contact(contact_id, true);
       }
 

@@ -47,9 +47,7 @@ TEST(RuntimeTest, PlatformDefaultReportsCurrentPlatformCapabilities) {
   EXPECT_TRUE(runtime->capabilities().requires_installed_driver);
   EXPECT_TRUE(runtime->capabilities().supports_keyboard);
   EXPECT_TRUE(runtime->capabilities().supports_mouse);
-  EXPECT_FALSE(runtime->capabilities().supports_touchscreen);
   EXPECT_FALSE(runtime->capabilities().supports_trackpad);
-  EXPECT_FALSE(runtime->capabilities().supports_pen_tablet);
 
   auto keyboard = runtime->create_keyboard();
   ASSERT_TRUE(keyboard) << keyboard.status.message();
@@ -57,9 +55,24 @@ TEST(RuntimeTest, PlatformDefaultReportsCurrentPlatformCapabilities) {
   auto mouse = runtime->create_mouse();
   ASSERT_TRUE(mouse) << mouse.status.message();
   EXPECT_TRUE(mouse.mouse->close().ok());
-  EXPECT_EQ(runtime->create_touchscreen().status.code(), lvh::ErrorCode::unsupported_profile);
+
+  auto touchscreen = runtime->create_touchscreen();
+  if (runtime->capabilities().supports_touchscreen) {
+    ASSERT_TRUE(touchscreen) << touchscreen.status.message();
+    EXPECT_TRUE(touchscreen.touchscreen->close().ok());
+  } else {
+    EXPECT_FALSE(touchscreen);
+  }
+
   EXPECT_EQ(runtime->create_trackpad().status.code(), lvh::ErrorCode::unsupported_profile);
-  EXPECT_EQ(runtime->create_pen_tablet().status.code(), lvh::ErrorCode::unsupported_profile);
+
+  auto pen_tablet = runtime->create_pen_tablet();
+  if (runtime->capabilities().supports_pen_tablet) {
+    ASSERT_TRUE(pen_tablet) << pen_tablet.status.message();
+    EXPECT_TRUE(pen_tablet.pen_tablet->close().ok());
+  } else {
+    EXPECT_FALSE(pen_tablet);
+  }
 
   if (!runtime->capabilities().supports_gamepad) {
     auto created = runtime->create_gamepad(lvh::profiles::xbox_360());

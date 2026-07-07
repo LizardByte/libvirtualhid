@@ -185,9 +185,10 @@ namespace lvh::detail {
      * @brief Release a touch contact.
      *
      * @param contact_id Consumer-stable contact identifier.
+     * @param transition Pointer transition used to remove the contact.
      * @return Submit status.
      */
-    virtual OperationStatus release_contact(std::int32_t contact_id) = 0;
+    virtual OperationStatus release_contact(std::int32_t contact_id, PointerTransition transition) = 0;
 
     /**
      * @brief Get platform-visible nodes associated with this backend device.
@@ -236,9 +237,10 @@ namespace lvh::detail {
      * @brief Release a trackpad contact.
      *
      * @param contact_id Consumer-stable contact identifier.
+     * @param transition Pointer transition used to remove the contact.
      * @return Submit status.
      */
-    virtual OperationStatus release_contact(std::int32_t contact_id) = 0;
+    virtual OperationStatus release_contact(std::int32_t contact_id, PointerTransition transition) = 0;
 
     /**
      * @brief Submit a trackpad button transition.
