@@ -5,6 +5,7 @@
 
 // standard includes
 #include <algorithm>
+#include <cmath>
 #include <memory>
 #include <mutex>
 #include <utility>
@@ -638,6 +639,19 @@ namespace lvh {
     return submit({.kind = MouseEventKind::absolute_motion, .x = x, .y = y, .width = width, .height = height});
   }
 
+  OperationStatus Mouse::move_absolute(float x, float y, std::int32_t width, std::int32_t height) {
+    return submit({
+      .kind = MouseEventKind::absolute_motion,
+      .x = static_cast<std::int32_t>(std::lround(x)),
+      .y = static_cast<std::int32_t>(std::lround(y)),
+      .absolute_x = x,
+      .absolute_y = y,
+      .has_fractional_absolute_coordinates = true,
+      .width = width,
+      .height = height,
+    });
+  }
+
   OperationStatus Mouse::button(MouseButton button, bool pressed) {
     MouseEvent event;
     event.kind = MouseEventKind::button;
@@ -749,7 +763,41 @@ namespace lvh {
       device_,
       "touchscreen is closed",
       [contact_id](auto &backend) {
-        return backend.release_contact(contact_id);
+        return backend.release_contact(contact_id, PointerTransition::release);
+      },
+      [contact_id](auto &device) {
+        device.last_contact.id = contact_id;
+      }
+    );
+  }
+
+  OperationStatus Touchscreen::cancel_contact(std::int32_t contact_id) {
+    if (contact_id < 0) {
+      return OperationStatus::failure(ErrorCode::invalid_argument, "touch contact id must not be negative");
+    }
+
+    return submit_touch_event(
+      device_,
+      "touchscreen is closed",
+      [contact_id](auto &backend) {
+        return backend.release_contact(contact_id, PointerTransition::cancel);
+      },
+      [contact_id](auto &device) {
+        device.last_contact.id = contact_id;
+      }
+    );
+  }
+
+  OperationStatus Touchscreen::leave_contact(std::int32_t contact_id) {
+    if (contact_id < 0) {
+      return OperationStatus::failure(ErrorCode::invalid_argument, "touch contact id must not be negative");
+    }
+
+    return submit_touch_event(
+      device_,
+      "touchscreen is closed",
+      [contact_id](auto &backend) {
+        return backend.release_contact(contact_id, PointerTransition::leave);
       },
       [contact_id](auto &device) {
         device.last_contact.id = contact_id;
@@ -846,7 +894,7 @@ namespace lvh {
       device_,
       "trackpad is closed",
       [contact_id](auto &backend) {
-        return backend.release_contact(contact_id);
+        return backend.release_contact(contact_id, PointerTransition::release);
       },
       [contact_id](auto &device) {
         device.last_contact.id = contact_id;

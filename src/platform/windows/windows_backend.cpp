@@ -3,9 +3,31 @@
  * @brief Windows UMDF control-channel backend definitions.
  */
 
+#ifndef DOXYGEN
+  #if defined(WINVER) && WINVER < 0x0A00
+    #undef WINVER
+  #endif
+  #ifndef WINVER
+    #define WINVER 0x0A00
+  #endif
+  #if defined(_WIN32_WINNT) && _WIN32_WINNT < 0x0A00
+    #undef _WIN32_WINNT
+  #endif
+  #ifndef _WIN32_WINNT
+    #define _WIN32_WINNT 0x0A00
+  #endif
+  #if defined(NTDDI_VERSION) && NTDDI_VERSION < 0x0A000006
+    #undef NTDDI_VERSION
+  #endif
+  #ifndef NTDDI_VERSION
+    #define NTDDI_VERSION 0x0A000006
+  #endif
+#endif
+
 // local includes
 #include "core/backend.hpp"
 #include "platform/windows/control_protocol.hpp"
+#include "platform/windows/keylayout.hpp"
 
 #include <libvirtualhid/profiles.hpp>
 #include <libvirtualhid/report.hpp>
@@ -15,13 +37,16 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <functional>
 #include <limits>
 #include <map>
 #include <memory>
 #include <mutex>
+#include <numbers>
 #include <optional>
 #include <span>
 #include <sstream>
@@ -51,6 +76,23 @@ namespace lvh::detail {
 
     using UniqueHandle = std::unique_ptr<void, decltype(&::CloseHandle)>;
     using SendInputFunction = std::function<UINT(std::span<INPUT>)>;
+    using SyncThreadDesktopFunction = std::function<HDESK()>;
+
+    /**
+     * @brief Thread-local desktop identity used for SendInput retry decisions.
+     */
+    struct LastKnownInputDesktop {
+      HDESK value = nullptr;  ///< Last desktop returned by OpenInputDesktop.
+    };
+
+    /**
+     * @brief Runtime-loaded Windows synthetic pointer API entry points.
+     */
+    struct SyntheticPointerApi {
+      std::function<HSYNTHETICPOINTERDEVICE(POINTER_INPUT_TYPE, ULONG, POINTER_FEEDBACK_MODE)> create;  ///< Device creation entry point.
+      std::function<BOOL(HSYNTHETICPOINTERDEVICE, const POINTER_TYPE_INFO *, UINT32)> inject;  ///< Pointer injection entry point.
+      std::function<void(HSYNTHETICPOINTERDEVICE)> destroy;  ///< Device destroy entry point.
+    };
 
     UINT send_input_with_win32(std::span<INPUT> inputs) {
       return ::SendInput(
@@ -63,6 +105,69 @@ namespace lvh::detail {
     SendInputFunction &send_input_function() {
       static SendInputFunction function = send_input_with_win32;
       return function;
+    }
+
+    HDESK sync_thread_desktop_with_win32() {
+      const auto desktop = ::OpenInputDesktop(DF_ALLOWOTHERACCOUNTHOOK, FALSE, GENERIC_ALL);
+      if (!desktop) {
+        return nullptr;
+      }
+
+      static_cast<void>(::SetThreadDesktop(desktop));
+      ::CloseDesktop(desktop);
+      return desktop;
+    }
+
+    SyncThreadDesktopFunction &sync_thread_desktop_function() {
+      static SyncThreadDesktopFunction function = sync_thread_desktop_with_win32;
+      return function;
+    }
+
+    LastKnownInputDesktop &last_known_input_desktop() {
+      thread_local LastKnownInputDesktop desktop;
+      return desktop;
+    }
+
+    template<typename Function>
+    Function load_user32_function(HMODULE user32, const char *name) {
+      const auto address = ::GetProcAddress(user32, name);
+      Function function {};
+      static_assert(sizeof(function) == sizeof(address));
+      std::memcpy(&function, &address, sizeof(function));
+      return function;
+    }
+
+    SyntheticPointerApi make_win32_synthetic_pointer_api() {
+      const auto user32 = ::GetModuleHandleA("user32.dll");
+      if (!user32) {
+        return {};
+      }
+
+      const auto create = load_user32_function<decltype(&::CreateSyntheticPointerDevice)>(user32, "CreateSyntheticPointerDevice");
+      const auto inject = load_user32_function<decltype(&::InjectSyntheticPointerInput)>(user32, "InjectSyntheticPointerInput");
+      const auto destroy = load_user32_function<decltype(&::DestroySyntheticPointerDevice)>(user32, "DestroySyntheticPointerDevice");
+      if (!create || !inject || !destroy) {
+        return {};
+      }
+
+      return {
+        .create = create,
+        .inject = inject,
+        .destroy = destroy,
+      };
+    }
+
+    SyntheticPointerApi &synthetic_pointer_api() {
+      static SyntheticPointerApi api = make_win32_synthetic_pointer_api();
+      return api;
+    }
+
+    bool synthetic_pointer_available(const SyntheticPointerApi &api) {
+      return api.create && api.inject && api.destroy;
+    }
+
+    OperationStatus unsupported_profile_status(std::string message) {
+      return OperationStatus::failure(ErrorCode::unsupported_profile, std::move(message));
     }
 
     constexpr GUID control_device_interface_guid {
@@ -109,19 +214,55 @@ namespace lvh::detail {
       return OperationStatus::failure(code, message.str());
     }
 
-    OperationStatus send_input(std::span<INPUT> inputs, std::string_view operation) {
+    template<typename Submit>
+    OperationStatus submit_with_desktop_retry(Submit submit, std::string_view operation) {
       using enum ErrorCode;
 
-      if (const auto sent = send_input_function()(inputs); sent != static_cast<UINT>(inputs.size())) {
-        return windows_failure(backend_failure, operation, ::GetLastError());
+      if (submit()) {
+        return OperationStatus::success();
       }
 
-      return OperationStatus::success();
+      auto error_code = ::GetLastError();
+      auto &known_desktop = last_known_input_desktop();
+      if (const auto desktop = sync_thread_desktop_function()(); known_desktop.value != desktop) {
+        known_desktop.value = desktop;
+        if (submit()) {
+          return OperationStatus::success();
+        }
+        error_code = ::GetLastError();
+      }
+
+      return windows_failure(backend_failure, operation, error_code);
+    }
+
+    OperationStatus send_input(std::span<INPUT> inputs, std::string_view operation) {
+      return submit_with_desktop_retry([&inputs] {
+        return send_input_function()(inputs) == static_cast<UINT>(inputs.size());
+      },
+                                       operation);
     }
 
     OperationStatus send_input(const INPUT &input, std::string_view operation) {
       std::array inputs {input};
       return send_input(std::span<INPUT> {inputs}, operation);
+    }
+
+    OperationStatus inject_synthetic_pointer_input(
+      const SyntheticPointerApi &api,
+      HSYNTHETICPOINTERDEVICE device,
+      const POINTER_TYPE_INFO *pointer_info,
+      UINT32 count,
+      std::string_view operation
+    ) {
+      using enum ErrorCode;
+
+      if (!synthetic_pointer_available(api)) {
+        return OperationStatus::failure(backend_unavailable, "Windows synthetic pointer APIs are unavailable");
+      }
+      return submit_with_desktop_retry([&api, device, pointer_info, count] {
+        return api.inject(device, pointer_info, count) != FALSE;
+      },
+                                       operation);
     }
 
     std::vector<std::string> enumerate_control_device_interface_paths() {
@@ -208,15 +349,70 @@ namespace lvh::detail {
       return 0;
     }
 
-    LONG scale_absolute_axis(std::int32_t value, std::int32_t dimension) {
+    LONG scale_absolute_axis(float value, std::int32_t dimension) {
       if (dimension <= 1) {
         return 0;
       }
 
-      const auto clamped = std::clamp(value, 0, dimension);
-      const auto numerator = static_cast<std::int64_t>(clamped) * std::numeric_limits<std::uint16_t>::max();
-      return static_cast<LONG>(numerator / dimension);
+      const auto clamped = std::clamp(value, 0.0F, static_cast<float>(dimension));
+      const auto scaled = clamped * static_cast<float>(std::numeric_limits<std::uint16_t>::max()) / static_cast<float>(dimension);
+      return static_cast<LONG>(std::lround(scaled));
     }
+
+    PointerViewport resolve_pointer_viewport(PointerViewport viewport) {
+      if (viewport.width > 0 && viewport.height > 0) {
+        return viewport;
+      }
+
+      viewport.offset_x = ::GetSystemMetrics(SM_XVIRTUALSCREEN);
+      viewport.offset_y = ::GetSystemMetrics(SM_YVIRTUALSCREEN);
+      viewport.width = std::max(1, ::GetSystemMetrics(SM_CXVIRTUALSCREEN));
+      viewport.height = std::max(1, ::GetSystemMetrics(SM_CYVIRTUALSCREEN));
+      return viewport;
+    }
+
+    POINT pointer_location(const PointerViewport &raw_viewport, float x, float y) {
+      const auto viewport = resolve_pointer_viewport(raw_viewport);
+      return {
+        .x = viewport.offset_x + static_cast<LONG>(std::lround(std::clamp(x, 0.0F, 1.0F) * static_cast<float>(viewport.width))),
+        .y = viewport.offset_y + static_cast<LONG>(std::lround(std::clamp(y, 0.0F, 1.0F) * static_cast<float>(viewport.height))),
+      };
+    }
+
+    void update_pointer_location(POINTER_INFO &pointer_info, const PointerViewport &viewport, float x, float y) {
+      pointer_info.ptPixelLocation = pointer_location(viewport, x, y);
+    }
+
+    bool extended_key(KeyboardKeyCode key_code) {
+      switch (key_code) {
+        case VK_LWIN:
+        case VK_RWIN:
+        case VK_RMENU:
+        case VK_RCONTROL:
+        case VK_INSERT:
+        case VK_DELETE:
+        case VK_HOME:
+        case VK_END:
+        case VK_PRIOR:
+        case VK_NEXT:
+        case VK_UP:
+        case VK_DOWN:
+        case VK_LEFT:
+        case VK_RIGHT:
+        case VK_DIVIDE:
+        case VK_APPS:
+          return true;
+        default:
+          return false;
+      }
+    }
+
+    bool can_map_virtual_key_to_scan_code(KeyboardKeyCode key_code) {
+      return key_code != VK_LWIN && key_code != VK_RWIN && key_code != VK_PAUSE;
+    }
+
+    constexpr auto synthetic_pointer_repeat_interval = std::chrono::milliseconds {50};  ///< Active pointer refresh interval.
+    constexpr auto pointer_edge_triggered_flags = POINTER_FLAG_DOWN | POINTER_FLAG_UP | POINTER_FLAG_CANCELED | POINTER_FLAG_UPDATE;  ///< One-frame pointer flags.
 
     std::vector<std::string> resolve_control_device_paths() {
       constexpr auto environment_name = "LIBVIRTUALHID_WINDOWS_CONTROL_DEVICE";
@@ -717,8 +913,27 @@ namespace lvh::detail {
         INPUT input {};
         input.type = INPUT_KEYBOARD;
         input.ki.wVk = event.key_code;
+        if (event.scan_code != 0U) {
+          input.ki.wVk = 0;
+          input.ki.wScan = event.scan_code;
+          input.ki.dwFlags |= KEYEVENTF_SCANCODE;
+        } else {
+          if (event.uses_normalized_key_code) {
+            input.ki.wScan = windows_us_english_scan_code(event.key_code);
+          } else if (event.prefer_native_scan_code && can_map_virtual_key_to_scan_code(event.key_code)) {
+            input.ki.wScan = static_cast<WORD>(::MapVirtualKeyW(event.key_code, MAPVK_VK_TO_VSC));
+          }
+
+          if (input.ki.wScan != 0U) {
+            input.ki.wVk = 0;
+            input.ki.dwFlags |= KEYEVENTF_SCANCODE;
+          }
+        }
+        if (extended_key(event.key_code)) {
+          input.ki.dwFlags |= KEYEVENTF_EXTENDEDKEY;
+        }
         if (!event.pressed) {
-          input.ki.dwFlags = KEYEVENTF_KEYUP;
+          input.ki.dwFlags |= KEYEVENTF_KEYUP;
         }
 
         return send_input(input, "submit Windows keyboard input");
@@ -811,8 +1026,14 @@ namespace lvh::detail {
             break;
           case absolute_motion:
             mouse.dwFlags = MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK;
-            mouse.dx = scale_absolute_axis(event.x, event.width);
-            mouse.dy = scale_absolute_axis(event.y, event.height);
+            mouse.dx = scale_absolute_axis(
+              event.has_fractional_absolute_coordinates ? event.absolute_x : static_cast<float>(event.x),
+              event.width
+            );
+            mouse.dy = scale_absolute_axis(
+              event.has_fractional_absolute_coordinates ? event.absolute_y : static_cast<float>(event.y),
+              event.height
+            );
             break;
           case button:
             mouse.dwFlags = mouse_button_flags(event.button, event.pressed);
@@ -840,6 +1061,528 @@ namespace lvh::detail {
       bool open_ = true;
     };
 
+    /**
+     * @brief Shared lifecycle and refresh support for Windows synthetic pointer devices.
+     */
+    class WindowsSyntheticPointerDevice {
+    protected:
+      WindowsSyntheticPointerDevice(SyntheticPointerApi api, HSYNTHETICPOINTERDEVICE device):
+          api_ {std::move(api)},
+          device_ {device} {}
+
+      WindowsSyntheticPointerDevice(const WindowsSyntheticPointerDevice &) = delete;
+      WindowsSyntheticPointerDevice &operator=(const WindowsSyntheticPointerDevice &) = delete;
+      WindowsSyntheticPointerDevice(WindowsSyntheticPointerDevice &&) noexcept = delete;
+      WindowsSyntheticPointerDevice &operator=(WindowsSyntheticPointerDevice &&) noexcept = delete;
+
+      virtual ~WindowsSyntheticPointerDevice() = default;
+
+      /**
+       * @brief Start periodic synthetic pointer refreshes while input is active.
+       *
+       * @param operation Operation description used for failure reporting.
+       */
+      void start_repeat_thread(std::string_view operation) {
+        repeat_thread_ = std::jthread {[this, operation = std::string {operation}](std::stop_token stop_token) {
+          while (!stop_token.stop_requested()) {
+            std::this_thread::sleep_for(synthetic_pointer_repeat_interval);
+            if (stop_token.stop_requested()) {
+              break;
+            }
+
+            std::lock_guard lock {mutex_};
+            if (!open_ || !has_repeat_input_locked()) {
+              continue;
+            }
+            static_cast<void>(inject_locked(operation));
+          }
+        }};
+      }
+
+      /**
+       * @brief Close the device and release the synthetic pointer handle.
+       *
+       * @return Success status after the device is closed.
+       */
+      OperationStatus close_device() {
+        stop_repeat_thread();
+
+        std::lock_guard lock {mutex_};
+        close_device_locked();
+        return OperationStatus::success();
+      }
+
+      /**
+       * @brief Close the device from the destructor without allowing exceptions to escape.
+       */
+      void close_device_noexcept() noexcept {
+        stop_repeat_thread();
+
+        std::lock_guard lock {mutex_};
+        close_device_locked();
+      }
+
+      /**
+       * @brief Lock the synthetic pointer device state.
+       *
+       * @return Lock guarding the device state.
+       */
+      [[nodiscard]] std::unique_lock<std::mutex> lock_device() const {
+        return std::unique_lock {mutex_};
+      }
+
+      /**
+       * @brief Check whether the synthetic pointer device is open while the caller holds the lock.
+       *
+       * @return true when the device is open, false otherwise.
+       */
+      bool is_open_locked() const {
+        return open_;
+      }
+
+      /**
+       * @brief Inject synthetic pointer input while the caller holds the lock.
+       *
+       * @param inputs Synthetic pointer packets to inject.
+       * @param count Number of packets to inject.
+       * @param operation Operation description used for failure reporting.
+       * @return Operation status from the injection call.
+       */
+      OperationStatus inject_synthetic_pointer_input_locked(
+        const POINTER_TYPE_INFO *inputs,
+        UINT32 count,
+        std::string_view operation
+      ) {
+        return inject_synthetic_pointer_input(api_, device_, inputs, count, operation);
+      }
+
+    private:
+      virtual bool has_repeat_input_locked() const = 0;
+      virtual OperationStatus inject_locked(std::string_view operation) = 0;
+
+      SyntheticPointerApi api_;
+      HSYNTHETICPOINTERDEVICE device_ {};
+      mutable std::mutex mutex_;
+      bool open_ = true;
+
+      void stop_repeat_thread() {
+        if (repeat_thread_.joinable()) {
+          repeat_thread_.request_stop();
+          repeat_thread_.join();
+        }
+      }
+
+      void close_device_locked() {
+        if (!open_) {
+          return;
+        }
+
+        open_ = false;
+        if (device_) {
+          api_.destroy(device_);
+          device_ = nullptr;
+        }
+      }
+
+      std::jthread repeat_thread_;
+    };
+
+    /**
+     * @brief Backend touchscreen implemented with Windows synthetic pointer injection.
+     */
+    class WindowsTouchscreen final: public WindowsSyntheticPointerDevice, public BackendTouchscreen {
+    public:
+      WindowsTouchscreen(SyntheticPointerApi api, HSYNTHETICPOINTERDEVICE device):
+          WindowsSyntheticPointerDevice {std::move(api), device} {
+        start_repeat_thread("refresh Windows touchscreen contacts");
+      }
+
+      WindowsTouchscreen(const WindowsTouchscreen &) = delete;
+      WindowsTouchscreen &operator=(const WindowsTouchscreen &) = delete;
+      WindowsTouchscreen(WindowsTouchscreen &&) noexcept = delete;
+      WindowsTouchscreen &operator=(WindowsTouchscreen &&) noexcept = delete;
+
+      ~WindowsTouchscreen() noexcept override {
+        close_device_noexcept();
+      }
+
+      static BackendTouchscreenCreationResult create(const SyntheticPointerApi &api, const CreateTouchscreenOptions &options) {
+        using enum ErrorCode;
+
+        if (options.profile.device_type != DeviceType::touchscreen) {
+          return {unsupported_profile_status("Windows touchscreen backend requires a touchscreen profile"), nullptr};
+        }
+        if (!synthetic_pointer_available(api)) {
+          return {
+            OperationStatus::failure(backend_unavailable, "Windows touchscreen backend requires Windows 10 1809 or later"),
+            nullptr,
+          };
+        }
+
+        const auto device = api.create(PT_TOUCH, max_contacts, POINTER_FEEDBACK_DEFAULT);
+        if (!device) {
+          return {windows_failure(backend_failure, "create Windows touchscreen device", ::GetLastError()), nullptr};
+        }
+
+        return {OperationStatus::success(), std::make_unique<WindowsTouchscreen>(api, device)};
+      }
+
+      OperationStatus place_contact(const TouchContact &contact) override {
+        using enum ErrorCode;
+
+        if (contact.id < 0) {
+          return OperationStatus::failure(invalid_argument, "Windows touch contact id must not be negative");
+        }
+
+        const auto lock = lock_device();
+        if (!is_open_locked()) {
+          return OperationStatus::failure(device_closed, "Windows touchscreen is closed");
+        }
+
+        const auto slot = slot_for_contact(contact.id);
+        if (!slot.has_value()) {
+          return OperationStatus::failure(invalid_argument, "too many active Windows touch contacts");
+        }
+
+        auto &pointer = contacts_[*slot];
+        pointer.type = PT_TOUCH;
+        auto &touch_info = pointer.touchInfo;
+        auto &pointer_info = touch_info.pointerInfo;
+        const auto was_touching = contact_touching_[*slot];
+        pointer_info.pointerType = PT_TOUCH;
+        pointer_info.pointerId = static_cast<UINT32>(contact.id);
+        pointer_info.pointerFlags |= POINTER_FLAG_INRANGE;
+        if (contact.touching) {
+          pointer_info.pointerFlags |= POINTER_FLAG_INCONTACT;
+          pointer_info.pointerFlags |= was_touching ? POINTER_FLAG_UPDATE : POINTER_FLAG_DOWN;
+        } else {
+          pointer_info.pointerFlags &= ~POINTER_FLAG_INCONTACT;
+          pointer_info.pointerFlags |= POINTER_FLAG_UPDATE;
+        }
+        update_pointer_location(pointer_info, contact.viewport, contact.x, contact.y);
+
+        touch_info.touchMask = TOUCH_MASK_NONE;
+        if (contact.touching && contact.pressure > 0.0F) {
+          touch_info.touchMask |= TOUCH_MASK_PRESSURE;
+          touch_info.pressure = static_cast<UINT32>(std::lround(std::clamp(contact.pressure, 0.0F, 1.0F) * 1024.0F));
+        } else if (contact.touching) {
+          touch_info.pressure = 512;
+        } else {
+          touch_info.pressure = 0;
+          touch_info.rcContact = {};
+        }
+        if (contact.orientation != 0) {
+          touch_info.touchMask |= TOUCH_MASK_ORIENTATION;
+          touch_info.orientation = static_cast<UINT32>((contact.orientation % 360 + 360) % 360);
+        } else {
+          touch_info.orientation = 0;
+        }
+        if (contact.touching) {
+          update_contact_area(touch_info, contact);
+        }
+
+        const auto status = inject_locked("submit Windows touchscreen contact");
+        if (status.ok()) {
+          pointer_info.pointerFlags &= ~pointer_edge_triggered_flags;
+          new_slot_ = false;
+          contact_touching_[*slot] = contact.touching;
+        }
+        return status;
+      }
+
+      OperationStatus release_contact(std::int32_t contact_id, PointerTransition transition) override {
+        using enum ErrorCode;
+
+        const auto lock = lock_device();
+        if (!is_open_locked()) {
+          return OperationStatus::failure(device_closed, "Windows touchscreen is closed");
+        }
+
+        const auto slot = find_contact_slot(contact_id);
+        if (!slot.has_value()) {
+          return OperationStatus::success();
+        }
+
+        auto &pointer_info = contacts_[*slot].touchInfo.pointerInfo;
+        const auto was_touching = contact_touching_[*slot];
+        pointer_info.pointerFlags &= ~(POINTER_FLAG_INCONTACT | POINTER_FLAG_INRANGE);
+        switch (transition) {
+          case PointerTransition::cancel:
+            pointer_info.pointerFlags |= POINTER_FLAG_CANCELED;
+            pointer_info.pointerFlags |= was_touching ? POINTER_FLAG_UP : POINTER_FLAG_UPDATE;
+            break;
+          case PointerTransition::leave:
+            pointer_info.pointerFlags |= POINTER_FLAG_UPDATE;
+            break;
+          default:
+            pointer_info.pointerFlags |= was_touching ? POINTER_FLAG_UP : POINTER_FLAG_UPDATE;
+            break;
+        }
+        if (const auto status = inject_locked("release Windows touchscreen contact"); !status.ok()) {
+          return status;
+        }
+
+        erase_slot(*slot);
+        return OperationStatus::success();
+      }
+
+      OperationStatus close() override {
+        return close_device();
+      }
+
+    private:
+      static constexpr UINT32 max_contacts = 10;  ///< Windows synthetic touchscreen contact capacity.
+
+      static void update_contact_area(POINTER_TOUCH_INFO &touch_info, const TouchContact &contact) {
+        if (contact.contact_major_axis <= 0.0F || contact.contact_minor_axis <= 0.0F) {
+          touch_info.rcContact = {};
+          return;
+        }
+
+        const auto rotation = static_cast<float>(contact.orientation) * static_cast<float>(std::numbers::pi) / 180.0F;
+        const auto minor_rotation = rotation + (static_cast<float>(std::numbers::pi) / 2.0F);
+        const auto width =
+          std::abs(std::cos(rotation) * contact.contact_major_axis) +
+          std::abs(std::cos(minor_rotation) * contact.contact_minor_axis);
+        const auto height =
+          std::abs(std::sin(rotation) * contact.contact_major_axis) +
+          std::abs(std::sin(minor_rotation) * contact.contact_minor_axis);
+        const auto &location = touch_info.pointerInfo.ptPixelLocation;
+        touch_info.rcContact.left = location.x - static_cast<LONG>(std::floor(width / 2.0F));
+        touch_info.rcContact.right = location.x + static_cast<LONG>(std::ceil(width / 2.0F));
+        touch_info.rcContact.top = location.y - static_cast<LONG>(std::floor(height / 2.0F));
+        touch_info.rcContact.bottom = location.y + static_cast<LONG>(std::ceil(height / 2.0F));
+        touch_info.touchMask |= TOUCH_MASK_CONTACTAREA;
+      }
+
+      std::optional<std::size_t> find_contact_slot(std::int32_t contact_id) const {
+        for (std::size_t index = 0; index < active_contacts_; ++index) {
+          if (contact_ids_[index] == contact_id) {
+            return index;
+          }
+        }
+
+        return std::nullopt;
+      }
+
+      std::optional<std::size_t> slot_for_contact(std::int32_t contact_id) {
+        if (const auto slot = find_contact_slot(contact_id); slot.has_value()) {
+          new_slot_ = false;
+          return slot;
+        }
+
+        if (active_contacts_ >= contacts_.size()) {
+          return std::nullopt;
+        }
+
+        const auto slot = active_contacts_++;
+        contact_ids_[slot] = contact_id;
+        new_slot_ = true;
+        return slot;
+      }
+
+      void erase_slot(std::size_t slot) {
+        for (std::size_t index = slot; index + 1U < active_contacts_; ++index) {
+          contacts_[index] = contacts_[index + 1U];
+          contact_ids_[index] = contact_ids_[index + 1U];
+          contact_touching_[index] = contact_touching_[index + 1U];
+        }
+        contacts_[active_contacts_ - 1U] = {};
+        contact_ids_[active_contacts_ - 1U].reset();
+        contact_touching_[active_contacts_ - 1U] = false;
+        --active_contacts_;
+      }
+
+      bool has_repeat_input_locked() const override {
+        return active_contacts_ != 0U;
+      }
+
+      OperationStatus inject_locked(std::string_view operation) override {
+        return inject_synthetic_pointer_input_locked(
+          contacts_.data(),
+          static_cast<UINT32>(active_contacts_),
+          operation
+        );
+      }
+
+      std::array<POINTER_TYPE_INFO, max_contacts> contacts_ {};
+      std::array<std::optional<std::int32_t>, max_contacts> contact_ids_ {};
+      std::array<bool, max_contacts> contact_touching_ {};
+      std::size_t active_contacts_ = 0;
+      bool new_slot_ = false;
+    };
+
+    /**
+     * @brief Backend pen tablet implemented with Windows synthetic pointer injection.
+     */
+    class WindowsPenTablet final: public WindowsSyntheticPointerDevice, public BackendPenTablet {
+    public:
+      WindowsPenTablet(SyntheticPointerApi api, HSYNTHETICPOINTERDEVICE device):
+          WindowsSyntheticPointerDevice {std::move(api), device} {
+        pointer_.type = PT_PEN;
+        pointer_.penInfo.pointerInfo.pointerType = PT_PEN;
+        pointer_.penInfo.pointerInfo.pointerId = 0;
+        start_repeat_thread("refresh Windows pen tablet tool");
+      }
+
+      WindowsPenTablet(const WindowsPenTablet &) = delete;
+      WindowsPenTablet &operator=(const WindowsPenTablet &) = delete;
+      WindowsPenTablet(WindowsPenTablet &&) noexcept = delete;
+      WindowsPenTablet &operator=(WindowsPenTablet &&) noexcept = delete;
+
+      ~WindowsPenTablet() noexcept override {
+        close_device_noexcept();
+      }
+
+      static BackendPenTabletCreationResult create(const SyntheticPointerApi &api, const CreatePenTabletOptions &options) {
+        using enum ErrorCode;
+
+        if (options.profile.device_type != DeviceType::pen_tablet) {
+          return {unsupported_profile_status("Windows pen tablet backend requires a pen tablet profile"), nullptr};
+        }
+        if (!synthetic_pointer_available(api)) {
+          return {
+            OperationStatus::failure(backend_unavailable, "Windows pen tablet backend requires Windows 10 1809 or later"),
+            nullptr,
+          };
+        }
+
+        const auto device = api.create(PT_PEN, 1, POINTER_FEEDBACK_DEFAULT);
+        if (!device) {
+          return {windows_failure(backend_failure, "create Windows pen tablet device", ::GetLastError()), nullptr};
+        }
+
+        return {OperationStatus::success(), std::make_unique<WindowsPenTablet>(api, device)};
+      }
+
+      OperationStatus place_tool(const PenToolState &state) override {
+        using enum ErrorCode;
+
+        const auto lock = lock_device();
+        if (!is_open_locked()) {
+          return OperationStatus::failure(device_closed, "Windows pen tablet is closed");
+        }
+
+        auto &pen_info = pointer_.penInfo;
+        update_tool_flags(pen_info, state.tool);
+        auto &pointer_info = pen_info.pointerInfo;
+        pointer_info.pointerType = PT_PEN;
+        pointer_info.pointerId = 0;
+        if (state.transition == PointerTransition::update) {
+          pointer_info.pointerFlags |= POINTER_FLAG_INRANGE | POINTER_FLAG_UPDATE;
+          if (state.pressure >= 0.0F) {
+            pointer_info.pointerFlags |= POINTER_FLAG_INCONTACT;
+            if (!contacting_) {
+              pointer_info.pointerFlags |= POINTER_FLAG_DOWN;
+            }
+          } else {
+            pointer_info.pointerFlags &= ~POINTER_FLAG_INCONTACT;
+          }
+          active_ = true;
+          contacting_ = state.pressure >= 0.0F;
+          update_pointer_location(pointer_info, state.viewport, state.x, state.y);
+        } else {
+          pointer_info.pointerFlags &= ~(POINTER_FLAG_INCONTACT | POINTER_FLAG_INRANGE);
+          switch (state.transition) {
+            case PointerTransition::cancel:
+              pointer_info.pointerFlags |= POINTER_FLAG_CANCELED;
+              pointer_info.pointerFlags |= contacting_ ? POINTER_FLAG_UP : POINTER_FLAG_UPDATE;
+              break;
+            case PointerTransition::leave:
+              pointer_info.pointerFlags |= POINTER_FLAG_UPDATE;
+              break;
+            default:
+              pointer_info.pointerFlags |= contacting_ ? POINTER_FLAG_UP : POINTER_FLAG_UPDATE;
+              break;
+          }
+          active_ = false;
+          contacting_ = false;
+        }
+
+        pen_info.penMask = PEN_MASK_NONE;
+        if (state.pressure > 0.0F) {
+          pen_info.penMask |= PEN_MASK_PRESSURE;
+          pen_info.pressure = static_cast<UINT32>(std::lround(std::clamp(state.pressure, 0.0F, 1.0F) * 1024.0F));
+        } else {
+          pen_info.pressure = 0;
+        }
+        if (state.tilt_x != 0.0F || state.tilt_y != 0.0F) {
+          pen_info.penMask |= PEN_MASK_TILT_X | PEN_MASK_TILT_Y;
+          pen_info.tiltX = static_cast<INT32>(std::lround(std::clamp(state.tilt_x, -90.0F, 90.0F)));
+          pen_info.tiltY = static_cast<INT32>(std::lround(std::clamp(state.tilt_y, -90.0F, 90.0F)));
+        } else {
+          pen_info.tiltX = 0;
+          pen_info.tiltY = 0;
+        }
+        if (barrel_pressed_) {
+          pen_info.penFlags |= PEN_FLAG_BARREL;
+        } else {
+          pen_info.penFlags &= ~PEN_FLAG_BARREL;
+        }
+
+        const auto status = inject_locked("submit Windows pen tablet tool");
+        if (status.ok()) {
+          pointer_info.pointerFlags &= ~pointer_edge_triggered_flags;
+        }
+        return status;
+      }
+
+      OperationStatus button(PenButton /*button*/, bool pressed) override {
+        using enum ErrorCode;
+
+        const auto lock = lock_device();
+        if (!is_open_locked()) {
+          return OperationStatus::failure(device_closed, "Windows pen tablet is closed");
+        }
+
+        barrel_pressed_ = pressed;
+        if (barrel_pressed_) {
+          pointer_.penInfo.penFlags |= PEN_FLAG_BARREL;
+        } else {
+          pointer_.penInfo.penFlags &= ~PEN_FLAG_BARREL;
+        }
+        if (active_) {
+          pointer_.penInfo.pointerInfo.pointerFlags |= POINTER_FLAG_UPDATE;
+          const auto status = inject_locked("submit Windows pen tablet button");
+          pointer_.penInfo.pointerInfo.pointerFlags &= ~pointer_edge_triggered_flags;
+          return status;
+        }
+
+        return OperationStatus::success();
+      }
+
+      OperationStatus close() override {
+        return close_device();
+      }
+
+    private:
+      static void update_tool_flags(POINTER_PEN_INFO &pen_info, PenToolType tool) {
+        switch (tool) {
+          case PenToolType::eraser:
+            pen_info.penFlags |= PEN_FLAG_ERASER;
+            break;
+          case PenToolType::unchanged:
+            break;
+          default:
+            pen_info.penFlags &= ~PEN_FLAG_ERASER;
+            break;
+        }
+      }
+
+      bool has_repeat_input_locked() const override {
+        return active_;
+      }
+
+      OperationStatus inject_locked(std::string_view operation) override {
+        return inject_synthetic_pointer_input_locked(&pointer_, 1, operation);
+      }
+
+      POINTER_TYPE_INFO pointer_ {};
+      bool barrel_pressed_ = false;
+      bool active_ = false;
+      bool contacting_ = false;
+    };
+
     class WindowsBackend final: public Backend {
     public:
       WindowsBackend():
@@ -856,6 +1599,8 @@ namespace lvh::detail {
         capabilities_.requires_installed_driver = true;
         capabilities_.supports_keyboard = true;
         capabilities_.supports_mouse = true;
+        capabilities_.supports_touchscreen = synthetic_pointer_available(synthetic_pointer_api());
+        capabilities_.supports_pen_tablet = synthetic_pointer_available(synthetic_pointer_api());
 
         if (!command_channel || !event_channel) {
           return;
@@ -902,7 +1647,7 @@ namespace lvh::detail {
 
         if (options.profile.gamepad_kind == GamepadProfileKind::xbox_360) {
           return {
-            unsupported_device_status(
+            unsupported_profile_status(
               "Windows UMDF/VHF backend cannot expose Xbox 360 XUSB gamepads; use an XUSB fallback for this profile"
             ),
             nullptr,
@@ -917,7 +1662,7 @@ namespace lvh::detail {
         const CreateKeyboardOptions &options
       ) override {
         if (options.profile.device_type != DeviceType::keyboard) {
-          return {unsupported_device_status("Windows keyboard backend requires a keyboard profile"), nullptr};
+          return {unsupported_profile_status("Windows keyboard backend requires a keyboard profile"), nullptr};
         }
 
         return {OperationStatus::success(), std::make_unique<WindowsKeyboard>()};
@@ -925,7 +1670,7 @@ namespace lvh::detail {
 
       BackendMouseCreationResult create_mouse(DeviceId /*id*/, const CreateMouseOptions &options) override {
         if (options.profile.device_type != DeviceType::mouse) {
-          return {unsupported_device_status("Windows mouse backend requires a mouse profile"), nullptr};
+          return {unsupported_profile_status("Windows mouse backend requires a mouse profile"), nullptr};
         }
 
         return {OperationStatus::success(), std::make_unique<WindowsMouse>()};
@@ -933,35 +1678,26 @@ namespace lvh::detail {
 
       BackendTouchscreenCreationResult create_touchscreen(
         DeviceId /*id*/,
-        const CreateTouchscreenOptions & /*options*/
+        const CreateTouchscreenOptions &options
       ) override {
-        return {unsupported_device_status("Windows backend currently supports gamepad, keyboard, and mouse devices only"), nullptr};
+        return WindowsTouchscreen::create(synthetic_pointer_api(), options);
       }
 
       BackendTrackpadCreationResult create_trackpad(
         DeviceId /*id*/,
         const CreateTrackpadOptions & /*options*/
       ) override {
-        return {unsupported_device_status("Windows backend currently supports gamepad, keyboard, and mouse devices only"), nullptr};
+        return {unsupported_profile_status("Windows backend currently supports gamepad, keyboard, and mouse devices only"), nullptr};
       }
 
       BackendPenTabletCreationResult create_pen_tablet(
         DeviceId /*id*/,
-        const CreatePenTabletOptions & /*options*/
+        const CreatePenTabletOptions &options
       ) override {
-        return {unsupported_device_status("Windows backend currently supports gamepad, keyboard, and mouse devices only"), nullptr};
+        return WindowsPenTablet::create(synthetic_pointer_api(), options);
       }
 
     private:
-      static OperationStatus unsupported_device_status(std::string message) {
-        using enum ErrorCode;
-
-        return OperationStatus::failure(
-          unsupported_profile,
-          std::move(message)
-        );
-      }
-
       BackendCapabilities capabilities_;
       std::shared_ptr<WindowsBackendContext> context_;
     };

@@ -10,6 +10,9 @@
 #include "../../src/platform/windows/windows_backend.cpp"
 #undef create_platform_backend
 
+// standard includes
+#include <bit>
+
 namespace lvh::detail {
   namespace {
 
@@ -269,8 +272,12 @@ namespace lvh::detail {
     public:
       explicit ScopedFakeSendInput(FakeSendInputState &state) {
         previous_function_ = send_input_function();
+        previous_sync_function_ = sync_thread_desktop_function();
         send_input_function() = [&state](std::span<INPUT> inputs) {
           return fake_send_input(state, inputs);
+        };
+        sync_thread_desktop_function() = [] {
+          return static_cast<HDESK>(nullptr);
         };
       }
 
@@ -281,10 +288,118 @@ namespace lvh::detail {
 
       ~ScopedFakeSendInput() {
         send_input_function() = std::move(previous_function_);
+        sync_thread_desktop_function() = std::move(previous_sync_function_);
       }
 
     private:
       SendInputFunction previous_function_ = send_input_with_win32;
+      SyncThreadDesktopFunction previous_sync_function_ = sync_thread_desktop_with_win32;
+    };
+
+    struct FakeSyntheticPointerState {
+      std::vector<test::WindowsSyntheticPointerRecord> injected_pointers;
+      std::vector<POINTER_INPUT_TYPE> created_types;
+      std::size_t destroyed_devices = 0;
+      std::optional<BOOL> forced_inject_result;
+      bool force_create_failure = false;
+      std::uintptr_t next_device = 1;
+    };
+
+    test::WindowsSyntheticPointerRecord make_synthetic_pointer_record(const POINTER_TYPE_INFO &pointer, UINT32 count) {
+      test::WindowsSyntheticPointerRecord record;
+      record.type = pointer.type;
+      record.count = count;
+      if (pointer.type == PT_TOUCH) {
+        const auto &touch = pointer.touchInfo;
+        record.pointer_flags = touch.pointerInfo.pointerFlags;
+        record.pointer_id = touch.pointerInfo.pointerId;
+        record.x = touch.pointerInfo.ptPixelLocation.x;
+        record.y = touch.pointerInfo.ptPixelLocation.y;
+        record.touch_mask = touch.touchMask;
+        record.touch_pressure = touch.pressure;
+        record.touch_orientation = touch.orientation;
+      } else if (pointer.type == PT_PEN) {
+        const auto &pen = pointer.penInfo;
+        record.pointer_flags = pen.pointerInfo.pointerFlags;
+        record.pointer_id = pen.pointerInfo.pointerId;
+        record.x = pen.pointerInfo.ptPixelLocation.x;
+        record.y = pen.pointerInfo.ptPixelLocation.y;
+        record.pen_mask = pen.penMask;
+        record.pen_flags = pen.penFlags;
+        record.pen_tilt_x = pen.tiltX;
+        record.pen_tilt_y = pen.tiltY;
+      }
+
+      return record;
+    }
+
+    HSYNTHETICPOINTERDEVICE fake_create_synthetic_pointer_device(
+      FakeSyntheticPointerState &state,
+      POINTER_INPUT_TYPE type,
+      ULONG /*max_count*/,
+      POINTER_FEEDBACK_MODE /*mode*/
+    ) {
+      if (state.force_create_failure) {
+        ::SetLastError(ERROR_ACCESS_DENIED);
+        return nullptr;
+      }
+
+      static_assert(sizeof(HSYNTHETICPOINTERDEVICE) == sizeof(state.next_device));
+
+      state.created_types.push_back(type);
+      return std::bit_cast<HSYNTHETICPOINTERDEVICE>(state.next_device++);
+    }
+
+    BOOL fake_inject_synthetic_pointer_input(
+      FakeSyntheticPointerState &state,
+      HSYNTHETICPOINTERDEVICE /*device*/,
+      const POINTER_TYPE_INFO *pointer_info,
+      UINT32 count
+    ) {
+      for (UINT32 index = 0; index < count; ++index) {
+        state.injected_pointers.push_back(make_synthetic_pointer_record(pointer_info[index], count));
+      }
+
+      if (state.forced_inject_result.has_value()) {
+        ::SetLastError(ERROR_ACCESS_DENIED);
+        return *state.forced_inject_result;
+      }
+
+      return TRUE;
+    }
+
+    void fake_destroy_synthetic_pointer_device(FakeSyntheticPointerState &state, HSYNTHETICPOINTERDEVICE /*device*/) {
+      ++state.destroyed_devices;
+    }
+
+    class ScopedFakeSyntheticPointerApi {
+    public:
+      explicit ScopedFakeSyntheticPointerApi(FakeSyntheticPointerState &state) {
+        previous_api_ = synthetic_pointer_api();
+        synthetic_pointer_api() = SyntheticPointerApi {
+          .create = [&state](POINTER_INPUT_TYPE type, ULONG max_count, POINTER_FEEDBACK_MODE mode) {
+            return fake_create_synthetic_pointer_device(state, type, max_count, mode);
+          },
+          .inject = [&state](HSYNTHETICPOINTERDEVICE device, const POINTER_TYPE_INFO *pointer_info, UINT32 count) {
+            return fake_inject_synthetic_pointer_input(state, device, pointer_info, count);
+          },
+          .destroy = [&state](HSYNTHETICPOINTERDEVICE device) {
+            fake_destroy_synthetic_pointer_device(state, device);
+          },
+        };
+      }
+
+      ScopedFakeSyntheticPointerApi(const ScopedFakeSyntheticPointerApi &) = delete;
+      ScopedFakeSyntheticPointerApi &operator=(const ScopedFakeSyntheticPointerApi &) = delete;
+      ScopedFakeSyntheticPointerApi(ScopedFakeSyntheticPointerApi &&) noexcept = delete;
+      ScopedFakeSyntheticPointerApi &operator=(ScopedFakeSyntheticPointerApi &&) noexcept = delete;
+
+      ~ScopedFakeSyntheticPointerApi() {
+        synthetic_pointer_api() = std::move(previous_api_);
+      }
+
+    private:
+      SyntheticPointerApi previous_api_;
     };
 
   }  // namespace
@@ -479,9 +594,12 @@ namespace lvh::detail {
       using enum MouseEventKind;
 
       WindowsBackendSendInputResult result;
-      WindowsBackend backend {nullptr, nullptr};
       FakeSendInputState fake_send_input;
       ScopedFakeSendInput scoped_send_input {fake_send_input};
+      FakeSyntheticPointerState fake_synthetic_pointer;
+      ScopedFakeSyntheticPointerApi scoped_synthetic_pointer {fake_synthetic_pointer};
+      WindowsBackend backend {nullptr, nullptr};
+      result.synthetic.capabilities = backend.capabilities();
 
       CreateKeyboardOptions keyboard_options;
       keyboard_options.profile = profiles::keyboard();
@@ -496,6 +614,14 @@ namespace lvh::detail {
         fake_send_input.forced_sent_count = 0U;
         result.keyboard.failure_status = keyboard.keyboard->submit({.key_code = 0x42, .pressed = true});
         fake_send_input.forced_sent_count.reset();
+
+        const auto prior_input_count = fake_send_input.sent_inputs.size();
+        result.keyboard.normalized_status =
+          keyboard.keyboard->submit({.key_code = 0x41, .pressed = true, .uses_normalized_key_code = true});
+        if (fake_send_input.sent_inputs.size() > prior_input_count) {
+          result.keyboard.normalized_input = fake_send_input.sent_inputs.back();
+          fake_send_input.sent_inputs.resize(prior_input_count);
+        }
       } else {
         result.keyboard.down_status = keyboard.status;
       }
@@ -547,7 +673,32 @@ namespace lvh::detail {
 
       CreateTouchscreenOptions touchscreen_options;
       touchscreen_options.profile = profiles::touchscreen();
-      result.unsupported.touchscreen_status = backend.create_touchscreen(14, touchscreen_options).status;
+      if (auto touchscreen = backend.create_touchscreen(14, touchscreen_options); touchscreen) {
+        result.synthetic.touchscreen_create_status = touchscreen.status;
+        result.synthetic.touchscreen_place_status = touchscreen.touchscreen->place_contact({
+          .id = 7,
+          .x = 0.25F,
+          .y = 0.5F,
+          .pressure = 0.75F,
+          .orientation = 30,
+          .viewport = {.offset_x = 100, .offset_y = 200, .width = 400, .height = 300},
+          .contact_major_axis = 20.0F,
+          .contact_minor_axis = 10.0F,
+        });
+        result.synthetic.touchscreen_release_status =
+          touchscreen.touchscreen->release_contact(7, PointerTransition::release);
+
+        fake_synthetic_pointer.forced_inject_result = FALSE;
+        result.synthetic.touchscreen_failure_status = touchscreen.touchscreen->place_contact({
+          .id = 8,
+          .x = 0.1F,
+          .y = 0.2F,
+          .viewport = {.offset_x = 0, .offset_y = 0, .width = 100, .height = 100},
+        });
+        fake_synthetic_pointer.forced_inject_result.reset();
+      } else {
+        result.synthetic.touchscreen_create_status = touchscreen.status;
+      }
 
       CreateTrackpadOptions trackpad_options;
       trackpad_options.profile = profiles::trackpad();
@@ -555,9 +706,35 @@ namespace lvh::detail {
 
       CreatePenTabletOptions pen_tablet_options;
       pen_tablet_options.profile = profiles::pen_tablet();
-      result.unsupported.pen_tablet_status = backend.create_pen_tablet(16, pen_tablet_options).status;
+      if (auto pen_tablet = backend.create_pen_tablet(16, pen_tablet_options); pen_tablet) {
+        result.synthetic.pen_tablet_create_status = pen_tablet.status;
+        result.synthetic.pen_tablet_button_status = pen_tablet.pen_tablet->button(PenButton::secondary, true);
+        result.synthetic.pen_tablet_tool_status = pen_tablet.pen_tablet->place_tool({
+          .tool = PenToolType::eraser,
+          .x = 0.5F,
+          .y = 0.75F,
+          .pressure = 0.5F,
+          .distance = -1.0F,
+          .tilt_x = 10.0F,
+          .tilt_y = -20.0F,
+          .viewport = {.offset_x = 10, .offset_y = 20, .width = 200, .height = 100},
+        });
+      } else {
+        result.synthetic.pen_tablet_create_status = pen_tablet.status;
+      }
+
+      CreateTouchscreenOptions invalid_touchscreen_options;
+      invalid_touchscreen_options.profile = profiles::pen_tablet();
+      result.synthetic.touchscreen_invalid_profile_status = backend.create_touchscreen(17, invalid_touchscreen_options).status;
+
+      CreatePenTabletOptions invalid_pen_tablet_options;
+      invalid_pen_tablet_options.profile = profiles::touchscreen();
+      result.synthetic.pen_tablet_invalid_profile_status = backend.create_pen_tablet(18, invalid_pen_tablet_options).status;
 
       result.sent_inputs = std::move(fake_send_input.sent_inputs);
+      result.synthetic.created_devices = fake_synthetic_pointer.created_types.size();
+      result.synthetic.destroyed_devices = fake_synthetic_pointer.destroyed_devices;
+      result.synthetic.injected_pointers = std::move(fake_synthetic_pointer.injected_pointers);
       return result;
     }
 

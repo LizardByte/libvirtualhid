@@ -719,6 +719,21 @@ namespace lvh {
      * @brief Whether the key is pressed.
      */
     bool pressed = false;
+
+    /**
+     * @brief Optional platform scan code to submit instead of translating `key_code`.
+     */
+    std::uint16_t scan_code = 0;
+
+    /**
+     * @brief Whether `key_code` is normalized to the Windows US English keyboard layout.
+     */
+    bool uses_normalized_key_code = false;
+
+    /**
+     * @brief Whether the backend should prefer a native scan-code translation when `scan_code` is not provided.
+     */
+    bool prefer_native_scan_code = false;
   };
 
   /**
@@ -729,6 +744,41 @@ namespace lvh {
      * @brief UTF-8 text to type.
      */
     std::string text;
+  };
+
+  /**
+   * @brief Pixel viewport used by backends that need screen-local pointer coordinates.
+   */
+  struct PointerViewport {
+    /**
+     * @brief Horizontal viewport offset in pixels.
+     */
+    std::int32_t offset_x = 0;
+
+    /**
+     * @brief Vertical viewport offset in pixels.
+     */
+    std::int32_t offset_y = 0;
+
+    /**
+     * @brief Viewport width in pixels, or `0` to use the platform default.
+     */
+    std::int32_t width = 0;
+
+    /**
+     * @brief Viewport height in pixels, or `0` to use the platform default.
+     */
+    std::int32_t height = 0;
+  };
+
+  /**
+   * @brief Pointer state transition requested for contact-capable devices.
+   */
+  enum class PointerTransition : std::uint8_t {
+    update,  ///< Pointer is in range, with contact state described by the event.
+    release,  ///< Pointer contact ended normally.
+    cancel,  ///< Pointer contact was canceled.
+    leave,  ///< Pointer left range without an in-contact release.
   };
 
   /**
@@ -771,6 +821,21 @@ namespace lvh {
      * @brief Relative delta or absolute Y coordinate.
      */
     std::int32_t y = 0;
+
+    /**
+     * @brief Fractional absolute X coordinate used when `has_fractional_absolute_coordinates` is true.
+     */
+    float absolute_x = 0.0F;
+
+    /**
+     * @brief Fractional absolute Y coordinate used when `has_fractional_absolute_coordinates` is true.
+     */
+    float absolute_y = 0.0F;
+
+    /**
+     * @brief Whether absolute motion should use `absolute_x` and `absolute_y` instead of integer `x` and `y`.
+     */
+    bool has_fractional_absolute_coordinates = false;
 
     /**
      * @brief Width of the absolute coordinate space.
@@ -826,6 +891,26 @@ namespace lvh {
      * @brief Contact orientation in degrees, typically in the inclusive range `[-90, 90]`.
      */
     std::int32_t orientation = 0;
+
+    /**
+     * @brief Whether the contact is touching the surface.
+     */
+    bool touching = true;
+
+    /**
+     * @brief Pixel viewport that receives the contact.
+     */
+    PointerViewport viewport;
+
+    /**
+     * @brief Contact major-axis size in viewport pixels, or `0.0` when unknown.
+     */
+    float contact_major_axis = 0.0F;
+
+    /**
+     * @brief Contact minor-axis size in viewport pixels, or `0.0` when unknown.
+     */
+    float contact_minor_axis = 0.0F;
   };
 
   /**
@@ -888,6 +973,16 @@ namespace lvh {
      * @brief Y-axis tilt in degrees.
      */
     float tilt_y = 0.0F;
+
+    /**
+     * @brief Pointer transition represented by this tool state.
+     */
+    PointerTransition transition = PointerTransition::update;
+
+    /**
+     * @brief Pixel viewport that receives the pen tool.
+     */
+    PointerViewport viewport;
   };
 
   /**

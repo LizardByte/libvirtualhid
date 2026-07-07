@@ -76,7 +76,7 @@ namespace lvh::detail {
         return OperationStatus::success();
       }
 
-      OperationStatus release_contact(std::int32_t /*contact_id*/) override {
+      OperationStatus release_contact(std::int32_t /*contact_id*/, PointerTransition /*transition*/) override {
         return OperationStatus::success();
       }
 
@@ -94,7 +94,7 @@ namespace lvh::detail {
         return OperationStatus::success();
       }
 
-      OperationStatus release_contact(std::int32_t /*contact_id*/) override {
+      OperationStatus release_contact(std::int32_t /*contact_id*/, PointerTransition /*transition*/) override {
         return OperationStatus::success();
       }
 

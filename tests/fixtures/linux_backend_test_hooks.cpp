@@ -1040,7 +1040,7 @@ namespace lvh::detail::test {
     UinputTouchscreen touchscreen {descriptors[1]};
     auto status = touchscreen.place_contact(contact);
     if (status.ok()) {
-      status = touchscreen.release_contact(contact.id);
+      status = touchscreen.release_contact(contact.id, PointerTransition::release);
     }
     static_cast<void>(touchscreen.close());
     auto records = read_input_events_until_eof(descriptors[0]);
@@ -1063,7 +1063,7 @@ namespace lvh::detail::test {
       status = trackpad.button(false);
     }
     if (status.ok()) {
-      status = trackpad.release_contact(contact.id);
+      status = trackpad.release_contact(contact.id, PointerTransition::release);
     }
     static_cast<void>(trackpad.close());
     auto records = read_input_events_until_eof(descriptors[0]);
@@ -1109,7 +1109,7 @@ namespace lvh::detail::test {
       });
     }
     for (auto id = 4; id >= 0 && status.ok(); --id) {
-      status = trackpad.release_contact(id);
+      status = trackpad.release_contact(id, PointerTransition::release);
     }
     static_cast<void>(trackpad.close());
     auto records = read_input_events_until_eof(descriptors[0]);

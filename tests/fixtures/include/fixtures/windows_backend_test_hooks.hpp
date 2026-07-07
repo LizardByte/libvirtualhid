@@ -78,7 +78,9 @@ namespace lvh::detail::test {
     OperationStatus empty_text_status;
     OperationStatus invalid_text_status;
     OperationStatus failure_status;
+    OperationStatus normalized_status;
     OperationStatus invalid_profile_status;
+    WindowsSendInputRecord normalized_input;
   };
 
   struct WindowsMouseSendInputResult {
@@ -97,15 +99,46 @@ namespace lvh::detail::test {
   };
 
   struct WindowsUnsupportedInputResult {
-    OperationStatus touchscreen_status;
     OperationStatus trackpad_status;
-    OperationStatus pen_tablet_status;
+  };
+
+  struct WindowsSyntheticPointerRecord {
+    std::uint32_t type = 0;
+    std::uint32_t count = 0;
+    std::uint32_t pointer_flags = 0;
+    std::uint32_t pointer_id = 0;
+    std::int32_t x = 0;
+    std::int32_t y = 0;
+    std::uint32_t touch_mask = 0;
+    std::uint32_t touch_pressure = 0;
+    std::uint32_t touch_orientation = 0;
+    std::uint32_t pen_mask = 0;
+    std::uint32_t pen_flags = 0;
+    std::int32_t pen_tilt_x = 0;
+    std::int32_t pen_tilt_y = 0;
+  };
+
+  struct WindowsSyntheticPointerResult {
+    BackendCapabilities capabilities;
+    OperationStatus touchscreen_create_status;
+    OperationStatus touchscreen_place_status;
+    OperationStatus touchscreen_release_status;
+    OperationStatus touchscreen_invalid_profile_status;
+    OperationStatus touchscreen_failure_status;
+    OperationStatus pen_tablet_create_status;
+    OperationStatus pen_tablet_button_status;
+    OperationStatus pen_tablet_tool_status;
+    OperationStatus pen_tablet_invalid_profile_status;
+    std::size_t created_devices = 0;
+    std::size_t destroyed_devices = 0;
+    std::vector<WindowsSyntheticPointerRecord> injected_pointers;
   };
 
   struct WindowsBackendSendInputResult {
     WindowsKeyboardSendInputResult keyboard;
     WindowsMouseSendInputResult mouse;
     WindowsUnsupportedInputResult unsupported;
+    WindowsSyntheticPointerResult synthetic;
     std::vector<WindowsSendInputRecord> sent_inputs;
   };
 
