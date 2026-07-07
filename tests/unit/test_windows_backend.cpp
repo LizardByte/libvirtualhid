@@ -4,16 +4,22 @@
  */
 
 #ifndef DOXYGEN
-  #if !defined(WINVER) || WINVER < 0x0A00
+  #if defined(WINVER) && WINVER < 0x0A00
     #undef WINVER
+  #endif
+  #ifndef WINVER
     #define WINVER 0x0A00
   #endif
-  #if !defined(_WIN32_WINNT) || _WIN32_WINNT < 0x0A00
+  #if defined(_WIN32_WINNT) && _WIN32_WINNT < 0x0A00
     #undef _WIN32_WINNT
+  #endif
+  #ifndef _WIN32_WINNT
     #define _WIN32_WINNT 0x0A00
   #endif
-  #if !defined(NTDDI_VERSION) || NTDDI_VERSION < 0x0A000006
+  #if defined(NTDDI_VERSION) && NTDDI_VERSION < 0x0A000006
     #undef NTDDI_VERSION
+  #endif
+  #ifndef NTDDI_VERSION
     #define NTDDI_VERSION 0x0A000006
   #endif
 #endif

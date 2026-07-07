@@ -4,16 +4,22 @@
  */
 
 #ifndef DOXYGEN
-  #if !defined(WINVER) || WINVER < 0x0A00
+  #if defined(WINVER) && WINVER < 0x0A00
     #undef WINVER
+  #endif
+  #ifndef WINVER
     #define WINVER 0x0A00
   #endif
-  #if !defined(_WIN32_WINNT) || _WIN32_WINNT < 0x0A00
+  #if defined(_WIN32_WINNT) && _WIN32_WINNT < 0x0A00
     #undef _WIN32_WINNT
+  #endif
+  #ifndef _WIN32_WINNT
     #define _WIN32_WINNT 0x0A00
   #endif
-  #if !defined(NTDDI_VERSION) || NTDDI_VERSION < 0x0A000006
+  #if defined(NTDDI_VERSION) && NTDDI_VERSION < 0x0A000006
     #undef NTDDI_VERSION
+  #endif
+  #ifndef NTDDI_VERSION
     #define NTDDI_VERSION 0x0A000006
   #endif
 #endif
@@ -73,6 +79,13 @@ namespace lvh::detail {
     using SyncThreadDesktopFunction = std::function<HDESK()>;
 
     /**
+     * @brief Thread-local desktop identity used for SendInput retry decisions.
+     */
+    struct LastKnownInputDesktop {
+      HDESK value = nullptr;  ///< Last desktop returned by OpenInputDesktop.
+    };
+
+    /**
      * @brief Runtime-loaded Windows synthetic pointer API entry points.
      */
     struct SyntheticPointerApi {
@@ -110,7 +123,10 @@ namespace lvh::detail {
       return function;
     }
 
-    thread_local HDESK last_known_input_desktop = nullptr;
+    LastKnownInputDesktop &last_known_input_desktop() {
+      thread_local LastKnownInputDesktop desktop;
+      return desktop;
+    }
 
     template<typename Function>
     Function load_user32_function(HMODULE user32, const char *name) {
@@ -203,9 +219,9 @@ namespace lvh::detail {
       }
 
       auto error_code = ::GetLastError();
-      const auto desktop = sync_thread_desktop_function()();
-      if (last_known_input_desktop != desktop) {
-        last_known_input_desktop = desktop;
+      auto &known_desktop = last_known_input_desktop();
+      if (const auto desktop = sync_thread_desktop_function()(); known_desktop.value != desktop) {
+        known_desktop.value = desktop;
         if (submit()) {
           return OperationStatus::success();
         }
@@ -1057,8 +1073,8 @@ namespace lvh::detail {
       WindowsTouchscreen(WindowsTouchscreen &&) noexcept = delete;
       WindowsTouchscreen &operator=(WindowsTouchscreen &&) noexcept = delete;
 
-      ~WindowsTouchscreen() override {
-        static_cast<void>(close());
+      ~WindowsTouchscreen() noexcept override {
+        close_noexcept();
       }
 
       static BackendTouchscreenCreationResult create(const SyntheticPointerApi &api, const CreateTouchscreenOptions &options) {
@@ -1173,8 +1189,7 @@ namespace lvh::detail {
             pointer_info.pointerFlags |= was_touching ? POINTER_FLAG_UP : POINTER_FLAG_UPDATE;
             break;
         }
-        const auto status = inject_locked("release Windows touchscreen contact");
-        if (!status.ok()) {
+        if (const auto status = inject_locked("release Windows touchscreen contact"); !status.ok()) {
           return status;
         }
 
@@ -1299,6 +1314,24 @@ namespace lvh::detail {
         }
       }
 
+      /**
+       * @brief Close the device from the destructor without allowing exceptions to escape.
+       */
+      void close_noexcept() noexcept {
+        stop_repeat_thread();
+
+        std::lock_guard lock {mutex_};
+        if (!open_) {
+          return;
+        }
+
+        open_ = false;
+        if (device_) {
+          api_.destroy(device_);
+          device_ = nullptr;
+        }
+      }
+
       SyntheticPointerApi api_;
       HSYNTHETICPOINTERDEVICE device_ {};
       mutable std::mutex mutex_;
@@ -1330,8 +1363,8 @@ namespace lvh::detail {
       WindowsPenTablet(WindowsPenTablet &&) noexcept = delete;
       WindowsPenTablet &operator=(WindowsPenTablet &&) noexcept = delete;
 
-      ~WindowsPenTablet() override {
-        static_cast<void>(close());
+      ~WindowsPenTablet() noexcept override {
+        close_noexcept();
       }
 
       static BackendPenTabletCreationResult create(const SyntheticPointerApi &api, const CreatePenTabletOptions &options) {
@@ -1510,6 +1543,24 @@ namespace lvh::detail {
         if (repeat_thread_.joinable()) {
           repeat_thread_.request_stop();
           repeat_thread_.join();
+        }
+      }
+
+      /**
+       * @brief Close the device from the destructor without allowing exceptions to escape.
+       */
+      void close_noexcept() noexcept {
+        stop_repeat_thread();
+
+        std::lock_guard lock {mutex_};
+        if (!open_) {
+          return;
+        }
+
+        open_ = false;
+        if (device_) {
+          api_.destroy(device_);
+          device_ = nullptr;
         }
       }
 

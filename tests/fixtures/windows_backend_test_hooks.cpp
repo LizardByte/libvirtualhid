@@ -10,6 +10,9 @@
 #include "../../src/platform/windows/windows_backend.cpp"
 #undef create_platform_backend
 
+// standard includes
+#include <bit>
+
 namespace lvh::detail {
   namespace {
 
@@ -341,8 +344,10 @@ namespace lvh::detail {
         return nullptr;
       }
 
+      static_assert(sizeof(HSYNTHETICPOINTERDEVICE) == sizeof(state.next_device));
+
       state.created_types.push_back(type);
-      return reinterpret_cast<HSYNTHETICPOINTERDEVICE>(state.next_device++);
+      return std::bit_cast<HSYNTHETICPOINTERDEVICE>(state.next_device++);
     }
 
     BOOL fake_inject_synthetic_pointer_input(
