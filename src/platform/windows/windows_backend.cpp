@@ -1122,14 +1122,48 @@ namespace lvh::detail {
         close_device_locked();
       }
 
-      SyntheticPointerApi api_;
-      HSYNTHETICPOINTERDEVICE device_ {};
-      mutable std::mutex mutex_;
-      bool open_ = true;
+      /**
+       * @brief Lock the synthetic pointer device state.
+       *
+       * @return Lock guarding the device state.
+       */
+      [[nodiscard]] std::unique_lock<std::mutex> lock_device() const {
+        return std::unique_lock {mutex_};
+      }
+
+      /**
+       * @brief Check whether the synthetic pointer device is open while the caller holds the lock.
+       *
+       * @return true when the device is open, false otherwise.
+       */
+      bool is_open_locked() const {
+        return open_;
+      }
+
+      /**
+       * @brief Inject synthetic pointer input while the caller holds the lock.
+       *
+       * @param inputs Synthetic pointer packets to inject.
+       * @param count Number of packets to inject.
+       * @param operation Operation description used for failure reporting.
+       * @return Operation status from the injection call.
+       */
+      OperationStatus inject_synthetic_pointer_input_locked(
+        const POINTER_TYPE_INFO *inputs,
+        UINT32 count,
+        std::string_view operation
+      ) {
+        return inject_synthetic_pointer_input(api_, device_, inputs, count, operation);
+      }
 
     private:
       virtual bool has_repeat_input_locked() const = 0;
       virtual OperationStatus inject_locked(std::string_view operation) = 0;
+
+      SyntheticPointerApi api_;
+      HSYNTHETICPOINTERDEVICE device_ {};
+      mutable std::mutex mutex_;
+      bool open_ = true;
 
       void stop_repeat_thread() {
         if (repeat_thread_.joinable()) {
@@ -1200,8 +1234,8 @@ namespace lvh::detail {
           return OperationStatus::failure(invalid_argument, "Windows touch contact id must not be negative");
         }
 
-        std::lock_guard lock {mutex_};
-        if (!open_) {
+        const auto lock = lock_device();
+        if (!is_open_locked()) {
           return OperationStatus::failure(device_closed, "Windows touchscreen is closed");
         }
 
@@ -1259,8 +1293,8 @@ namespace lvh::detail {
       OperationStatus release_contact(std::int32_t contact_id, PointerTransition transition) override {
         using enum ErrorCode;
 
-        std::lock_guard lock {mutex_};
-        if (!open_) {
+        const auto lock = lock_device();
+        if (!is_open_locked()) {
           return OperationStatus::failure(device_closed, "Windows touchscreen is closed");
         }
 
@@ -1364,9 +1398,7 @@ namespace lvh::detail {
       }
 
       OperationStatus inject_locked(std::string_view operation) override {
-        return inject_synthetic_pointer_input(
-          api_,
-          device_,
+        return inject_synthetic_pointer_input_locked(
           contacts_.data(),
           static_cast<UINT32>(active_contacts_),
           operation
@@ -1426,8 +1458,8 @@ namespace lvh::detail {
       OperationStatus place_tool(const PenToolState &state) override {
         using enum ErrorCode;
 
-        std::lock_guard lock {mutex_};
-        if (!open_) {
+        const auto lock = lock_device();
+        if (!is_open_locked()) {
           return OperationStatus::failure(device_closed, "Windows pen tablet is closed");
         }
 
@@ -1498,8 +1530,8 @@ namespace lvh::detail {
       OperationStatus button(PenButton /*button*/, bool pressed) override {
         using enum ErrorCode;
 
-        std::lock_guard lock {mutex_};
-        if (!open_) {
+        const auto lock = lock_device();
+        if (!is_open_locked()) {
           return OperationStatus::failure(device_closed, "Windows pen tablet is closed");
         }
 
@@ -1542,7 +1574,7 @@ namespace lvh::detail {
       }
 
       OperationStatus inject_locked(std::string_view operation) override {
-        return inject_synthetic_pointer_input(api_, device_, &pointer_, 1, operation);
+        return inject_synthetic_pointer_input_locked(&pointer_, 1, operation);
       }
 
       POINTER_TYPE_INFO pointer_ {};
