@@ -9,6 +9,10 @@ target_link_libraries(virtualhid_control_model
   PUBLIC
   libvirtualhid::libvirtualhid)
 
+if(MSVC AND LIBVIRTUALHID_TOOLS_STATIC_RUNTIME AND LIBVIRTUALHID_BUILD_WINDOWS_DRIVER)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
+
 include("${PROJECT_SOURCE_DIR}/cmake/cpm/CPM.cmake")
 CPMUsePackageLock("${PROJECT_SOURCE_DIR}/package-lock.cmake")
 
