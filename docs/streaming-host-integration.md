@@ -68,5 +68,5 @@ Remaining replacement work is validation and packaging, not broad API shape:
   names used by the consuming application.
 - Define the FreeBSD backend subset explicitly instead of assuming Linux
   `uhid` behavior applies.
-- Implement and validate a macOS backend before advertising macOS runtime
-  support.
+- Validate macOS CoreGraphics keyboard and mouse support in a streaming host, and
+  keep native macOS virtual HID device work scoped separately.

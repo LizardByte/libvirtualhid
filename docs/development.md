@@ -11,7 +11,7 @@ src/core/                     Shared profile, descriptor, and report logic
 src/platform/windows/         Windows client backend and UMDF control channel
 src/platform/windows/driver/  Windows UMDF2 driver package sources
 src/platform/linux/           Linux uhid/uinput backend
-src/platform/macos/           Future macOS backend
+src/platform/macos/           macOS CoreGraphics keyboard and mouse backend
 examples/                     Minimal consumers and platform smoke tests
 tests/                        Unit and integration tests
 cmake/                        Package config and helper modules
@@ -40,6 +40,19 @@ The Windows UMDF driver package is a separate MSVC/WDK build. See
 Linux builds use the same CMake target shape. Integration tests that create real
 devices require access to `/dev/uhid` and `/dev/uinput`; see
 [Platform support](platform-support.md).
+
+```bash
+cmake -S . -B cmake-build-debug -G Ninja -DCMAKE_BUILD_TYPE=Debug
+cmake --build cmake-build-debug
+cmake-build-debug/tests/test_libvirtualhid
+```
+
+## macOS Build
+
+macOS builds use the same CMake target shape and link the CoreGraphics backend
+against the system ApplicationServices, Carbon, CoreFoundation, and IOKit
+frameworks. The CI test coverage exercises translation and lifecycle paths
+without posting live synthetic input events.
 
 ```bash
 cmake -S . -B cmake-build-debug -G Ninja -DCMAKE_BUILD_TYPE=Debug
@@ -81,5 +94,6 @@ code and tests provide a better source of truth.
   libvirtualhid driver-package checks.
 - Validate Linux host-adapter behavior across the selected controller profiles.
 - Define and implement the FreeBSD-supported backend subset.
-- Prototype and document macOS virtual HID support, including signing,
-  entitlement, and installer constraints.
+- Extend macOS support beyond CoreGraphics keyboard and mouse injection to
+  native virtual HID devices, including signing, entitlement, and installer
+  constraints.

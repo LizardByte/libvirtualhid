@@ -52,6 +52,10 @@ elseif(WIN32)
     list(APPEND LIBVIRTUALHID_TEST_SOURCES
          "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/windows_backend_test_hooks.cpp"
          "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_windows_backend.cpp")
+elseif(APPLE)
+    list(APPEND LIBVIRTUALHID_TEST_SOURCES
+         "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/macos_backend_test_hooks.cpp"
+         "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_macos_backend.cpp")
 endif()
 
 add_executable(${TEST_BINARY}
@@ -81,6 +85,13 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
       PkgConfig::LIBEVDEV
       PkgConfig::LIBINPUT
       PkgConfig::SDL2)
+elseif(APPLE)
+    target_link_libraries(${TEST_BINARY}
+      PRIVATE
+      "-framework ApplicationServices"
+      "-framework Carbon"
+      "-framework CoreFoundation"
+      "-framework IOKit")
 endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND LIBVIRTUALHID_ENABLE_XTEST AND X11_FOUND AND X11_XTest_FOUND)

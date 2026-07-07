@@ -108,6 +108,31 @@ TEST(RuntimeTest, PlatformDefaultReportsCurrentPlatformCapabilities) {
   invalid_profile = lvh::profiles::xbox_series();
   invalid_profile.output_report_size = LVH_WINDOWS_MAX_OUTPUT_REPORT_SIZE + 1U;
   EXPECT_EQ(runtime->create_gamepad(invalid_profile).status.code(), lvh::ErrorCode::invalid_argument);
+#elif defined(__APPLE__) && defined(__MACH__)
+  EXPECT_EQ(runtime->capabilities().backend_name, "macos-coregraphics");
+  EXPECT_FALSE(runtime->capabilities().requires_installed_driver);
+  EXPECT_FALSE(runtime->capabilities().supports_virtual_hid);
+  EXPECT_FALSE(runtime->capabilities().supports_gamepad);
+  EXPECT_TRUE(runtime->capabilities().supports_keyboard);
+  EXPECT_TRUE(runtime->capabilities().supports_mouse);
+  EXPECT_FALSE(runtime->capabilities().supports_touchscreen);
+  EXPECT_FALSE(runtime->capabilities().supports_trackpad);
+  EXPECT_FALSE(runtime->capabilities().supports_pen_tablet);
+  EXPECT_FALSE(runtime->capabilities().supports_output_reports);
+
+  auto keyboard = runtime->create_keyboard();
+  ASSERT_TRUE(keyboard) << keyboard.status.message();
+  EXPECT_EQ(keyboard.keyboard->type_text({.text = "A"}).code(), lvh::ErrorCode::unsupported_profile);
+  EXPECT_TRUE(keyboard.keyboard->close().ok());
+
+  auto mouse = runtime->create_mouse();
+  ASSERT_TRUE(mouse) << mouse.status.message();
+  EXPECT_TRUE(mouse.mouse->close().ok());
+
+  EXPECT_EQ(runtime->create_gamepad(lvh::profiles::xbox_360()).status.code(), lvh::ErrorCode::unsupported_profile);
+  EXPECT_EQ(runtime->create_touchscreen().status.code(), lvh::ErrorCode::unsupported_profile);
+  EXPECT_EQ(runtime->create_trackpad().status.code(), lvh::ErrorCode::unsupported_profile);
+  EXPECT_EQ(runtime->create_pen_tablet().status.code(), lvh::ErrorCode::unsupported_profile);
 #else
   EXPECT_EQ(runtime->capabilities().backend_name, "platform-default-unimplemented");
   EXPECT_FALSE(runtime->capabilities().supports_gamepad);
