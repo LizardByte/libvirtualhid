@@ -13,13 +13,9 @@ Driver Store. It is not a kernel-mode `.sys` driver.
 Paste this into the Partner Center certification notes field:
 
 ```text
-This package installs the libvirtualhid Windows user-mode UMDF/VHF virtual HID
-driver. Applications consume it through the libvirtualhid client API, and the
-MSI includes a native diagnostic UI for local validation.
+This package installs the libvirtualhid Windows user-mode UMDF/VHF virtual HID driver. Applications consume it through the libvirtualhid client API, and the MSI includes a native diagnostic UI for local validation.
 
-A prebuilt native validation tool is installed by the MSI so no programming,
-SDK setup, or driver build environment is required. Please install the released,
-production-signed MSI, then launch the validation tool below.
+Launch the validation tool below.
 
 Default install root:
 C:\Program Files\libvirtualhid
@@ -32,17 +28,14 @@ Required validation:
 $installRoot = Join-Path $env:ProgramFiles "libvirtualhid"
 & "$installRoot\tools\windows\virtualhid_control.exe"
 
-In the libvirtualhid control window, leave the default Xbox Series profile
-selected and click Create. Use the button and axis controls in the UI to submit
-input to the virtual controller.
+In the libvirtualhid control window, leave the default Xbox Series profile selected and click Create. Use the button and axis controls in the UI to submit input to the virtual controller.
 
 Expected result:
-- The UI launches without requiring SDK or WDK tools.
-- The backend status reports windows-umdf with gamepad support available.
-- A virtual HID gamepad is created and appears in the device list.
+- The backend status reports windows-umdf with gamepad support available
+- A virtual HID gamepad is created and appears in the device list
 - A virtual HID gamepad child device starts, matching either
-  HID\VID_045E&PID_0B12&IG_00 or HID\VID_045E&PID_02FF&IG_00.
-- Button and axis values in the UI can be pressed or moved without errors.
+  HID\VID_045E&PID_0B12&IG_00 or HID\VID_045E&PID_02FF&IG_00
+- Button and axis values in the UI can be pressed or moved without errors
 
 Optional browser validation:
 $installRoot = Join-Path $env:ProgramFiles "libvirtualhid"
@@ -51,18 +44,11 @@ $installRoot = Join-Path $env:ProgramFiles "libvirtualhid"
 Create the default Xbox Series gamepad, then open:
 https://hardwaretester.com/gamepad
 
-Use the libvirtualhid control window to press buttons or move axes while the
-browser page is open.
+Use the libvirtualhid control window to press buttons or move axes while the browser page is open.
 
 Expected result:
-- Microsoft Edge, Google Chrome, or another desktop browser opens a gamepad
-  test page.
-- The browser Gamepad API sees an Xbox-compatible controller.
-- Button and axis values change while controls are used in the validation UI.
-
-The installed virtualhid_control.exe and gamepad_adapter.exe binaries are built
-with the static MSVC runtime, so they do not require the Visual C++
-Redistributable to be installed separately.
+- The browser Gamepad API sees an Xbox-compatible controller
+- Button and axis values change while controls are used in the validation UI
 ```
 
 ## Manual Review Steps
