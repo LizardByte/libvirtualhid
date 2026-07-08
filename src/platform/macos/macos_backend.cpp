@@ -345,6 +345,39 @@ namespace lvh::detail {
     }
 
     /**
+     * @brief Scale one absolute mouse axis into a display-sized coordinate.
+     *
+     * @param value Absolute coordinate in the source coordinate space.
+     * @param limit Size of the source coordinate space.
+     * @param display_size Size of the target display coordinate space.
+     * @return Coordinate offset within the target display bounds.
+     */
+    inline CGFloat scale_absolute_axis(float value, std::int32_t limit, CGFloat display_size) {
+      if (limit <= 0 || display_size <= 0) {
+        return 0;
+      }
+
+      const auto clamped = std::clamp(value, 0.0F, static_cast<float>(limit));
+      return static_cast<CGFloat>(clamped) * display_size / static_cast<CGFloat>(limit);
+    }
+
+    /**
+     * @brief Convert a libvirtualhid absolute mouse event to a CoreGraphics location.
+     *
+     * @param event Mouse event to translate.
+     * @param display_bounds Target display bounds.
+     * @return CoreGraphics display location.
+     */
+    inline CGPoint absolute_mouse_location(const MouseEvent &event, const CGRect &display_bounds) {
+      const auto x = event.has_fractional_absolute_coordinates ? event.absolute_x : static_cast<float>(event.x);
+      const auto y = event.has_fractional_absolute_coordinates ? event.absolute_y : static_cast<float>(event.y);
+      return CGPoint {
+        display_bounds.origin.x + scale_absolute_axis(x, event.width, display_bounds.size.width),
+        display_bounds.origin.y + scale_absolute_axis(y, event.height, display_bounds.size.height)
+      };
+    }
+
+    /**
      * @brief Shared macOS backend state.
      */
     class MacosInputState {
@@ -632,12 +665,7 @@ namespace lvh::detail {
 
       OperationStatus submit_absolute_motion(const MouseEvent &event) {
         const auto display_bounds = CGDisplayBounds(state_->display);
-        const auto location = CGPoint {
-          event.has_fractional_absolute_coordinates ? display_bounds.origin.x + event.absolute_x * display_bounds.size.width :
-                                                      static_cast<CGFloat>(event.x) * state_->display_scaling + display_bounds.origin.x,
-          event.has_fractional_absolute_coordinates ? display_bounds.origin.y + event.absolute_y * display_bounds.size.height :
-                                                      static_cast<CGFloat>(event.y) * state_->display_scaling + display_bounds.origin.y
-        };
+        const auto location = absolute_mouse_location(event, display_bounds);
         return post_mouse(kCGMouseButtonLeft, event_type_for_current_buttons(), location, current_location(), 0);
       }
 

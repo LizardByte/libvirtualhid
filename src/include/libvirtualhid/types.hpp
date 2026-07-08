@@ -813,22 +813,22 @@ namespace lvh {
     MouseEventKind kind = MouseEventKind::relative_motion;
 
     /**
-     * @brief Relative delta or absolute X coordinate.
+     * @brief Relative delta or absolute X coordinate in the supplied coordinate space.
      */
     std::int32_t x = 0;
 
     /**
-     * @brief Relative delta or absolute Y coordinate.
+     * @brief Relative delta or absolute Y coordinate in the supplied coordinate space.
      */
     std::int32_t y = 0;
 
     /**
-     * @brief Fractional absolute X coordinate used when `has_fractional_absolute_coordinates` is true.
+     * @brief Absolute X coordinate with fractional precision, used when `has_fractional_absolute_coordinates` is true.
      */
     float absolute_x = 0.0F;
 
     /**
-     * @brief Fractional absolute Y coordinate used when `has_fractional_absolute_coordinates` is true.
+     * @brief Absolute Y coordinate with fractional precision, used when `has_fractional_absolute_coordinates` is true.
      */
     float absolute_y = 0.0F;
 

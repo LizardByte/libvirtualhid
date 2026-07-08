@@ -39,6 +39,23 @@ namespace lvh::detail::test {
     return macos::scroll_pixels(high_resolution_distance, pixels_per_line, lines_per_detent);
   }
 
+  MacosPoint macos_backend_absolute_mouse_location(
+    const MouseEvent &event,
+    double origin_x,
+    double origin_y,
+    double width,
+    double height
+  ) {
+    const auto location = macos::absolute_mouse_location(
+      event,
+      CGRect {
+        .origin = CGPoint {origin_x, origin_y},
+        .size = CGSize {width, height}
+      }
+    );
+    return {.x = location.x, .y = location.y};
+  }
+
   MacosBackendUtilityResult macos_backend_utilities() {
     auto backend = create_platform_backend_for_macos_backend_test_hooks();
     MacosBackendUtilityResult result;

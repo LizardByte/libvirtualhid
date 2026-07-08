@@ -417,8 +417,8 @@ namespace lvh {
     /**
      * @brief Submit absolute pointer movement.
      *
-     * @param x Absolute X coordinate.
-     * @param y Absolute Y coordinate.
+     * @param x Absolute X coordinate in the supplied coordinate space.
+     * @param y Absolute Y coordinate in the supplied coordinate space.
      * @param width Width of the absolute coordinate space.
      * @param height Height of the absolute coordinate space.
      * @return Submit operation status.
@@ -428,8 +428,8 @@ namespace lvh {
     /**
      * @brief Submit absolute pointer movement with fractional coordinates.
      *
-     * @param x Absolute X coordinate.
-     * @param y Absolute Y coordinate.
+     * @param x Absolute X coordinate in the supplied coordinate space, preserving fractional precision.
+     * @param y Absolute Y coordinate in the supplied coordinate space, preserving fractional precision.
      * @param width Width of the absolute coordinate space.
      * @param height Height of the absolute coordinate space.
      * @return Submit operation status.
