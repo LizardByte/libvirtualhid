@@ -239,10 +239,21 @@ TEST(RuntimeTest, CreatesSubmitsAndClosesMouse) {
   EXPECT_EQ(created.mouse->last_submitted_event().y, -5);
 
   EXPECT_TRUE(created.mouse->move_absolute(100, 200, 1920, 1080).ok());
+  EXPECT_EQ(created.mouse->last_submitted_event().kind, lvh::MouseEventKind::absolute_motion);
+  EXPECT_EQ(created.mouse->last_submitted_event().x, 100);
+  EXPECT_EQ(created.mouse->last_submitted_event().y, 200);
+  EXPECT_EQ(created.mouse->last_submitted_event().width, 1920);
+  EXPECT_EQ(created.mouse->last_submitted_event().height, 1080);
+
+  EXPECT_TRUE(created.mouse->move_absolute(0.25F, 0.75F, 1, 1).ok());
+  EXPECT_EQ(created.mouse->last_submitted_event().kind, lvh::MouseEventKind::absolute_motion);
+  EXPECT_TRUE(created.mouse->last_submitted_event().has_fractional_absolute_coordinates);
+  EXPECT_FLOAT_EQ(created.mouse->last_submitted_event().absolute_x, 0.25F);
+  EXPECT_FLOAT_EQ(created.mouse->last_submitted_event().absolute_y, 0.75F);
   EXPECT_TRUE(created.mouse->button(lvh::MouseButton::right, true).ok());
   EXPECT_TRUE(created.mouse->vertical_scroll(120).ok());
   EXPECT_TRUE(created.mouse->horizontal_scroll(-120).ok());
-  EXPECT_EQ(created.mouse->submit_count(), 5U);
+  EXPECT_EQ(created.mouse->submit_count(), 6U);
 
   EXPECT_EQ(created.mouse->move_absolute(1, 1, 0, 0).code(), lvh::ErrorCode::invalid_argument);
   EXPECT_TRUE(created.mouse->close().ok());

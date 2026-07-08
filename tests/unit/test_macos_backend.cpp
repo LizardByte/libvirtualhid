@@ -76,6 +76,38 @@ TEST_F(MacosBackendTest, ConvertsScrollSettings) {
   EXPECT_EQ(lvh::detail::test::macos_backend_scroll_pixels(120, 0, 0), 1);
 }
 
+TEST_F(MacosBackendTest, ConvertsAbsoluteMouseCoordinates) {
+  lvh::MouseEvent event {
+    .kind = lvh::MouseEventKind::absolute_motion,
+    .x = 40,
+    .y = 50,
+    .width = 200,
+    .height = 100,
+  };
+
+  auto location = lvh::detail::test::macos_backend_absolute_mouse_location(event, 10.0, 20.0, 400.0, 200.0);
+  EXPECT_DOUBLE_EQ(location.x, 90.0);
+  EXPECT_DOUBLE_EQ(location.y, 120.0);
+
+  event.x = 250;
+  event.y = -10;
+  location = lvh::detail::test::macos_backend_absolute_mouse_location(event, 10.0, 20.0, 400.0, 200.0);
+  EXPECT_DOUBLE_EQ(location.x, 410.0);
+  EXPECT_DOUBLE_EQ(location.y, 20.0);
+
+  event = {
+    .kind = lvh::MouseEventKind::absolute_motion,
+    .absolute_x = 0.25F,
+    .absolute_y = 0.75F,
+    .has_fractional_absolute_coordinates = true,
+    .width = 1,
+    .height = 1,
+  };
+  location = lvh::detail::test::macos_backend_absolute_mouse_location(event, 10.0, 20.0, 400.0, 200.0);
+  EXPECT_DOUBLE_EQ(location.x, 110.0);
+  EXPECT_DOUBLE_EQ(location.y, 170.0);
+}
+
 TEST_F(MacosBackendTest, ReportsCapabilitiesAndUnsupportedDevices) {
   const auto result = lvh::detail::test::macos_backend_utilities();
 

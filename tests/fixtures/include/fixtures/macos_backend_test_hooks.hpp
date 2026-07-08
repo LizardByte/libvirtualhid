@@ -14,6 +14,14 @@
 namespace lvh::detail::test {
 
   /**
+   * @brief Portable representation of a CoreGraphics point for tests.
+   */
+  struct MacosPoint {
+    double x {};  ///< Horizontal coordinate.
+    double y {};  ///< Vertical coordinate.
+  };
+
+  /**
    * @brief Result set for macOS backend lifecycle utility coverage.
    */
   struct MacosBackendUtilityResult {
@@ -66,6 +74,24 @@ namespace lvh::detail::test {
    * @return Pixel distance to send to CoreGraphics.
    */
   int macos_backend_scroll_pixels(std::int32_t high_resolution_distance, int pixels_per_line, int lines_per_detent);
+
+  /**
+   * @brief Convert an absolute mouse event to a macOS display location.
+   *
+   * @param event Mouse event to convert.
+   * @param origin_x Display origin X coordinate.
+   * @param origin_y Display origin Y coordinate.
+   * @param width Display width.
+   * @param height Display height.
+   * @return Display location that the macOS backend will post.
+   */
+  MacosPoint macos_backend_absolute_mouse_location(
+    const MouseEvent &event,
+    double origin_x,
+    double origin_y,
+    double width,
+    double height
+  );
 
   /**
    * @brief Exercise macOS backend creation and unsupported-device paths.
