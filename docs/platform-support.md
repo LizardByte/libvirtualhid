@@ -113,7 +113,33 @@ sudo usermod -aG input $USER
 
 ## macOS
 
-macOS support is not implemented yet. The expected backend direction is
-`IOHIDUserDevice`, DriverKit/HIDDriverKit, or a combination that preserves the
-same public API while documenting any signing, entitlement, and installer
-requirements.
+The macOS backend currently uses CoreGraphics event injection for keyboard and
+mouse input. It keeps the same public device model as the other backends:
+consumers create keyboard and mouse devices through the runtime and submit the
+same normalized event types. Platform details such as macOS virtual key-code
+translation, modifier flag tracking, display coordinate scaling, scroll-wheel
+preference handling, and CoreGraphics event posting stay inside the backend.
+
+This first backend is not a virtual HID implementation. It does not require a
+driver package, but consuming applications still need the normal macOS
+permission path for synthetic input, such as Accessibility/Input Monitoring
+approval when the host environment enforces it.
+
+Current macOS capabilities:
+
+- Keyboard key press and release using the existing Windows-style portable key
+  codes.
+- Mouse relative movement, absolute movement on the main display, left/middle/
+  right button transitions, and pixel-based vertical/horizontal scroll.
+- Shared keyboard modifier state on mouse events so combinations such as
+  shift-click continue to work.
+
+Unsupported macOS capabilities currently return `unsupported_profile`:
+
+- Gamepad devices and output reports.
+- Touchscreen, trackpad, and pen tablet devices.
+- Keyboard text input through `KeyboardTextEvent`.
+
+Future native virtual HID support may use `IOHIDUserDevice`,
+DriverKit/HIDDriverKit, or a combination that preserves the same public API
+while documenting any signing, entitlement, and installer requirements.

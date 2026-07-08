@@ -61,6 +61,16 @@ elseif(WIN32)
     target_link_libraries(${PROJECT_NAME}
       PRIVATE
       setupapi)
+elseif(APPLE)
+    target_sources(${PROJECT_NAME}
+      PRIVATE
+      "${CMAKE_CURRENT_SOURCE_DIR}/platform/macos/macos_backend.cpp")
+    target_link_libraries(${PROJECT_NAME}
+      PRIVATE
+      "-framework ApplicationServices"
+      "-framework Carbon"
+      "-framework CoreFoundation"
+      "-framework IOKit")
 else()
     target_sources(${PROJECT_NAME}
       PRIVATE
