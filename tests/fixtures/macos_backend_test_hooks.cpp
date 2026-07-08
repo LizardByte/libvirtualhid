@@ -13,7 +13,7 @@
 namespace lvh::detail::test {
 
   std::optional<std::uint16_t> macos_backend_key_code(KeyboardKeyCode key_code) {
-    const auto mapped = macos_key_code(key_code);
+    const auto mapped = macos::macos_key_code(key_code);
     if (!mapped) {
       return std::nullopt;
     }
@@ -22,21 +22,21 @@ namespace lvh::detail::test {
   }
 
   bool macos_backend_is_modifier_key(KeyboardKeyCode key_code) {
-    const auto mapped = macos_key_code(key_code);
+    const auto mapped = macos::macos_key_code(key_code);
     if (!mapped) {
       return false;
     }
 
-    ModifierFlags flags;
-    return modifier_flags_for_key(*mapped, flags);
+    macos::ModifierFlags flags;
+    return macos::modifier_flags_for_key(*mapped, flags);
   }
 
   int macos_backend_scroll_lines_per_detent(double scale) {
-    return scroll_lines_per_detent(scale);
+    return macos::scroll_lines_per_detent(scale);
   }
 
   int macos_backend_scroll_pixels(std::int32_t high_resolution_distance, int pixels_per_line, int lines_per_detent) {
-    return scroll_pixels(high_resolution_distance, pixels_per_line, lines_per_detent);
+    return macos::scroll_pixels(high_resolution_distance, pixels_per_line, lines_per_detent);
   }
 
   MacosBackendUtilityResult macos_backend_utilities() {
