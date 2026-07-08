@@ -36,7 +36,7 @@ namespace lvh {
     };
 
     bool is_common_button(GamepadButton button) {
-      return std::ranges::contains(common_buttons, button);
+      return std::find(common_buttons.begin(), common_buttons.end(), button) != common_buttons.end();
     }
 
     bool supports_common_misc1_button(GamepadProfileKind kind) {
