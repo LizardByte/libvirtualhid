@@ -39,9 +39,11 @@ namespace lvh::detail {
     };
 
     /**
-     * @brief Portable Windows-style key code to macOS virtual key code map.
+     * @brief Build the portable Windows-style key code to macOS virtual key code map.
+     *
+     * @return Portable key code map.
      */
-    constexpr auto key_code_map = [] {
+    constexpr std::array<KeyCodeMap, 167> make_key_code_map() {
       std::array<KeyCodeMap, 167> result {};
       result[0] = {0x08 /* VKEY_BACK */, kVK_Delete};
       result[1] = {0x09 /* VKEY_TAB */, kVK_Tab};
@@ -211,7 +213,12 @@ namespace lvh::detail {
       result[165] = {0xFD /* VKEY_PA1 */, -1};
       result[166] = {0xFE /* VKEY_OEM_CLEAR */, kVK_ANSI_KeypadClear};
       return result;
-    }();
+    }
+
+    /**
+     * @brief Portable Windows-style key code to macOS virtual key code map.
+     */
+    constexpr auto key_code_map = make_key_code_map();
 
     /**
      * @brief Resolve a portable key code to a macOS virtual key code.
