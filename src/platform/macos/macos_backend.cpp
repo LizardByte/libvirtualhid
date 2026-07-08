@@ -226,7 +226,7 @@ namespace lvh::detail {
      * @param key_code Portable key code.
      * @return macOS virtual key code when supported.
      */
-    std::optional<CGKeyCode> macos_key_code(KeyboardKeyCode key_code) {
+    inline std::optional<CGKeyCode> macos_key_code(KeyboardKeyCode key_code) {
       const auto position = std::ranges::lower_bound(key_code_map, key_code, {}, &KeyCodeMap::portable_key_code);
 
       if (position == key_code_map.end() || position->portable_key_code != key_code || position->macos_key_code < 0) {
@@ -252,7 +252,7 @@ namespace lvh::detail {
      * @param flags Output modifier flag masks.
      * @return `true` when the key represents a modifier.
      */
-    bool modifier_flags_for_key(CGKeyCode key, ModifierFlags &flags) {
+    inline bool modifier_flags_for_key(CGKeyCode key, ModifierFlags &flags) {
       switch (key) {
         case kVK_Shift:
           flags = {kCGEventFlagMaskShift, NX_DEVICELSHIFTKEYMASK, NX_DEVICELSHIFTKEYMASK | NX_DEVICERSHIFTKEYMASK};
@@ -289,7 +289,7 @@ namespace lvh::detail {
      * @param scale macOS scroll-wheel scaling preference.
      * @return Logical lines represented by one wheel detent.
      */
-    int scroll_lines_per_detent(double scale) {
+    inline int scroll_lines_per_detent(double scale) {
       if (!std::isfinite(scale)) {
         scale = default_scrollwheel_scaling;
       }
@@ -305,7 +305,7 @@ namespace lvh::detail {
      * @param scrollwheel_scaling Output raw scaling preference.
      * @return Logical lines represented by one wheel detent.
      */
-    int read_scroll_lines_per_detent(double &scrollwheel_scaling) {
+    inline int read_scroll_lines_per_detent(double &scrollwheel_scaling) {
       double scale = default_scrollwheel_scaling;
       const auto value = CFPreferencesCopyValue(
         CFSTR("com.apple.scrollwheel.scaling"),
@@ -337,7 +337,7 @@ namespace lvh::detail {
      * @param lines_per_detent Logical lines represented by one wheel detent.
      * @return Pixel distance to send to CoreGraphics.
      */
-    int scroll_pixels(std::int32_t high_resolution_distance, int pixels_per_line, int lines_per_detent) {
+    inline int scroll_pixels(std::int32_t high_resolution_distance, int pixels_per_line, int lines_per_detent) {
       const auto scaled_pixels = static_cast<std::int64_t>(high_resolution_distance) *
                                  std::max(1, pixels_per_line) *
                                  std::max(1, lines_per_detent);
@@ -504,7 +504,7 @@ namespace lvh::detail {
      * @param button Portable mouse button.
      * @return CoreGraphics button metadata when supported.
      */
-    std::optional<MacosMouseButton> macos_mouse_button(MouseButton button) {
+    inline std::optional<MacosMouseButton> macos_mouse_button(MouseButton button) {
       switch (button) {
         using enum MouseButton;
 
