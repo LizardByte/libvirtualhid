@@ -52,17 +52,27 @@ namespace lvh::detail {
         response.size = sizeof(response);
         response.status = create_protocol_status_;
         response.driver_device_id = next_driver_id_++;
+        response.session_token = session_token_;
         windows::copy_string(response.device_path, response_device_path_);
         return protocol_status(response.status, "Windows driver rejected gamepad creation");
       }
 
-      OperationStatus destroy_device(std::uint64_t driver_device_id) {
+      OperationStatus destroy_device(
+        std::uint64_t driver_device_id,
+        const LvhWindowsSessionToken &session_token
+      ) {
         std::lock_guard lock {mutex_};
+        if (!session_token_matches(session_token)) {
+          return OperationStatus::failure(ErrorCode::backend_failure, "unexpected destroy session token");
+        }
         destroyed_ids_.push_back(driver_device_id);
         return destroy_status_;
       }
 
-      OperationStatus submit_input_report(const std::vector<std::uint8_t> &report) {
+      OperationStatus submit_input_report(
+        const LvhWindowsSessionToken &session_token,
+        const std::vector<std::uint8_t> &report
+      ) {
         using enum ErrorCode;
 
         if (report.size() > LVH_WINDOWS_MAX_INPUT_REPORT_SIZE) {
@@ -70,6 +80,9 @@ namespace lvh::detail {
         }
 
         std::lock_guard lock {mutex_};
+        if (!session_token_matches(session_token)) {
+          return OperationStatus::failure(backend_failure, "unexpected submit session token");
+        }
         submit_reports_.push_back(report);
         return submit_status_;
       }
@@ -116,10 +129,24 @@ namespace lvh::detail {
       }
 
     private:
+      bool session_token_matches(const LvhWindowsSessionToken &session_token) const {
+        return std::ranges::equal(session_token.bytes, session_token_.bytes);
+      }
+
+      static LvhWindowsSessionToken make_session_token() {
+        LvhWindowsSessionToken session_token {};
+        for (std::uint8_t index = 0; index < LVH_WINDOWS_SESSION_TOKEN_SIZE; ++index) {
+          session_token.bytes[index] = static_cast<std::uint8_t>(0x10U + index);
+        }
+
+        return session_token;
+      }
+
       mutable std::mutex mutex_;
       std::string path_ = R"(\\.\LibVirtualHid)";
       std::string response_device_path_ = R"(\\.\LibVirtualHid#100)";
       std::uint64_t next_driver_id_ = 100;
+      LvhWindowsSessionToken session_token_ = make_session_token();
       OperationStatus create_transport_status_ = OperationStatus::success();
       std::uint32_t create_protocol_status_ = LVH_WINDOWS_STATUS_SUCCESS;
       OperationStatus submit_status_ = OperationStatus::success();
@@ -146,15 +173,19 @@ namespace lvh::detail {
         return state_->create_gamepad(request, response);
       }
 
-      OperationStatus destroy_device(std::uint64_t driver_device_id) const override {
-        return state_->destroy_device(driver_device_id);
+      OperationStatus destroy_device(
+        std::uint64_t driver_device_id,
+        const LvhWindowsSessionToken &session_token
+      ) const override {
+        return state_->destroy_device(driver_device_id, session_token);
       }
 
       OperationStatus submit_input_report(
         std::uint64_t /*driver_device_id*/,
+        const LvhWindowsSessionToken &session_token,
         const std::vector<std::uint8_t> &report
       ) const override {
-        return state_->submit_input_report(report);
+        return state_->submit_input_report(session_token, report);
       }
 
       std::optional<LvhWindowsOutputReportEvent> read_output_report(HANDLE stop_event) const override {
@@ -636,18 +667,15 @@ namespace lvh::detail {
 
       constexpr auto environment_name = "LIBVIRTUALHID_WINDOWS_CONTROL_DEVICE";
       constexpr auto custom_path = R"(\\.\LibVirtualHid-Test)";
-      std::array<char, 512> original_value {};
-      const auto original_size = ::GetEnvironmentVariableA(
-        environment_name,
-        original_value.data(),
-        static_cast<DWORD>(original_value.size())
-      );
-      static_cast<void>(::SetEnvironmentVariableA(environment_name, custom_path));
+      std::string original_value;
+      const auto had_original_value = lizardbyte::common::get_env(environment_name, original_value);
+      static_cast<void>(lizardbyte::common::set_env(environment_name, custom_path));
       result.custom_device_paths = resolve_control_device_paths();
-      static_cast<void>(::SetEnvironmentVariableA(
-        environment_name,
-        original_size > 0U && original_size < original_value.size() ? original_value.data() : nullptr
-      ));
+      if (had_original_value) {
+        static_cast<void>(lizardbyte::common::set_env(environment_name, original_value));
+      } else {
+        static_cast<void>(lizardbyte::common::unset_env(environment_name));
+      }
 
       result.formatted_error_status =
         windows_failure(ErrorCode::backend_failure, "format known Windows error", ERROR_FILE_NOT_FOUND);

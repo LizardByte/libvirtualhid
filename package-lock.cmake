@@ -63,3 +63,15 @@ CPMDeclarePackage(imgui
         DOWNLOAD_ONLY YES
         FORCE YES
 )
+
+# nlohmann JSON
+# renovate: datasource=github-tags depName=nlohmann/json
+# versioning=regex:^v(?<major>\d+)\.(?<minor>\d+)\.(?<patch>\d+)$
+# extractVersion=^v(?<version>.*)$
+set(NLOHMANN_JSON_VERSION 3.12.0)
+CPMDeclarePackage(nlohmann_json
+        NAME nlohmann_json
+        VERSION ${NLOHMANN_JSON_VERSION}
+        GITHUB_REPOSITORY nlohmann/json
+        GIT_TAG v${NLOHMANN_JSON_VERSION}
+)

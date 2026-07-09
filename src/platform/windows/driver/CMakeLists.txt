@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2026 David Lane
+# SPDX-FileCopyrightText: 2026 LIZARDBYTE LLC
 # SPDX-License-Identifier: LicenseRef-LizardByte-SAL-1.0
 
 if(NOT WIN32)
@@ -218,6 +218,8 @@ if(LIBVIRTUALHID_WARNINGS_AS_ERRORS)
 endif()
 target_link_libraries(libvirtualhid_umdf
   PRIVATE
+  advapi32
+  bcrypt
   "${LIBVIRTUALHID_WDF_DRIVER_STUB_UM_LIBRARY}"
   "${LIBVIRTUALHID_VHF_UM_LIBRARY}"
   "${LIBVIRTUALHID_NTDLL_LIBRARY}")

@@ -11,6 +11,8 @@ param(
 
   [string] $HardwareId = "ROOT\LIBVIRTUALHID",
 
+  [string] $BrokerPath,
+
   [string] $LogPath,
 
   [switch] $StageOnly
@@ -18,6 +20,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 $script:LibVirtualHidTranscriptStarted = $false
+$script:LibVirtualHidBrokerServiceName = "libvirtualhid_broker"
+$script:LibVirtualHidBrokerServiceDisplayName = "libvirtualhid Broker"
 . (Join-Path $PSScriptRoot "libvirtualhid-driver-common.ps1")
 
 function Start-LibVirtualHidTranscript {
@@ -73,6 +77,161 @@ function Invoke-CheckedCommand {
   & $FilePath @Arguments
   if ($LASTEXITCODE -notin $SuccessExitCodes) {
     throw "$FilePath exited with code $LASTEXITCODE"
+  }
+}
+
+function Resolve-LibVirtualHidBrokerPath {
+  param([string] $Path)
+
+  if ($Path) {
+    if (-not (Test-Path -LiteralPath $Path)) {
+      throw "The broker executable was not found at $Path"
+    }
+    return (Resolve-Path -LiteralPath $Path).Path
+  }
+
+  $packagedPath = Join-Path $PSScriptRoot "..\..\services\windows\libvirtualhid_broker.exe"
+  if (Test-Path -LiteralPath $packagedPath) {
+    return (Resolve-Path -LiteralPath $packagedPath).Path
+  }
+
+  return $null
+}
+
+function Get-LibVirtualHidQuotedServiceBinaryPath {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string] $Path
+  )
+
+  if ($Path.Contains('"')) {
+    throw "The broker executable path must not contain quotation marks: $Path"
+  }
+
+  return "`"$Path`""
+}
+
+function Get-LibVirtualHidScBinaryPathArgument {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string] $Path
+  )
+
+  # Windows PowerShell 5.1 needs triple quotes in a native-command argument to pass one literal quote
+  # through to sc.exe while keeping a path containing spaces in a single argv element.
+  return (Get-LibVirtualHidQuotedServiceBinaryPath -Path $Path).Replace('"', '"""')
+}
+
+function Assert-LibVirtualHidBrokerServiceImagePath {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string] $Name,
+
+    [Parameter(Mandatory = $true)]
+    [string] $Path
+  )
+
+  $registryPath = "HKLM:\SYSTEM\CurrentControlSet\Services\$Name"
+  $imagePath = (Get-ItemProperty -LiteralPath $registryPath -Name "ImagePath").ImagePath
+  $expectedPath = Get-LibVirtualHidQuotedServiceBinaryPath -Path $Path
+  if ($imagePath -cne $expectedPath) {
+    throw "The $Name service ImagePath is not safely quoted. Expected $expectedPath but found $imagePath."
+  }
+}
+
+function Clear-LibVirtualHidBrokerServiceEnvironment {
+  [CmdletBinding(SupportsShouldProcess)]
+  param([string] $Name)
+
+  $registryPath = "HKLM:\SYSTEM\CurrentControlSet\Services\$Name"
+  if (-not (Test-Path -LiteralPath $registryPath)) {
+    return
+  }
+
+  if ($PSCmdlet.ShouldProcess($Name, "Clear legacy libvirtualhid broker service environment")) {
+    Remove-ItemProperty -LiteralPath $registryPath -Name "Environment" -ErrorAction SilentlyContinue
+  }
+}
+
+function Stop-LibVirtualHidBrokerService {
+  [CmdletBinding(SupportsShouldProcess)]
+  param([string] $Name)
+
+  $service = Get-Service -Name $Name -ErrorAction SilentlyContinue
+  if (-not $service -or $service.Status -eq "Stopped") {
+    return
+  }
+
+  if ($PSCmdlet.ShouldProcess($Name, "Stop libvirtualhid broker service")) {
+    Stop-Service -Name $Name -Force -ErrorAction Stop
+    $service.WaitForStatus("Stopped", [TimeSpan]::FromSeconds(15))
+  }
+}
+
+function Install-LibVirtualHidBrokerService {
+  [CmdletBinding(SupportsShouldProcess)]
+  param([string] $Path)
+
+  $resolvedBroker = Resolve-LibVirtualHidBrokerPath -Path $Path
+  if (-not $resolvedBroker) {
+    Write-Verbose "No libvirtualhid broker executable was found; skipping broker service registration."
+    return
+  }
+
+  $serviceBinaryPath = Get-LibVirtualHidScBinaryPathArgument -Path $resolvedBroker
+  $serviceRegistered = $false
+  $service = Get-Service -Name $script:LibVirtualHidBrokerServiceName -ErrorAction SilentlyContinue
+  if ($service) {
+    Stop-LibVirtualHidBrokerService -Name $script:LibVirtualHidBrokerServiceName
+    if ($PSCmdlet.ShouldProcess($script:LibVirtualHidBrokerServiceName, "Update libvirtualhid broker service")) {
+      Invoke-CheckedCommand -FilePath "sc.exe" -Arguments @(
+        "config",
+        $script:LibVirtualHidBrokerServiceName,
+        "binPath=",
+        $serviceBinaryPath,
+        "start=",
+        "auto",
+        "DisplayName=",
+        $script:LibVirtualHidBrokerServiceDisplayName
+      )
+      $serviceRegistered = $true
+    }
+  } else {
+    if ($PSCmdlet.ShouldProcess($script:LibVirtualHidBrokerServiceName, "Install libvirtualhid broker service")) {
+      $quotedServicePath = Get-LibVirtualHidQuotedServiceBinaryPath -Path $resolvedBroker
+      New-Service `
+        -Name $script:LibVirtualHidBrokerServiceName `
+        -BinaryPathName $quotedServicePath `
+        -DisplayName $script:LibVirtualHidBrokerServiceDisplayName `
+        -StartupType Automatic | Out-Null
+      $serviceRegistered = $true
+    }
+  }
+
+  if ($serviceRegistered) {
+    Assert-LibVirtualHidBrokerServiceImagePath -Name $script:LibVirtualHidBrokerServiceName -Path $resolvedBroker
+  }
+
+  Clear-LibVirtualHidBrokerServiceEnvironment -Name $script:LibVirtualHidBrokerServiceName
+
+  if ($PSCmdlet.ShouldProcess($script:LibVirtualHidBrokerServiceName, "Enable libvirtualhid broker service SID")) {
+    Invoke-CheckedCommand -FilePath "sc.exe" -Arguments @(
+      "sidtype",
+      $script:LibVirtualHidBrokerServiceName,
+      "unrestricted"
+    )
+  }
+
+  if ($PSCmdlet.ShouldProcess($script:LibVirtualHidBrokerServiceName, "Set libvirtualhid broker service description")) {
+    Invoke-CheckedCommand -FilePath "sc.exe" -Arguments @(
+      "description",
+      $script:LibVirtualHidBrokerServiceName,
+      "Authorizes libvirtualhid virtual gamepad creation and license state."
+    )
+  }
+
+  if ($PSCmdlet.ShouldProcess($script:LibVirtualHidBrokerServiceName, "Start libvirtualhid broker service")) {
+    Start-Service -Name $script:LibVirtualHidBrokerServiceName
   }
 }
 
@@ -330,6 +489,7 @@ try {
     foreach ($rootDevice in $rootDevices) {
       Restart-RootDevice -InstanceId $rootDevice
     }
+    Install-LibVirtualHidBrokerService -Path $BrokerPath
     return
   }
 
@@ -345,6 +505,7 @@ try {
   foreach ($rootDevice in $rootDevices) {
     Restart-RootDevice -InstanceId $rootDevice
   }
+  Install-LibVirtualHidBrokerService -Path $BrokerPath
 } finally {
   Stop-LibVirtualHidTranscript
 }

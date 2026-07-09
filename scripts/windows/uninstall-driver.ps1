@@ -10,6 +10,8 @@ param(
 
   [string] $HardwareId = "ROOT\LIBVIRTUALHID",
 
+  [string] $BrokerServiceName = "libvirtualhid_broker",
+
   [string] $RemoveCertificateSubject,
 
   [switch] $Force
@@ -32,6 +34,25 @@ function Invoke-CheckedCommand {
   & $FilePath @Arguments
   if ($LASTEXITCODE -ne 0 -and -not $IgnoreFailure) {
     throw "$FilePath exited with code $LASTEXITCODE"
+  }
+}
+
+function Remove-LibVirtualHidBrokerService {
+  [CmdletBinding(SupportsShouldProcess)]
+  param([string] $Name)
+
+  $service = Get-Service -Name $Name -ErrorAction SilentlyContinue
+  if (-not $service) {
+    return
+  }
+
+  if ($service.Status -ne "Stopped" -and $PSCmdlet.ShouldProcess($Name, "Stop libvirtualhid broker service")) {
+    Stop-Service -Name $Name -Force -ErrorAction Stop
+    $service.WaitForStatus("Stopped", [TimeSpan]::FromSeconds(15))
+  }
+
+  if ($PSCmdlet.ShouldProcess($Name, "Delete libvirtualhid broker service")) {
+    Invoke-CheckedCommand -FilePath "sc.exe" -Arguments @("delete", $Name) -IgnoreFailure
   }
 }
 
@@ -103,6 +124,8 @@ function Remove-DriverCertificate {
     }
   }
 }
+
+Remove-LibVirtualHidBrokerService -Name $BrokerServiceName
 
 $devcon = Find-Devcon
 if ($devcon -and $PSCmdlet.ShouldProcess($HardwareId, "Remove libvirtualhid development device")) {

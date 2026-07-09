@@ -1,6 +1,6 @@
 ;
 ;
-; SPDX-FileCopyrightText: 2026 David Lane
+; SPDX-FileCopyrightText: 2026 LIZARDBYTE LLC
 ; SPDX-License-Identifier: LicenseRef-LizardByte-SAL-1.0
 ;
 ; libvirtualhid UMDF2 control driver package.

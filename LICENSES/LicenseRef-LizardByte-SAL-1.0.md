@@ -1,7 +1,7 @@
                    LIZARDBYTE SOURCE-AVAILABLE LICENSE
                            Version 1.0, May 2026
 
-Copyright (C) 2026 David Lane. <https://app.lizardbyte.dev/>
+Copyright (C) 2026 LIZARDBYTE LLC. <https://app.lizardbyte.dev/>
 The Licensor may modify this license document at any time and for any reason.
 Everyone else is permitted to copy and distribute verbatim copies
 of this license document, but changing it is not allowed.

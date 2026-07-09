@@ -19,6 +19,7 @@ inline constexpr uint32_t LVH_WINDOWS_MAX_DEVICE_PATH_SIZE = 260u;
 inline constexpr uint32_t LVH_WINDOWS_MAX_DEVICE_NAME_SIZE = 128u;
 inline constexpr uint32_t LVH_WINDOWS_MAX_MANUFACTURER_SIZE = 128u;
 inline constexpr uint32_t LVH_WINDOWS_MAX_STABLE_ID_SIZE = 128u;
+inline constexpr uint32_t LVH_WINDOWS_SESSION_TOKEN_SIZE = 32u;
 
 inline constexpr uint32_t LVH_WINDOWS_FILE_DEVICE_LIBVIRTUALHID = 0x8000u;
 inline constexpr uint32_t LVH_WINDOWS_METHOD_BUFFERED = 0u;
@@ -149,6 +150,7 @@ enum {
   LVH_WINDOWS_MAX_DEVICE_NAME_SIZE = 128u,
   LVH_WINDOWS_MAX_MANUFACTURER_SIZE = 128u,
   LVH_WINDOWS_MAX_STABLE_ID_SIZE = 128u,
+  LVH_WINDOWS_SESSION_TOKEN_SIZE = 32u,
   LVH_WINDOWS_FILE_DEVICE_LIBVIRTUALHID = 0x8000u,
   LVH_WINDOWS_METHOD_BUFFERED = 0u,
   LVH_WINDOWS_FILE_READ_ACCESS = 1u,
@@ -218,6 +220,10 @@ extern "C" {
     uint32_t stable_id_size;
   };
 
+  struct LvhWindowsSessionToken {
+    uint8_t bytes[LVH_WINDOWS_SESSION_TOKEN_SIZE];
+  };
+
   struct LvhWindowsCreateGamepadRequest {
     uint32_t version;
     uint32_t size;
@@ -239,6 +245,7 @@ extern "C" {
     uint32_t status;
     uint32_t reserved0;
     uint64_t driver_device_id;
+    LvhWindowsSessionToken session_token;
     char device_path[LVH_WINDOWS_MAX_DEVICE_PATH_SIZE];
   };
 
@@ -246,12 +253,14 @@ extern "C" {
     uint32_t version;
     uint32_t size;
     uint64_t driver_device_id;
+    LvhWindowsSessionToken session_token;
   };
 
   struct LvhWindowsSubmitInputReportRequest {
     uint32_t version;
     uint32_t size;
     uint64_t driver_device_id;
+    LvhWindowsSessionToken session_token;
     uint32_t report_size;
     uint32_t reserved0;
     uint8_t report[LVH_WINDOWS_MAX_INPUT_REPORT_SIZE];

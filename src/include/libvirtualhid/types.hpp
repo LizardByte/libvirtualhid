@@ -32,6 +32,10 @@ namespace lvh {
     backend_unavailable,  ///< Requested backend is not available on this host.
     device_closed,  ///< Device operation was requested after the device closed.
     unsupported_profile,  ///< Backend cannot create the requested device profile.
+    license_required,  ///< Operation requires an active machine license.
+    license_invalid,  ///< Supplied or stored license is invalid.
+    activation_limit_reached,  ///< License has no remaining machine activations.
+    network_unavailable,  ///< License provider could not be reached.
     backend_failure,  ///< Backend-specific operation failed.
   };
 

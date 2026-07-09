@@ -8,6 +8,8 @@ if(@LIBVIRTUALHID_USES_THREADS@)
     pkg_check_modules(LIBEVDEV REQUIRED IMPORTED_TARGET libevdev)
 endif()
 
+find_dependency(lizardbyte-common)
+
 include("${CMAKE_CURRENT_LIST_DIR}/libvirtualhid-targets.cmake")
 
 check_required_components(libvirtualhid)
