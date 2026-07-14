@@ -420,7 +420,7 @@ namespace lvh::detail {
       if (created) {
         result.device_nodes = created.gamepad->device_nodes();
         std::vector<std::uint8_t> report(options.profile.input_report_size, 0x7A);
-        result.submit_status = created.gamepad->submit(report);
+        result.submit_status = created.gamepad->submit({}, report);
 
         const auto driver_id = last_created_driver_id(command_state);
         enqueue_output_report(event_state, driver_id, options.profile);
@@ -441,7 +441,7 @@ namespace lvh::detail {
         enqueue_output_report(event_state, driver_id, options.profile);
         wait_for_output_events_to_drain(event_state);
         result.second_close_status = created.gamepad->close();
-        result.submit_after_close_status = created.gamepad->submit(report);
+        result.submit_after_close_status = created.gamepad->submit({}, report);
 
         result.create_requests = command_state->create_request_count();
         result.submit_requests = command_state->submit_report_count();
@@ -511,8 +511,10 @@ namespace lvh::detail {
         result.empty_nodes_create_status = created.status;
         if (created) {
           result.empty_device_nodes = created.gamepad->device_nodes();
-          result.oversized_submit_status =
-            created.gamepad->submit(std::vector<std::uint8_t>(LVH_WINDOWS_MAX_INPUT_REPORT_SIZE + 1U, 0x7B));
+          result.oversized_submit_status = created.gamepad->submit(
+            {},
+            std::vector<std::uint8_t>(LVH_WINDOWS_MAX_INPUT_REPORT_SIZE + 1U, 0x7B)
+          );
         }
       }
 

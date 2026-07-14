@@ -711,7 +711,10 @@ namespace lvh::detail {
           context_ {std::move(context)},
           state_ {std::move(state)} {}
 
-      OperationStatus submit(const std::vector<std::uint8_t> &report) override;
+      OperationStatus submit(
+        const GamepadState &state,
+        const std::vector<std::uint8_t> &report
+      ) override;
       void set_output_callback(OutputCallback callback) override;
       std::vector<DeviceNode> device_nodes() const override;
       OperationStatus close() override;
@@ -870,7 +873,10 @@ namespace lvh::detail {
       std::map<std::uint64_t, std::weak_ptr<WindowsGamepadState>> gamepads_;
     };
 
-    OperationStatus WindowsGamepad::submit(const std::vector<std::uint8_t> &report) {
+    OperationStatus WindowsGamepad::submit(
+      const GamepadState & /*state*/,
+      const std::vector<std::uint8_t> &report
+    ) {
       using enum ErrorCode;
 
       {

@@ -18,8 +18,6 @@ namespace lvh::profiles {
 
     constexpr std::uint8_t common_button_count = 12;
 
-    constexpr std::uint8_t standard_button_count = 16;
-
     constexpr std::uint8_t common_axis_count = 6;
 
     constexpr std::size_t common_button_bytes = 2;
@@ -86,18 +84,87 @@ namespace lvh::profiles {
       return descriptor;
     }
 
+    void append_common_gamepad_buttons(std::vector<std::uint8_t> &descriptor, bool include_misc_button) {
+      descriptor.insert(
+        descriptor.end(),
+        {
+          0x05,
+          0x09,  // Usage Page (Button)
+          0x09,
+          0x01,  // Usage (Button 1 / BTN_SOUTH)
+          0x09,
+          0x02,  // Usage (Button 2 / BTN_EAST)
+          0x09,
+          0x04,  // Usage (Button 4 / BTN_NORTH)
+          0x09,
+          0x05,  // Usage (Button 5 / BTN_WEST)
+          0x09,
+          0x07,  // Usage (Button 7 / BTN_TL)
+          0x09,
+          0x08,  // Usage (Button 8 / BTN_TR)
+          0x09,
+          0x0B,  // Usage (Button 11 / BTN_SELECT)
+          0x09,
+          0x0C,  // Usage (Button 12 / BTN_START)
+          0x09,
+          0x0E,  // Usage (Button 14 / BTN_THUMBL)
+          0x09,
+          0x0F,  // Usage (Button 15 / BTN_THUMBR)
+          0x09,
+          0x0D,  // Usage (Button 13 / BTN_MODE)
+        }
+      );
+      if (include_misc_button) {
+        descriptor.insert(
+          descriptor.end(),
+          {
+            0x09,
+            0x06,  // Usage (Button 6 / BTN_Z)
+          }
+        );
+      }
+      descriptor.insert(
+        descriptor.end(),
+        {
+          0x15,
+          0x00,  // Logical Minimum (0)
+          0x25,
+          0x01,  // Logical Maximum (1)
+          0x75,
+          0x01,  // Report Size (1)
+          0x95,
+          static_cast<std::uint8_t>(include_misc_button ? common_button_count : common_button_count - 1U),
+          0x81,
+          0x02,  // Input (Data,Var,Abs)
+        }
+      );
+      if (!include_misc_button) {
+        descriptor.insert(
+          descriptor.end(),
+          {
+            0x75,
+            0x01,  // Report Size (1)
+            0x95,
+            0x01,  // Report Count (1)
+            0x81,
+            0x03,  // Input (Const,Var,Abs)
+          }
+        );
+      }
+    }
+
     std::vector<std::uint8_t> make_xbox_gip_report_descriptor(bool include_share_button) {
       constexpr std::string_view xbox_one_descriptor =
         "05010905a101a10009300931150027ffff0000950275108102c0a10009330934150027ffff0000950275108102c0"
         "05010932150026ff039501750a81021500250075069501810305010935150026ff039501750a8102150025007506"
-        "9501810305091901290a950a750181021500250075069501810305010939150125083500463b0166140075049501"
+        "950181030509090109020904090509070908090b090c090e090f150025017501950a81021500250075069501810305010939150125083500463b0166140075049501"
         "814275049501150025003500450065008103a102050f099715002501750495019102150025009103097015002564"
         "7508950491020950660110550e26ff009501910209a7910265005500097c9102c005010980a100098515002501"
         "95017501810215002500750795018103c005060920150026ff00750895018102c0";
       constexpr std::string_view xbox_series_descriptor =
         "05010905a101a10009300931150027ffff0000950275108102c0a10009330934150027ffff0000950275108102c0"
         "05010932150026ff039501750a81021500250075069501810305010935150026ff039501750a8102150025007506"
-        "9501810305091901290c950c750181021500250075049501810305010939150125083500463b0166140075049501"
+        "950181030509090109020904090509070908090b090c090e090f150025017501950a8102150025007501950181030906150025017501950181021500250075049501810305010939150125083500463b0166140075049501"
         "814275049501150025003500450065008103a102050f099715002501750495019102150025009103097015002564"
         "7508950491020950660110550e26ff009501910209a7910265005500097c9102c005010980a100098515002501"
         "95017501810215002500750795018103c005060920150026ff00750895018102c0";
@@ -107,9 +174,9 @@ namespace lvh::profiles {
 
     std::vector<std::uint8_t> make_switch_pro_report_descriptor() {
       constexpr std::string_view descriptor =
-        "050115000904a1018530050105091901290a150025017501950a5500650081020509190b290e150025017501"
+        "050115000904a1018530050105090902090109040905090709080909090a090b090c150025017501950a5500650081020509090e090f090d0906150025017501"
         "950481027501950281030b01000100a1000b300001000b310001000b320001000b35000100150027ffff0000"
-        "751095048102c00b39000100150025073500463b0165147504950181020509190f291215002501750195048102"
+        "751095048102c00b39000100150025073500463b016514750495018102750495018103"
         "7508953481030600ff852109017508953f8103858109027508953f8103850109037508953f9183851009047508"
         "953f9183858009057508953f9183858209067508953f9183c0";
 
@@ -126,71 +193,61 @@ namespace lvh::profiles {
         0x01,  // Collection (Application)
         0x85,
         report_id,  // Report ID
-        0x05,
-        0x09,  // Usage Page (Button)
-        0x19,
-        0x01,  // Usage Minimum (Button 1)
-        0x29,
-        common_button_count,  // Usage Maximum
-        0x15,
-        0x00,  // Logical Minimum (0)
-        0x25,
-        0x01,  // Logical Maximum (1)
-        0x75,
-        0x01,  // Report Size (1)
-        0x95,
-        common_button_count,  // Report Count
-        0x81,
-        0x02,  // Input (Data,Var,Abs)
-        0x05,
-        0x01,  // Usage Page (Generic Desktop)
-        0x09,
-        0x39,  // Usage (Hat switch)
-        0x15,
-        0x00,  // Logical Minimum (0)
-        0x25,
-        0x07,  // Logical Maximum (7)
-        0x35,
-        0x00,  // Physical Minimum (0)
-        0x46,
-        0x3B,
-        0x01,  // Physical Maximum (315)
-        0x65,
-        0x14,  // Unit (Eng Rot:Angular Pos)
-        0x75,
-        0x04,  // Report Size (4)
-        0x95,
-        0x01,  // Report Count (1)
-        0x81,
-        0x42,  // Input (Data,Var,Abs,Null)
-        0x65,
-        0x00,  // Unit (None)
-        0x05,
-        0x01,  // Usage Page (Generic Desktop)
-        0x15,
-        0x00,  // Logical Minimum (0)
-        0x26,
-        0xFF,
-        0x00,  // Logical Maximum (255)
-        0x75,
-        0x08,  // Report Size (8)
-        0x95,
-        common_axis_count,  // Report Count
-        0x09,
-        0x30,  // Usage (X)
-        0x09,
-        0x31,  // Usage (Y)
-        0x09,
-        0x32,  // Usage (Z)
-        0x09,
-        0x33,  // Usage (Rx)
-        0x09,
-        0x34,  // Usage (Ry)
-        0x09,
-        0x35,  // Usage (Rz)
-        0x81,
-        0x02,  // Input (Data,Var,Abs)
       };
+      append_common_gamepad_buttons(descriptor, false);
+      descriptor.insert(
+        descriptor.end(),
+        {
+          0x05,
+          0x01,  // Usage Page (Generic Desktop)
+          0x09,
+          0x39,  // Usage (Hat switch)
+          0x15,
+          0x00,  // Logical Minimum (0)
+          0x25,
+          0x07,  // Logical Maximum (7)
+          0x35,
+          0x00,  // Physical Minimum (0)
+          0x46,
+          0x3B,
+          0x01,  // Physical Maximum (315)
+          0x65,
+          0x14,  // Unit (Eng Rot:Angular Pos)
+          0x75,
+          0x04,  // Report Size (4)
+          0x95,
+          0x01,  // Report Count (1)
+          0x81,
+          0x42,  // Input (Data,Var,Abs,Null)
+          0x65,
+          0x00,  // Unit (None)
+          0x05,
+          0x01,  // Usage Page (Generic Desktop)
+          0x15,
+          0x00,  // Logical Minimum (0)
+          0x26,
+          0xFF,
+          0x00,  // Logical Maximum (255)
+          0x75,
+          0x08,  // Report Size (8)
+          0x95,
+          common_axis_count,  // Report Count
+          0x09,
+          0x30,  // Usage (X)
+          0x09,
+          0x31,  // Usage (Y)
+          0x09,
+          0x32,  // Usage (Z)
+          0x09,
+          0x33,  // Usage (Rx)
+          0x09,
+          0x34,  // Usage (Ry)
+          0x09,
+          0x35,  // Usage (Rz)
+          0x81,
+          0x02,  // Input (Data,Var,Abs)
+        }
+      );
 
       if (supports_rumble) {
         descriptor.insert(
@@ -233,48 +290,61 @@ namespace lvh::profiles {
         0x01,  // Collection (Application)
         0x85,
         report_id,  // Report ID
-        0x05,
-        0x09,  // Usage Page (Button)
-        0x19,
-        0x01,  // Usage Minimum (Button 1)
-        0x29,
-        standard_button_count,  // Usage Maximum
-        0x15,
-        0x00,  // Logical Minimum (0)
-        0x25,
-        0x01,  // Logical Maximum (1)
-        0x75,
-        0x01,  // Report Size (1)
-        0x95,
-        standard_button_count,  // Report Count
-        0x81,
-        0x02,  // Input (Data,Var,Abs)
-        0x05,
-        0x01,  // Usage Page (Generic Desktop)
-        0x15,
-        0x00,  // Logical Minimum (0)
-        0x26,
-        0xFF,
-        0x00,  // Logical Maximum (255)
-        0x75,
-        0x08,  // Report Size (8)
-        0x95,
-        common_axis_count,  // Report Count
-        0x09,
-        0x30,  // Usage (X)
-        0x09,
-        0x31,  // Usage (Y)
-        0x09,
-        0x33,  // Usage (Rx)
-        0x09,
-        0x34,  // Usage (Ry)
-        0x09,
-        0x32,  // Usage (Z)
-        0x09,
-        0x35,  // Usage (Rz)
-        0x81,
-        0x02,  // Input (Data,Var,Abs)
       };
+      append_common_gamepad_buttons(descriptor, true);
+      descriptor.insert(
+        descriptor.end(),
+        {
+          0x05,
+          0x01,  // Usage Page (Generic Desktop)
+          0x09,
+          0x39,  // Usage (Hat switch)
+          0x15,
+          0x00,  // Logical Minimum (0)
+          0x25,
+          0x07,  // Logical Maximum (7)
+          0x35,
+          0x00,  // Physical Minimum (0)
+          0x46,
+          0x3B,
+          0x01,  // Physical Maximum (315)
+          0x65,
+          0x14,  // Unit (Eng Rot:Angular Pos)
+          0x75,
+          0x04,  // Report Size (4)
+          0x95,
+          0x01,  // Report Count (1)
+          0x81,
+          0x42,  // Input (Data,Var,Abs,Null)
+          0x65,
+          0x00,  // Unit (None)
+          0x05,
+          0x01,  // Usage Page (Generic Desktop)
+          0x15,
+          0x00,  // Logical Minimum (0)
+          0x26,
+          0xFF,
+          0x00,  // Logical Maximum (255)
+          0x75,
+          0x08,  // Report Size (8)
+          0x95,
+          common_axis_count,  // Report Count
+          0x09,
+          0x30,  // Usage (X)
+          0x09,
+          0x31,  // Usage (Y)
+          0x09,
+          0x33,  // Usage (Rx)
+          0x09,
+          0x34,  // Usage (Ry)
+          0x09,
+          0x32,  // Usage (Z)
+          0x09,
+          0x35,  // Usage (Rz)
+          0x81,
+          0x02,  // Input (Data,Var,Abs)
+        }
+      );
 
       if (supports_rumble) {
         descriptor.insert(

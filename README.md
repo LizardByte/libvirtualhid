@@ -34,8 +34,9 @@ behind backend implementations.
 
 - Gamepad profiles for generic HID, Xbox 360, Xbox One, Xbox Series,
   DualShock 4, DualSense, and Nintendo Switch Pro-style controllers.
-- Descriptor-driven Linux gamepads through `uhid`, plus keyboard, mouse,
-  touchscreen, trackpad, and pen tablet devices through `uinput`.
+- Descriptor-driven Linux gamepads through `uhid`; Xbox Series gamepads plus
+  keyboard, mouse, touchscreen, trackpad, and pen tablet devices through
+  `uinput`.
 - Windows gamepads through a user-mode UMDF2 control driver backed by Virtual
   HID Framework, with keyboard and mouse support through normal Win32 APIs.
 - Output callbacks for profile-specific feedback such as rumble, LEDs,

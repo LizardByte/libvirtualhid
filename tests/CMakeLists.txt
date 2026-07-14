@@ -24,8 +24,6 @@ set(TEST_BINARY test_libvirtualhid)
 set(LIBVIRTUALHID_TEST_SOURCES
   "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_gamepad_adapter.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_gamepad_lifecycle.cpp"
-  "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_linux_backend.cpp"
-  "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_linux_consumers.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_profiles.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_report.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_runtime.cpp"
@@ -43,7 +41,9 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     pkg_check_modules(SDL2 REQUIRED IMPORTED_TARGET sdl2)
 
     list(APPEND LIBVIRTUALHID_TEST_SOURCES
-         "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/linux_backend_test_hooks.cpp")
+         "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/linux_backend_test_hooks.cpp"
+         "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_linux_backend.cpp"
+         "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_linux_consumers.cpp")
 
     if(LIBVIRTUALHID_ENABLE_XTEST)
         find_package(X11 QUIET)

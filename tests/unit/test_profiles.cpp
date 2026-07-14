@@ -49,17 +49,37 @@ TEST(ProfileTest, StreamingControllerProfilesArePresent) {
   EXPECT_EQ(xbox_series.report_id, 0);
   EXPECT_EQ(xbox_series.input_report_size, 17U);
 
-  const std::array<std::uint8_t, 12> xbox_gip_button_descriptor {
+  const std::array<std::uint8_t, 32> xbox_gip_button_descriptor {
     0x05,
     0x09,
-    0x19,
+    0x09,
     0x01,
-    0x29,
-    0x0A,
-    0x95,
-    0x0A,
+    0x09,
+    0x02,
+    0x09,
+    0x04,
+    0x09,
+    0x05,
+    0x09,
+    0x07,
+    0x09,
+    0x08,
+    0x09,
+    0x0B,
+    0x09,
+    0x0C,
+    0x09,
+    0x0E,
+    0x09,
+    0x0F,
+    0x15,
+    0x00,
+    0x25,
+    0x01,
     0x75,
     0x01,
+    0x95,
+    0x0A,
     0x81,
     0x02,
   };
@@ -182,19 +202,43 @@ TEST(ProfileTest, StreamingControllerProfilesArePresent) {
   EXPECT_TRUE(switch_pro.capabilities.supports_battery);
 
   const auto generic = lvh::profiles::generic_gamepad();
-  const std::array<std::uint8_t, 12> standard_button_descriptor {
+  const std::array<std::uint8_t, 36> standard_button_descriptor {
     0x05,
     0x09,
-    0x19,
+    0x09,
     0x01,
-    0x29,
-    0x10,
+    0x09,
+    0x02,
+    0x09,
+    0x04,
+    0x09,
+    0x05,
+    0x09,
+    0x07,
+    0x09,
+    0x08,
+    0x09,
+    0x0B,
+    0x09,
+    0x0C,
+    0x09,
+    0x0E,
+    0x09,
+    0x0F,
+    0x09,
+    0x0D,
+    0x09,
+    0x06,
     0x15,
     0x00,
     0x25,
     0x01,
     0x75,
     0x01,
+    0x95,
+    0x0C,
+    0x81,
+    0x02,
   };
   EXPECT_TRUE(
     std::ranges::search(generic.report_descriptor, standard_button_descriptor).begin() != generic.report_descriptor.end()
@@ -225,11 +269,29 @@ TEST(ProfileTest, StreamingControllerProfilesArePresent) {
     switch_pro.report_descriptor.end()
   );
 
-  const std::array<std::uint8_t, 12> switch_pro_button_descriptor {
-    0x19,
+  const std::array<std::uint8_t, 36> switch_pro_button_descriptor {
+    0x05,
+    0x09,
+    0x09,
+    0x02,
+    0x09,
     0x01,
-    0x29,
+    0x09,
+    0x04,
+    0x09,
+    0x05,
+    0x09,
+    0x07,
+    0x09,
+    0x08,
+    0x09,
+    0x09,
+    0x09,
     0x0A,
+    0x09,
+    0x0B,
+    0x09,
+    0x0C,
     0x15,
     0x00,
     0x25,
@@ -238,9 +300,42 @@ TEST(ProfileTest, StreamingControllerProfilesArePresent) {
     0x01,
     0x95,
     0x0A,
+    0x55,
+    0x00,
+    0x65,
+    0x00,
+    0x81,
+    0x02,
   };
   EXPECT_TRUE(
     std::ranges::search(switch_pro.report_descriptor, switch_pro_button_descriptor).begin() !=
+    switch_pro.report_descriptor.end()
+  );
+
+  const std::array<std::uint8_t, 20> switch_pro_system_button_descriptor {
+    0x05,
+    0x09,
+    0x09,
+    0x0E,
+    0x09,
+    0x0F,
+    0x09,
+    0x0D,
+    0x09,
+    0x06,
+    0x15,
+    0x00,
+    0x25,
+    0x01,
+    0x75,
+    0x01,
+    0x95,
+    0x04,
+    0x81,
+    0x02,
+  };
+  EXPECT_TRUE(
+    std::ranges::search(switch_pro.report_descriptor, switch_pro_system_button_descriptor).begin() !=
     switch_pro.report_descriptor.end()
   );
 }

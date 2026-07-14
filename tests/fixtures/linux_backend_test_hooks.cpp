@@ -138,6 +138,9 @@ namespace lvh::detail::test {
       std::vector<std::ptrdiff_t> read_results;
       std::vector<int> read_errors;
       uhid_event read_event {};
+      std::vector<input_event> read_input_events;
+      ff_effect uploaded_ff_effect {};
+      bool provide_uploaded_ff_effect = false;
       bool override_xtest_query = false;
       bool xtest_query_result = true;
       bool override_x_keycode = false;
@@ -237,6 +240,13 @@ int lvh_linux_test_ioctl(int fd, unsigned long request, unsigned long argument) 
       errno = EINVAL;
       return -1;
     }
+    if (
+      request == UI_BEGIN_FF_UPLOAD &&
+      lvh::detail::test::active_test_syscalls()->provide_uploaded_ff_effect
+    ) {
+      auto *upload = std::bit_cast<uinput_ff_upload *>(argument);
+      upload->effect = lvh::detail::test::active_test_syscalls()->uploaded_ff_effect;
+    }
     return 0;
   }
   return ::ioctl(fd, request, argument);
@@ -283,6 +293,13 @@ std::ptrdiff_t lvh_linux_test_read(int fd, std::byte *buffer, std::size_t size) 
     }
 
     if (result > 0) {
+      if (const auto &input_events = lvh::detail::test::active_test_syscalls()->read_input_events;
+          call_index < input_events.size()) {
+        const auto bytes = std::min<std::size_t>(static_cast<std::size_t>(result), std::min(size, sizeof(input_event)));
+        std::memcpy(buffer, &input_events[call_index], bytes);
+        return static_cast<std::ptrdiff_t>(bytes);
+      }
+
       const auto bytes = std::min<std::size_t>(static_cast<std::size_t>(result), std::min(size, sizeof(uhid_event)));
       std::memcpy(buffer, &lvh::detail::test::active_test_syscalls()->read_event, bytes);
       return static_cast<std::ptrdiff_t>(bytes);
@@ -724,7 +741,7 @@ namespace lvh::detail::test {
         case DeviceType::pen_tablet:
           return profiles::pen_tablet();
         case DeviceType::gamepad:
-          return profiles::generic_gamepad();
+          return profiles::xbox_series();
       }
 
       return profiles::mouse();
@@ -769,9 +786,10 @@ namespace lvh::detail::test {
           }
         case DeviceType::gamepad:
           {
-            auto status = create_libevdev_uinput_device(fd, profile_for_uinput_device_type(device_type), 1).status;
-            static_cast<void>(system_close(fd));
-            return status;
+            CreateGamepadOptions options;
+            options.profile = profile_for_uinput_device_type(device_type);
+            UinputXboxGamepad gamepad {fd};
+            return gamepad.create(1, options);
           }
       }
 
@@ -837,6 +855,11 @@ namespace lvh::detail::test {
 
   std::uint16_t linux_uhid_bus(BusType bus_type) {
     return to_uhid_bus(bus_type);
+  }
+
+  std::uint16_t linux_gamepad_uhid_bus(GamepadProfileKind kind) {
+    const auto profile = profiles::gamepad_profile(kind);
+    return profile ? to_uhid_bus(*profile) : to_uhid_bus(BusType::unknown);
   }
 
   std::uint16_t linux_uinput_bus(BusType bus_type) {
@@ -935,13 +958,13 @@ namespace lvh::detail::test {
 
   OperationStatus linux_uhid_submit_report_size(std::size_t report_size) {
     UhidGamepad gamepad {-1};
-    return gamepad.submit(std::vector<std::uint8_t>(report_size, 0));
+    return gamepad.submit({}, std::vector<std::uint8_t>(report_size, 0));
   }
 
   OperationStatus linux_uhid_submit_after_close() {
     UhidGamepad gamepad {-1};
     static_cast<void>(gamepad.close());
-    return gamepad.submit({0});
+    return gamepad.submit({}, {0});
   }
 
   OperationStatus linux_uinput_keyboard_create_invalid_fd() {
@@ -980,6 +1003,79 @@ namespace lvh::detail::test {
     auto records = read_input_events_until_eof(descriptors[0]);
     static_cast<void>(::close(descriptors[0]));
     return {std::move(status), std::move(records)};
+  }
+
+  LinuxInputSubmissionResult linux_uinput_xbox_series_submit_pipe(const GamepadState &state) {
+    std::array<int, 2> descriptors {-1, -1};
+    if (::pipe(descriptors.data()) != 0) {
+      return {system_error_status(ErrorCode::backend_failure, "failed to create pipe", errno), {}};
+    }
+
+    const auto profile = profiles::xbox_series();
+    UinputXboxGamepad gamepad {descriptors[1]};
+    auto status = gamepad.submit(state, reports::pack_input_report(profile, state));
+    static_cast<void>(gamepad.close());
+    auto records = read_input_events_until_eof(descriptors[0]);
+    static_cast<void>(::close(descriptors[0]));
+    return {std::move(status), std::move(records)};
+  }
+
+  LinuxUinputRumbleResult linux_uinput_xbox_series_fake_rumble() {
+    LinuxTestSyscalls syscalls;
+    enable_fake_device_syscalls(syscalls);
+    syscalls.override_poll = true;
+    syscalls.poll_results = {1, 1, 0};
+    syscalls.poll_revents = {POLLIN, POLLIN, 0};
+    syscalls.override_read = true;
+    syscalls.read_results = {
+      static_cast<std::ptrdiff_t>(sizeof(input_event)),
+      static_cast<std::ptrdiff_t>(sizeof(input_event)),
+    };
+    syscalls.read_input_events = {
+      input_event {.type = EV_UINPUT, .code = UI_FF_UPLOAD, .value = 7},
+      input_event {.type = EV_FF, .code = 3, .value = 1},
+    };
+    syscalls.provide_uploaded_ff_effect = true;
+    syscalls.uploaded_ff_effect.type = FF_RUMBLE;
+    syscalls.uploaded_ff_effect.id = 3;
+    syscalls.uploaded_ff_effect.u.rumble.weak_magnitude = 0x1234;
+    syscalls.uploaded_ff_effect.u.rumble.strong_magnitude = 0x5678;
+    syscalls.uploaded_ff_effect.replay.length = 1000;
+    ScopedLinuxTestSyscalls scoped_syscalls {syscalls};
+
+    LinuxUinputRumbleResult result;
+    const auto fd = open_test_fd();
+    if (fd < 0) {
+      result.create_status = system_error_status(ErrorCode::backend_failure, "failed to open test file descriptor", errno);
+      result.close_status = result.create_status;
+      return result;
+    }
+
+    std::atomic_size_t callback_count = 0;
+    std::mutex output_mutex;
+    GamepadOutput last_output;
+    UinputXboxGamepad gamepad {fd};
+    gamepad.set_output_callback([&callback_count, &last_output, &output_mutex](const GamepadOutput &output) {
+      if (output.low_frequency_rumble != 0 || output.high_frequency_rumble != 0) {
+        std::lock_guard lock {output_mutex};
+        last_output = output;
+      }
+      ++callback_count;
+    });
+
+    CreateGamepadOptions options;
+    options.profile = profiles::xbox_series();
+    result.create_status = gamepad.create(8, options);
+    for (auto attempt = 0; attempt < 100 && callback_count.load() == 0; ++attempt) {
+      std::this_thread::sleep_for(std::chrono::milliseconds {1});
+    }
+    result.close_status = gamepad.close();
+    result.callback_count = callback_count.load();
+    {
+      std::lock_guard lock {output_mutex};
+      result.last_output = last_output;
+    }
+    return result;
   }
 
   OperationStatus linux_uinput_user_device_invalid_fd() {
@@ -1268,7 +1364,7 @@ namespace lvh::detail::test {
     lvh::GamepadState state;
     state.buttons.set(GamepadButton::a);
     const auto report = reports::pack_input_report(profile, state);
-    result.submit_status = gamepad.submit(report);
+    result.submit_status = gamepad.submit(state, report);
     if (read_uhid_event(descriptors[1], event)) {
       result.saw_input = event.type == UHID_INPUT2 && event.u.input2.size == report.size();
     }
@@ -1311,7 +1407,7 @@ namespace lvh::detail::test {
     event.u.get_report.rnum = 0x05;
     static_cast<void>(write_uhid_event(descriptors[1], event));
     if (read_uhid_event_type(descriptors[1], UHID_GET_REPORT_REPLY, event)) {
-      result.saw_dualsense_calibration = event.u.get_report_reply.err == 0 && event.u.get_report_reply.size > 0 &&
+      result.saw_dualsense_calibration = event.u.get_report_reply.err == 0 && event.u.get_report_reply.size == 41U &&
                                          event.u.get_report_reply.data[0] == 0x05;
     }
 
@@ -1555,7 +1651,7 @@ namespace lvh::detail::test {
     result.capabilities = backend.capabilities();
 
     CreateGamepadOptions gamepad_options;
-    gamepad_options.profile = profiles::xbox_360();
+    gamepad_options.profile = profiles::xbox_series();
     gamepad_options.metadata.stable_id = "fake-linux-gamepad";
     auto gamepad = backend.create_gamepad(1, gamepad_options);
     result.gamepad_status = gamepad.status;
@@ -1862,7 +1958,7 @@ namespace lvh::detail::test {
     ScopedLinuxTestSyscalls scoped_syscalls {syscalls};
 
     UhidGamepad gamepad {fake_fd};
-    return gamepad.submit({0});
+    return gamepad.submit({}, {0});
   }
 
   OperationStatus linux_uhid_submit_fake_short_write() {
@@ -1872,7 +1968,7 @@ namespace lvh::detail::test {
     ScopedLinuxTestSyscalls scoped_syscalls {syscalls};
 
     UhidGamepad gamepad {fake_fd};
-    return gamepad.submit({0});
+    return gamepad.submit({}, {0});
   }
 
   OperationStatus linux_uhid_close_fake_write_failure() {

@@ -30,12 +30,16 @@ namespace lvh::detail {
     virtual ~BackendGamepad() = default;
 
     /**
-     * @brief Submit a packed input report to the backend.
+     * @brief Submit normalized state and its packed input report to the backend.
      *
+     * HID backends consume @p report, while native platform input backends may
+     * consume @p state.
+     *
+     * @param state Normalized gamepad state.
      * @param report Packed HID input report.
      * @return Submit status.
      */
-    virtual OperationStatus submit(const std::vector<std::uint8_t> &report) = 0;
+    virtual OperationStatus submit(const GamepadState &state, const std::vector<std::uint8_t> &report) = 0;
 
     /**
      * @brief Get platform-visible nodes associated with this backend device.

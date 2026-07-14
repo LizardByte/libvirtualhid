@@ -46,15 +46,29 @@ and signing details.
 The Linux backend uses standard user-space kernel interfaces:
 
 - `uhid` for descriptor-driven HID gamepads.
-- `uinput` for keyboard, mouse, touchscreen, trackpad, and pen tablet devices.
+- `uinput` for Xbox Series gamepads, keyboard, mouse, touchscreen, trackpad,
+  and pen tablet devices.
 - `libevdev` internally for uinput device construction.
 - X11/XTest only as a keyboard and mouse fallback when `uinput` cannot be used
   and an X11 session is available.
 
-Gamepad support prefers `uhid` because descriptors, raw HID identity, feature
-reports, and output reports matter for controller compatibility. Keyboard and
-pointer devices prefer `uinput` because those devices map naturally to Linux
-input devices.
+Gamepad support normally prefers `uhid` because descriptors, raw HID identity,
+feature reports, and output reports matter for controller compatibility. Xbox
+Series is the exception: on Linux it uses `uinput` so SDL, Steam, and other
+evdev consumers receive the native Xbox button codes without interpreting the
+descriptor report as Xbox GIP traffic. Face buttons, shoulders, menu buttons,
+stick clicks, the guide button, and Share are exposed through their canonical
+evdev codes; sticks and the directional pad use absolute axes; triggers remain
+independent analog `ABS_Z` and `ABS_RZ` axes. Force-feedback effects are
+normalized back into the public rumble callback. The backend advertises the
+full 15-slot Xbox Series button range expected by Steam for this controller
+identity. Its unused `BTN_C`, `BTN_Z`, `BTN_TL2`, and `BTN_TR2` slots are never
+pressed; they keep the active buttons after them at the correct Linux indices.
+
+Other gamepad profiles remain descriptor-driven through `uhid`. The Switch Pro
+profile keeps its Nintendo identity but uses the virtual UHID bus on Linux,
+preventing `hid-nintendo` from claiming the descriptor-only device and waiting
+for physical-controller initialization handshakes.
 
 The optional `virtualhid_control` diagnostic UI uses SDL3 and Dear ImGui through
 the repository CPM lockfile. It is intended to stay on the same UI framework for
@@ -87,7 +101,7 @@ KERNEL=="hidraw*", ATTRS{name}=="Your App Controller*", GROUP="input", MODE="066
 SUBSYSTEMS=="input", ATTRS{name}=="Your App Controller*", GROUP="input", MODE="0660", TAG+="uaccess"
 ```
 
-For `uhid` gamepad support, install a modules-load entry such as
+For descriptor-driven `uhid` gamepad support, install a modules-load entry such as
 `/etc/modules-load.d/60-libvirtualhid.conf`:
 
 ```text

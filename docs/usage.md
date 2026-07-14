@@ -178,3 +178,6 @@ Profiles advertise support for features such as rumble, trigger rumble, RGB
 LEDs, adaptive triggers, motion sensors, touchpads, battery state, profile
 specific buttons, and raw output reports. Consumers should query profile and
 backend capabilities before warning users about unsupported client features.
+The `misc1` button represents Share/Capture/Mic Mute-style controls and is
+available on the generic, Xbox Series, DualSense, and Switch Pro profiles; Xbox
+360 and Xbox One do not advertise that extra button.

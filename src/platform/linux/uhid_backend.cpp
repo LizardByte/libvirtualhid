@@ -17,6 +17,7 @@
 #include <format>
 #include <fstream>
 #include <iomanip>
+#include <limits>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -77,6 +78,7 @@ namespace lvh::detail {
     constexpr auto tablet_distance_max = 1024;
     constexpr auto tablet_resolution = 28;
     constexpr auto poll_timeout_ms = 100;
+    constexpr auto xbox_trigger_max = 255;
     constexpr auto dualshock4_usb_calibration_report = 0x02;
     constexpr auto dualshock4_bluetooth_calibration_report = 0x05;
     constexpr auto dualshock4_pairing_report = 0x12;
@@ -244,6 +246,7 @@ namespace lvh::detail {
 
     constexpr std::uint8_t dualsense_calibration_info[] {
       0x05,
+      0x00,
       0x00,
       0x00,
       0x00,
@@ -495,6 +498,13 @@ namespace lvh::detail {
         return BUS_BLUETOOTH;
       }
       return BUS_USB;
+    }
+
+    std::uint16_t to_uhid_bus(const DeviceProfile &profile) {
+      if (profile.gamepad_kind == GamepadProfileKind::switch_pro) {
+        return BUS_VIRTUAL;
+      }
+      return to_uhid_bus(profile.bus_type);
     }
 
     std::uint16_t to_uinput_bus(BusType bus_type) {
@@ -1273,8 +1283,72 @@ namespace lvh::detail {
       return enable_evdev_property(device, INPUT_PROP_DIRECT, "tablet direct");
     }
 
-    OperationStatus configure_evdev_device(libevdev *device, DeviceType device_type) {
-      switch (device_type) {
+    OperationStatus configure_evdev_xbox_series_gamepad(libevdev *device) {
+      if (const auto status = enable_evdev_type(device, EV_KEY, "Xbox gamepad button events"); !status.ok()) {
+        return status;
+      }
+      if (const auto status = enable_evdev_type(device, EV_ABS, "Xbox gamepad absolute events"); !status.ok()) {
+        return status;
+      }
+      if (const auto status = enable_evdev_type(device, EV_FF, "Xbox gamepad force-feedback events"); !status.ok()) {
+        return status;
+      }
+
+      // Steam maps the Xbox Series VID/PID using the controller's 15-slot HID button layout.
+      // Keep the unused C, Z, and digital-trigger slots so Linux button indices do not collapse.
+      // The submit path never presses these reserved slots; triggers remain analog axes.
+      for (const auto button : {
+             BTN_SOUTH,
+             BTN_EAST,
+             BTN_C,
+             BTN_NORTH,
+             BTN_WEST,
+             BTN_Z,
+             BTN_TL,
+             BTN_TR,
+             BTN_TL2,
+             BTN_TR2,
+             BTN_SELECT,
+             BTN_START,
+             BTN_MODE,
+             BTN_THUMBL,
+             BTN_THUMBR,
+             KEY_RECORD,
+           }) {
+        if (const auto status = enable_evdev_code(device, EV_KEY, button, "Xbox gamepad button"); !status.ok()) {
+          return status;
+        }
+      }
+
+      auto dpad = make_absinfo(-1, 1);
+      for (const auto code : {ABS_HAT0X, ABS_HAT0Y}) {
+        if (const auto status = enable_evdev_code(device, EV_ABS, code, "Xbox gamepad directional axis", &dpad); !status.ok()) {
+          return status;
+        }
+      }
+
+      auto stick = make_absinfo(-32768, 32767, 16, 128);
+      for (const auto code : {ABS_X, ABS_Y, ABS_RX, ABS_RY}) {
+        if (const auto status = enable_evdev_code(device, EV_ABS, code, "Xbox gamepad stick axis", &stick); !status.ok()) {
+          return status;
+        }
+      }
+
+      auto trigger = make_absinfo(0, xbox_trigger_max);
+      for (const auto code : {ABS_Z, ABS_RZ}) {
+        if (const auto status = enable_evdev_code(device, EV_ABS, code, "Xbox gamepad trigger axis", &trigger); !status.ok()) {
+          return status;
+        }
+      }
+
+      if (const auto status = enable_evdev_code(device, EV_FF, FF_RUMBLE, "Xbox gamepad force-feedback effect"); !status.ok()) {
+        return status;
+      }
+      return enable_evdev_code(device, EV_FF, FF_GAIN, "Xbox gamepad force-feedback gain");
+    }
+
+    OperationStatus configure_evdev_device(libevdev *device, const DeviceProfile &profile) {
+      switch (profile.device_type) {
         using enum DeviceType;
 
         case keyboard:
@@ -1288,7 +1362,10 @@ namespace lvh::detail {
         case pen_tablet:
           return configure_evdev_pen_tablet(device);
         case gamepad:
-          return OperationStatus::failure(ErrorCode::unsupported_profile, "gamepads are created through UHID, not uinput");
+          if (profile.gamepad_kind == GamepadProfileKind::xbox_series) {
+            return configure_evdev_xbox_series_gamepad(device);
+          }
+          return OperationStatus::failure(ErrorCode::unsupported_profile, "gamepad profile is not supported through uinput");
       }
 
       return OperationStatus::failure(ErrorCode::unsupported_profile, "unsupported uinput device type");
@@ -1310,7 +1387,7 @@ namespace lvh::detail {
       libevdev_set_id_product(device.get(), profile.product_id);
       libevdev_set_id_version(device.get(), profile.version);
 
-      if (const auto status = configure_evdev_device(device.get(), profile.device_type); !status.ok()) {
+      if (const auto status = configure_evdev_device(device.get(), profile); !status.ok()) {
         return {status, nullptr};
       }
 
@@ -2232,6 +2309,295 @@ namespace lvh::detail {
     }
 #endif
 
+    struct UinputRumbleEffect {
+      std::uint16_t weak_magnitude = 0;
+      std::uint16_t strong_magnitude = 0;
+      std::chrono::milliseconds length {0};
+      std::chrono::milliseconds delay {0};
+      std::chrono::steady_clock::time_point start {};
+      std::chrono::steady_clock::time_point end {};
+      bool active = false;
+    };
+
+    /**
+     * @brief Xbox Series gamepad exposed through canonical Linux input events.
+     */
+    class UinputXboxGamepad final: public BackendGamepad, private UinputDevice {
+    public:
+      explicit UinputXboxGamepad(int file_descriptor):
+          UinputDevice {file_descriptor} {}
+
+      ~UinputXboxGamepad() override = default;
+
+      OperationStatus create(DeviceId id, const CreateGamepadOptions &options) {
+        if (options.profile.gamepad_kind != GamepadProfileKind::xbox_series) {
+          return OperationStatus::failure(ErrorCode::unsupported_profile, "uinput Xbox backend requires the Xbox Series profile");
+        }
+
+        device_name_ = options.profile.name;
+        if (const auto status = create_uinput_device(options.profile, id); !status.ok()) {
+          return status;
+        }
+
+        running_ = true;
+        reader_ = std::jthread {[this](std::stop_token stop_token) {
+          read_output_loop(stop_token);
+        }};
+        return OperationStatus::success();
+      }
+
+      OperationStatus submit(
+        const GamepadState &state,
+        const std::vector<std::uint8_t> & /*report*/
+      ) override {
+        using enum GamepadButton;
+
+        if (!is_open()) {
+          return OperationStatus::failure(ErrorCode::device_closed, "uinput Xbox gamepad is closed");
+        }
+
+        const auto normalized = reports::normalize_state(state);
+        std::lock_guard lock {submit_mutex_};
+
+        constexpr std::array button_map {
+          std::pair {a, BTN_SOUTH},
+          std::pair {b, BTN_EAST},
+          std::pair {x, BTN_NORTH},
+          std::pair {y, BTN_WEST},
+          std::pair {left_shoulder, BTN_TL},
+          std::pair {right_shoulder, BTN_TR},
+          std::pair {back, BTN_SELECT},
+          std::pair {start, BTN_START},
+          std::pair {guide, BTN_MODE},
+          std::pair {left_stick, BTN_THUMBL},
+          std::pair {right_stick, BTN_THUMBR},
+          std::pair {misc1, KEY_RECORD},
+        };
+        for (const auto &[button, code] : button_map) {
+          if (const auto status = emit_event(EV_KEY, code, normalized.buttons.test(button) ? 1 : 0); !status.ok()) {
+            return status;
+          }
+        }
+
+        if (const auto status = emit_event(EV_ABS, ABS_HAT0X, dpad_axis(normalized.buttons, dpad_left, dpad_right)); !status.ok()) {
+          return status;
+        }
+        if (const auto status = emit_event(EV_ABS, ABS_HAT0Y, dpad_axis(normalized.buttons, dpad_up, dpad_down)); !status.ok()) {
+          return status;
+        }
+
+        const std::array axes {
+          std::pair {ABS_X, static_cast<int>(reports::normalize_axis(normalized.left_stick.x))},
+          std::pair {ABS_Y, static_cast<int>(reports::normalize_axis(-normalized.left_stick.y))},
+          std::pair {ABS_RX, static_cast<int>(reports::normalize_axis(normalized.right_stick.x))},
+          std::pair {ABS_RY, static_cast<int>(reports::normalize_axis(-normalized.right_stick.y))},
+          std::pair {ABS_Z, static_cast<int>(reports::normalize_trigger(normalized.left_trigger))},
+          std::pair {ABS_RZ, static_cast<int>(reports::normalize_trigger(normalized.right_trigger))},
+        };
+        for (const auto &[code, value] : axes) {
+          if (const auto status = emit_event(EV_ABS, code, value); !status.ok()) {
+            return status;
+          }
+        }
+        return sync();
+      }
+
+      void set_output_callback(OutputCallback callback) override {
+        std::lock_guard lock {callback_mutex_};
+        output_callback_ = std::move(callback);
+      }
+
+      std::vector<DeviceNode> device_nodes() const override {
+        return discover_input_nodes_by_name(device_name_);
+      }
+
+      OperationStatus close() override {
+        running_ = false;
+        if (reader_.joinable()) {
+          reader_.request_stop();
+          reader_.join();
+        }
+        dispatch_rumble(0, 0);
+        return close_uinput("uinput Xbox gamepad");
+      }
+
+    private:
+      static int dpad_axis(const ButtonSet &buttons, GamepadButton negative, GamepadButton positive) {
+        const auto negative_pressed = buttons.test(negative);
+        if (const auto positive_pressed = buttons.test(positive); negative_pressed == positive_pressed) {
+          return 0;
+        }
+        return negative_pressed ? -1 : 1;
+      }
+
+      void read_output_loop(std::stop_token stop_token) {
+        while (!stop_token.stop_requested() && running_) {
+          pollfd descriptor {};
+          descriptor.fd = file_descriptor();
+          descriptor.events = POLLIN;
+
+          const auto poll_result = system_poll(&descriptor, 1, poll_timeout_ms);
+          if (poll_result < 0) {
+            if (errno == EINTR) {
+              continue;
+            }
+            return;
+          }
+          if (poll_result > 0) {
+            if ((descriptor.revents & (POLLERR | POLLHUP | POLLNVAL)) != 0) {
+              return;
+            }
+            if ((descriptor.revents & POLLIN) != 0 && !read_output_events()) {
+              return;
+            }
+          }
+          update_rumble();
+        }
+      }
+
+      bool read_output_events() {
+        std::array<input_event, 16> events {};
+        const auto result = system_read(file_descriptor(), std::as_writable_bytes(std::span {events}));
+        if (result < 0) {
+          return errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR;
+        }
+        if (result == 0) {
+          return false;
+        }
+
+        const auto event_count = static_cast<std::size_t>(result) / sizeof(input_event);
+        for (std::size_t index = 0; index < event_count; ++index) {
+          handle_output_event(events[index]);
+        }
+        return true;
+      }
+
+      void handle_output_event(const input_event &event) {
+        if (event.type == EV_UINPUT && event.code == UI_FF_UPLOAD) {
+          upload_rumble_effect(event.value);
+          return;
+        }
+        if (event.type == EV_UINPUT && event.code == UI_FF_ERASE) {
+          erase_rumble_effect(event.value);
+          return;
+        }
+        if (event.type != EV_FF) {
+          return;
+        }
+        if (event.code == FF_GAIN) {
+          gain_ = static_cast<std::uint16_t>(std::clamp(event.value, 0, static_cast<int>(std::numeric_limits<std::uint16_t>::max())));
+          return;
+        }
+
+        const auto effect = rumble_effects_.find(event.code);
+        if (effect == rumble_effects_.end()) {
+          return;
+        }
+        if (event.value <= 0) {
+          effect->second.active = false;
+          return;
+        }
+
+        const auto now = std::chrono::steady_clock::now();
+        effect->second.active = true;
+        effect->second.start = now + effect->second.delay;
+        effect->second.end = effect->second.start + effect->second.length * std::max(event.value, 1);
+      }
+
+      void upload_rumble_effect(int request_id) {
+        uinput_ff_upload upload {};
+        upload.request_id = request_id;
+        if (system_ioctl(file_descriptor(), UI_BEGIN_FF_UPLOAD, reinterpret_cast<unsigned long>(&upload)) < 0) {
+          return;
+        }
+
+        if (upload.effect.type == FF_RUMBLE) {
+          auto effect = UinputRumbleEffect {
+            .weak_magnitude = upload.effect.u.rumble.weak_magnitude,
+            .strong_magnitude = upload.effect.u.rumble.strong_magnitude,
+            .length = std::chrono::milliseconds {upload.effect.replay.length},
+            .delay = std::chrono::milliseconds {upload.effect.replay.delay},
+          };
+          if (const auto existing = rumble_effects_.find(upload.effect.id); existing != rumble_effects_.end()) {
+            effect.start = existing->second.start;
+            effect.end = existing->second.end;
+            effect.active = existing->second.active;
+          }
+          rumble_effects_.insert_or_assign(upload.effect.id, effect);
+        }
+
+        upload.retval = 0;
+        static_cast<void>(system_ioctl(file_descriptor(), UI_END_FF_UPLOAD, reinterpret_cast<unsigned long>(&upload)));
+      }
+
+      void erase_rumble_effect(int request_id) {
+        uinput_ff_erase erase {};
+        erase.request_id = request_id;
+        if (system_ioctl(file_descriptor(), UI_BEGIN_FF_ERASE, reinterpret_cast<unsigned long>(&erase)) < 0) {
+          return;
+        }
+
+        rumble_effects_.erase(erase.effect_id);
+        erase.retval = 0;
+        static_cast<void>(system_ioctl(file_descriptor(), UI_END_FF_ERASE, reinterpret_cast<unsigned long>(&erase)));
+      }
+
+      void update_rumble() {
+        const auto now = std::chrono::steady_clock::now();
+        auto weak = std::uint64_t {0};
+        auto strong = std::uint64_t {0};
+        for (auto &[id, effect] : rumble_effects_) {
+          static_cast<void>(id);
+          if (!effect.active || now < effect.start) {
+            continue;
+          }
+          if (now >= effect.end) {
+            effect.active = false;
+            continue;
+          }
+          weak += effect.weak_magnitude;
+          strong += effect.strong_magnitude;
+        }
+
+        constexpr auto maximum = std::numeric_limits<std::uint16_t>::max();
+        const auto scaled_weak = static_cast<std::uint16_t>(std::min<std::uint64_t>(weak, maximum) * gain_ / maximum);
+        const auto scaled_strong = static_cast<std::uint16_t>(std::min<std::uint64_t>(strong, maximum) * gain_ / maximum);
+        dispatch_rumble(scaled_strong, scaled_weak);
+      }
+
+      void dispatch_rumble(std::uint16_t low_frequency, std::uint16_t high_frequency) {
+        if (last_low_frequency_ == low_frequency && last_high_frequency_ == high_frequency) {
+          return;
+        }
+        last_low_frequency_ = low_frequency;
+        last_high_frequency_ = high_frequency;
+
+        OutputCallback callback;
+        {
+          std::lock_guard lock {callback_mutex_};
+          callback = output_callback_;
+        }
+        if (callback) {
+          GamepadOutput output;
+          output.kind = GamepadOutputKind::rumble;
+          output.low_frequency_rumble = low_frequency;
+          output.high_frequency_rumble = high_frequency;
+          callback(output);
+        }
+      }
+
+      std::string device_name_;
+      std::atomic_bool running_ = false;
+      std::mutex submit_mutex_;
+      std::mutex callback_mutex_;
+      OutputCallback output_callback_;
+      std::map<int, UinputRumbleEffect> rumble_effects_;
+      std::uint16_t gain_ = std::numeric_limits<std::uint16_t>::max();
+      std::uint16_t last_low_frequency_ = 0;
+      std::uint16_t last_high_frequency_ = 0;
+      std::jthread reader_;
+    };
+
     /**
      * @brief Backend gamepad backed by one Linux UHID file descriptor.
      */
@@ -2268,7 +2634,7 @@ namespace lvh::detail {
         copy_string(request.phys, std::format("libvirtualhid/uhid/{}", id));
         copy_string(request.uniq, unique_id);
         request.rd_size = static_cast<std::uint16_t>(options.profile.report_descriptor.size());
-        request.bus = to_uhid_bus(options.profile.bus_type);
+        request.bus = to_uhid_bus(options.profile);
         request.vendor = options.profile.vendor_id;
         request.product = options.profile.product_id;
         request.version = options.profile.version;
@@ -2296,7 +2662,10 @@ namespace lvh::detail {
         return OperationStatus::success();
       }
 
-      OperationStatus submit(const std::vector<std::uint8_t> &report) override {
+      OperationStatus submit(
+        const GamepadState & /*state*/,
+        const std::vector<std::uint8_t> &report
+      ) override {
         if (!open_) {
           return OperationStatus::failure(ErrorCode::device_closed, "UHID gamepad is closed");
         }
@@ -2453,7 +2822,7 @@ namespace lvh::detail {
             report = last_report_;
           }
           if (!report.empty()) {
-            static_cast<void>(submit(report));
+            static_cast<void>(submit({}, report));
           }
         }
       }
@@ -2585,13 +2954,13 @@ namespace lvh::detail {
         const auto xtest_accessible = can_use_xtest();
         capabilities_.backend_name = "linux-uhid-uinput";
         capabilities_.supports_virtual_hid = uhid_accessible || uinput_accessible;
-        capabilities_.supports_gamepad = uhid_accessible;
+        capabilities_.supports_gamepad = uhid_accessible || uinput_accessible;
         capabilities_.supports_keyboard = uinput_accessible || xtest_accessible;
         capabilities_.supports_mouse = uinput_accessible || xtest_accessible;
         capabilities_.supports_touchscreen = uinput_accessible;
         capabilities_.supports_trackpad = uinput_accessible;
         capabilities_.supports_pen_tablet = uinput_accessible;
-        capabilities_.supports_output_reports = uhid_accessible;
+        capabilities_.supports_output_reports = uhid_accessible || uinput_accessible;
         capabilities_.supports_xtest_fallback = xtest_accessible;
       }
 
@@ -2600,6 +2969,20 @@ namespace lvh::detail {
       }
 
       BackendGamepadCreationResult create_gamepad(DeviceId id, const CreateGamepadOptions &options) override {
+        if (options.profile.gamepad_kind == GamepadProfileKind::xbox_series) {
+          const auto fd = system_open(uinput_path, O_RDWR | O_CLOEXEC | O_NONBLOCK);
+          if (fd < 0) {
+            return {system_error_status(ErrorCode::backend_unavailable, "failed to open /dev/uinput", errno), nullptr};
+          }
+
+          auto gamepad = std::make_unique<UinputXboxGamepad>(fd);
+          if (const auto status = gamepad->create(id, options); !status.ok()) {
+            static_cast<void>(gamepad->close());
+            return {status, nullptr};
+          }
+          return {OperationStatus::success(), std::move(gamepad)};
+        }
+
         const auto fd = system_open(uhid_path, O_RDWR | O_CLOEXEC | O_NONBLOCK);
         if (fd < 0) {
           return {system_error_status(ErrorCode::backend_unavailable, "failed to open /dev/uhid", errno), nullptr};

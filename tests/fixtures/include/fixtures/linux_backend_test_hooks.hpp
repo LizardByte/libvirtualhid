@@ -52,6 +52,31 @@ namespace lvh::detail::test {
   };
 
   /**
+   * @brief Result from a fake uinput Xbox force-feedback exchange.
+   */
+  struct LinuxUinputRumbleResult {
+    /**
+     * @brief Create operation status.
+     */
+    OperationStatus create_status;
+
+    /**
+     * @brief Close operation status.
+     */
+    OperationStatus close_status;
+
+    /**
+     * @brief Number of normalized rumble callbacks received.
+     */
+    std::size_t callback_count = 0;
+
+    /**
+     * @brief Last normalized rumble callback.
+     */
+    GamepadOutput last_output;
+  };
+
+  /**
    * @brief Result from a socketpair-backed UHID lifecycle test.
    */
   struct LinuxUhidRoundTripResult {
@@ -364,6 +389,14 @@ namespace lvh::detail::test {
   std::uint16_t linux_uhid_bus(BusType bus_type);
 
   /**
+   * @brief Select the Linux UHID bus code for a built-in gamepad profile.
+   *
+   * @param kind Built-in gamepad profile kind.
+   * @return Linux UHID bus code.
+   */
+  std::uint16_t linux_gamepad_uhid_bus(GamepadProfileKind kind);
+
+  /**
    * @brief Translate a bus type to a Linux uinput bus code.
    *
    * @param bus_type Bus type.
@@ -566,6 +599,21 @@ namespace lvh::detail::test {
    * @return Submission status and captured input events.
    */
   LinuxInputSubmissionResult linux_uinput_keyboard_submit_pipe(const KeyboardEvent &event);
+
+  /**
+   * @brief Submit normalized state through a pipe-backed Xbox Series uinput gamepad.
+   *
+   * @param state Gamepad state to submit.
+   * @return Submission status and captured input events.
+   */
+  LinuxInputSubmissionResult linux_uinput_xbox_series_submit_pipe(const GamepadState &state);
+
+  /**
+   * @brief Exercise Xbox Series uinput force-feedback upload and playback.
+   *
+   * @return Creation, callback, and close results.
+   */
+  LinuxUinputRumbleResult linux_uinput_xbox_series_fake_rumble();
 
   /**
    * @brief Try creating a libevdev uinput mouse on an invalid file descriptor.
