@@ -59,6 +59,7 @@ namespace {
     lvh::DeviceProfile profile;
     std::string_view name_suffix;
     std::string_view stable_id;
+    std::optional<std::uint16_t> expected_product_id;
     int minimum_buttons = 1;
     int minimum_axes = 2;
     bool expect_live_input = true;
@@ -367,6 +368,9 @@ namespace {
     const auto expected_profile = [&test_case]() {
       auto profile = test_case.profile;
       profile.name = unique_device_name(test_case.name_suffix);
+      if (test_case.expected_product_id) {
+        profile.product_id = *test_case.expected_product_id;
+      }
       return profile;
     }();
 
@@ -624,7 +628,8 @@ TEST_F(LinuxConsumerTest, SdlSeesXboxSeriesCanonicalButtons) {
     .profile = lvh::profiles::xbox_series(),
     .name_suffix = "SDL Xbox Series",
     .stable_id = "libvirtualhid-sdl-xbox-series-test",
-    .minimum_buttons = 11,
+    .expected_product_id = 0x0B13,
+    .minimum_buttons = 16,
     .minimum_axes = 6,
   };
   run_sdl_gamepad_test(
