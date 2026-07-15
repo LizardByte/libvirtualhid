@@ -79,6 +79,7 @@ namespace lvh::detail {
     constexpr auto tablet_resolution = 28;
     constexpr auto poll_timeout_ms = 100;
     constexpr auto xbox_trigger_max = 255;
+    constexpr auto xbox_series_uinput_version = 0x050D;
     constexpr auto dualshock4_usb_calibration_report = 0x02;
     constexpr auto dualshock4_bluetooth_calibration_report = 0x05;
     constexpr auto dualshock4_pairing_report = 0x12;
@@ -1294,20 +1295,15 @@ namespace lvh::detail {
         return status;
       }
 
-      // Steam maps the Xbox Series VID/PID using the controller's 15-slot HID button layout.
-      // Keep the unused C, Z, and digital-trigger slots so Linux button indices do not collapse.
-      // The submit path never presses these reserved slots; triggers remain analog axes.
+      // Match the active evdev capabilities exposed by the USB xpad driver. The Xbox Series
+      // profile uses a firmware version with a known SDL/Steam mapping for this compact layout.
       for (const auto button : {
              BTN_SOUTH,
              BTN_EAST,
-             BTN_C,
              BTN_NORTH,
              BTN_WEST,
-             BTN_Z,
              BTN_TL,
              BTN_TR,
-             BTN_TL2,
-             BTN_TR2,
              BTN_SELECT,
              BTN_START,
              BTN_MODE,
@@ -1385,7 +1381,10 @@ namespace lvh::detail {
       libevdev_set_id_bustype(device.get(), to_uinput_bus(profile.bus_type));
       libevdev_set_id_vendor(device.get(), profile.vendor_id);
       libevdev_set_id_product(device.get(), profile.product_id);
-      libevdev_set_id_version(device.get(), profile.version);
+      libevdev_set_id_version(
+        device.get(),
+        profile.gamepad_kind == GamepadProfileKind::xbox_series ? xbox_series_uinput_version : profile.version
+      );
 
       if (const auto status = configure_evdev_device(device.get(), profile); !status.ok()) {
         return {status, nullptr};

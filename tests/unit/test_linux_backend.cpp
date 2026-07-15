@@ -774,11 +774,28 @@ TEST_F(LinuxBackendTest, FakeUinputConstructionCoversCapabilitiesAndFailureBranc
   EXPECT_EQ(gamepad.name, lvh::profiles::xbox_series().name);
   EXPECT_EQ(gamepad.vendor, lvh::profiles::xbox_series().vendor_id);
   EXPECT_EQ(gamepad.product, lvh::profiles::xbox_series().product_id);
+  EXPECT_EQ(gamepad.version, 0x050D);
   EXPECT_TRUE(has_type(gamepad, EV_KEY));
   EXPECT_TRUE(has_type(gamepad, EV_ABS));
   EXPECT_TRUE(has_type(gamepad, EV_FF));
-  for (auto button = BTN_SOUTH; button <= BTN_THUMBR; ++button) {
-    EXPECT_NE(find_code(gamepad, EV_KEY, button), nullptr) << "missing Xbox HID button slot " << button;
+  for (const auto button : {
+         BTN_SOUTH,
+         BTN_EAST,
+         BTN_NORTH,
+         BTN_WEST,
+         BTN_TL,
+         BTN_TR,
+         BTN_SELECT,
+         BTN_START,
+         BTN_MODE,
+         BTN_THUMBL,
+         BTN_THUMBR,
+       }) {
+    EXPECT_NE(find_code(gamepad, EV_KEY, button), nullptr) << "missing Xbox USB button " << button;
+  }
+  for (const auto reserved_button : {BTN_C, BTN_Z, BTN_TL2, BTN_TR2}) {
+    EXPECT_EQ(find_code(gamepad, EV_KEY, reserved_button), nullptr)
+      << "unexpected Xbox USB button capability " << reserved_button;
   }
   EXPECT_NE(find_code(gamepad, EV_KEY, KEY_RECORD), nullptr);
   const auto *left_trigger = find_code(gamepad, EV_ABS, ABS_Z);

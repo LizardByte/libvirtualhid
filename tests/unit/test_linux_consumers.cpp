@@ -499,6 +499,7 @@ namespace {
       ButtonCase {right_shoulder, SDL_CONTROLLER_BUTTON_RIGHTSHOULDER},
       ButtonCase {back, SDL_CONTROLLER_BUTTON_BACK},
       ButtonCase {start, SDL_CONTROLLER_BUTTON_START},
+      ButtonCase {guide, SDL_CONTROLLER_BUTTON_GUIDE},
       ButtonCase {left_stick, SDL_CONTROLLER_BUTTON_LEFTSTICK},
       ButtonCase {right_stick, SDL_CONTROLLER_BUTTON_RIGHTSTICK},
     };

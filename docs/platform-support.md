@@ -60,10 +60,11 @@ descriptor report as Xbox GIP traffic. Face buttons, shoulders, menu buttons,
 stick clicks, the guide button, and Share are exposed through their canonical
 evdev codes; sticks and the directional pad use absolute axes; triggers remain
 independent analog `ABS_Z` and `ABS_RZ` axes. Force-feedback effects are
-normalized back into the public rumble callback. The backend advertises the
-full 15-slot Xbox Series button range expected by Steam for this controller
-identity. Its unused `BTN_C`, `BTN_Z`, `BTN_TL2`, and `BTN_TR2` slots are never
-pressed; they keep the active buttons after them at the correct Linux indices.
+normalized back into the public rumble callback. The backend advertises the same
+compact set of active button capabilities as Linux's USB `xpad` driver, and the
+Linux uinput identity uses a firmware version with a known SDL/Steam USB mapping.
+This keeps Guide, L3, and R3 on the mapped USB button indices without adding
+unused digital-button capabilities that would shift those indices.
 
 Other gamepad profiles remain descriptor-driven through `uhid`. The Switch Pro
 profile keeps its Nintendo identity but uses the virtual UHID bus on Linux,
