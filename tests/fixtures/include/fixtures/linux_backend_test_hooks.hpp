@@ -601,12 +601,13 @@ namespace lvh::detail::test {
   LinuxInputSubmissionResult linux_uinput_keyboard_submit_pipe(const KeyboardEvent &event);
 
   /**
-   * @brief Submit normalized state through a pipe-backed Xbox Series uinput gamepad.
+   * @brief Submit normalized state through a pipe-backed uinput gamepad.
    *
+   * @param kind Gamepad profile kind.
    * @param state Gamepad state to submit.
    * @return Submission status and captured input events.
    */
-  LinuxInputSubmissionResult linux_uinput_xbox_series_submit_pipe(const GamepadState &state);
+  LinuxInputSubmissionResult linux_uinput_gamepad_submit_pipe(GamepadProfileKind kind, const GamepadState &state);
 
   /**
    * @brief Exercise Xbox Series uinput force-feedback upload and playback.
@@ -935,6 +936,14 @@ namespace lvh::detail::test {
    * @return Recorded fake libevdev construction result.
    */
   LinuxLibevdevCreationResult linux_uinput_create_fake_libevdev_device(DeviceType device_type);
+
+  /**
+   * @brief Create a uinput gamepad through the fake libevdev recorder.
+   *
+   * @param kind Gamepad profile kind to create.
+   * @return Recorded fake libevdev construction result.
+   */
+  LinuxLibevdevCreationResult linux_uinput_create_fake_gamepad(GamepadProfileKind kind);
 
   /**
    * @brief Try creating a uinput device while fake libevdev allocation fails.

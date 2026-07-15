@@ -747,7 +747,11 @@ namespace lvh::detail::test {
       return profiles::mouse();
     }
 
-    OperationStatus create_uinput_device_by_type(int fd, DeviceType device_type) {
+    OperationStatus create_uinput_device_by_type(
+      int fd,
+      DeviceType device_type,
+      std::optional<GamepadProfileKind> gamepad_kind = std::nullopt
+    ) {
       switch (device_type) {
         case DeviceType::keyboard:
           {
@@ -787,8 +791,8 @@ namespace lvh::detail::test {
         case DeviceType::gamepad:
           {
             CreateGamepadOptions options;
-            options.profile = profile_for_uinput_device_type(device_type);
-            UinputXboxGamepad gamepad {fd};
+            options.profile = gamepad_kind ? *profiles::gamepad_profile(*gamepad_kind) : profile_for_uinput_device_type(device_type);
+            UinputGamepad gamepad {fd, options.profile.gamepad_kind};
             return gamepad.create(1, options);
           }
       }
@@ -797,7 +801,11 @@ namespace lvh::detail::test {
     }
 
     template<typename ConfigureFailure>
-    LinuxLibevdevCreationResult create_fake_libevdev_device(DeviceType device_type, ConfigureFailure configure_failure) {
+    LinuxLibevdevCreationResult create_fake_libevdev_device(
+      DeviceType device_type,
+      ConfigureFailure configure_failure,
+      std::optional<GamepadProfileKind> gamepad_kind = std::nullopt
+    ) {
       LinuxTestSyscalls syscalls;
       syscalls.override_libevdev = true;
       configure_failure(syscalls);
@@ -810,7 +818,7 @@ namespace lvh::detail::test {
         return result;
       }
 
-      result.status = create_uinput_device_by_type(fd, device_type);
+      result.status = create_uinput_device_by_type(fd, device_type, gamepad_kind);
       if (!syscalls.libevdev_devices.empty()) {
         const auto &device = syscalls.libevdev_devices.back();
         result.name = device.name;
@@ -835,6 +843,10 @@ namespace lvh::detail::test {
 
     LinuxLibevdevCreationResult create_fake_libevdev_device(DeviceType device_type) {
       return create_fake_libevdev_device(device_type, keep_fake_libevdev_successful);
+    }
+
+    LinuxLibevdevCreationResult create_fake_libevdev_gamepad(GamepadProfileKind kind) {
+      return create_fake_libevdev_device(DeviceType::gamepad, keep_fake_libevdev_successful, kind);
     }
 
   }  // namespace
@@ -1005,15 +1017,21 @@ namespace lvh::detail::test {
     return {std::move(status), std::move(records)};
   }
 
-  LinuxInputSubmissionResult linux_uinput_xbox_series_submit_pipe(const GamepadState &state) {
+  LinuxInputSubmissionResult linux_uinput_gamepad_submit_pipe(GamepadProfileKind kind, const GamepadState &state) {
     std::array<int, 2> descriptors {-1, -1};
     if (::pipe(descriptors.data()) != 0) {
       return {system_error_status(ErrorCode::backend_failure, "failed to create pipe", errno), {}};
     }
 
-    const auto profile = profiles::xbox_series();
-    UinputXboxGamepad gamepad {descriptors[1]};
-    auto status = gamepad.submit(state, reports::pack_input_report(profile, state));
+    const auto profile = profiles::gamepad_profile(kind);
+    if (!profile) {
+      static_cast<void>(::close(descriptors[0]));
+      static_cast<void>(::close(descriptors[1]));
+      return {OperationStatus::failure(ErrorCode::unsupported_profile, "unknown gamepad profile"), {}};
+    }
+
+    UinputGamepad gamepad {descriptors[1], kind};
+    auto status = gamepad.submit(state, reports::pack_input_report(*profile, state));
     static_cast<void>(gamepad.close());
     auto records = read_input_events_until_eof(descriptors[0]);
     static_cast<void>(::close(descriptors[0]));
@@ -1054,7 +1072,7 @@ namespace lvh::detail::test {
     std::atomic_size_t callback_count = 0;
     std::mutex output_mutex;
     GamepadOutput last_output;
-    UinputXboxGamepad gamepad {fd};
+    UinputGamepad gamepad {fd, GamepadProfileKind::xbox_series};
     gamepad.set_output_callback([&callback_count, &last_output, &output_mutex](const GamepadOutput &output) {
       if (output.low_frequency_rumble != 0 || output.high_frequency_rumble != 0) {
         std::lock_guard lock {output_mutex};
@@ -1740,7 +1758,7 @@ namespace lvh::detail::test {
     LinuxUhidBackend backend;
 
     CreateGamepadOptions options;
-    options.profile = profiles::xbox_360();
+    options.profile = profiles::dualshock4_usb();
     return backend.create_gamepad(1, options).status;
   }
 
@@ -2042,6 +2060,10 @@ namespace lvh::detail::test {
 
   LinuxLibevdevCreationResult linux_uinput_create_fake_libevdev_device(DeviceType device_type) {
     return create_fake_libevdev_device(device_type);
+  }
+
+  LinuxLibevdevCreationResult linux_uinput_create_fake_gamepad(GamepadProfileKind kind) {
+    return create_fake_libevdev_gamepad(kind);
   }
 
   OperationStatus linux_uinput_create_fake_libevdev_allocation_failure(DeviceType device_type) {

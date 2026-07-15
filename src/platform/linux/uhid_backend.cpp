@@ -495,6 +495,28 @@ namespace lvh::detail {
       return kind == GamepadProfileKind::dualshock4 || kind == GamepadProfileKind::dualsense;
     }
 
+    bool uses_uinput_gamepad_profile(GamepadProfileKind kind) {
+      switch (kind) {
+        using enum GamepadProfileKind;
+
+        case generic:
+        case xbox_360:
+        case xbox_one:
+        case xbox_series:
+          return true;
+        case dualshock4:
+        case dualsense:
+        case switch_pro:
+          return false;
+      }
+
+      return false;
+    }
+
+    bool has_uinput_misc1_button(GamepadProfileKind kind) {
+      return kind == GamepadProfileKind::generic || kind == GamepadProfileKind::xbox_series;
+    }
+
     std::uint16_t to_uhid_bus(BusType bus_type) {
       if (bus_type == BusType::bluetooth) {
         return BUS_BLUETOOTH;
@@ -1285,39 +1307,46 @@ namespace lvh::detail {
       return enable_evdev_property(device, INPUT_PROP_DIRECT, "tablet direct");
     }
 
-    OperationStatus configure_evdev_xbox_series_gamepad(libevdev *device) {
+    OperationStatus configure_evdev_gamepad(libevdev *device, const DeviceProfile &profile) {
       if (const auto status = enable_evdev_type(device, EV_KEY, "Xbox gamepad button events"); !status.ok()) {
         return status;
       }
       if (const auto status = enable_evdev_type(device, EV_ABS, "Xbox gamepad absolute events"); !status.ok()) {
         return status;
       }
-      if (const auto status = enable_evdev_type(device, EV_FF, "Xbox gamepad force-feedback events"); !status.ok()) {
-        return status;
+      if (profile.capabilities.supports_rumble) {
+        if (const auto status = enable_evdev_type(device, EV_FF, "Xbox gamepad force-feedback events"); !status.ok()) {
+          return status;
+        }
       }
 
-      // Steam maps the Xbox Series VID/PID using the controller's 15-slot HID button layout.
-      // Keep the unused C, Z, and digital-trigger slots so Linux button indices do not collapse.
-      // The submit path never presses these reserved slots; triggers remain analog axes.
-      for (const auto button : {
-             BTN_SOUTH,
-             BTN_EAST,
-             BTN_C,
-             BTN_NORTH,
-             BTN_WEST,
-             BTN_Z,
-             BTN_TL,
-             BTN_TR,
-             BTN_TL2,
-             BTN_TR2,
-             BTN_SELECT,
-             BTN_START,
-             BTN_MODE,
-             BTN_THUMBL,
-             BTN_THUMBR,
-             KEY_RECORD,
-           }) {
+      // Steam assigns the standard logical buttons using the sparse Linux gamepad
+      // button sequence. Advertise the unused slots as capabilities so the active
+      // buttons retain their canonical indices instead of being compacted.
+      constexpr std::array button_slots {
+        BTN_SOUTH,
+        BTN_EAST,
+        BTN_C,
+        BTN_NORTH,
+        BTN_WEST,
+        BTN_Z,
+        BTN_TL,
+        BTN_TR,
+        BTN_TL2,
+        BTN_TR2,
+        BTN_SELECT,
+        BTN_START,
+        BTN_MODE,
+        BTN_THUMBL,
+        BTN_THUMBR,
+      };
+      for (const auto button : button_slots) {
         if (const auto status = enable_evdev_code(device, EV_KEY, button, "Xbox gamepad button"); !status.ok()) {
+          return status;
+        }
+      }
+      if (has_uinput_misc1_button(profile.gamepad_kind)) {
+        if (const auto status = enable_evdev_code(device, EV_KEY, KEY_RECORD, "gamepad share button"); !status.ok()) {
           return status;
         }
       }
@@ -1343,10 +1372,13 @@ namespace lvh::detail {
         }
       }
 
-      if (const auto status = enable_evdev_code(device, EV_FF, FF_RUMBLE, "Xbox gamepad force-feedback effect"); !status.ok()) {
-        return status;
+      if (profile.capabilities.supports_rumble) {
+        if (const auto status = enable_evdev_code(device, EV_FF, FF_RUMBLE, "Xbox gamepad force-feedback effect"); !status.ok()) {
+          return status;
+        }
+        return enable_evdev_code(device, EV_FF, FF_GAIN, "Xbox gamepad force-feedback gain");
       }
-      return enable_evdev_code(device, EV_FF, FF_GAIN, "Xbox gamepad force-feedback gain");
+      return OperationStatus::success();
     }
 
     OperationStatus configure_evdev_device(libevdev *device, const DeviceProfile &profile) {
@@ -1364,8 +1396,8 @@ namespace lvh::detail {
         case pen_tablet:
           return configure_evdev_pen_tablet(device);
         case gamepad:
-          if (profile.gamepad_kind == GamepadProfileKind::xbox_series) {
-            return configure_evdev_xbox_series_gamepad(device);
+          if (uses_uinput_gamepad_profile(profile.gamepad_kind)) {
+            return configure_evdev_gamepad(device, profile);
           }
           return OperationStatus::failure(ErrorCode::unsupported_profile, "gamepad profile is not supported through uinput");
       }
@@ -2326,18 +2358,19 @@ namespace lvh::detail {
     };
 
     /**
-     * @brief Xbox Series gamepad exposed through canonical Linux input events.
+     * @brief Standard gamepad exposed through canonical Linux input events.
      */
-    class UinputXboxGamepad final: public BackendGamepad, private UinputDevice {
+    class UinputGamepad final: public BackendGamepad, private UinputDevice {
     public:
-      explicit UinputXboxGamepad(int file_descriptor):
-          UinputDevice {file_descriptor} {}
+      UinputGamepad(int file_descriptor, GamepadProfileKind profile_kind):
+          UinputDevice {file_descriptor},
+          profile_kind_ {profile_kind} {}
 
-      ~UinputXboxGamepad() override = default;
+      ~UinputGamepad() override = default;
 
       OperationStatus create(DeviceId id, const CreateGamepadOptions &options) {
-        if (options.profile.gamepad_kind != GamepadProfileKind::xbox_series) {
-          return OperationStatus::failure(ErrorCode::unsupported_profile, "uinput Xbox backend requires the Xbox Series profile");
+        if (options.profile.gamepad_kind != profile_kind_ || !uses_uinput_gamepad_profile(profile_kind_)) {
+          return OperationStatus::failure(ErrorCode::unsupported_profile, "gamepad profile is not supported through uinput");
         }
 
         device_name_ = options.profile.name;
@@ -2345,10 +2378,12 @@ namespace lvh::detail {
           return status;
         }
 
-        running_ = true;
-        reader_ = std::jthread {[this](std::stop_token stop_token) {
-          read_output_loop(stop_token);
-        }};
+        if (options.profile.capabilities.supports_rumble) {
+          running_ = true;
+          reader_ = std::jthread {[this](std::stop_token stop_token) {
+            read_output_loop(stop_token);
+          }};
+        }
         return OperationStatus::success();
       }
 
@@ -2377,10 +2412,14 @@ namespace lvh::detail {
           std::pair {guide, BTN_MODE},
           std::pair {left_stick, BTN_THUMBL},
           std::pair {right_stick, BTN_THUMBR},
-          std::pair {misc1, KEY_RECORD},
         };
         for (const auto &[button, code] : button_map) {
           if (const auto status = emit_event(EV_KEY, code, normalized.buttons.test(button) ? 1 : 0); !status.ok()) {
+            return status;
+          }
+        }
+        if (has_uinput_misc1_button(profile_kind_)) {
+          if (const auto status = emit_event(EV_KEY, KEY_RECORD, normalized.buttons.test(misc1) ? 1 : 0); !status.ok()) {
             return status;
           }
         }
@@ -2424,7 +2463,7 @@ namespace lvh::detail {
           reader_.join();
         }
         dispatch_rumble(0, 0);
-        return close_uinput("uinput Xbox gamepad");
+        return close_uinput("uinput gamepad");
       }
 
     private:
@@ -2593,6 +2632,7 @@ namespace lvh::detail {
       }
 
       std::string device_name_;
+      GamepadProfileKind profile_kind_;
       std::atomic_bool running_ = false;
       std::mutex submit_mutex_;
       std::mutex callback_mutex_;
@@ -2975,13 +3015,13 @@ namespace lvh::detail {
       }
 
       BackendGamepadCreationResult create_gamepad(DeviceId id, const CreateGamepadOptions &options) override {
-        if (options.profile.gamepad_kind == GamepadProfileKind::xbox_series) {
+        if (uses_uinput_gamepad_profile(options.profile.gamepad_kind)) {
           const auto fd = system_open(uinput_path, O_RDWR | O_CLOEXEC | O_NONBLOCK);
           if (fd < 0) {
             return {system_error_status(ErrorCode::backend_unavailable, "failed to open /dev/uinput", errno), nullptr};
           }
 
-          auto gamepad = std::make_unique<UinputXboxGamepad>(fd);
+          auto gamepad = std::make_unique<UinputGamepad>(fd, options.profile.gamepad_kind);
           if (const auto status = gamepad->create(id, options); !status.ok()) {
             static_cast<void>(gamepad->close());
             return {status, nullptr};

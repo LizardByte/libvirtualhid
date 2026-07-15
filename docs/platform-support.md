@@ -46,32 +46,34 @@ and signing details.
 The Linux backend uses standard user-space kernel interfaces:
 
 - `uhid` for descriptor-driven HID gamepads.
-- `uinput` for Xbox Series gamepads, keyboard, mouse, touchscreen, trackpad,
-  and pen tablet devices.
+- `uinput` for Generic, Xbox 360, Xbox One, and Xbox Series gamepads, plus
+  keyboard, mouse, touchscreen, trackpad, and pen tablet devices.
 - `libevdev` internally for uinput device construction.
 - X11/XTest only as a keyboard and mouse fallback when `uinput` cannot be used
   and an X11 session is available.
 
 Gamepad support normally prefers `uhid` because descriptors, raw HID identity,
-feature reports, and output reports matter for controller compatibility. Xbox
-Series is the exception: on Linux it uses `uinput` so SDL, Steam, and other
-evdev consumers receive the native Xbox button codes without interpreting the
-descriptor report as Xbox GIP traffic. Face buttons, shoulders, menu buttons,
-stick clicks, the guide button, and Share are exposed through their canonical
-evdev codes; sticks and the directional pad use absolute axes; triggers remain
-independent analog `ABS_Z` and `ABS_RZ` axes. Force-feedback effects are
-normalized back into the public rumble callback. The Linux uinput device uses
-the Xbox Series Bluetooth product identity (`0x0B13`), whose native 15-slot
-button layout matches these evdev capabilities. The public profile retains the
-physical USB identity used by other backends. Unused `BTN_C`, `BTN_Z`,
-`BTN_TL2`, and `BTN_TR2` slots are never pressed; they keep every active button,
-including Guide, L3, and R3, at the indices expected for the Linux uinput
-identity.
+feature reports, and output reports matter for controller compatibility.
+Generic and Xbox-family profiles instead use `uinput` so SDL, Steam, and other
+evdev consumers receive canonical Linux gamepad events without interpreting a
+standard or Xbox GIP descriptor. Face buttons, shoulders, menu buttons, stick
+clicks, and Guide use their native evdev codes; sticks and the directional pad
+use absolute axes; triggers remain independent analog `ABS_Z` and `ABS_RZ`
+axes. Profiles with rumble support normalize force-feedback effects back into
+the public callback.
 
-Other gamepad profiles remain descriptor-driven through `uhid`. The Switch Pro
-profile keeps its Nintendo identity but uses the virtual UHID bus on Linux,
-preventing `hid-nintendo` from claiming the descriptor-only device and waiting
-for physical-controller initialization handshakes.
+Xbox 360 and Xbox One retain their public USB identities. Xbox Series uses the
+Bluetooth product identity (`0x0B13`) only for its Linux uinput device; its
+public profile retains the physical USB identity used by other backends. All
+four uinput gamepad profiles preserve the sparse 15-slot Linux gamepad button
+sequence expected by Steam. Unused `BTN_C`, `BTN_Z`, `BTN_TL2`, and `BTN_TR2`
+slots are advertised but never pressed, keeping face buttons, shoulders, menu
+buttons, Guide, L3, and R3 at their expected indices.
+
+Descriptor-driven profiles remain on `uhid`. The Switch Pro profile keeps its
+Nintendo identity but uses the virtual UHID bus on Linux, preventing
+`hid-nintendo` from claiming the descriptor-only device and waiting for
+physical-controller initialization handshakes.
 
 The optional `virtualhid_control` diagnostic UI uses SDL3 and Dear ImGui through
 the repository CPM lockfile. It is intended to stay on the same UI framework for
