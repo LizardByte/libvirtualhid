@@ -374,23 +374,59 @@ TEST_F(LinuxBackendTest, PipeBackedUinputGamepadsUseCanonicalLinuxEvents) {
     const auto result = lvh::detail::test::linux_uinput_gamepad_submit_pipe(kind, state);
     ASSERT_TRUE(result.status.ok()) << result.status.message();
 
-    const auto event_value = [&result](std::uint16_t code) -> std::optional<std::int32_t> {
-      const auto event = std::ranges::find_if(result.events, [code](const auto &candidate) {
-        return candidate.type == EV_ABS && candidate.code == code;
+    const auto event_value = [&result](std::uint16_t type, std::uint16_t code) -> std::optional<std::int32_t> {
+      const auto event = std::ranges::find_if(result.events, [type, code](const auto &candidate) {
+        return candidate.type == type && candidate.code == code;
       });
       if (event == result.events.end()) {
         return std::nullopt;
       }
       return event->value;
     };
-    EXPECT_EQ(event_value(ABS_HAT0X), 1);
-    EXPECT_EQ(event_value(ABS_HAT0Y), -1);
-    EXPECT_EQ(event_value(ABS_X), lvh::reports::normalize_axis(-0.5F));
-    EXPECT_EQ(event_value(ABS_Y), lvh::reports::normalize_axis(-0.25F));
-    EXPECT_EQ(event_value(ABS_RX), lvh::reports::normalize_axis(0.75F));
-    EXPECT_EQ(event_value(ABS_RY), lvh::reports::normalize_axis(1.0F));
-    EXPECT_EQ(event_value(ABS_Z), lvh::reports::normalize_trigger(0.25F));
-    EXPECT_EQ(event_value(ABS_RZ), lvh::reports::normalize_trigger(0.75F));
+    EXPECT_EQ(event_value(EV_ABS, ABS_HAT0X), 1);
+    EXPECT_EQ(event_value(EV_ABS, ABS_HAT0Y), -1);
+    EXPECT_EQ(event_value(EV_ABS, ABS_X), lvh::reports::normalize_axis(-0.5F));
+    EXPECT_EQ(event_value(EV_ABS, ABS_Y), lvh::reports::normalize_axis(-0.25F));
+    EXPECT_EQ(event_value(EV_ABS, ABS_RX), lvh::reports::normalize_axis(0.75F));
+    EXPECT_EQ(event_value(EV_ABS, ABS_RY), lvh::reports::normalize_axis(1.0F));
+    EXPECT_EQ(event_value(EV_ABS, ABS_Z), lvh::reports::normalize_trigger(0.25F));
+    EXPECT_EQ(event_value(EV_ABS, ABS_RZ), lvh::reports::normalize_trigger(0.75F));
+
+    if (kind == generic || kind == xbox_360) {
+      EXPECT_EQ(event_value(EV_KEY, BTN_DPAD_UP), 1);
+      EXPECT_EQ(event_value(EV_KEY, BTN_DPAD_DOWN), 0);
+      EXPECT_EQ(event_value(EV_KEY, BTN_DPAD_LEFT), 0);
+      EXPECT_EQ(event_value(EV_KEY, BTN_DPAD_RIGHT), 1);
+    } else {
+      EXPECT_EQ(event_value(EV_KEY, BTN_DPAD_UP), std::nullopt);
+      EXPECT_EQ(event_value(EV_KEY, BTN_DPAD_DOWN), std::nullopt);
+      EXPECT_EQ(event_value(EV_KEY, BTN_DPAD_LEFT), std::nullopt);
+      EXPECT_EQ(event_value(EV_KEY, BTN_DPAD_RIGHT), std::nullopt);
+    }
+  }
+
+  constexpr std::array dpad_cases {
+    std::pair {dpad_up, BTN_DPAD_UP},
+    std::pair {dpad_down, BTN_DPAD_DOWN},
+    std::pair {dpad_left, BTN_DPAD_LEFT},
+    std::pair {dpad_right, BTN_DPAD_RIGHT},
+  };
+  for (const auto kind : {generic, xbox_360}) {
+    for (const auto &[logical_button, linux_code] : dpad_cases) {
+      lvh::GamepadState state;
+      state.buttons.set(logical_button);
+      const auto result = lvh::detail::test::linux_uinput_gamepad_submit_pipe(kind, state);
+      ASSERT_TRUE(result.status.ok()) << result.status.message();
+
+      std::vector<std::uint16_t> pressed_codes;
+      for (const auto &event : result.events) {
+        if (event.type == EV_KEY && event.value == 1) {
+          pressed_codes.push_back(event.code);
+        }
+      }
+      ASSERT_EQ(pressed_codes.size(), 1U);
+      EXPECT_EQ(pressed_codes.front(), linux_code);
+    }
   }
 }
 
@@ -791,15 +827,18 @@ TEST_F(LinuxBackendTest, FakeUinputConstructionCoversCapabilitiesAndFailureBranc
 
   struct GamepadCase {
     lvh::GamepadProfileKind kind;
-    bool series_identity;
+    std::uint16_t bustype;
+    std::uint16_t product_id;
     bool misc1;
+    bool sparse_button_slots;
+    bool dpad_buttons;
   };
 
   constexpr std::array gamepad_cases {
-    GamepadCase {lvh::GamepadProfileKind::generic, false, true},
-    GamepadCase {lvh::GamepadProfileKind::xbox_360, false, false},
-    GamepadCase {lvh::GamepadProfileKind::xbox_one, false, false},
-    GamepadCase {lvh::GamepadProfileKind::xbox_series, true, true},
+    GamepadCase {lvh::GamepadProfileKind::generic, BUS_USB, 0x0001, true, true, true},
+    GamepadCase {lvh::GamepadProfileKind::xbox_360, BUS_USB, 0x028E, false, false, true},
+    GamepadCase {lvh::GamepadProfileKind::xbox_one, BUS_BLUETOOTH, 0x0B20, false, true, false},
+    GamepadCase {lvh::GamepadProfileKind::xbox_series, BUS_BLUETOOTH, 0x0B13, true, true, false},
   };
   constexpr std::array active_buttons {
     BTN_SOUTH,
@@ -815,16 +854,17 @@ TEST_F(LinuxBackendTest, FakeUinputConstructionCoversCapabilitiesAndFailureBranc
     BTN_THUMBR,
   };
   constexpr std::array reserved_buttons {BTN_C, BTN_Z, BTN_TL2, BTN_TR2};
+  constexpr std::array dpad_buttons {BTN_DPAD_UP, BTN_DPAD_DOWN, BTN_DPAD_LEFT, BTN_DPAD_RIGHT};
 
-  for (const auto &[kind, series_identity, misc1] : gamepad_cases) {
+  for (const auto &[kind, bustype, product_id, misc1, sparse_button_slots, has_dpad_buttons] : gamepad_cases) {
     const auto expected_profile = lvh::profiles::gamepad_profile(kind);
     ASSERT_TRUE(expected_profile.has_value());
     const auto gamepad = lvh::detail::test::linux_uinput_create_fake_gamepad(kind);
     ASSERT_TRUE(gamepad.status.ok()) << gamepad.status.message();
     EXPECT_EQ(gamepad.name, expected_profile->name);
     EXPECT_EQ(gamepad.vendor, expected_profile->vendor_id);
-    EXPECT_EQ(gamepad.bustype, series_identity ? BUS_BLUETOOTH : BUS_USB);
-    EXPECT_EQ(gamepad.product, series_identity ? 0x0B13 : expected_profile->product_id);
+    EXPECT_EQ(gamepad.bustype, bustype);
+    EXPECT_EQ(gamepad.product, product_id);
     EXPECT_EQ(gamepad.version, expected_profile->version);
     EXPECT_TRUE(has_type(gamepad, EV_KEY));
     EXPECT_TRUE(has_type(gamepad, EV_ABS));
@@ -833,7 +873,12 @@ TEST_F(LinuxBackendTest, FakeUinputConstructionCoversCapabilitiesAndFailureBranc
       EXPECT_NE(find_code(gamepad, EV_KEY, button), nullptr) << "missing canonical gamepad button " << button;
     }
     for (const auto button : reserved_buttons) {
-      EXPECT_NE(find_code(gamepad, EV_KEY, button), nullptr) << "missing reserved gamepad button slot " << button;
+      EXPECT_EQ(find_code(gamepad, EV_KEY, button) != nullptr, sparse_button_slots)
+        << "unexpected reserved gamepad button slot state for " << button;
+    }
+    for (const auto button : dpad_buttons) {
+      EXPECT_EQ(find_code(gamepad, EV_KEY, button) != nullptr, has_dpad_buttons)
+        << "unexpected directional gamepad button state for " << button;
     }
     EXPECT_EQ(find_code(gamepad, EV_KEY, KEY_RECORD) != nullptr, misc1);
     const auto *left_trigger = find_code(gamepad, EV_ABS, ABS_Z);

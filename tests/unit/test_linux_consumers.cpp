@@ -465,6 +465,10 @@ namespace {
       ButtonCase {guide, SDL_CONTROLLER_BUTTON_GUIDE},
       ButtonCase {left_stick, SDL_CONTROLLER_BUTTON_LEFTSTICK},
       ButtonCase {right_stick, SDL_CONTROLLER_BUTTON_RIGHTSTICK},
+      ButtonCase {dpad_up, SDL_CONTROLLER_BUTTON_DPAD_UP},
+      ButtonCase {dpad_down, SDL_CONTROLLER_BUTTON_DPAD_DOWN},
+      ButtonCase {dpad_left, SDL_CONTROLLER_BUTTON_DPAD_LEFT},
+      ButtonCase {dpad_right, SDL_CONTROLLER_BUTTON_DPAD_RIGHT},
     };
 
     for (const auto &[logical_button, sdl_button] : button_cases) {
@@ -587,7 +591,7 @@ TEST_F(LinuxConsumerTest, SdlSeesGenericCanonicalButtons) {
     .profile = lvh::profiles::generic_gamepad(),
     .name_suffix = "SDL Generic Gamepad",
     .stable_id = "libvirtualhid-sdl-gamepad-test",
-    .minimum_buttons = 16,
+    .minimum_buttons = 20,
     .minimum_axes = 6,
   });
 }
@@ -611,6 +615,7 @@ TEST_F(LinuxConsumerTest, SdlSeesXboxOneCanonicalButtons) {
     .profile = lvh::profiles::xbox_one(),
     .name_suffix = "SDL Xbox One",
     .stable_id = "libvirtualhid-sdl-xbox-one-test",
+    .expected_product_id = 0x0B20,
     .minimum_buttons = 15,
     .minimum_axes = 6,
   });

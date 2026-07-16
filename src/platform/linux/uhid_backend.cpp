@@ -79,7 +79,10 @@ namespace lvh::detail {
     constexpr auto tablet_resolution = 28;
     constexpr auto poll_timeout_ms = 100;
     constexpr auto xbox_trigger_max = 255;
-    constexpr auto xbox_series_uinput_bus = BUS_BLUETOOTH;
+    // The Xbox Bluetooth identities select the sparse evdev mappings that match
+    // the button capabilities exposed by these uinput devices.
+    constexpr auto xbox_wireless_uinput_bus = BUS_BLUETOOTH;
+    constexpr std::uint16_t xbox_wireless_uinput_product_id = 0x0B20;
     constexpr std::uint16_t xbox_series_uinput_product_id = 0x0B13;
     constexpr auto dualshock4_usb_calibration_report = 0x02;
     constexpr auto dualshock4_bluetooth_calibration_report = 0x05;
@@ -515,6 +518,14 @@ namespace lvh::detail {
 
     bool has_uinput_misc1_button(GamepadProfileKind kind) {
       return kind == GamepadProfileKind::generic || kind == GamepadProfileKind::xbox_series;
+    }
+
+    bool uses_sparse_uinput_button_slots(GamepadProfileKind kind) {
+      return kind == GamepadProfileKind::generic || kind == GamepadProfileKind::xbox_one || kind == GamepadProfileKind::xbox_series;
+    }
+
+    bool has_uinput_dpad_buttons(GamepadProfileKind kind) {
+      return kind == GamepadProfileKind::generic || kind == GamepadProfileKind::xbox_360;
     }
 
     std::uint16_t to_uhid_bus(BusType bus_type) {
@@ -1320,34 +1331,45 @@ namespace lvh::detail {
         }
       }
 
-      // Steam assigns the standard logical buttons using the sparse Linux gamepad
-      // button sequence. Advertise the unused slots as capabilities so the active
-      // buttons retain their canonical indices instead of being compacted.
-      constexpr std::array button_slots {
+      constexpr std::array active_buttons {
         BTN_SOUTH,
         BTN_EAST,
-        BTN_C,
         BTN_NORTH,
         BTN_WEST,
-        BTN_Z,
         BTN_TL,
         BTN_TR,
-        BTN_TL2,
-        BTN_TR2,
         BTN_SELECT,
         BTN_START,
         BTN_MODE,
         BTN_THUMBL,
         BTN_THUMBR,
       };
-      for (const auto button : button_slots) {
+      for (const auto button : active_buttons) {
         if (const auto status = enable_evdev_code(device, EV_KEY, button, "Xbox gamepad button"); !status.ok()) {
           return status;
+        }
+      }
+
+      if (uses_sparse_uinput_button_slots(profile.gamepad_kind)) {
+        // Steam's Generic and Xbox Series mappings use the sparse Linux gamepad
+        // sequence. These unused capabilities preserve the active button indices.
+        constexpr std::array reserved_buttons {BTN_C, BTN_Z, BTN_TL2, BTN_TR2};
+        for (const auto button : reserved_buttons) {
+          if (const auto status = enable_evdev_code(device, EV_KEY, button, "reserved gamepad button slot"); !status.ok()) {
+            return status;
+          }
         }
       }
       if (has_uinput_misc1_button(profile.gamepad_kind)) {
         if (const auto status = enable_evdev_code(device, EV_KEY, KEY_RECORD, "gamepad share button"); !status.ok()) {
           return status;
+        }
+      }
+      if (has_uinput_dpad_buttons(profile.gamepad_kind)) {
+        for (const auto button : {BTN_DPAD_UP, BTN_DPAD_DOWN, BTN_DPAD_LEFT, BTN_DPAD_RIGHT}) {
+          if (const auto status = enable_evdev_code(device, EV_KEY, button, "gamepad directional button"); !status.ok()) {
+            return status;
+          }
         }
       }
 
@@ -1416,13 +1438,21 @@ namespace lvh::detail {
       }
 
       libevdev_set_name(device.get(), profile.name.c_str());
+      const auto xbox_one = profile.gamepad_kind == GamepadProfileKind::xbox_one;
       const auto xbox_series = profile.gamepad_kind == GamepadProfileKind::xbox_series;
+      const auto xbox_wireless = xbox_one || xbox_series;
+      auto product_id = profile.product_id;
+      if (xbox_one) {
+        product_id = xbox_wireless_uinput_product_id;
+      } else if (xbox_series) {
+        product_id = xbox_series_uinput_product_id;
+      }
       libevdev_set_id_bustype(
         device.get(),
-        xbox_series ? xbox_series_uinput_bus : to_uinput_bus(profile.bus_type)
+        xbox_wireless ? xbox_wireless_uinput_bus : to_uinput_bus(profile.bus_type)
       );
       libevdev_set_id_vendor(device.get(), profile.vendor_id);
-      libevdev_set_id_product(device.get(), xbox_series ? xbox_series_uinput_product_id : profile.product_id);
+      libevdev_set_id_product(device.get(), product_id);
       libevdev_set_id_version(device.get(), profile.version);
 
       if (const auto status = configure_evdev_device(device.get(), profile); !status.ok()) {
@@ -2421,6 +2451,19 @@ namespace lvh::detail {
         if (has_uinput_misc1_button(profile_kind_)) {
           if (const auto status = emit_event(EV_KEY, KEY_RECORD, normalized.buttons.test(misc1) ? 1 : 0); !status.ok()) {
             return status;
+          }
+        }
+        if (has_uinput_dpad_buttons(profile_kind_)) {
+          constexpr std::array dpad_button_map {
+            std::pair {dpad_up, BTN_DPAD_UP},
+            std::pair {dpad_down, BTN_DPAD_DOWN},
+            std::pair {dpad_left, BTN_DPAD_LEFT},
+            std::pair {dpad_right, BTN_DPAD_RIGHT},
+          };
+          for (const auto &[button, code] : dpad_button_map) {
+            if (const auto status = emit_event(EV_KEY, code, normalized.buttons.test(button) ? 1 : 0); !status.ok()) {
+              return status;
+            }
           }
         }
 

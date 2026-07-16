@@ -59,15 +59,20 @@ evdev consumers receive canonical Linux gamepad events without interpreting a
 standard or Xbox GIP descriptor. Face buttons, shoulders, menu buttons, stick
 clicks, and Guide use their native evdev codes; sticks and the directional pad
 use absolute axes; triggers remain independent analog `ABS_Z` and `ABS_RZ`
-axes. Profiles with rumble support normalize force-feedback effects back into
-the public callback.
+axes. Generic and Xbox 360 also emit the directional pad through `BTN_DPAD_*`
+alongside their hat axes for consumers that prefer digital D-pad events.
+Profiles with rumble support normalize force-feedback effects back into the
+public callback.
 
-Xbox 360 and Xbox One retain their public USB identities. Xbox Series uses the
-Bluetooth product identity (`0x0B13`) only for its Linux uinput device; its
-public profile retains the physical USB identity used by other backends. All
-four uinput gamepad profiles preserve the sparse 15-slot Linux gamepad button
-sequence expected by Steam. Unused `BTN_C`, `BTN_Z`, `BTN_TL2`, and `BTN_TR2`
-slots are advertised but never pressed, keeping face buttons, shoulders, menu
+Xbox 360 retains its public USB identity (`0x045E:0x028E`). It has a compact
+11-button core sequence with no reserved slots, plus four active digital D-pad
+buttons for 15 active button capabilities in total. Xbox One and Xbox Series
+retain their public USB identities, but their Linux uinput devices use the
+corresponding Bluetooth product identities (`0x0B20` and `0x0B13`,
+respectively), whose standard consumer mappings match the events that uinput
+exposes. Generic, Xbox One, and Xbox Series preserve the sparse 15-slot Linux
+gamepad button sequence: unused `BTN_C`, `BTN_Z`, `BTN_TL2`, and `BTN_TR2` slots
+are advertised but never pressed, keeping face buttons, shoulders, menu
 buttons, Guide, L3, and R3 at their expected indices.
 
 Descriptor-driven profiles remain on `uhid`. The Switch Pro profile keeps its
