@@ -32,6 +32,20 @@
  */
 class LinuxBackendTest: public LinuxTest {};
 
+namespace {
+  std::vector<std::uint16_t> pressed_key_codes(
+    const std::vector<lvh::detail::test::LinuxInputEventRecord> &events
+  ) {
+    std::vector<std::uint16_t> pressed_codes;
+    for (const auto &event : events) {
+      if (event.type == EV_KEY && event.value == 1) {
+        pressed_codes.push_back(event.code);
+      }
+    }
+    return pressed_codes;
+  }
+}  // namespace
+
 TEST_F(LinuxBackendTest, TranslatesKeyboardKeys) {
   EXPECT_EQ(lvh::detail::test::linux_key_code(0x08), KEY_BACKSPACE);
   EXPECT_EQ(lvh::detail::test::linux_key_code(0x09), KEY_TAB);
@@ -337,12 +351,7 @@ TEST_F(LinuxBackendTest, PipeBackedUinputGamepadsUseCanonicalLinuxEvents) {
       const auto result = lvh::detail::test::linux_uinput_gamepad_submit_pipe(kind, state);
       ASSERT_TRUE(result.status.ok()) << result.status.message();
 
-      std::vector<std::uint16_t> pressed_codes;
-      for (const auto &event : result.events) {
-        if (event.type == EV_KEY && event.value == 1) {
-          pressed_codes.push_back(event.code);
-        }
-      }
+      const auto pressed_codes = pressed_key_codes(result.events);
       ASSERT_EQ(pressed_codes.size(), 1U)
         << "profile " << static_cast<int>(std::to_underlying(kind)) << " logical button "
         << static_cast<int>(std::to_underlying(button));
@@ -418,12 +427,7 @@ TEST_F(LinuxBackendTest, PipeBackedUinputGamepadsUseCanonicalLinuxEvents) {
       const auto result = lvh::detail::test::linux_uinput_gamepad_submit_pipe(kind, state);
       ASSERT_TRUE(result.status.ok()) << result.status.message();
 
-      std::vector<std::uint16_t> pressed_codes;
-      for (const auto &event : result.events) {
-        if (event.type == EV_KEY && event.value == 1) {
-          pressed_codes.push_back(event.code);
-        }
-      }
+      const auto pressed_codes = pressed_key_codes(result.events);
       ASSERT_EQ(pressed_codes.size(), 1U);
       EXPECT_EQ(pressed_codes.front(), linux_code);
     }

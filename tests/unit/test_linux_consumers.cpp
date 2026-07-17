@@ -351,7 +351,7 @@ namespace {
     const auto expected_profile = [&test_case]() {
       auto profile = test_case.profile;
       profile.name = unique_device_name(test_case.name_suffix);
-      if (test_case.expected_product_id) {
+      if (test_case.expected_product_id.has_value()) {
         profile.product_id = *test_case.expected_product_id;
       }
       return profile;
