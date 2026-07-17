@@ -392,7 +392,7 @@ TEST_F(LinuxBackendTest, PipeBackedUinputGamepadsUseCanonicalLinuxEvents) {
     EXPECT_EQ(event_value(EV_ABS, ABS_Z), lvh::reports::normalize_trigger(0.25F));
     EXPECT_EQ(event_value(EV_ABS, ABS_RZ), lvh::reports::normalize_trigger(0.75F));
 
-    if (kind == generic || kind == xbox_360) {
+    if (kind == generic) {
       EXPECT_EQ(event_value(EV_KEY, BTN_DPAD_UP), 1);
       EXPECT_EQ(event_value(EV_KEY, BTN_DPAD_DOWN), 0);
       EXPECT_EQ(event_value(EV_KEY, BTN_DPAD_LEFT), 0);
@@ -411,7 +411,7 @@ TEST_F(LinuxBackendTest, PipeBackedUinputGamepadsUseCanonicalLinuxEvents) {
     std::pair {dpad_left, BTN_DPAD_LEFT},
     std::pair {dpad_right, BTN_DPAD_RIGHT},
   };
-  for (const auto kind : {generic, xbox_360}) {
+  for (const auto kind : {generic}) {
     for (const auto &[logical_button, linux_code] : dpad_cases) {
       lvh::GamepadState state;
       state.buttons.set(logical_button);
@@ -836,7 +836,7 @@ TEST_F(LinuxBackendTest, FakeUinputConstructionCoversCapabilitiesAndFailureBranc
 
   constexpr std::array gamepad_cases {
     GamepadCase {lvh::GamepadProfileKind::generic, BUS_USB, 0x0001, true, true, true},
-    GamepadCase {lvh::GamepadProfileKind::xbox_360, BUS_USB, 0x028E, false, false, true},
+    GamepadCase {lvh::GamepadProfileKind::xbox_360, BUS_USB, 0x028E, false, true, false},
     GamepadCase {lvh::GamepadProfileKind::xbox_one, BUS_BLUETOOTH, 0x0B20, false, true, false},
     GamepadCase {lvh::GamepadProfileKind::xbox_series, BUS_BLUETOOTH, 0x0B13, true, true, false},
   };
@@ -886,6 +886,37 @@ TEST_F(LinuxBackendTest, FakeUinputConstructionCoversCapabilitiesAndFailureBranc
     EXPECT_EQ(left_trigger->minimum, 0);
     EXPECT_EQ(left_trigger->maximum, 255);
     EXPECT_EQ(find_code(gamepad, EV_FF, FF_RUMBLE) != nullptr, expected_profile->capabilities.supports_rumble);
+  }
+
+  const auto xbox_360 = lvh::detail::test::linux_uinput_create_fake_gamepad(lvh::GamepadProfileKind::xbox_360);
+  ASSERT_TRUE(xbox_360.status.ok()) << xbox_360.status.message();
+  std::vector<std::uint16_t> xbox_360_button_slots;
+  for (const auto &event_code : xbox_360.event_codes) {
+    if (event_code.type == EV_KEY && event_code.code >= BTN_SOUTH && event_code.code <= BTN_THUMBR) {
+      xbox_360_button_slots.push_back(event_code.code);
+    }
+  }
+  std::ranges::sort(xbox_360_button_slots);
+  constexpr std::array expected_xbox_360_button_slots {
+    BTN_SOUTH,
+    BTN_EAST,
+    BTN_C,
+    BTN_NORTH,
+    BTN_WEST,
+    BTN_Z,
+    BTN_TL,
+    BTN_TR,
+    BTN_TL2,
+    BTN_TR2,
+    BTN_SELECT,
+    BTN_START,
+    BTN_MODE,
+    BTN_THUMBL,
+    BTN_THUMBR,
+  };
+  ASSERT_EQ(xbox_360_button_slots.size(), expected_xbox_360_button_slots.size());
+  for (std::size_t index = 0; index < expected_xbox_360_button_slots.size(); ++index) {
+    EXPECT_EQ(xbox_360_button_slots[index], expected_xbox_360_button_slots[index]) << "button slot " << index;
   }
 
   const auto mouse = lvh::detail::test::linux_uinput_create_fake_libevdev_device(lvh::DeviceType::mouse);

@@ -521,11 +521,12 @@ namespace lvh::detail {
     }
 
     bool uses_sparse_uinput_button_slots(GamepadProfileKind kind) {
-      return kind == GamepadProfileKind::generic || kind == GamepadProfileKind::xbox_one || kind == GamepadProfileKind::xbox_series;
+      return kind == GamepadProfileKind::generic || kind == GamepadProfileKind::xbox_360 || kind == GamepadProfileKind::xbox_one ||
+             kind == GamepadProfileKind::xbox_series;
     }
 
     bool has_uinput_dpad_buttons(GamepadProfileKind kind) {
-      return kind == GamepadProfileKind::generic || kind == GamepadProfileKind::xbox_360;
+      return kind == GamepadProfileKind::generic;
     }
 
     std::uint16_t to_uhid_bus(BusType bus_type) {
@@ -1351,8 +1352,8 @@ namespace lvh::detail {
       }
 
       if (uses_sparse_uinput_button_slots(profile.gamepad_kind)) {
-        // Steam's Generic and Xbox Series mappings use the sparse Linux gamepad
-        // sequence. These unused capabilities preserve the active button indices.
+        // Linux gamepad consumers use the sparse button sequence. These unused
+        // capabilities preserve the active button indices.
         constexpr std::array reserved_buttons {BTN_C, BTN_Z, BTN_TL2, BTN_TR2};
         for (const auto button : reserved_buttons) {
           if (const auto status = enable_evdev_code(device, EV_KEY, button, "reserved gamepad button slot"); !status.ok()) {
