@@ -63,16 +63,17 @@ axes. Generic also emits the directional pad through `BTN_DPAD_*` alongside its
 hat axes for consumers that prefer digital D-pad events. Profiles with rumble
 support normalize force-feedback effects back into the public callback.
 
-Xbox 360 retains its public USB identity (`0x045E:0x028E`). Xbox One and Xbox
-Series retain their public USB identities, but their Linux uinput devices use
-the corresponding Bluetooth product identities (`0x0B20` and `0x0B13`,
-respectively), whose standard consumer mappings match the events that uinput
-exposes. All four uinput gamepad profiles preserve the sparse 15-slot Linux
-gamepad button sequence: unused `BTN_C`, `BTN_Z`, `BTN_TL2`, and `BTN_TR2` slots
-are advertised but never pressed, keeping face buttons, shoulders, menu
-buttons, Guide, L3, and R3 at their expected indices. D-pad directions are
-reported through the hat axes and exposed as logical buttons by standard
-gamepad consumers.
+Xbox 360 retains its name and `0x045E:0x028E` identity, while its Linux uinput
+device uses the Bluetooth bus so consumers select the sparse button mapping.
+Xbox One and Xbox Series retain their public USB identities, but their Linux
+uinput devices use the corresponding Bluetooth product identities (`0x0B20`
+and `0x0B13`, respectively), whose standard consumer mappings match the events
+that uinput exposes. All four uinput gamepad profiles preserve the sparse
+15-slot Linux gamepad button sequence: unused `BTN_C`, `BTN_Z`, `BTN_TL2`, and
+`BTN_TR2` slots are advertised but never pressed, keeping face buttons,
+shoulders, menu buttons, Guide, L3, and R3 at their expected indices. D-pad
+directions are reported through the hat axes and exposed as logical buttons by
+standard gamepad consumers.
 
 Descriptor-driven profiles remain on `uhid`. The Switch Pro profile keeps its
 Nintendo identity but uses the virtual UHID bus on Linux, preventing

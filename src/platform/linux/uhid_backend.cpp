@@ -79,9 +79,9 @@ namespace lvh::detail {
     constexpr auto tablet_resolution = 28;
     constexpr auto poll_timeout_ms = 100;
     constexpr auto xbox_trigger_max = 255;
-    // The Xbox Bluetooth identities select the sparse evdev mappings that match
-    // the button capabilities exposed by these uinput devices.
-    constexpr auto xbox_wireless_uinput_bus = BUS_BLUETOOTH;
+    // The Bluetooth bus selects the sparse evdev mapping that matches the
+    // button capabilities exposed by these Xbox uinput devices.
+    constexpr auto xbox_sparse_uinput_bus = BUS_BLUETOOTH;
     constexpr std::uint16_t xbox_wireless_uinput_product_id = 0x0B20;
     constexpr std::uint16_t xbox_series_uinput_product_id = 0x0B13;
     constexpr auto dualshock4_usb_calibration_report = 0x02;
@@ -1439,9 +1439,10 @@ namespace lvh::detail {
       }
 
       libevdev_set_name(device.get(), profile.name.c_str());
+      const auto xbox_360 = profile.gamepad_kind == GamepadProfileKind::xbox_360;
       const auto xbox_one = profile.gamepad_kind == GamepadProfileKind::xbox_one;
       const auto xbox_series = profile.gamepad_kind == GamepadProfileKind::xbox_series;
-      const auto xbox_wireless = xbox_one || xbox_series;
+      const auto uses_sparse_xbox_mapping = xbox_360 || xbox_one || xbox_series;
       auto product_id = profile.product_id;
       if (xbox_one) {
         product_id = xbox_wireless_uinput_product_id;
@@ -1450,7 +1451,7 @@ namespace lvh::detail {
       }
       libevdev_set_id_bustype(
         device.get(),
-        xbox_wireless ? xbox_wireless_uinput_bus : to_uinput_bus(profile.bus_type)
+        uses_sparse_xbox_mapping ? xbox_sparse_uinput_bus : to_uinput_bus(profile.bus_type)
       );
       libevdev_set_id_vendor(device.get(), profile.vendor_id);
       libevdev_set_id_product(device.get(), product_id);

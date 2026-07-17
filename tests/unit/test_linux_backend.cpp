@@ -836,7 +836,7 @@ TEST_F(LinuxBackendTest, FakeUinputConstructionCoversCapabilitiesAndFailureBranc
 
   constexpr std::array gamepad_cases {
     GamepadCase {lvh::GamepadProfileKind::generic, BUS_USB, 0x0001, true, true, true},
-    GamepadCase {lvh::GamepadProfileKind::xbox_360, BUS_USB, 0x028E, false, true, false},
+    GamepadCase {lvh::GamepadProfileKind::xbox_360, BUS_BLUETOOTH, 0x028E, false, true, false},
     GamepadCase {lvh::GamepadProfileKind::xbox_one, BUS_BLUETOOTH, 0x0B20, false, true, false},
     GamepadCase {lvh::GamepadProfileKind::xbox_series, BUS_BLUETOOTH, 0x0B13, true, true, false},
   };
