@@ -506,28 +506,39 @@ namespace lvh::detail {
         case xbox_360:
         case xbox_one:
         case xbox_series:
+        case switch_pro:
           return true;
         case dualshock4:
         case dualsense:
-        case switch_pro:
           return false;
       }
 
       return false;
     }
 
-    bool has_uinput_misc1_button(GamepadProfileKind kind) {
-      return kind == GamepadProfileKind::generic || kind == GamepadProfileKind::xbox_series;
+    std::optional<int> uinput_misc1_button(GamepadProfileKind kind) {
+      switch (kind) {
+        using enum GamepadProfileKind;
+
+        case generic:
+        case xbox_series:
+          return KEY_RECORD;
+        case switch_pro:
+          return BTN_Z;
+        case xbox_360:
+        case xbox_one:
+        case dualshock4:
+        case dualsense:
+          return std::nullopt;
+      }
+
+      return std::nullopt;
     }
 
     bool uses_sparse_uinput_button_slots(GamepadProfileKind kind) {
       using enum GamepadProfileKind;
 
       return kind == generic || kind == xbox_360 || kind == xbox_one || kind == xbox_series;
-    }
-
-    bool has_uinput_dpad_buttons(GamepadProfileKind kind) {
-      return kind == GamepadProfileKind::generic;
     }
 
     std::uint16_t to_uhid_bus(BusType bus_type) {
@@ -1321,16 +1332,16 @@ namespace lvh::detail {
     }
 
     OperationStatus configure_evdev_gamepad_event_types(libevdev *device, bool supports_rumble) {
-      if (const auto status = enable_evdev_type(device, EV_KEY, "Xbox gamepad button events"); !status.ok()) {
+      if (const auto status = enable_evdev_type(device, EV_KEY, "gamepad button events"); !status.ok()) {
         return status;
       }
-      if (const auto status = enable_evdev_type(device, EV_ABS, "Xbox gamepad absolute events"); !status.ok()) {
+      if (const auto status = enable_evdev_type(device, EV_ABS, "gamepad absolute events"); !status.ok()) {
         return status;
       }
       if (!supports_rumble) {
         return OperationStatus::success();
       }
-      return enable_evdev_type(device, EV_FF, "Xbox gamepad force-feedback events");
+      return enable_evdev_type(device, EV_FF, "gamepad force-feedback events");
     }
 
     OperationStatus configure_evdev_gamepad_buttons(libevdev *device, GamepadProfileKind profile_kind) {
@@ -1348,7 +1359,7 @@ namespace lvh::detail {
         BTN_THUMBR,
       };
       for (const auto button : active_buttons) {
-        if (const auto status = enable_evdev_code(device, EV_KEY, button, "Xbox gamepad button"); !status.ok()) {
+        if (const auto status = enable_evdev_code(device, EV_KEY, button, "gamepad button"); !status.ok()) {
           return status;
         }
       }
@@ -1363,39 +1374,43 @@ namespace lvh::detail {
           }
         }
       }
-      if (has_uinput_misc1_button(profile_kind)) {
-        if (const auto status = enable_evdev_code(device, EV_KEY, KEY_RECORD, "gamepad share button"); !status.ok()) {
-          return status;
-        }
-      }
-      if (has_uinput_dpad_buttons(profile_kind)) {
-        for (const auto button : {BTN_DPAD_UP, BTN_DPAD_DOWN, BTN_DPAD_LEFT, BTN_DPAD_RIGHT}) {
-          if (const auto status = enable_evdev_code(device, EV_KEY, button, "gamepad directional button"); !status.ok()) {
+      if (profile_kind == GamepadProfileKind::switch_pro) {
+        for (const auto button : {BTN_TL2, BTN_TR2}) {
+          if (const auto status = enable_evdev_code(device, EV_KEY, button, "gamepad trigger button"); !status.ok()) {
             return status;
           }
+        }
+      }
+      if (const auto misc1_button = uinput_misc1_button(profile_kind); misc1_button.has_value()) {
+        if (const auto status = enable_evdev_code(device, EV_KEY, *misc1_button, "gamepad auxiliary button"); !status.ok()) {
+          return status;
         }
       }
       return OperationStatus::success();
     }
 
-    OperationStatus configure_evdev_gamepad_axes(libevdev *device) {
+    OperationStatus configure_evdev_gamepad_axes(libevdev *device, GamepadProfileKind profile_kind) {
       auto dpad = make_absinfo(-1, 1);
       for (const auto code : {ABS_HAT0X, ABS_HAT0Y}) {
-        if (const auto status = enable_evdev_code(device, EV_ABS, code, "Xbox gamepad directional axis", &dpad); !status.ok()) {
+        if (const auto status = enable_evdev_code(device, EV_ABS, code, "gamepad directional axis", &dpad); !status.ok()) {
           return status;
         }
       }
 
       auto stick = make_absinfo(-32768, 32767, 16, 128);
       for (const auto code : {ABS_X, ABS_Y, ABS_RX, ABS_RY}) {
-        if (const auto status = enable_evdev_code(device, EV_ABS, code, "Xbox gamepad stick axis", &stick); !status.ok()) {
+        if (const auto status = enable_evdev_code(device, EV_ABS, code, "gamepad stick axis", &stick); !status.ok()) {
           return status;
         }
       }
 
+      if (profile_kind == GamepadProfileKind::switch_pro) {
+        return OperationStatus::success();
+      }
+
       auto trigger = make_absinfo(0, xbox_trigger_max);
       for (const auto code : {ABS_Z, ABS_RZ}) {
-        if (const auto status = enable_evdev_code(device, EV_ABS, code, "Xbox gamepad trigger axis", &trigger); !status.ok()) {
+        if (const auto status = enable_evdev_code(device, EV_ABS, code, "gamepad trigger axis", &trigger); !status.ok()) {
           return status;
         }
       }
@@ -1406,10 +1421,10 @@ namespace lvh::detail {
       if (!supports_rumble) {
         return OperationStatus::success();
       }
-      if (const auto status = enable_evdev_code(device, EV_FF, FF_RUMBLE, "Xbox gamepad force-feedback effect"); !status.ok()) {
+      if (const auto status = enable_evdev_code(device, EV_FF, FF_RUMBLE, "gamepad force-feedback effect"); !status.ok()) {
         return status;
       }
-      return enable_evdev_code(device, EV_FF, FF_GAIN, "Xbox gamepad force-feedback gain");
+      return enable_evdev_code(device, EV_FF, FF_GAIN, "gamepad force-feedback gain");
     }
 
     OperationStatus configure_evdev_gamepad(libevdev *device, const DeviceProfile &profile) {
@@ -1420,7 +1435,7 @@ namespace lvh::detail {
       if (const auto status = configure_evdev_gamepad_buttons(device, profile.gamepad_kind); !status.ok()) {
         return status;
       }
-      if (const auto status = configure_evdev_gamepad_axes(device); !status.ok()) {
+      if (const auto status = configure_evdev_gamepad_axes(device, profile.gamepad_kind); !status.ok()) {
         return status;
       }
       return configure_evdev_gamepad_force_feedback(device, supports_rumble);
@@ -2496,11 +2511,19 @@ namespace lvh::detail {
       OperationStatus emit_button_state(const ButtonSet &buttons) {
         using enum GamepadButton;
 
-        constexpr std::array button_map {
+        constexpr std::array standard_face_button_map {
           std::pair {a, BTN_SOUTH},
           std::pair {b, BTN_EAST},
           std::pair {x, BTN_NORTH},
           std::pair {y, BTN_WEST},
+        };
+        constexpr std::array switch_face_button_map {
+          std::pair {a, BTN_EAST},
+          std::pair {b, BTN_SOUTH},
+          std::pair {x, BTN_NORTH},
+          std::pair {y, BTN_WEST},
+        };
+        constexpr std::array common_button_map {
           std::pair {left_shoulder, BTN_TL},
           std::pair {right_shoulder, BTN_TR},
           std::pair {back, BTN_SELECT},
@@ -2509,25 +2532,21 @@ namespace lvh::detail {
           std::pair {left_stick, BTN_THUMBL},
           std::pair {right_stick, BTN_THUMBR},
         };
-        if (const auto status = emit_button_map(buttons, button_map); !status.ok()) {
+
+        const auto &face_button_map =
+          profile_kind_ == GamepadProfileKind::switch_pro ? switch_face_button_map : standard_face_button_map;
+        if (const auto status = emit_button_map(buttons, face_button_map); !status.ok()) {
           return status;
         }
-        if (has_uinput_misc1_button(profile_kind_)) {
-          if (const auto status = emit_event(EV_KEY, KEY_RECORD, buttons.test(misc1) ? 1 : 0); !status.ok()) {
+        if (const auto status = emit_button_map(buttons, common_button_map); !status.ok()) {
+          return status;
+        }
+        if (const auto misc1_button = uinput_misc1_button(profile_kind_); misc1_button.has_value()) {
+          if (const auto status = emit_event(EV_KEY, *misc1_button, buttons.test(misc1) ? 1 : 0); !status.ok()) {
             return status;
           }
         }
-        if (!has_uinput_dpad_buttons(profile_kind_)) {
-          return OperationStatus::success();
-        }
-
-        constexpr std::array dpad_button_map {
-          std::pair {dpad_up, BTN_DPAD_UP},
-          std::pair {dpad_down, BTN_DPAD_DOWN},
-          std::pair {dpad_left, BTN_DPAD_LEFT},
-          std::pair {dpad_right, BTN_DPAD_RIGHT},
-        };
-        return emit_button_map(buttons, dpad_button_map);
+        return OperationStatus::success();
       }
 
       OperationStatus emit_axis_state(const GamepadState &state) {
@@ -2540,15 +2559,30 @@ namespace lvh::detail {
           return status;
         }
 
-        const std::array axes {
+        const std::array stick_axes {
           std::pair {ABS_X, static_cast<int>(reports::normalize_axis(state.left_stick.x))},
           std::pair {ABS_Y, static_cast<int>(reports::normalize_axis(-state.left_stick.y))},
           std::pair {ABS_RX, static_cast<int>(reports::normalize_axis(state.right_stick.x))},
           std::pair {ABS_RY, static_cast<int>(reports::normalize_axis(-state.right_stick.y))},
+        };
+        for (const auto &[code, value] : stick_axes) {
+          if (const auto status = emit_event(EV_ABS, code, value); !status.ok()) {
+            return status;
+          }
+        }
+
+        if (profile_kind_ == GamepadProfileKind::switch_pro) {
+          if (const auto status = emit_event(EV_KEY, BTN_TL2, state.left_trigger > 0.0F ? 1 : 0); !status.ok()) {
+            return status;
+          }
+          return emit_event(EV_KEY, BTN_TR2, state.right_trigger > 0.0F ? 1 : 0);
+        }
+
+        const std::array trigger_axes {
           std::pair {ABS_Z, static_cast<int>(reports::normalize_trigger(state.left_trigger))},
           std::pair {ABS_RZ, static_cast<int>(reports::normalize_trigger(state.right_trigger))},
         };
-        for (const auto &[code, value] : axes) {
+        for (const auto &[code, value] : trigger_axes) {
           if (const auto status = emit_event(EV_ABS, code, value); !status.ok()) {
             return status;
           }
@@ -2936,7 +2970,11 @@ namespace lvh::detail {
             send_get_report_reply(event.u.get_report.id, event.u.get_report.rnum);
             break;
           case UHID_SET_REPORT:
-            dispatch_output_report(event.u.set_report.data, event.u.set_report.size);
+            dispatch_output_report(
+              event.u.set_report.data,
+              event.u.set_report.size,
+              event.u.set_report.rnum
+            );
             send_set_report_reply(event.u.set_report.id, 0);
             break;
           default:
@@ -2962,7 +3000,11 @@ namespace lvh::detail {
         }
       }
 
-      void dispatch_output_report(const __u8 *data, std::size_t report_size) {
+      void dispatch_output_report(
+        const __u8 *data,
+        std::size_t report_size,
+        std::optional<std::uint8_t> report_number = std::nullopt
+      ) {
         OutputCallback callback;
         {
           std::lock_guard lock {callback_mutex_};
@@ -2975,6 +3017,14 @@ namespace lvh::detail {
 
         const auto size = std::min<std::size_t>(report_size, UHID_DATA_MAX);
         std::vector<std::uint8_t> report(data, data + size);
+        const auto omits_report_number = profile_.output_report_size > 0U &&
+                                         report.size() + 1U == profile_.output_report_size;
+        if (
+          report_number.has_value() &&
+          (omits_report_number || report.empty() || report.front() != *report_number)
+        ) {
+          report.insert(report.begin(), *report_number);
+        }
         for (const auto &output : reports::parse_output_reports(profile_, report)) {
           callback(output);
         }
@@ -3118,7 +3168,7 @@ namespace lvh::detail {
           return {OperationStatus::success(), std::move(gamepad)};
         }
 
-        const auto fd = system_open(uhid_path, O_RDWR | O_CLOEXEC | O_NONBLOCK);
+        const auto fd = system_open(uhid_path, O_RDWR | O_CLOEXEC);
         if (fd < 0) {
           return {system_error_status(ErrorCode::backend_unavailable, "failed to open /dev/uhid", errno), nullptr};
         }

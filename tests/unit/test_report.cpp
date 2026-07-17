@@ -476,8 +476,21 @@ TEST(ReportTest, KeepsUnrecognizedOutputReportsRaw) {
 
   const auto generic_output = lvh::reports::parse_output_report(generic_profile, generic_report);
 
-  EXPECT_EQ(generic_output.kind, lvh::GamepadOutputKind::raw_report);
-  EXPECT_EQ(generic_output.low_frequency_rumble, 0U);
-  EXPECT_EQ(generic_output.high_frequency_rumble, 0U);
+  EXPECT_EQ(generic_output.kind, lvh::GamepadOutputKind::rumble);
+  EXPECT_EQ(generic_output.low_frequency_rumble, 0x1234);
+  EXPECT_EQ(generic_output.high_frequency_rumble, 0xABCD);
   EXPECT_EQ(generic_output.raw_report, generic_report);
+
+  const auto switch_profile = lvh::profiles::switch_pro();
+  std::vector<std::uint8_t> switch_report(switch_profile.output_report_size, 0);
+  switch_report[0] = switch_profile.report_id;
+  switch_report[1] = 0x34;
+  switch_report[2] = 0x12;
+  switch_report[3] = 0xCD;
+  switch_report[4] = 0xAB;
+
+  const auto switch_output = lvh::reports::parse_output_report(switch_profile, switch_report);
+
+  EXPECT_EQ(switch_output.kind, lvh::GamepadOutputKind::raw_report);
+  EXPECT_EQ(switch_output.raw_report, switch_report);
 }

@@ -935,7 +935,8 @@ namespace lvh::reports {
     }
 
     if (
-      profile.capabilities.supports_rumble && profile.output_report_size >= 5U &&
+      profile.gamepad_kind != GamepadProfileKind::switch_pro && profile.capabilities.supports_rumble &&
+      profile.output_report_size >= 5U &&
       report.size() >= profile.output_report_size && report[0] == profile.report_id
     ) {
       GamepadOutput output;

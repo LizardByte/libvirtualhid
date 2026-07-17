@@ -51,7 +51,8 @@ The core API and adapter shape cover the major streaming-host requirements:
 - Rich controller metadata.
 - Gamepad output callbacks.
 - Keyboard and mouse input paths.
-- Linux `uhid` gamepads and `uinput` keyboard/pointer devices.
+- Linux PlayStation gamepads through `uhid`, Generic/Xbox/Switch Pro gamepads
+  through `uinput`, and `uinput` keyboard/pointer devices.
 - Linux DualSense and DualShock 4 USB/Bluetooth report handling.
 - Linux touchscreen, trackpad, and pen tablet device types.
 - Windows UMDF/VHF gamepad creation through an installed driver package.

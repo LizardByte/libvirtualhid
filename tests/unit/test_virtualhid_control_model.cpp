@@ -127,12 +127,12 @@ TEST(VirtualHidControlModelTest, SummarizesProfileFeatures) {
   const auto generic = lvh::profiles::generic_gamepad();
   const auto dualsense = lvh::profiles::dualsense();
 
-  EXPECT_FALSE(control::supports_normalized_feedback(generic));
+  EXPECT_TRUE(control::supports_normalized_feedback(generic));
   EXPECT_TRUE(control::supports_normalized_feedback(dualsense));
 
   EXPECT_EQ(
     control::profile_feature_summary(generic),
-    L"Features: battery no | rumble no | trigger rumble no | RGB LED no | adaptive triggers no | raw output no"
+    L"Features: battery no | rumble yes | trigger rumble no | RGB LED no | adaptive triggers no | raw output yes"
   );
   EXPECT_EQ(
     control::profile_feature_summary(dualsense),
@@ -170,7 +170,7 @@ TEST(VirtualHidControlModelTest, SummarizesOutputState) {
   control::OutputState state;
   EXPECT_EQ(
     control::output_summary(state, generic),
-    L"Output: no reports received | profile has no normalized feedback categories"
+    L"Output: no reports received"
   );
   EXPECT_EQ(control::output_summary(state, dualsense), L"Output: no reports received");
 

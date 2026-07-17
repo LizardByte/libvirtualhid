@@ -197,7 +197,7 @@ TEST(ProfileTest, StreamingControllerProfilesArePresent) {
   EXPECT_EQ(switch_pro.report_id, 0x30);
   EXPECT_EQ(switch_pro.input_report_size, 64U);
   EXPECT_EQ(switch_pro.output_report_size, 64U);
-  EXPECT_FALSE(switch_pro.capabilities.supports_rumble);
+  EXPECT_TRUE(switch_pro.capabilities.supports_rumble);
   EXPECT_TRUE(switch_pro.capabilities.supports_motion);
   EXPECT_TRUE(switch_pro.capabilities.supports_battery);
 
@@ -344,8 +344,8 @@ TEST(ProfileTest, RumbleProfilesExposeOutputReports) {
   const auto generic = lvh::profiles::generic_gamepad();
   const auto xbox_360 = lvh::profiles::xbox_360();
 
-  EXPECT_FALSE(generic.capabilities.supports_rumble);
-  EXPECT_EQ(generic.output_report_size, 0U);
+  EXPECT_TRUE(generic.capabilities.supports_rumble);
+  EXPECT_EQ(generic.output_report_size, 5U);
 
   EXPECT_TRUE(xbox_360.capabilities.supports_rumble);
   EXPECT_EQ(xbox_360.output_report_size, 5U);

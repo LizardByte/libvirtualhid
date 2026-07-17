@@ -610,11 +610,12 @@ namespace lvh::detail::test {
   LinuxInputSubmissionResult linux_uinput_gamepad_submit_pipe(GamepadProfileKind kind, const GamepadState &state);
 
   /**
-   * @brief Exercise Xbox Series uinput force-feedback upload and playback.
+   * @brief Exercise uinput gamepad force-feedback upload and playback.
    *
+   * @param kind Gamepad profile kind.
    * @return Creation, callback, and close results.
    */
-  LinuxUinputRumbleResult linux_uinput_xbox_series_fake_rumble();
+  LinuxUinputRumbleResult linux_uinput_gamepad_fake_rumble(GamepadProfileKind kind);
 
   /**
    * @brief Try creating a libevdev uinput mouse on an invalid file descriptor.

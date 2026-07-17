@@ -46,39 +46,48 @@ and signing details.
 The Linux backend uses standard user-space kernel interfaces:
 
 - `uhid` for descriptor-driven HID gamepads.
-- `uinput` for Generic, Xbox 360, Xbox One, and Xbox Series gamepads, plus
-  keyboard, mouse, touchscreen, trackpad, and pen tablet devices.
+- `uinput` for Generic, Xbox 360, Xbox One, Xbox Series, and Switch Pro
+  gamepads, plus keyboard, mouse, touchscreen, trackpad, and pen tablet
+  devices.
 - `libevdev` internally for uinput device construction.
 - X11/XTest only as a keyboard and mouse fallback when `uinput` cannot be used
   and an X11 session is available.
 
 Gamepad support normally prefers `uhid` because descriptors, raw HID identity,
 feature reports, and output reports matter for controller compatibility.
-Generic and Xbox-family profiles instead use `uinput` so SDL, Steam, and other
-evdev consumers receive canonical Linux gamepad events without interpreting a
-standard or Xbox GIP descriptor. Face buttons, shoulders, menu buttons, stick
+Generic, Xbox-family, and Switch Pro profiles instead use `uinput` so SDL,
+Steam, browser Gamepad API implementations, and other evdev consumers receive
+canonical Linux gamepad events. Face buttons, shoulders, menu buttons, stick
 clicks, and Guide use their native evdev codes; sticks and the directional pad
-use absolute axes; triggers remain independent analog `ABS_Z` and `ABS_RZ`
-axes. Generic also emits the directional pad through `BTN_DPAD_*` alongside its
-hat axes for consumers that prefer digital D-pad events. Profiles with rumble
-support normalize force-feedback effects back into the public callback.
+use absolute axes. Generic and Xbox triggers remain independent analog `ABS_Z`
+and `ABS_RZ` axes. Switch Pro uses the Nintendo face-button positions, button
+events for ZL/ZR, and `BTN_Z` for Capture. The directional pad is exposed only
+through `ABS_HAT0X` and `ABS_HAT0Y`, avoiding the ambiguous duplicate
+`BTN_DPAD_*` representation used by some consumers. Profiles with rumble
+support normalize uinput force-feedback effects back into the public callback.
 
 Xbox 360 retains its name and `0x045E:0x028E` identity, while its Linux uinput
 device uses the Bluetooth bus so consumers select the sparse button mapping.
 Xbox One and Xbox Series retain their public USB identities, but their Linux
 uinput devices use the corresponding Bluetooth product identities (`0x0B20`
 and `0x0B13`, respectively), whose standard consumer mappings match the events
-that uinput exposes. All four uinput gamepad profiles preserve the sparse
-15-slot Linux gamepad button sequence: unused `BTN_C`, `BTN_Z`, `BTN_TL2`, and
-`BTN_TR2` slots are advertised but never pressed, keeping face buttons,
-shoulders, menu buttons, Guide, L3, and R3 at their expected indices. D-pad
-directions are reported through the hat axes and exposed as logical buttons by
-standard gamepad consumers.
+that uinput exposes. Those four sparse-layout profiles preserve the 15-slot
+Linux gamepad button sequence: unused `BTN_C`, `BTN_Z`, `BTN_TL2`, and `BTN_TR2`
+slots are advertised but never pressed, keeping face buttons, shoulders, menu
+buttons, Guide, L3, and R3 at their expected indices. D-pad directions are
+reported through the hat axes and exposed as logical buttons by standard
+gamepad consumers.
 
-Descriptor-driven profiles remain on `uhid`. The Switch Pro profile keeps its
-Nintendo identity but uses the virtual UHID bus on Linux, preventing
-`hid-nintendo` from claiming the descriptor-only device and waiting for
-physical-controller initialization handshakes.
+DualShock 4 and DualSense remain on `uhid` so their descriptors, motion,
+touchpad, battery, feature reports, and profile-specific output reports stay
+available. The backend accepts PlayStation output through both UHID interrupt
+and control channels, including control reports whose report number is supplied
+separately from the payload.
+
+Switch Pro keeps its Nintendo identity on the Linux uinput path. This follows
+the evdev layout used by Linux-native virtual-controller implementations and
+allows standard `FF_RUMBLE` effects without emulating the physical controller's
+proprietary initialization handshake.
 
 The optional `virtualhid_control` diagnostic UI uses SDL3 and Dear ImGui through
 the repository CPM lockfile. It is intended to stay on the same UI framework for

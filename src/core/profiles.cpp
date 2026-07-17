@@ -1975,7 +1975,7 @@ namespace lvh::profiles {
       profile.output_report_size = switch_pro_output_report_size;
       profile.name = "Pro Controller";
       profile.manufacturer = "Nintendo Co., Ltd.";
-      profile.capabilities = {.supports_motion = true, .supports_battery = true};
+      profile.capabilities = {.supports_rumble = true, .supports_motion = true, .supports_battery = true};
       profile.report_descriptor = make_switch_pro_report_descriptor();
       return profile;
     }
@@ -2002,7 +2002,7 @@ namespace lvh::profiles {
       0x1209,
       0x0001,
       0x0001,
-      {}
+      {.supports_rumble = true}
     );
   }
 

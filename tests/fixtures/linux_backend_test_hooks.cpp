@@ -1038,7 +1038,7 @@ namespace lvh::detail::test {
     return {std::move(status), std::move(records)};
   }
 
-  LinuxUinputRumbleResult linux_uinput_xbox_series_fake_rumble() {
+  LinuxUinputRumbleResult linux_uinput_gamepad_fake_rumble(GamepadProfileKind kind) {
     LinuxTestSyscalls syscalls;
     enable_fake_device_syscalls(syscalls);
     syscalls.override_poll = true;
@@ -1072,7 +1072,7 @@ namespace lvh::detail::test {
     std::atomic_size_t callback_count = 0;
     std::mutex output_mutex;
     GamepadOutput last_output;
-    UinputGamepad gamepad {fd, GamepadProfileKind::xbox_series};
+    UinputGamepad gamepad {fd, kind};
     gamepad.set_output_callback([&callback_count, &last_output, &output_mutex](const GamepadOutput &output) {
       if (output.low_frequency_rumble != 0 || output.high_frequency_rumble != 0) {
         std::lock_guard lock {output_mutex};
@@ -1082,7 +1082,14 @@ namespace lvh::detail::test {
     });
 
     CreateGamepadOptions options;
-    options.profile = profiles::xbox_series();
+    const auto profile = profiles::gamepad_profile(kind);
+    if (!profile.has_value()) {
+      result.create_status = OperationStatus::failure(ErrorCode::unsupported_profile, "unknown gamepad profile");
+      result.close_status = result.create_status;
+      static_cast<void>(system_close(fd));
+      return result;
+    }
+    options.profile = *profile;
     result.create_status = gamepad.create(8, options);
     for (auto attempt = 0; attempt < 100 && callback_count.load() == 0; ++attempt) {
       std::this_thread::sleep_for(std::chrono::milliseconds {1});
@@ -1364,6 +1371,8 @@ namespace lvh::detail::test {
     event = {};
     event.type = UHID_SET_REPORT;
     event.u.set_report.id = 10;
+    event.u.set_report.rnum = profile.report_id;
+    event.u.set_report.rtype = UHID_OUTPUT_REPORT;
     event.u.set_report.size = static_cast<__u16>(profile.output_report_size);
     event.u.set_report.data[0] = profile.report_id;
     event.u.set_report.data[1] = 0x78;
@@ -1418,6 +1427,23 @@ namespace lvh::detail::test {
       result.saw_create = event.u.create2.vendor == options.profile.vendor_id &&
                           event.u.create2.product == options.profile.product_id;
     }
+
+    gamepad.set_output_callback([&result](const GamepadOutput &output) {
+      if (output.kind == GamepadOutputKind::rumble) {
+        ++result.output_callback_count;
+        result.last_output = output;
+      }
+    });
+
+    event = {};
+    event.type = UHID_OUTPUT;
+    event.u.output.rtype = UHID_OUTPUT_REPORT;
+    event.u.output.size = 63;
+    event.u.output.data[0] = 0x02;
+    event.u.output.data[1] = 0x03;
+    event.u.output.data[3] = 0x12;
+    event.u.output.data[4] = 0x56;
+    static_cast<void>(write_uhid_event(descriptors[1], event));
 
     event = {};
     event.type = UHID_GET_REPORT;
@@ -1547,6 +1573,27 @@ namespace lvh::detail::test {
     if (read_uhid_event_type(descriptors[1], UHID_CREATE2, event)) {
       result.saw_create = event.u.create2.vendor == options.profile.vendor_id &&
                           event.u.create2.product == options.profile.product_id;
+    }
+
+    gamepad.set_output_callback([&result](const GamepadOutput &output) {
+      if (output.kind == GamepadOutputKind::rumble) {
+        ++result.output_callback_count;
+        result.last_output = output;
+      }
+    });
+
+    event = {};
+    event.type = UHID_SET_REPORT;
+    event.u.set_report.id = 21;
+    event.u.set_report.rnum = 0x05;
+    event.u.set_report.rtype = UHID_OUTPUT_REPORT;
+    event.u.set_report.size = 31;
+    event.u.set_report.data[0] = 0x05;
+    event.u.set_report.data[3] = 0x12;
+    event.u.set_report.data[4] = 0x56;
+    static_cast<void>(write_uhid_event(descriptors[1], event));
+    if (read_uhid_event_type(descriptors[1], UHID_SET_REPORT_REPLY, event)) {
+      result.saw_set_report_reply = event.u.set_report_reply.id == 21 && event.u.set_report_reply.err == 0;
     }
 
     event = {};

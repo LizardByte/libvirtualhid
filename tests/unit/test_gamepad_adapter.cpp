@@ -22,7 +22,7 @@ TEST(GamepadAdapterTest, ReportsProfileSupport) {
   const auto keyboard = lvh::profiles::keyboard();
 
   const auto generic_support = lvh::gamepad_profile_support(generic);
-  EXPECT_FALSE(generic_support.supports_rumble);
+  EXPECT_TRUE(generic_support.supports_rumble);
   EXPECT_FALSE(generic_support.supports_touchpad);
   EXPECT_TRUE(generic_support.supports_misc1_button);
   EXPECT_FALSE(generic_support.supports_trigger_rumble);
@@ -51,7 +51,7 @@ TEST(GamepadAdapterTest, ReportsProfileSupport) {
   EXPECT_EQ(dualsense_support.supported_rear_paddle_count, 0U);
 
   const auto switch_pro_support = lvh::gamepad_profile_support(switch_pro);
-  EXPECT_FALSE(switch_pro_support.supports_rumble);
+  EXPECT_TRUE(switch_pro_support.supports_rumble);
   EXPECT_TRUE(switch_pro_support.supports_motion);
   EXPECT_TRUE(switch_pro_support.supports_battery);
   EXPECT_TRUE(switch_pro_support.supports_misc1_button);
@@ -96,9 +96,9 @@ TEST(GamepadAdapterTest, ChecksButtonsAndOutputsByProfile) {
   EXPECT_FALSE(lvh::supports_gamepad_output(dualshock4, lvh::GamepadOutputKind::trigger_rumble));
   EXPECT_TRUE(lvh::supports_gamepad_output(dualshock4, lvh::GamepadOutputKind::raw_report));
   EXPECT_TRUE(lvh::supports_gamepad_output(dualsense, lvh::GamepadOutputKind::adaptive_triggers));
-  EXPECT_FALSE(lvh::supports_gamepad_output(switch_pro, lvh::GamepadOutputKind::rumble));
+  EXPECT_TRUE(lvh::supports_gamepad_output(switch_pro, lvh::GamepadOutputKind::rumble));
   EXPECT_TRUE(lvh::supports_gamepad_output(switch_pro, lvh::GamepadOutputKind::raw_report));
-  EXPECT_FALSE(lvh::supports_gamepad_output(generic, lvh::GamepadOutputKind::raw_report));
+  EXPECT_TRUE(lvh::supports_gamepad_output(generic, lvh::GamepadOutputKind::raw_report));
   EXPECT_FALSE(lvh::supports_gamepad_output(keyboard, lvh::GamepadOutputKind::rumble));
   EXPECT_FALSE(lvh::supports_gamepad_output(generic, static_cast<lvh::GamepadOutputKind>(255)));
 }
