@@ -504,7 +504,16 @@ namespace lvh::detail {
 
     class Win32WindowsControlChannel final: public WindowsControlChannel {
     public:
-      static std::unique_ptr<WindowsControlChannel> open(const std::string &path) {
+      struct SharedHandle {
+        explicit SharedHandle(UniqueHandle value):
+            value {std::move(value)} {}
+
+        UniqueHandle value;
+      };
+
+      static std::pair<std::unique_ptr<WindowsControlChannel>, std::unique_ptr<WindowsControlChannel>> open_pair(
+        const std::string &path
+      ) {
         const auto handle = ::CreateFileA(
           path.c_str(),
           GENERIC_READ | GENERIC_WRITE,
@@ -516,10 +525,14 @@ namespace lvh::detail {
         );
 
         if (handle == INVALID_HANDLE_VALUE) {
-          return nullptr;
+          return {};
         }
 
-        return std::make_unique<Win32WindowsControlChannel>(path, make_unique_handle(handle));
+        auto shared_handle = std::make_shared<SharedHandle>(make_unique_handle(handle));
+        return {
+          std::make_unique<Win32WindowsControlChannel>(path, shared_handle),
+          std::make_unique<Win32WindowsControlChannel>(path, std::move(shared_handle)),
+        };
       }
 
       const std::string &path() const override {
@@ -590,7 +603,7 @@ namespace lvh::detail {
         overlapped.hEvent = operation_event.get();
         DWORD bytes_returned = 0;
 
-        if (const auto started = ::DeviceIoControl(handle_.get(), LVH_WINDOWS_IOCTL_READ_OUTPUT_REPORT, nullptr, 0, &event, sizeof(event), &bytes_returned, &overlapped); started == FALSE) {
+        if (const auto started = ::DeviceIoControl(handle_->value.get(), LVH_WINDOWS_IOCTL_READ_OUTPUT_REPORT, nullptr, 0, &event, sizeof(event), &bytes_returned, &overlapped); started == FALSE) {
           if (const auto error_code = ::GetLastError(); error_code != ERROR_IO_PENDING) {
             return std::nullopt;
           }
@@ -606,16 +619,16 @@ namespace lvh::detail {
             INFINITE
           );
           if (wait_result == WAIT_OBJECT_0 + 1U) {
-            static_cast<void>(::CancelIoEx(handle_.get(), &overlapped));
+            static_cast<void>(::CancelIoEx(handle_->value.get(), &overlapped));
             return std::nullopt;
           }
           if (wait_result != WAIT_OBJECT_0) {
-            static_cast<void>(::CancelIoEx(handle_.get(), &overlapped));
+            static_cast<void>(::CancelIoEx(handle_->value.get(), &overlapped));
             return std::nullopt;
           }
         }
 
-        if (::GetOverlappedResult(handle_.get(), &overlapped, &bytes_returned, FALSE) == FALSE) {
+        if (::GetOverlappedResult(handle_->value.get(), &overlapped, &bytes_returned, FALSE) == FALSE) {
           return std::nullopt;
         }
 
@@ -627,7 +640,7 @@ namespace lvh::detail {
         return event;
       }
 
-      Win32WindowsControlChannel(std::string path, UniqueHandle handle):
+      Win32WindowsControlChannel(std::string path, std::shared_ptr<SharedHandle> handle):
           path_ {std::move(path)},
           handle_ {std::move(handle)} {}
 
@@ -642,7 +655,7 @@ namespace lvh::detail {
       ) const {
         using enum ErrorCode;
 
-        if (::DeviceIoControl(handle_.get(), control_code, &input, sizeof(input), &output, sizeof(output), bytes_returned, nullptr) == FALSE) {
+        if (::DeviceIoControl(handle_->value.get(), control_code, &input, sizeof(input), &output, sizeof(output), bytes_returned, nullptr) == FALSE) {
           return windows_failure(backend_failure, operation, ::GetLastError());
         }
 
@@ -658,7 +671,7 @@ namespace lvh::detail {
       ) const {
         using enum ErrorCode;
 
-        if (::DeviceIoControl(handle_.get(), control_code, &input, sizeof(input), nullptr, 0, bytes_returned, nullptr) == FALSE) {
+        if (::DeviceIoControl(handle_->value.get(), control_code, &input, sizeof(input), nullptr, 0, bytes_returned, nullptr) == FALSE) {
           return windows_failure(backend_failure, operation, ::GetLastError());
         }
 
@@ -666,17 +679,23 @@ namespace lvh::detail {
       }
 
       std::string path_;
-      UniqueHandle handle_;
+      std::shared_ptr<SharedHandle> handle_;
     };
 
-    std::unique_ptr<WindowsControlChannel> open_control_channel() {
+    struct WindowsControlChannels {
+      std::unique_ptr<WindowsControlChannel> command;
+      std::unique_ptr<WindowsControlChannel> event;
+    };
+
+    WindowsControlChannels open_control_channels() {
       for (const auto &path : resolve_control_device_paths()) {
-        if (auto channel = Win32WindowsControlChannel::open(path)) {
-          return channel;
+        auto [command, event] = Win32WindowsControlChannel::open_pair(path);
+        if (command && event) {
+          return {std::move(command), std::move(event)};
         }
       }
 
-      return nullptr;
+      return {};
     }
 
     class WindowsGamepadState {
@@ -1592,10 +1611,10 @@ namespace lvh::detail {
     class WindowsBackend final: public Backend {
     public:
       WindowsBackend():
-          WindowsBackend(
-            open_control_channel(),
-            open_control_channel()
-          ) {}
+          WindowsBackend(open_control_channels()) {}
+
+      explicit WindowsBackend(WindowsControlChannels channels):
+          WindowsBackend(std::move(channels.command), std::move(channels.event)) {}
 
       WindowsBackend(
         std::unique_ptr<WindowsControlChannel> command_channel,

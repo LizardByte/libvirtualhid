@@ -214,11 +214,18 @@ namespace lvh::detail {
       event.size = sizeof(event);
       event.driver_device_id = driver_id;
       event.report_size = static_cast<std::uint32_t>(profile.output_report_size);
-      event.report[0] = profile.report_id;
-      event.report[1] = 0x78;
-      event.report[2] = 0x56;
-      event.report[3] = 0x34;
-      event.report[4] = 0x12;
+      if (profile.gamepad_kind == GamepadProfileKind::xbox_one || profile.gamepad_kind == GamepadProfileKind::xbox_series) {
+        event.report[0] = 0x03;
+        event.report[3] = 75;
+        event.report[4] = 100;
+        event.report[5] = 10;
+      } else {
+        event.report[0] = profile.report_id;
+        event.report[1] = 0x78;
+        event.report[2] = 0x56;
+        event.report[3] = 0x34;
+        event.report[4] = 0x12;
+      }
 
       state->enqueue_output_event(event);
     }
@@ -428,9 +435,11 @@ namespace lvh::detail {
 
         std::atomic_bool output_seen {false};
         created.gamepad->set_output_callback([&result, &output_seen](const GamepadOutput &output) {
-          result.last_output = output;
-          result.saw_output = true;
-          output_seen.store(true);
+          if (output.kind == GamepadOutputKind::rumble) {
+            result.last_output = output;
+            result.saw_output = true;
+            output_seen.store(true);
+          }
         });
         enqueue_output_report(event_state, driver_id, options.profile);
         static_cast<void>(wait_until([&output_seen] {

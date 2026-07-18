@@ -78,13 +78,23 @@ namespace {
     std::wstring hardware_ids;
   };
 
+  struct PendingOutputRequest {
+    WDFREQUEST request {};
+    WDFFILEOBJECT owner_file {};
+  };
+
+  struct BufferedOutputEvent {
+    LvhWindowsOutputReportEvent event {};
+    WDFFILEOBJECT owner_file {};
+  };
+
   struct DriverState {
     std::atomic<std::uint64_t> next_driver_device_id {1};
     std::mutex devices_mutex;
     std::map<std::uint64_t, std::shared_ptr<DeviceRecord>> devices;
     std::mutex output_requests_mutex;
-    std::vector<WDFREQUEST> pending_output_requests;
-    std::vector<LvhWindowsOutputReportEvent> buffered_output_events;
+    std::vector<PendingOutputRequest> pending_output_requests;
+    std::vector<BufferedOutputEvent> buffered_output_events;
   };
 
   DriverState &driver_state() {
@@ -160,7 +170,7 @@ namespace {
   bool remove_pending_output_request(WDFREQUEST request) {
     auto &state = driver_state();
     std::lock_guard lock {state.output_requests_mutex};
-    const auto iter = std::ranges::find(state.pending_output_requests, request);
+    const auto iter = std::ranges::find(state.pending_output_requests, request, &PendingOutputRequest::request);
     if (iter == state.pending_output_requests.end()) {
       return false;
     }
@@ -217,29 +227,34 @@ namespace {
     return true;
   }
 
-  void queue_output_event(const LvhWindowsOutputReportEvent &event) {
+  void queue_output_event(WDFFILEOBJECT owner_file, const LvhWindowsOutputReportEvent &event) {
     WDFREQUEST request = nullptr;
     {
       auto &state = driver_state();
       std::lock_guard lock {state.output_requests_mutex};
-      if (state.pending_output_requests.empty()) {
-        state.buffered_output_events.push_back(event);
+      const auto pending = std::ranges::find(
+        state.pending_output_requests,
+        owner_file,
+        &PendingOutputRequest::owner_file
+      );
+      if (pending == state.pending_output_requests.end()) {
+        state.buffered_output_events.push_back({event, owner_file});
         return;
       }
 
-      request = state.pending_output_requests.front();
-      state.pending_output_requests.erase(state.pending_output_requests.begin());
+      request = pending->request;
+      state.pending_output_requests.erase(pending);
     }
 
     if (!complete_output_request(request, event, true)) {
       auto &state = driver_state();
       std::lock_guard lock {state.output_requests_mutex};
-      state.buffered_output_events.push_back(event);
+      state.buffered_output_events.push_back({event, owner_file});
     }
   }
 
   void complete_pending_output_requests(NTSTATUS status) {
-    std::vector<WDFREQUEST> requests;
+    std::vector<PendingOutputRequest> requests;
     {
       auto &state = driver_state();
       std::lock_guard lock {state.output_requests_mutex};
@@ -247,9 +262,33 @@ namespace {
       state.buffered_output_events.clear();
     }
 
+    for (const auto &pending : requests) {
+      if (NT_SUCCESS(WdfRequestUnmarkCancelable(pending.request))) {
+        complete_request(pending.request, status);
+      }
+    }
+  }
+
+  void cancel_output_requests_for_file(WDFFILEOBJECT file_object) {
+    std::vector<WDFREQUEST> requests;
+    auto &state = driver_state();
+    {
+      std::lock_guard lock {state.output_requests_mutex};
+      static_cast<void>(std::erase_if(state.pending_output_requests, [&](const auto &pending) {
+        if (pending.owner_file != file_object) {
+          return false;
+        }
+        requests.push_back(pending.request);
+        return true;
+      }));
+      static_cast<void>(std::erase_if(state.buffered_output_events, [&](const auto &buffered) {
+        return buffered.owner_file == file_object;
+      }));
+    }
+
     for (const auto request : requests) {
       if (NT_SUCCESS(WdfRequestUnmarkCancelable(request))) {
-        complete_request(request, status);
+        complete_request(request, STATUS_CANCELLED);
       }
     }
   }
@@ -704,12 +743,18 @@ namespace {
 
   void handle_read_output_report_request(WDFREQUEST request) {
     std::optional<LvhWindowsOutputReportEvent> buffered_event;
+    const auto owner_file = WdfRequestGetFileObject(request);
     auto &state = driver_state();
     {
       std::lock_guard lock {state.output_requests_mutex};
-      if (!state.buffered_output_events.empty()) {
-        buffered_event = state.buffered_output_events.front();
-        state.buffered_output_events.erase(state.buffered_output_events.begin());
+      const auto buffered = std::ranges::find(
+        state.buffered_output_events,
+        owner_file,
+        &BufferedOutputEvent::owner_file
+      );
+      if (buffered != state.buffered_output_events.end()) {
+        buffered_event = buffered->event;
+        state.buffered_output_events.erase(buffered);
       } else {
         const auto status = WdfRequestMarkCancelableEx(request, LvhEvtOutputReadCanceled);
         if (!NT_SUCCESS(status)) {
@@ -717,7 +762,7 @@ namespace {
           return;
         }
 
-        state.pending_output_requests.push_back(request);
+        state.pending_output_requests.push_back({request, owner_file});
       }
     }
 
@@ -825,6 +870,7 @@ void LvhEvtDeviceCleanup(WDFOBJECT device_object) {
 void LvhEvtFileCleanup(WDFFILEOBJECT file_object) {
   trace_status("EvtFileCleanup begin");
   delete_vhf_devices_for_file(file_object);
+  cancel_output_requests_for_file(file_object);
 }
 
 void LvhEvtOutputReadCanceled(WDFREQUEST request) {
@@ -853,7 +899,7 @@ void LvhEvtVhfWriteReport(
   event.driver_device_id = record->driver_device_id;
   copy_vhf_output_payload(event, *hid_transfer_packet);
 
-  queue_output_event(event);
+  queue_output_event(record->owner_file, event);
   static_cast<void>(VhfAsyncOperationComplete(vhf_operation_handle, STATUS_SUCCESS));
 }
 

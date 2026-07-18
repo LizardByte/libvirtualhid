@@ -456,12 +456,14 @@ TEST_F(LinuxBackendTest, PipeBackedUinputGamepadsUseCanonicalLinuxEvents) {
 }
 
 TEST_F(LinuxBackendTest, UinputGamepadsNormalizeForceFeedback) {
+  using enum lvh::GamepadProfileKind;
+
   for (const auto kind : {
-         lvh::GamepadProfileKind::generic,
-         lvh::GamepadProfileKind::xbox_360,
-         lvh::GamepadProfileKind::xbox_one,
-         lvh::GamepadProfileKind::xbox_series,
-         lvh::GamepadProfileKind::switch_pro,
+         generic,
+         xbox_360,
+         xbox_one,
+         xbox_series,
+         switch_pro,
        }) {
     for (const auto effect_type : {FF_RUMBLE, FF_CONSTANT, FF_PERIODIC, FF_RAMP}) {
       const auto result = lvh::detail::test::linux_uinput_gamepad_fake_rumble(kind, effect_type);
@@ -854,6 +856,8 @@ TEST_F(LinuxBackendTest, FakeUhidSyscallsCoverFailureBranches) {
 }
 
 TEST_F(LinuxBackendTest, FakeUinputConstructionCoversCapabilitiesAndFailureBranches) {
+  using enum lvh::GamepadProfileKind;
+
   const auto has_type = [](const lvh::detail::test::LinuxLibevdevCreationResult &result, std::uint32_t type) {
     return std::ranges::find(result.event_types, type) != result.event_types.end();
   };
@@ -878,6 +882,7 @@ TEST_F(LinuxBackendTest, FakeUinputConstructionCoversCapabilitiesAndFailureBranc
   struct GamepadCase {
     lvh::GamepadProfileKind kind;
     std::uint16_t bustype;
+    std::uint16_t vendor_id;
     std::uint16_t product_id;
     bool key_record;
     bool sparse_button_slots;
@@ -885,11 +890,11 @@ TEST_F(LinuxBackendTest, FakeUinputConstructionCoversCapabilitiesAndFailureBranc
   };
 
   constexpr std::array gamepad_cases {
-    GamepadCase {lvh::GamepadProfileKind::generic, BUS_USB, 0x0001, true, true, false},
-    GamepadCase {lvh::GamepadProfileKind::xbox_360, BUS_BLUETOOTH, 0x028E, false, true, false},
-    GamepadCase {lvh::GamepadProfileKind::xbox_one, BUS_BLUETOOTH, 0x0B20, false, true, false},
-    GamepadCase {lvh::GamepadProfileKind::xbox_series, BUS_BLUETOOTH, 0x0B13, true, true, false},
-    GamepadCase {lvh::GamepadProfileKind::switch_pro, BUS_USB, 0x2009, false, false, true},
+    GamepadCase {generic, BUS_USB, 0x045E, 0x02EA, true, false, false},
+    GamepadCase {xbox_360, BUS_BLUETOOTH, 0x045E, 0x028E, false, true, false},
+    GamepadCase {xbox_one, BUS_BLUETOOTH, 0x045E, 0x0B20, false, true, false},
+    GamepadCase {xbox_series, BUS_BLUETOOTH, 0x045E, 0x0B13, true, true, false},
+    GamepadCase {switch_pro, BUS_USB, 0x057E, 0x2009, false, false, true},
   };
   constexpr std::array active_buttons {
     BTN_SOUTH,
@@ -909,13 +914,13 @@ TEST_F(LinuxBackendTest, FakeUinputConstructionCoversCapabilitiesAndFailureBranc
 
   constexpr std::array feedback_codes {FF_RUMBLE, FF_CONSTANT, FF_PERIODIC, FF_SINE, FF_RAMP, FF_GAIN};
 
-  for (const auto &[kind, bustype, product_id, key_record, sparse_button_slots, switch_controls] : gamepad_cases) {
+  for (const auto &[kind, bustype, vendor_id, product_id, key_record, sparse_button_slots, switch_controls] : gamepad_cases) {
     const auto expected_profile = lvh::profiles::gamepad_profile(kind);
     ASSERT_TRUE(expected_profile.has_value());
     const auto gamepad = lvh::detail::test::linux_uinput_create_fake_gamepad(kind);
     ASSERT_TRUE(gamepad.status.ok()) << gamepad.status.message();
     EXPECT_EQ(gamepad.name, expected_profile->name);
-    EXPECT_EQ(gamepad.vendor, expected_profile->vendor_id);
+    EXPECT_EQ(gamepad.vendor, vendor_id);
     EXPECT_EQ(gamepad.bustype, bustype);
     EXPECT_EQ(gamepad.product, product_id);
     EXPECT_EQ(gamepad.version, expected_profile->version);
@@ -953,10 +958,10 @@ TEST_F(LinuxBackendTest, FakeUinputConstructionCoversCapabilitiesAndFailureBranc
     }
   }
 
-  const auto xbox_360 = lvh::detail::test::linux_uinput_create_fake_gamepad(lvh::GamepadProfileKind::xbox_360);
-  ASSERT_TRUE(xbox_360.status.ok()) << xbox_360.status.message();
+  const auto xbox_360_result = lvh::detail::test::linux_uinput_create_fake_gamepad(lvh::GamepadProfileKind::xbox_360);
+  ASSERT_TRUE(xbox_360_result.status.ok()) << xbox_360_result.status.message();
   std::vector<std::uint16_t> xbox_360_button_slots;
-  for (const auto &event_code : xbox_360.event_codes) {
+  for (const auto &event_code : xbox_360_result.event_codes) {
     if (event_code.type == EV_KEY && event_code.code >= BTN_SOUTH && event_code.code <= BTN_THUMBR) {
       xbox_360_button_slots.push_back(event_code.code);
     }

@@ -83,6 +83,8 @@ namespace lvh::detail {
     // The Bluetooth bus selects the sparse evdev mapping that matches the
     // button capabilities exposed by these Xbox uinput devices.
     constexpr auto xbox_sparse_uinput_bus = BUS_BLUETOOTH;
+    constexpr std::uint16_t xbox_uinput_vendor_id = 0x045E;
+    constexpr std::uint16_t xbox_one_usb_uinput_product_id = 0x02EA;
     constexpr std::uint16_t xbox_wireless_uinput_product_id = 0x0B20;
     constexpr std::uint16_t xbox_series_uinput_product_id = 0x0B13;
     constexpr auto dualshock4_usb_calibration_report = 0x02;
@@ -539,7 +541,7 @@ namespace lvh::detail {
     bool uses_sparse_uinput_button_slots(GamepadProfileKind kind) {
       using enum GamepadProfileKind;
 
-      return kind == generic || kind == xbox_360 || kind == xbox_one || kind == xbox_series;
+      return kind == xbox_360 || kind == xbox_one || kind == xbox_series;
     }
 
     std::uint16_t to_uhid_bus(BusType bus_type) {
@@ -636,21 +638,15 @@ namespace lvh::detail {
 
       std::string line;
       while (std::getline(file, line)) {
-        constexpr std::string_view name_key {"HID_NAME="};
-        if (!name.empty() && line.starts_with(name_key) && line.size() == name_key.size() + name.size() && line.ends_with(name)) {
+        if (constexpr std::string_view name_key {"HID_NAME="}; !name.empty() && line.starts_with(name_key) && line.size() == name_key.size() + name.size() && line.ends_with(name)) {
           return true;
         }
 
-        constexpr std::string_view phys_key {"HID_PHYS="};
-        if (
-          !physical_id.empty() && line.starts_with(phys_key) &&
-          line.size() == phys_key.size() + physical_id.size() && line.ends_with(physical_id)
-        ) {
+        if (constexpr std::string_view phys_key {"HID_PHYS="}; !physical_id.empty() && line.starts_with(phys_key) && line.size() == phys_key.size() + physical_id.size() && line.ends_with(physical_id)) {
           return true;
         }
 
-        constexpr std::string_view uniq_key {"HID_UNIQ="};
-        if (!unique_id.empty() && line.starts_with(uniq_key) && line.size() == uniq_key.size() + unique_id.size() && line.ends_with(unique_id)) {
+        if (constexpr std::string_view uniq_key {"HID_UNIQ="}; !unique_id.empty() && line.starts_with(uniq_key) && line.size() == uniq_key.size() + unique_id.size() && line.ends_with(unique_id)) {
           return true;
         }
       }
@@ -1551,12 +1547,21 @@ namespace lvh::detail {
       }
 
       libevdev_set_name(device.get(), profile.name.c_str());
+      const auto generic = profile.gamepad_kind == GamepadProfileKind::generic;
       const auto xbox_360 = profile.gamepad_kind == GamepadProfileKind::xbox_360;
       const auto xbox_one = profile.gamepad_kind == GamepadProfileKind::xbox_one;
       const auto xbox_series = profile.gamepad_kind == GamepadProfileKind::xbox_series;
       const auto uses_sparse_xbox_mapping = xbox_360 || xbox_one || xbox_series;
+      auto vendor_id = profile.vendor_id;
       auto product_id = profile.product_id;
-      if (xbox_one) {
+      if (generic) {
+        // Linux consumers do not have a standard mapping for libvirtualhid's
+        // vendor-neutral identity. Use the same compact, Xbox-compatible evdev
+        // identity as Inputtino so hats and force feedback are recognized by
+        // Steam and browser Gamepad API implementations.
+        vendor_id = xbox_uinput_vendor_id;
+        product_id = xbox_one_usb_uinput_product_id;
+      } else if (xbox_one) {
         product_id = xbox_wireless_uinput_product_id;
       } else if (xbox_series) {
         product_id = xbox_series_uinput_product_id;
@@ -1565,7 +1570,7 @@ namespace lvh::detail {
         device.get(),
         uses_sparse_xbox_mapping ? xbox_sparse_uinput_bus : to_uinput_bus(profile.bus_type)
       );
-      libevdev_set_id_vendor(device.get(), profile.vendor_id);
+      libevdev_set_id_vendor(device.get(), vendor_id);
       libevdev_set_id_product(device.get(), product_id);
       libevdev_set_id_version(device.get(), profile.version);
 

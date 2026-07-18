@@ -6,11 +6,54 @@
 // standard includes
 #include <algorithm>
 #include <array>
+#include <cstddef>
+#include <cstdint>
+#include <utility>
+#include <vector>
 
 // local includes
 #include "fixtures/fixtures.hpp"
 
 #include <libvirtualhid/profiles.hpp>
+#include <libvirtualhid/report.hpp>
+
+namespace {
+  struct PackedButtonCase {
+    lvh::GamepadButton button;
+    std::uint16_t bit;
+  };
+
+  template<std::size_t Size>
+  void expect_descriptor_contains(
+    const lvh::DeviceProfile &profile,
+    const std::array<std::uint8_t, Size> &expected
+  ) {
+    const auto match = std::ranges::search(profile.report_descriptor, expected);
+    EXPECT_NE(match.begin(), profile.report_descriptor.end());
+  }
+
+  std::uint16_t read_u16_le(const std::vector<std::uint8_t> &report, std::size_t offset) {
+    return static_cast<std::uint16_t>(
+      report[offset] | static_cast<std::uint16_t>(static_cast<std::uint16_t>(report[offset + 1U]) << 8U)
+    );
+  }
+
+  void expect_packed_button_bits(
+    const lvh::DeviceProfile &profile,
+    const std::vector<PackedButtonCase> &button_cases,
+    std::size_t report_offset
+  ) {
+    for (const auto &[button, bit] : button_cases) {
+      lvh::GamepadState state;
+      state.buttons.set(button);
+      const auto report = lvh::reports::pack_input_report(profile, state);
+
+      ASSERT_GT(report.size(), report_offset + 1U);
+      EXPECT_EQ(read_u16_le(report, report_offset), static_cast<std::uint16_t>(1U << bit))
+        << "logical button " << static_cast<unsigned>(std::to_underlying(button));
+    }
+  }
+}  // namespace
 
 TEST(ProfileTest, BuiltInProfilesHaveDescriptors) {
   const auto profiles = lvh::profiles::built_in_gamepad_profiles();
@@ -49,6 +92,7 @@ TEST(ProfileTest, StreamingControllerProfilesArePresent) {
   EXPECT_TRUE(xbox_one.capabilities.supports_rumble);
   EXPECT_EQ(xbox_one.report_id, 0);
   EXPECT_EQ(xbox_one.input_report_size, 17U);
+  EXPECT_EQ(xbox_one.output_report_size, 8U);
 
   const auto xbox_series = lvh::profiles::xbox_series();
   EXPECT_EQ(xbox_series.vendor_id, 0x045E);
@@ -57,44 +101,7 @@ TEST(ProfileTest, StreamingControllerProfilesArePresent) {
   EXPECT_EQ(xbox_series.manufacturer, "Microsoft");
   EXPECT_EQ(xbox_series.report_id, 0);
   EXPECT_EQ(xbox_series.input_report_size, 17U);
-
-  const std::array<std::uint8_t, 32> xbox_gip_button_descriptor {
-    0x05,
-    0x09,
-    0x09,
-    0x01,
-    0x09,
-    0x02,
-    0x09,
-    0x04,
-    0x09,
-    0x05,
-    0x09,
-    0x07,
-    0x09,
-    0x08,
-    0x09,
-    0x0B,
-    0x09,
-    0x0C,
-    0x09,
-    0x0E,
-    0x09,
-    0x0F,
-    0x15,
-    0x00,
-    0x25,
-    0x01,
-    0x75,
-    0x01,
-    0x95,
-    0x0A,
-    0x81,
-    0x02,
-  };
-  EXPECT_TRUE(
-    std::ranges::search(xbox_one.report_descriptor, xbox_gip_button_descriptor).begin() != xbox_one.report_descriptor.end()
-  );
+  EXPECT_EQ(xbox_series.output_report_size, 8U);
 
   const std::array<std::uint8_t, 11> xbox_gip_stick_axis_descriptor {
     0x15,
@@ -254,30 +261,48 @@ TEST(ProfileTest, StreamingControllerProfilesArePresent) {
     std::ranges::search(switch_pro.report_descriptor, switch_pro_report_id_descriptor).begin() !=
     switch_pro.report_descriptor.end()
   );
+}
 
-  const std::array<std::uint8_t, 36> switch_pro_button_descriptor {
+TEST(ProfileTest, NativeControllerDescriptorsUseContiguousButtonUsages) {
+  const auto xbox_one = lvh::profiles::xbox_one();
+  const auto xbox_series = lvh::profiles::xbox_series();
+  const auto switch_pro = lvh::profiles::switch_pro();
+
+  constexpr std::array<std::uint8_t, 12> xbox_one_buttons {
     0x05,
     0x09,
-    0x09,
-    0x02,
-    0x09,
+    0x19,
     0x01,
-    0x09,
-    0x04,
-    0x09,
+    0x29,
+    0x0A,
+    0x95,
+    0x0A,
+    0x75,
+    0x01,
+    0x81,
+    0x02,
+  };
+  constexpr std::array<std::uint8_t, 12> xbox_series_buttons {
     0x05,
     0x09,
-    0x07,
-    0x09,
-    0x08,
-    0x09,
-    0x09,
-    0x09,
-    0x0A,
-    0x09,
-    0x0B,
-    0x09,
+    0x19,
+    0x01,
+    0x29,
     0x0C,
+    0x95,
+    0x0C,
+    0x75,
+    0x01,
+    0x81,
+    0x02,
+  };
+  constexpr std::array<std::uint8_t, 20> switch_primary_buttons {
+    0x05,
+    0x09,
+    0x19,
+    0x01,
+    0x29,
+    0x0A,
     0x15,
     0x00,
     0x25,
@@ -293,22 +318,13 @@ TEST(ProfileTest, StreamingControllerProfilesArePresent) {
     0x81,
     0x02,
   };
-  EXPECT_TRUE(
-    std::ranges::search(switch_pro.report_descriptor, switch_pro_button_descriptor).begin() !=
-    switch_pro.report_descriptor.end()
-  );
-
-  const std::array<std::uint8_t, 20> switch_pro_system_button_descriptor {
+  constexpr std::array<std::uint8_t, 16> switch_system_buttons {
     0x05,
     0x09,
-    0x09,
+    0x19,
+    0x0B,
+    0x29,
     0x0E,
-    0x09,
-    0x0F,
-    0x09,
-    0x0D,
-    0x09,
-    0x06,
     0x15,
     0x00,
     0x25,
@@ -320,18 +336,120 @@ TEST(ProfileTest, StreamingControllerProfilesArePresent) {
     0x81,
     0x02,
   };
-  EXPECT_TRUE(
-    std::ranges::search(switch_pro.report_descriptor, switch_pro_system_button_descriptor).begin() !=
-    switch_pro.report_descriptor.end()
-  );
+  constexpr std::array<std::uint8_t, 16> switch_compatibility_buttons {
+    0x05,
+    0x09,
+    0x19,
+    0x0F,
+    0x29,
+    0x12,
+    0x15,
+    0x00,
+    0x25,
+    0x01,
+    0x75,
+    0x01,
+    0x95,
+    0x04,
+    0x81,
+    0x02,
+  };
+
+  expect_descriptor_contains(xbox_one, xbox_one_buttons);
+  expect_descriptor_contains(xbox_series, xbox_series_buttons);
+  expect_descriptor_contains(switch_pro, switch_primary_buttons);
+  expect_descriptor_contains(switch_pro, switch_system_buttons);
+  expect_descriptor_contains(switch_pro, switch_compatibility_buttons);
+}
+
+TEST(ProfileTest, NativeControllerPackedButtonsUseExpectedBitSlots) {
+  using enum lvh::GamepadButton;
+
+  const auto xbox_one = lvh::profiles::xbox_one();
+  const auto xbox_series = lvh::profiles::xbox_series();
+  const auto switch_pro = lvh::profiles::switch_pro();
+
+  const std::vector<PackedButtonCase> xbox_button_cases {
+    {a, 0U},
+    {b, 1U},
+    {x, 2U},
+    {y, 3U},
+    {left_shoulder, 4U},
+    {right_shoulder, 5U},
+    {back, 6U},
+    {start, 7U},
+    {left_stick, 8U},
+    {right_stick, 9U},
+  };
+  expect_packed_button_bits(xbox_one, xbox_button_cases, 12U);
+  expect_packed_button_bits(xbox_series, xbox_button_cases, 12U);
+  expect_packed_button_bits(xbox_series, {{misc1, 11U}}, 12U);
+
+  for (const auto &profile : {xbox_one, xbox_series}) {
+    lvh::GamepadState state;
+    state.buttons.set(guide);
+    const auto report = lvh::reports::pack_input_report(profile, state);
+
+    ASSERT_GT(report.size(), 15U);
+    EXPECT_EQ(read_u16_le(report, 12U), 0U);
+    EXPECT_EQ(report[15], 1U);
+  }
+
+  const std::vector<PackedButtonCase> switch_button_cases {
+    {a, 0U},
+    {b, 1U},
+    {x, 2U},
+    {y, 3U},
+    {left_shoulder, 4U},
+    {right_shoulder, 5U},
+    {back, 8U},
+    {start, 9U},
+    {left_stick, 10U},
+    {right_stick, 11U},
+    {guide, 12U},
+    {misc1, 13U},
+  };
+  expect_packed_button_bits(switch_pro, switch_button_cases, 1U);
+
+  lvh::GamepadState trigger_state;
+  trigger_state.left_trigger = 1.0F;
+  trigger_state.right_trigger = 1.0F;
+  const auto trigger_report = lvh::reports::pack_input_report(switch_pro, trigger_state);
+  ASSERT_GT(trigger_report.size(), 2U);
+  EXPECT_EQ(read_u16_le(trigger_report, 1U), static_cast<std::uint16_t>((1U << 6U) | (1U << 7U)));
+
+  // Switch usages 15 through 18 are inactive compatibility slots in the upper
+  // nibble after the hat, not public logical paddle buttons.
+  EXPECT_EQ(trigger_report[11] & 0xF0U, 0U);
 }
 
 TEST(ProfileTest, RumbleProfilesExposeOutputReports) {
   const auto generic = lvh::profiles::generic_gamepad();
   const auto xbox_360 = lvh::profiles::xbox_360();
+  const auto xbox_one = lvh::profiles::xbox_one();
+  const auto xbox_series = lvh::profiles::xbox_series();
 
   EXPECT_TRUE(generic.capabilities.supports_rumble);
-  EXPECT_EQ(generic.output_report_size, 5U);
+  EXPECT_EQ(generic.output_report_size, 9U);
+  constexpr std::array<std::uint8_t, 16> pid_rumble_descriptor {
+    0x05,
+    0x0F,
+    0x09,
+    0x97,
+    0x15,
+    0x00,
+    0x25,
+    0x01,
+    0x75,
+    0x04,
+    0x95,
+    0x01,
+    0x91,
+    0x02,
+    0x15,
+    0x00,
+  };
+  expect_descriptor_contains(generic, pid_rumble_descriptor);
 
   EXPECT_TRUE(xbox_360.capabilities.supports_rumble);
   EXPECT_EQ(xbox_360.output_report_size, 5U);
@@ -339,6 +457,11 @@ TEST(ProfileTest, RumbleProfilesExposeOutputReports) {
   EXPECT_EQ(xbox_360.report_descriptor[xbox_360.report_descriptor.size() - 3U], 0x91);
   EXPECT_EQ(xbox_360.report_descriptor[xbox_360.report_descriptor.size() - 2U], 0x02);
   EXPECT_EQ(xbox_360.report_descriptor.back(), 0xC0);
+
+  EXPECT_EQ(xbox_one.output_report_size, 8U);
+  EXPECT_EQ(xbox_series.output_report_size, 8U);
+  expect_descriptor_contains(xbox_one, pid_rumble_descriptor);
+  expect_descriptor_contains(xbox_series, pid_rumble_descriptor);
 }
 
 TEST(ProfileTest, CanFindProfileByKind) {

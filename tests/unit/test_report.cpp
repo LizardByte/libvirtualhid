@@ -4,6 +4,7 @@
  */
 
 // standard includes
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -341,6 +342,85 @@ TEST(ReportTest, ParsesRumbleOutputReport) {
   EXPECT_EQ(output.raw_report, report);
 }
 
+TEST(ReportTest, ParsesPidRumbleReports) {
+  const auto expect_outputs = [](const lvh::DeviceProfile &profile, const std::vector<std::uint8_t> &report) {
+    const auto outputs = lvh::reports::parse_output_reports(profile, report);
+
+    ASSERT_EQ(outputs.size(), 2U);
+    EXPECT_EQ(outputs[0].kind, lvh::GamepadOutputKind::rumble);
+    EXPECT_EQ(outputs[0].low_frequency_rumble, 49151U);
+    EXPECT_EQ(outputs[0].high_frequency_rumble, 65535U);
+    EXPECT_EQ(outputs[0].raw_report, report);
+    EXPECT_EQ(outputs[1].kind, lvh::GamepadOutputKind::trigger_rumble);
+    EXPECT_EQ(outputs[1].left_trigger_rumble, 16384U);
+    EXPECT_EQ(outputs[1].right_trigger_rumble, 32768U);
+    EXPECT_EQ(outputs[1].raw_report, report);
+  };
+
+  const auto generic = lvh::profiles::generic_gamepad();
+  const std::vector<std::uint8_t> generic_report {generic.report_id, 0x0F, 25, 50, 75, 100, 10, 0, 0};
+  expect_outputs(generic, generic_report);
+
+  for (const auto &profile : {lvh::profiles::xbox_one(), lvh::profiles::xbox_series()}) {
+    const std::vector<std::uint8_t> payload {0x0F, 25, 50, 75, 100, 10, 0, 0};
+    expect_outputs(profile, payload);
+
+    auto prefixed_report = payload;
+    prefixed_report.insert(prefixed_report.begin(), 0);
+    expect_outputs(profile, prefixed_report);
+  }
+}
+
+TEST(ReportTest, PidRumbleHonorsEnableMaskAndDuration) {
+  const auto profile = lvh::profiles::xbox_one();
+
+  struct EnableMaskCase {
+    std::uint8_t mask;
+    std::uint16_t low_frequency;
+    std::uint16_t high_frequency;
+    std::uint16_t left_trigger;
+    std::uint16_t right_trigger;
+  };
+
+  constexpr std::array enable_mask_cases {
+    EnableMaskCase {0x01, 0, 65535, 0, 0},
+    EnableMaskCase {0x02, 65535, 0, 0, 0},
+    EnableMaskCase {0x04, 0, 0, 0, 65535},
+    EnableMaskCase {0x08, 0, 0, 65535, 0},
+  };
+
+  for (const auto &test_case : enable_mask_cases) {
+    const std::vector<std::uint8_t> report {test_case.mask, 100, 100, 100, 100, 10, 0, 0};
+    const auto outputs = lvh::reports::parse_output_reports(profile, report);
+
+    ASSERT_EQ(outputs.size(), 2U);
+    EXPECT_EQ(outputs[0].low_frequency_rumble, test_case.low_frequency);
+    EXPECT_EQ(outputs[0].high_frequency_rumble, test_case.high_frequency);
+    EXPECT_EQ(outputs[1].left_trigger_rumble, test_case.left_trigger);
+    EXPECT_EQ(outputs[1].right_trigger_rumble, test_case.right_trigger);
+  }
+
+  const std::vector<std::uint8_t> zero_duration {0x0F, 100, 100, 100, 100, 0, 0, 0};
+  const auto stopped_outputs = lvh::reports::parse_output_reports(profile, zero_duration);
+
+  ASSERT_EQ(stopped_outputs.size(), 2U);
+  EXPECT_EQ(stopped_outputs[0].low_frequency_rumble, 0U);
+  EXPECT_EQ(stopped_outputs[0].high_frequency_rumble, 0U);
+  EXPECT_EQ(stopped_outputs[1].left_trigger_rumble, 0U);
+  EXPECT_EQ(stopped_outputs[1].right_trigger_rumble, 0U);
+}
+
+TEST(ReportTest, KeepsMalformedPidRumbleReportRaw) {
+  const auto profile = lvh::profiles::xbox_series();
+  const std::vector<std::uint8_t> report {0x0F, 101, 0, 0, 0, 10, 0, 0};
+
+  const auto outputs = lvh::reports::parse_output_reports(profile, report);
+
+  ASSERT_EQ(outputs.size(), 1U);
+  EXPECT_EQ(outputs[0].kind, lvh::GamepadOutputKind::raw_report);
+  EXPECT_EQ(outputs[0].raw_report, report);
+}
+
 TEST(ReportTest, ParsesDualSenseOutputReportEvents) {
   const auto profile = lvh::profiles::dualsense_usb();
   std::vector<std::uint8_t> report(profile.output_report_size, 0);
@@ -476,21 +556,119 @@ TEST(ReportTest, KeepsUnrecognizedOutputReportsRaw) {
 
   const auto generic_output = lvh::reports::parse_output_report(generic_profile, generic_report);
 
-  EXPECT_EQ(generic_output.kind, lvh::GamepadOutputKind::rumble);
-  EXPECT_EQ(generic_output.low_frequency_rumble, 0x1234);
-  EXPECT_EQ(generic_output.high_frequency_rumble, 0xABCD);
+  EXPECT_EQ(generic_output.kind, lvh::GamepadOutputKind::raw_report);
+  EXPECT_EQ(generic_output.low_frequency_rumble, 0U);
+  EXPECT_EQ(generic_output.high_frequency_rumble, 0U);
   EXPECT_EQ(generic_output.raw_report, generic_report);
 
   const auto switch_profile = lvh::profiles::switch_pro();
   std::vector<std::uint8_t> switch_report(switch_profile.output_report_size, 0);
-  switch_report[0] = switch_profile.report_id;
-  switch_report[1] = 0x34;
-  switch_report[2] = 0x12;
-  switch_report[3] = 0xCD;
-  switch_report[4] = 0xAB;
+  switch_report[0] = 0x80;
+  switch_report[1] = 0x02;
 
   const auto switch_output = lvh::reports::parse_output_report(switch_profile, switch_report);
 
   EXPECT_EQ(switch_output.kind, lvh::GamepadOutputKind::raw_report);
   EXPECT_EQ(switch_output.raw_report, switch_report);
+}
+
+TEST(ReportTest, ParsesSwitchProRumbleOnlyReport) {
+  const auto profile = lvh::profiles::switch_pro();
+  const std::vector<std::uint8_t> report {
+    0x10,
+    0x07,
+    0x74,
+    0x1A,
+    0x3D,
+    0x59,
+    0x74,
+    0x1A,
+    0x3D,
+    0x59,
+  };
+
+  const auto output = lvh::reports::parse_output_report(profile, report);
+
+  EXPECT_EQ(output.kind, lvh::GamepadOutputKind::rumble);
+  EXPECT_EQ(output.low_frequency_rumble, 22251U);
+  EXPECT_EQ(output.high_frequency_rumble, 5213U);
+  EXPECT_EQ(output.raw_report, report);
+
+  auto padded_report = report;
+  padded_report.resize(profile.output_report_size, 0);
+  const auto padded_output = lvh::reports::parse_output_report(profile, padded_report);
+
+  EXPECT_EQ(padded_output.kind, lvh::GamepadOutputKind::rumble);
+  EXPECT_EQ(padded_output.low_frequency_rumble, 22251U);
+  EXPECT_EQ(padded_output.high_frequency_rumble, 5213U);
+  EXPECT_EQ(padded_output.raw_report, padded_report);
+}
+
+TEST(ReportTest, ParsesSwitchProRumbleFromSubcommandReport) {
+  const auto profile = lvh::profiles::switch_pro();
+  const std::vector<std::uint8_t> report {
+    0x01,
+    0x0F,
+    0x74,
+    0x00,
+    0xBD,
+    0x71,
+    0x74,
+    0xC8,
+    0x3D,
+    0x40,
+    0x48,
+    0x01,
+  };
+
+  const auto output = lvh::reports::parse_output_report(profile, report);
+
+  EXPECT_EQ(output.kind, lvh::GamepadOutputKind::rumble);
+  EXPECT_EQ(output.low_frequency_rumble, 64315U);
+  EXPECT_EQ(output.high_frequency_rumble, 65535U);
+  EXPECT_EQ(output.raw_report, report);
+}
+
+TEST(ReportTest, ParsesSwitchProNeutralRumbleReport) {
+  const auto profile = lvh::profiles::switch_pro();
+  const std::vector<std::uint8_t> report {
+    0x10,
+    0x00,
+    0x00,
+    0x01,
+    0x40,
+    0x40,
+    0x00,
+    0x01,
+    0x40,
+    0x40,
+  };
+
+  const auto output = lvh::reports::parse_output_report(profile, report);
+
+  EXPECT_EQ(output.kind, lvh::GamepadOutputKind::rumble);
+  EXPECT_EQ(output.low_frequency_rumble, 0U);
+  EXPECT_EQ(output.high_frequency_rumble, 0U);
+  EXPECT_EQ(output.raw_report, report);
+}
+
+TEST(ReportTest, KeepsMalformedSwitchProRumbleReportRaw) {
+  const auto profile = lvh::profiles::switch_pro();
+  const std::vector<std::uint8_t> report {
+    0x10,
+    0x00,
+    0x74,
+    0x1A,
+    0x3D,
+    0x20,
+    0x74,
+    0x1A,
+    0x3D,
+    0x59,
+  };
+
+  const auto output = lvh::reports::parse_output_report(profile, report);
+
+  EXPECT_EQ(output.kind, lvh::GamepadOutputKind::raw_report);
+  EXPECT_EQ(output.raw_report, report);
 }

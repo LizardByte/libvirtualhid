@@ -88,10 +88,10 @@ TEST_F(WindowsBackendTest, FakeChannelExercisesLifecycleSubmitCloseAndOutput) {
 
   ASSERT_TRUE(result.saw_output);
   EXPECT_EQ(result.last_output.kind, lvh::GamepadOutputKind::rumble);
-  EXPECT_EQ(result.last_output.low_frequency_rumble, 0x5678U);
-  EXPECT_EQ(result.last_output.high_frequency_rumble, 0x1234U);
-  ASSERT_GE(result.last_output.raw_report.size(), 5U);
-  EXPECT_EQ(result.last_output.raw_report[0], 0U);
+  EXPECT_EQ(result.last_output.low_frequency_rumble, 49151U);
+  EXPECT_EQ(result.last_output.high_frequency_rumble, 65535U);
+  ASSERT_EQ(result.last_output.raw_report.size(), 8U);
+  EXPECT_EQ(result.last_output.raw_report[0], 0x03U);
 }
 
 TEST_F(WindowsBackendTest, FakeChannelCoversCreateFailureBranches) {

@@ -28,6 +28,10 @@ namespace lvh::profiles {
 
     constexpr std::size_t common_output_report_size = 5;
 
+    constexpr std::size_t pid_rumble_payload_size = 8;
+
+    constexpr std::size_t pid_rumble_output_report_size = pid_rumble_payload_size + 1U;
+
     constexpr std::size_t xbox_gip_input_report_size = 17;
 
     constexpr std::uint8_t switch_pro_report_id = 0x30;
@@ -155,18 +159,87 @@ namespace lvh::profiles {
       }
     }
 
+    void append_pid_rumble_output(std::vector<std::uint8_t> &descriptor) {
+      descriptor.insert(
+        descriptor.end(),
+        {
+          0xA1,
+          0x02,  // Collection (Logical)
+          0x05,
+          0x0F,  // Usage Page (Physical Interface Device)
+          0x09,
+          0x97,  // Usage (DC Enable Actuators)
+          0x15,
+          0x00,  // Logical Minimum (0)
+          0x25,
+          0x01,  // Logical Maximum (1)
+          0x75,
+          0x04,  // Report Size (4)
+          0x95,
+          0x01,  // Report Count (1)
+          0x91,
+          0x02,  // Output (Data,Var,Abs)
+          0x15,
+          0x00,
+          0x25,
+          0x00,
+          0x91,
+          0x03,  // Output (Const,Var,Abs) padding
+          0x09,
+          0x70,  // Usage (Magnitude)
+          0x15,
+          0x00,
+          0x25,
+          0x64,  // Logical Maximum (100)
+          0x75,
+          0x08,
+          0x95,
+          0x04,  // Four actuator magnitudes
+          0x91,
+          0x02,
+          0x09,
+          0x50,  // Usage (Duration)
+          0x66,
+          0x01,
+          0x10,
+          0x55,
+          0x0E,
+          0x26,
+          0xFF,
+          0x00,
+          0x95,
+          0x01,
+          0x91,
+          0x02,
+          0x09,
+          0xA7,  // Usage (Start Delay)
+          0x91,
+          0x02,
+          0x65,
+          0x00,
+          0x55,
+          0x00,
+          0x09,
+          0x7C,  // Usage (Loop Count)
+          0x91,
+          0x02,
+          0xC0,  // End logical collection
+        }
+      );
+    }
+
     std::vector<std::uint8_t> make_xbox_gip_report_descriptor(bool include_share_button) {
       constexpr std::string_view xbox_one_descriptor =
         "05010905a101a10009300931150027ffff0000950275108102c0a10009330934150027ffff0000950275108102c0"
         "05010932150026ff039501750a81021500250075069501810305010935150026ff039501750a8102150025007506"
-        "950181030509090109020904090509070908090b090c090e090f150025017501950a81021500250075069501810305010939150125083500463b0166140075049501"
+        "9501810305091901290a950a750181021500250075069501810305010939150125083500463b0166140075049501"
         "814275049501150025003500450065008103a102050f099715002501750495019102150025009103097015002564"
         "7508950491020950660110550e26ff009501910209a7910265005500097c9102c005010980a100098515002501"
         "95017501810215002500750795018103c005060920150026ff00750895018102c0";
       constexpr std::string_view xbox_series_descriptor =
         "05010905a101a10009300931150027ffff0000950275108102c0a10009330934150027ffff0000950275108102c0"
         "05010932150026ff039501750a81021500250075069501810305010935150026ff039501750a8102150025007506"
-        "950181030509090109020904090509070908090b090c090e090f150025017501950a8102150025007501950181030906150025017501950181021500250075049501810305010939150125083500463b0166140075049501"
+        "9501810305091901290c950c750181021500250075049501810305010939150125083500463b0166140075049501"
         "814275049501150025003500450065008103a102050f099715002501750495019102150025009103097015002564"
         "7508950491020950660110550e26ff009501910209a7910265005500097c9102c005010980a100098515002501"
         "95017501810215002500750795018103c005060920150026ff00750895018102c0";
@@ -176,9 +249,9 @@ namespace lvh::profiles {
 
     std::vector<std::uint8_t> make_switch_pro_report_descriptor() {
       constexpr std::string_view descriptor =
-        "050115000904a1018530050105090902090109040905090709080909090a090b090c150025017501950a5500650081020509090e090f090d0906150025017501"
+        "050115000904a1018530050105091901290a150025017501950a5500650081020509190b290e150025017501"
         "950481027501950281030b01000100a1000b300001000b310001000b320001000b35000100150027ffff0000"
-        "751095048102c00b39000100150025073500463b016514750495018102750495018103"
+        "751095048102c00b39000100150025073500463b0165147504950181020509190f291215002501750195048102"
         "7508953481030600ff852109017508953f8103858109027508953f8103850109037508953f9183851009047508"
         "953f9183858009057508953f9183858209067508953f9183c0";
 
@@ -336,27 +409,7 @@ namespace lvh::profiles {
       };
 
       if (supports_rumble) {
-        descriptor.insert(
-          descriptor.end(),
-          {
-            0x06,
-            0x00,
-            0xFF,  // Usage Page (Vendor Defined)
-            0x09,
-            0x01,  // Usage (Vendor Usage 1)
-            0x15,
-            0x00,  // Logical Minimum (0)
-            0x26,
-            0xFF,
-            0x00,  // Logical Maximum (255)
-            0x75,
-            0x08,  // Report Size (8)
-            0x95,
-            0x04,  // Report Count (4)
-            0x91,
-            0x02,  // Output (Data,Var,Abs)
-          }
-        );
+        append_pid_rumble_output(descriptor);
       }
 
       descriptor.push_back(0xC0);  // End Collection
@@ -1869,6 +1922,9 @@ namespace lvh::profiles {
       );
       profile.report_descriptor =
         make_standard_gamepad_report_descriptor(profile.report_id, profile.capabilities.supports_rumble);
+      if (profile.capabilities.supports_rumble) {
+        profile.output_report_size = pid_rumble_output_report_size;
+      }
       return profile;
     }
 
@@ -1888,7 +1944,7 @@ namespace lvh::profiles {
       profile.version = version;
       profile.report_id = 0;
       profile.input_report_size = xbox_gip_input_report_size;
-      profile.output_report_size = common_output_report_size;
+      profile.output_report_size = pid_rumble_payload_size;
       profile.name = std::move(name);
       profile.manufacturer = "Microsoft";
       profile.capabilities = {.supports_rumble = true, .supports_battery = include_share_button};

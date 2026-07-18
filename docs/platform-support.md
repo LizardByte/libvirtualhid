@@ -38,6 +38,13 @@ HID consumers can enumerate, including SDL/HIDAPI, DirectInput,
 Windows.Gaming.Input/GameInput, and browser Gamepad API clients. XInput is not a
 direct target of the HID backend.
 
+The Generic descriptor advertises its four rumble actuators through the HID
+Physical Interface Device usage page instead of an opaque vendor output. Xbox
+One and Xbox Series use the same native eight-byte PID payload exposed by the
+Windows Xbox HID stack. The library applies the actuator-enable mask and
+duration field, then reports the body motors as normalized low/high-frequency
+rumble and the independent trigger motors as trigger-rumble output.
+
 See [Windows driver package](windows-driver.md) for build, install, validation,
 and signing details.
 
@@ -69,12 +76,19 @@ backend lets a new uinput device settle before reading those effects so an early
 poll error cannot disable feedback for the device lifetime. PlayStation rumble
 is read from native UHID interrupt-channel output reports.
 
+The Generic profile keeps its public `0x1209:0x0001` identity on descriptor-
+driven backends. Its Linux uinput device uses the proven compact Xbox-compatible
+`0x045E:0x02EA` evdev identity used by Inputtino. Linux browser and Steam mapping
+tables do not define a standard mapping for the vendor-neutral identity; the
+compatible uinput identity makes the hat axes appear as logical D-pad buttons
+and exposes standard force feedback without changing the public profile name.
+
 Xbox 360 retains its `0x045E:0x028E` identity, while its Linux uinput device uses
 the Bluetooth bus so consumers select the sparse button mapping.
 Xbox One and Xbox Series retain their public USB identities, but their Linux
 uinput devices use the corresponding Bluetooth product identities (`0x0B20`
 and `0x0B13`, respectively), whose standard consumer mappings match the events
-that uinput exposes. Those four sparse-layout profiles preserve the 15-slot
+that uinput exposes. Those three Xbox profiles preserve the 15-slot
 Linux gamepad button sequence: unused `BTN_C`, `BTN_Z`, `BTN_TL2`, and `BTN_TR2`
 slots are advertised but never pressed, keeping face buttons, shoulders, menu
 buttons, Guide, L3, and R3 at their expected indices. D-pad directions are
@@ -92,6 +106,10 @@ Switch Pro keeps its Nintendo identity on the Linux uinput path. This follows
 the evdev layout used by Linux-native virtual-controller implementations and
 allows standard `FF_RUMBLE` effects without emulating the physical controller's
 proprietary initialization handshake.
+
+On descriptor-driven backends, native Switch Pro output reports `0x01` and
+`0x10` are decoded into the normalized low- and high-frequency rumble callback.
+The original native report remains available in `GamepadOutput::raw_report`.
 
 The optional `virtualhid_control` diagnostic UI uses SDL3 and Dear ImGui through
 the repository CPM lockfile. It is intended to stay on the same UI framework for

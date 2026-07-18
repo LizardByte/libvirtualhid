@@ -32,6 +32,7 @@
 #include <cerrno>
 #include <fcntl.h>
 #include <linux/input.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 // lib includes
@@ -60,6 +61,7 @@ namespace {
     lvh::DeviceProfile profile;
     std::string_view name_suffix;
     std::string_view stable_id;
+    std::optional<std::uint16_t> expected_vendor_id;
     std::optional<std::uint16_t> expected_product_id;
     int minimum_buttons = 1;
     int minimum_axes = 2;
@@ -208,17 +210,73 @@ namespace {
     return rumble->observed.load();
   }
 
-  std::optional<std::filesystem::path> wait_for_hidraw_node(lvh::Gamepad &gamepad) {
+  std::optional<std::filesystem::path> wait_for_hidraw_node(const lvh::Gamepad &gamepad) {
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds {3};
     while (std::chrono::steady_clock::now() < deadline) {
       for (const auto &node : gamepad.device_nodes()) {
-        if (node.kind == lvh::DeviceNodeKind::hidraw && ::access(node.path.c_str(), W_OK) == 0) {
+        if (node.kind == lvh::DeviceNodeKind::hidraw) {
           return std::filesystem::path {node.path};
         }
       }
       std::this_thread::sleep_for(std::chrono::milliseconds {50});
     }
     return std::nullopt;
+  }
+
+  std::string describe_device_nodes(const std::vector<lvh::DeviceNode> &nodes) {
+    if (nodes.empty()) {
+      return "<none>";
+    }
+
+    std::ostringstream description;
+    for (std::size_t index = 0; index < nodes.size(); ++index) {
+      if (index != 0) {
+        description << ", ";
+      }
+      description << nodes[index].path
+                  << " (kind=" << static_cast<int>(std::to_underlying(nodes[index].kind)) << ')';
+    }
+    return description.str();
+  }
+
+  std::string errno_message(int error) {
+    return std::error_code {error, std::generic_category()}.message();
+  }
+
+  std::string describe_node_permissions(const std::filesystem::path &path) {
+    struct stat status {};
+    if (::stat(path.c_str(), &status) != 0) {
+      const auto stat_error = errno;
+      return std::format(
+        "path={} stat failed: {} (errno={})",
+        path.string(),
+        errno_message(stat_error),
+        stat_error
+      );
+    }
+
+    return std::format(
+      "path={} mode={:04o} uid={} gid={} euid={} egid={}",
+      path.string(),
+      status.st_mode & 07777,
+      status.st_uid,
+      status.st_gid,
+      ::geteuid(),
+      ::getegid()
+    );
+  }
+
+  int wait_for_write_access(const std::filesystem::path &path) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds {3};
+    int access_error = 0;
+    while (std::chrono::steady_clock::now() < deadline) {
+      if (::access(path.c_str(), W_OK) == 0) {
+        return 0;
+      }
+      access_error = errno;
+      std::this_thread::sleep_for(std::chrono::milliseconds {50});
+    }
+    return access_error;
   }
 
   std::vector<std::uint8_t> playstation_rumble_report(const lvh::DeviceProfile &profile) {
@@ -418,6 +476,9 @@ namespace {
     const auto expected_profile = [&test_case]() {
       auto profile = test_case.profile;
       profile.name = unique_device_name(test_case.name_suffix);
+      if (test_case.expected_vendor_id.has_value()) {
+        profile.vendor_id = *test_case.expected_vendor_id;
+      }
       if (test_case.expected_product_id.has_value()) {
         profile.product_id = *test_case.expected_product_id;
       }
@@ -460,19 +521,34 @@ namespace {
   void expect_hidraw_rumble_callback(const lvh::DeviceProfile &profile, lvh::Gamepad &gamepad) {
     const auto rumble = observe_rumble(gamepad);
     const auto hidraw_node = wait_for_hidraw_node(gamepad);
-    ASSERT_TRUE(hidraw_node.has_value());
+    ASSERT_TRUE(hidraw_node.has_value())
+      << "No hidraw node was discovered. Reported device nodes: "
+      << describe_device_nodes(gamepad.device_nodes());
 
     const auto report = playstation_rumble_report(profile);
     ASSERT_FALSE(report.empty());
 
+    const auto access_error = wait_for_write_access(*hidraw_node);
+    ASSERT_EQ(access_error, 0)
+      << "hidraw node is not writable: " << errno_message(access_error)
+      << " (errno=" << access_error << "); " << describe_node_permissions(*hidraw_node);
+
+    errno = 0;
     const auto descriptor = ::open(hidraw_node->c_str(), O_WRONLY | O_CLOEXEC);
-    ASSERT_GE(descriptor, 0) << std::strerror(errno);
+    const auto open_error = errno;
+    ASSERT_GE(descriptor, 0)
+      << "Failed to open hidraw node: " << errno_message(open_error)
+      << " (errno=" << open_error << "); " << describe_node_permissions(*hidraw_node);
     ScopeExit close_descriptor {[descriptor]() {
       static_cast<void>(::close(descriptor));
     }};
 
-    ASSERT_EQ(::write(descriptor, report.data(), report.size()), static_cast<ssize_t>(report.size()))
-      << std::strerror(errno);
+    errno = 0;
+    const auto bytes_written = ::write(descriptor, report.data(), report.size());
+    const auto write_error = errno;
+    ASSERT_EQ(bytes_written, static_cast<ssize_t>(report.size()))
+      << "Failed to write the complete rumble report: " << errno_message(write_error)
+      << " (errno=" << write_error << ")";
     EXPECT_TRUE(wait_for_rumble(rumble, false));
     EXPECT_GT(rumble->low_frequency.load(), 0);
     EXPECT_GT(rumble->high_frequency.load(), 0);
@@ -516,6 +592,7 @@ namespace {
     expect_sdl_playstation_controller_profile(controller.get());
     if (test_case.expect_live_input) {
       EXPECT_TRUE(wait_for_sdl_controller_input(controller.get())) << describe_sdl_controller_state(controller.get());
+      expect_sdl_rumble_callback(controller.get(), gamepad);
       expect_hidraw_rumble_callback(expected_profile, gamepad);
     }
   }
@@ -690,7 +767,9 @@ TEST_F(LinuxConsumerTest, SdlSeesGenericCanonicalButtons) {
     .profile = lvh::profiles::generic_gamepad(),
     .name_suffix = "SDL Generic Gamepad",
     .stable_id = "libvirtualhid-sdl-gamepad-test",
-    .minimum_buttons = 16,
+    .expected_vendor_id = 0x045E,
+    .expected_product_id = 0x02EA,
+    .minimum_buttons = 11,
     .minimum_axes = 6,
   });
 }

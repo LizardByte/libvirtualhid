@@ -36,6 +36,11 @@ device from the requested descriptor, VID/PID, version, and report layout. Input
 reports are submitted through VHF, and HID output writes are normalized back to
 the C++ output callback path.
 
+Each backend runtime uses one control-file handle for commands and its pending
+output read. The driver associates output events with that handle, so feedback
+from a virtual gamepad is delivered only to the runtime that created it instead
+of being consumed by another libvirtualhid client.
+
 The driver opens a separate VHF source target for each virtual gamepad and
 parents that target to the control-file handle that created it. If the creating
 process exits or crashes, Windows cleans up gamepads that were not explicitly

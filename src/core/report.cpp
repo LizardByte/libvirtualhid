@@ -61,6 +61,119 @@ namespace lvh::reports {
 
     constexpr auto dualsense_flag2_compatible_vibration = std::byte {0x04};
 
+    constexpr std::uint8_t switch_rumble_and_subcommand_output_report_id = 0x01;
+
+    constexpr std::uint8_t switch_rumble_only_output_report_id = 0x10;
+
+    constexpr std::size_t switch_rumble_output_report_size = 10;
+
+    // SDL maps 16-bit rumble strengths to Nintendo's shared 101-step amplitude
+    // scale. This is the inverse table for the packed high- and low-band values:
+    // https://github.com/libsdl-org/SDL/blob/main/src/joystick/hidapi/SDL_hidapi_switch.c
+    constexpr std::array<std::uint16_t, 101> switch_rumble_amplitudes {
+      0,
+      514,
+      775,
+      921,
+      1096,
+      1303,
+      1550,
+      1843,
+      2192,
+      2606,
+      3100,
+      3686,
+      4383,
+      5213,
+      6199,
+      7372,
+      7698,
+      8039,
+      8395,
+      8767,
+      9155,
+      9560,
+      9984,
+      10426,
+      10887,
+      11369,
+      11873,
+      12398,
+      12947,
+      13520,
+      14119,
+      14744,
+      15067,
+      15397,
+      15734,
+      16079,
+      16431,
+      16790,
+      17158,
+      17534,
+      17918,
+      18310,
+      18711,
+      19121,
+      19540,
+      19967,
+      20405,
+      20851,
+      21308,
+      21775,
+      22251,
+      22739,
+      23236,
+      23745,
+      24265,
+      24797,
+      25340,
+      25894,
+      26462,
+      27041,
+      27633,
+      28238,
+      28856,
+      29488,
+      30134,
+      30794,
+      31468,
+      32157,
+      32861,
+      33581,
+      34316,
+      35068,
+      35836,
+      36620,
+      37422,
+      38242,
+      39079,
+      39935,
+      40809,
+      41703,
+      42616,
+      43549,
+      44503,
+      45477,
+      46473,
+      47491,
+      48531,
+      49593,
+      50679,
+      51789,
+      52923,
+      54082,
+      55266,
+      56476,
+      57713,
+      58977,
+      60268,
+      61588,
+      62936,
+      64315,
+      65535,
+    };
+
     constexpr std::byte to_byte(std::uint8_t value) {
       return static_cast<std::byte>(value);
     }
@@ -174,6 +287,145 @@ namespace lvh::reports {
 
     std::uint16_t scale_output_byte(std::uint8_t value) {
       return static_cast<std::uint16_t>(std::lround((static_cast<float>(value) / 255.0F) * 65535.0F));
+    }
+
+    constexpr std::size_t pid_rumble_payload_size = 8;
+
+    constexpr std::size_t pid_rumble_report_size = pid_rumble_payload_size + 1U;
+
+    constexpr std::uint8_t pid_rumble_maximum_magnitude = 100;
+
+    constexpr std::uint8_t pid_rumble_low_frequency_enabled = 0x02;
+
+    constexpr std::uint8_t pid_rumble_high_frequency_enabled = 0x01;
+
+    constexpr std::uint8_t pid_rumble_left_trigger_enabled = 0x08;
+
+    constexpr std::uint8_t pid_rumble_right_trigger_enabled = 0x04;
+
+    struct PidRumbleAmplitude {
+      std::uint16_t left_trigger;
+      std::uint16_t right_trigger;
+      std::uint16_t low_frequency;
+      std::uint16_t high_frequency;
+    };
+
+    std::uint16_t scale_pid_rumble_magnitude(std::uint8_t value) {
+      return static_cast<std::uint16_t>(
+        (static_cast<std::uint32_t>(value) * 65535U + 50U) / pid_rumble_maximum_magnitude
+      );
+    }
+
+    std::optional<std::size_t> pid_rumble_payload_offset(
+      const DeviceProfile &profile,
+      const std::vector<std::uint8_t> &report
+    ) {
+      using enum GamepadProfileKind;
+
+      if (profile.gamepad_kind == generic) {
+        if (report.size() >= pid_rumble_report_size && report[0] == profile.report_id) {
+          return 1U;
+        }
+        return std::nullopt;
+      }
+
+      if (profile.gamepad_kind != xbox_one && profile.gamepad_kind != xbox_series) {
+        return std::nullopt;
+      }
+
+      // The Windows HID write buffer includes a leading zero for devices that
+      // do not use report IDs. VHF may preserve that byte or expose only the
+      // eight-byte PID payload, so accept both representations.
+      if (report.size() >= pid_rumble_report_size && report[0] == 0U) {
+        return 1U;
+      }
+      if (report.size() >= pid_rumble_payload_size) {
+        return 0U;
+      }
+      return std::nullopt;
+    }
+
+    std::optional<PidRumbleAmplitude> decode_pid_rumble_report(
+      const DeviceProfile &profile,
+      const std::vector<std::uint8_t> &report
+    ) {
+      const auto offset = pid_rumble_payload_offset(profile, report);
+      if (!offset.has_value()) {
+        return std::nullopt;
+      }
+
+      const auto magnitudes = std::span {report}.subspan(*offset + 1U, 4U);
+      if (std::ranges::any_of(magnitudes, [](const auto magnitude) {
+            return magnitude > pid_rumble_maximum_magnitude;
+          })) {
+        return std::nullopt;
+      }
+
+      const auto enabled = report[*offset] & 0x0FU;
+      const auto duration = report[*offset + 5U];
+      const auto enabled_magnitude = [&](std::uint8_t enable_bit, std::size_t magnitude_index) {
+        if (duration == 0U || (enabled & enable_bit) == 0U) {
+          return std::uint16_t {0};
+        }
+        return scale_pid_rumble_magnitude(magnitudes[magnitude_index]);
+      };
+
+      return PidRumbleAmplitude {
+        .left_trigger = enabled_magnitude(pid_rumble_left_trigger_enabled, 0U),
+        .right_trigger = enabled_magnitude(pid_rumble_right_trigger_enabled, 1U),
+        .low_frequency = enabled_magnitude(pid_rumble_low_frequency_enabled, 2U),
+        .high_frequency = enabled_magnitude(pid_rumble_high_frequency_enabled, 3U),
+      };
+    }
+
+    struct SwitchRumbleAmplitude {
+      std::uint16_t low_frequency;
+      std::uint16_t high_frequency;
+    };
+
+    std::optional<SwitchRumbleAmplitude> decode_switch_rumble_frame(
+      const std::vector<std::uint8_t> &report,
+      std::size_t offset
+    ) {
+      const auto high_frequency_index = static_cast<std::size_t>((report[offset + 1U] & 0xFEU) / 2U);
+
+      const auto low_frequency_code = report[offset + 3U];
+      if (high_frequency_index >= switch_rumble_amplitudes.size() || low_frequency_code < 0x40U || low_frequency_code > 0x72U) {
+        return std::nullopt;
+      }
+
+      const auto low_frequency_index =
+        static_cast<std::size_t>((low_frequency_code - 0x40U) * 2U) + ((report[offset + 2U] & 0x80U) != 0U ? 1U : 0U);
+      if (low_frequency_index >= switch_rumble_amplitudes.size()) {
+        return std::nullopt;
+      }
+
+      return SwitchRumbleAmplitude {
+        .low_frequency = switch_rumble_amplitudes[low_frequency_index],
+        .high_frequency = switch_rumble_amplitudes[high_frequency_index],
+      };
+    }
+
+    std::optional<SwitchRumbleAmplitude> decode_switch_rumble_report(
+      const std::vector<std::uint8_t> &report
+    ) {
+      if (report.size() < switch_rumble_output_report_size || (report[0] != switch_rumble_and_subcommand_output_report_id && report[0] != switch_rumble_only_output_report_id)) {
+        return std::nullopt;
+      }
+
+      const auto left = decode_switch_rumble_frame(report, 2U);
+      const auto right = decode_switch_rumble_frame(report, 6U);
+      if (!left.has_value() || !right.has_value()) {
+        return std::nullopt;
+      }
+
+      // The normalized API has one strength per frequency band, while the
+      // native report has one frame per actuator. Retain the strongest request
+      // in each band so asymmetric native effects are not lost entirely.
+      return SwitchRumbleAmplitude {
+        .low_frequency = std::max(left->low_frequency, right->low_frequency),
+        .high_frequency = std::max(left->high_frequency, right->high_frequency),
+      };
     }
 
     struct ButtonBit {
@@ -952,8 +1204,37 @@ namespace lvh::reports {
       }
     }
 
+    if (profile.gamepad_kind == GamepadProfileKind::switch_pro) {
+      if (const auto rumble = decode_switch_rumble_report(report); rumble.has_value()) {
+        GamepadOutput output;
+        output.kind = GamepadOutputKind::rumble;
+        output.low_frequency_rumble = rumble->low_frequency;
+        output.high_frequency_rumble = rumble->high_frequency;
+        output.raw_report = report;
+        outputs.push_back(std::move(output));
+        return outputs;
+      }
+    }
+
+    if (const auto rumble = decode_pid_rumble_report(profile, report); rumble.has_value()) {
+      GamepadOutput motor_output;
+      motor_output.kind = GamepadOutputKind::rumble;
+      motor_output.low_frequency_rumble = rumble->low_frequency;
+      motor_output.high_frequency_rumble = rumble->high_frequency;
+      motor_output.raw_report = report;
+      outputs.push_back(std::move(motor_output));
+
+      GamepadOutput trigger_output;
+      trigger_output.kind = GamepadOutputKind::trigger_rumble;
+      trigger_output.left_trigger_rumble = rumble->left_trigger;
+      trigger_output.right_trigger_rumble = rumble->right_trigger;
+      trigger_output.raw_report = report;
+      outputs.push_back(std::move(trigger_output));
+      return outputs;
+    }
+
     if (
-      profile.gamepad_kind != GamepadProfileKind::switch_pro && profile.capabilities.supports_rumble &&
+      profile.gamepad_kind == GamepadProfileKind::xbox_360 && profile.capabilities.supports_rumble &&
       profile.output_report_size >= 5U &&
       report.size() >= profile.output_report_size && report[0] == profile.report_id
     ) {
