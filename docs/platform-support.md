@@ -58,16 +58,17 @@ feature reports, and output reports matter for controller compatibility.
 Generic, Xbox-family, and Switch Pro profiles instead use `uinput` so SDL,
 Steam, browser Gamepad API implementations, and other evdev consumers receive
 canonical Linux gamepad events. Face buttons, shoulders, menu buttons, stick
-clicks, and Guide use their native evdev codes; sticks and the directional pad
-use absolute axes. Generic and Xbox triggers remain independent analog `ABS_Z`
-and `ABS_RZ` axes. Switch Pro uses the Nintendo face-button positions, button
-events for ZL/ZR, and `BTN_Z` for Capture. The directional pad is exposed only
-through `ABS_HAT0X` and `ABS_HAT0Y`, avoiding the ambiguous duplicate
-`BTN_DPAD_*` representation used by some consumers. Profiles with rumble
-support normalize uinput force-feedback effects back into the public callback.
+clicks, and Guide use their native evdev codes; sticks use absolute axes.
+Generic exposes its directional pad only through `BTN_DPAD_*`, while Xbox and
+Switch Pro use `ABS_HAT0X` and `ABS_HAT0Y`; each profile therefore has one
+unambiguous D-pad representation. Generic and Xbox triggers remain independent
+analog `ABS_Z` and `ABS_RZ` axes. Switch Pro uses the Nintendo face-button
+positions, button events for ZL/ZR, and `BTN_Z` for Capture. Profiles with
+rumble support normalize rumble, constant, periodic, and ramp uinput
+force-feedback effects back into the public callback.
 
-Xbox 360 retains its name and `0x045E:0x028E` identity, while its Linux uinput
-device uses the Bluetooth bus so consumers select the sparse button mapping.
+Xbox 360 retains its `0x045E:0x028E` identity, while its Linux uinput device uses
+the Bluetooth bus so consumers select the sparse button mapping.
 Xbox One and Xbox Series retain their public USB identities, but their Linux
 uinput devices use the corresponding Bluetooth product identities (`0x0B20`
 and `0x0B13`, respectively), whose standard consumer mappings match the events

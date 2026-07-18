@@ -1920,7 +1920,7 @@ namespace lvh::profiles {
         bus_type == BusType::bluetooth ? dualshock4_bluetooth_input_report_size : dualshock4_usb_input_report_size;
       profile.output_report_size =
         bus_type == BusType::bluetooth ? dualshock4_bluetooth_output_report_size : dualshock4_usb_output_report_size;
-      profile.name = "Wireless Controller";
+      profile.name = "(libvirtualhid) PS4 Controller";
       profile.manufacturer = "Sony Computer Entertainment";
       profile.capabilities = {
         .supports_rumble = true,
@@ -1947,7 +1947,7 @@ namespace lvh::profiles {
         bus_type == BusType::bluetooth ? dualsense_bluetooth_input_report_size : dualsense_usb_input_report_size;
       profile.output_report_size =
         bus_type == BusType::bluetooth ? dualsense_bluetooth_output_report_size : dualsense_usb_output_report_size;
-      profile.name = "Wireless Controller";
+      profile.name = "(libvirtualhid) PS5 Controller";
       profile.manufacturer = "Sony Interactive Entertainment";
       profile.capabilities = {
         .supports_rumble = true,
@@ -1973,7 +1973,7 @@ namespace lvh::profiles {
       profile.report_id = switch_pro_report_id;
       profile.input_report_size = switch_pro_input_report_size;
       profile.output_report_size = switch_pro_output_report_size;
-      profile.name = "Pro Controller";
+      profile.name = "(libvirtualhid) Nintendo Pro Controller";
       profile.manufacturer = "Nintendo Co., Ltd.";
       profile.capabilities = {.supports_rumble = true, .supports_motion = true, .supports_battery = true};
       profile.report_descriptor = make_switch_pro_report_descriptor();
@@ -1997,7 +1997,7 @@ namespace lvh::profiles {
   DeviceProfile generic_gamepad() {
     return make_standard_gamepad_profile(
       GamepadProfileKind::generic,
-      "libvirtualhid Generic Gamepad",
+      "(libvirtualhid) Generic Controller",
       "LizardByte",
       0x1209,
       0x0001,
@@ -2009,7 +2009,7 @@ namespace lvh::profiles {
   DeviceProfile xbox_360() {
     return make_gamepad_profile(
       GamepadProfileKind::xbox_360,
-      "Microsoft X-Box 360 pad",
+      "(libvirtualhid) X-Box 360 Controller",
       "Microsoft",
       0x045E,
       0x028E,
@@ -2021,7 +2021,7 @@ namespace lvh::profiles {
   DeviceProfile xbox_one() {
     return make_xbox_gip_profile(
       GamepadProfileKind::xbox_one,
-      "Xbox One Controller",
+      "(libvirtualhid) X-Box One Controller",
       0x02EA,
       0x0408,
       false
@@ -2031,7 +2031,7 @@ namespace lvh::profiles {
   DeviceProfile xbox_series() {
     return make_xbox_gip_profile(
       GamepadProfileKind::xbox_series,
-      "Xbox Controller",
+      "(libvirtualhid) X-Box Series Controller",
       0x0B12,
       0x0500,
       true
@@ -2060,7 +2060,7 @@ namespace lvh::profiles {
 
   DeviceProfile dualsense_bluetooth() {
     auto profile = make_dualsense_profile(BusType::bluetooth);
-    profile.name = "Wireless Controller";
+    profile.name = "(libvirtualhid) PS5 Controller";
     return profile;
   }
 

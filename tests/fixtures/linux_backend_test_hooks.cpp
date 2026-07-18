@@ -1038,7 +1038,10 @@ namespace lvh::detail::test {
     return {std::move(status), std::move(records)};
   }
 
-  LinuxUinputRumbleResult linux_uinput_gamepad_fake_rumble(GamepadProfileKind kind) {
+  LinuxUinputRumbleResult linux_uinput_gamepad_fake_rumble(
+    GamepadProfileKind kind,
+    std::uint16_t effect_type
+  ) {
     LinuxTestSyscalls syscalls;
     enable_fake_device_syscalls(syscalls);
     syscalls.override_poll = true;
@@ -1054,10 +1057,27 @@ namespace lvh::detail::test {
       input_event {.type = EV_FF, .code = 3, .value = 1},
     };
     syscalls.provide_uploaded_ff_effect = true;
-    syscalls.uploaded_ff_effect.type = FF_RUMBLE;
+    syscalls.uploaded_ff_effect.type = effect_type;
     syscalls.uploaded_ff_effect.id = 3;
-    syscalls.uploaded_ff_effect.u.rumble.weak_magnitude = 0x1234;
-    syscalls.uploaded_ff_effect.u.rumble.strong_magnitude = 0x5678;
+    switch (effect_type) {
+      case FF_RUMBLE:
+        syscalls.uploaded_ff_effect.u.rumble.weak_magnitude = 0x1234;
+        syscalls.uploaded_ff_effect.u.rumble.strong_magnitude = 0x5678;
+        break;
+      case FF_CONSTANT:
+        syscalls.uploaded_ff_effect.u.constant.level = 0x1234;
+        break;
+      case FF_PERIODIC:
+        syscalls.uploaded_ff_effect.u.periodic.waveform = FF_SINE;
+        syscalls.uploaded_ff_effect.u.periodic.magnitude = 0x1234;
+        break;
+      case FF_RAMP:
+        syscalls.uploaded_ff_effect.u.ramp.start_level = 0x1234;
+        syscalls.uploaded_ff_effect.u.ramp.end_level = 0x2345;
+        break;
+      default:
+        break;
+    }
     syscalls.uploaded_ff_effect.replay.length = 1000;
     ScopedLinuxTestSyscalls scoped_syscalls {syscalls};
 
@@ -1587,10 +1607,11 @@ namespace lvh::detail::test {
     event.u.set_report.id = 21;
     event.u.set_report.rnum = 0x05;
     event.u.set_report.rtype = UHID_OUTPUT_REPORT;
-    event.u.set_report.size = 31;
+    event.u.set_report.size = 32;
     event.u.set_report.data[0] = 0x05;
-    event.u.set_report.data[3] = 0x12;
-    event.u.set_report.data[4] = 0x56;
+    event.u.set_report.data[1] = 0x03;
+    event.u.set_report.data[4] = 0x12;
+    event.u.set_report.data[5] = 0x56;
     static_cast<void>(write_uhid_event(descriptors[1], event));
     if (read_uhid_event_type(descriptors[1], UHID_SET_REPORT_REPLY, event)) {
       result.saw_set_report_reply = event.u.set_report_reply.id == 21 && event.u.set_report_reply.err == 0;

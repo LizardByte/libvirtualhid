@@ -541,6 +541,10 @@ namespace lvh::detail {
       return kind == generic || kind == xbox_360 || kind == xbox_one || kind == xbox_series;
     }
 
+    bool uses_uinput_dpad_buttons(GamepadProfileKind kind) {
+      return kind == GamepadProfileKind::generic;
+    }
+
     std::uint16_t to_uhid_bus(BusType bus_type) {
       if (bus_type == BusType::bluetooth) {
         return BUS_BLUETOOTH;
@@ -1386,14 +1390,23 @@ namespace lvh::detail {
           return status;
         }
       }
+      if (uses_uinput_dpad_buttons(profile_kind)) {
+        for (const auto button : {BTN_DPAD_UP, BTN_DPAD_DOWN, BTN_DPAD_LEFT, BTN_DPAD_RIGHT}) {
+          if (const auto status = enable_evdev_code(device, EV_KEY, button, "gamepad directional button"); !status.ok()) {
+            return status;
+          }
+        }
+      }
       return OperationStatus::success();
     }
 
     OperationStatus configure_evdev_gamepad_axes(libevdev *device, GamepadProfileKind profile_kind) {
-      auto dpad = make_absinfo(-1, 1);
-      for (const auto code : {ABS_HAT0X, ABS_HAT0Y}) {
-        if (const auto status = enable_evdev_code(device, EV_ABS, code, "gamepad directional axis", &dpad); !status.ok()) {
-          return status;
+      if (!uses_uinput_dpad_buttons(profile_kind)) {
+        auto dpad = make_absinfo(-1, 1);
+        for (const auto code : {ABS_HAT0X, ABS_HAT0Y}) {
+          if (const auto status = enable_evdev_code(device, EV_ABS, code, "gamepad directional axis", &dpad); !status.ok()) {
+            return status;
+          }
         }
       }
 
@@ -1421,8 +1434,11 @@ namespace lvh::detail {
       if (!supports_rumble) {
         return OperationStatus::success();
       }
-      if (const auto status = enable_evdev_code(device, EV_FF, FF_RUMBLE, "gamepad force-feedback effect"); !status.ok()) {
-        return status;
+      constexpr std::array effect_codes {FF_RUMBLE, FF_CONSTANT, FF_PERIODIC, FF_SINE, FF_RAMP};
+      for (const auto code : effect_codes) {
+        if (const auto status = enable_evdev_code(device, EV_FF, code, "gamepad force-feedback effect"); !status.ok()) {
+          return status;
+        }
       }
       return enable_evdev_code(device, EV_FF, FF_GAIN, "gamepad force-feedback gain");
     }
@@ -2417,8 +2433,11 @@ namespace lvh::detail {
 #endif
 
     struct UinputRumbleEffect {
-      std::uint16_t weak_magnitude = 0;
-      std::uint16_t strong_magnitude = 0;
+      std::uint16_t start_weak_magnitude = 0;
+      std::uint16_t start_strong_magnitude = 0;
+      std::uint16_t end_weak_magnitude = 0;
+      std::uint16_t end_strong_magnitude = 0;
+      ff_envelope envelope {};
       std::chrono::milliseconds length {0};
       std::chrono::milliseconds delay {0};
       std::chrono::steady_clock::time_point start {};
@@ -2546,17 +2565,28 @@ namespace lvh::detail {
             return status;
           }
         }
+        if (uses_uinput_dpad_buttons(profile_kind_)) {
+          constexpr std::array dpad_button_map {
+            std::pair {dpad_up, BTN_DPAD_UP},
+            std::pair {dpad_down, BTN_DPAD_DOWN},
+            std::pair {dpad_left, BTN_DPAD_LEFT},
+            std::pair {dpad_right, BTN_DPAD_RIGHT},
+          };
+          return emit_button_map(buttons, dpad_button_map);
+        }
         return OperationStatus::success();
       }
 
       OperationStatus emit_axis_state(const GamepadState &state) {
         using enum GamepadButton;
 
-        if (const auto status = emit_event(EV_ABS, ABS_HAT0X, dpad_axis(state.buttons, dpad_left, dpad_right)); !status.ok()) {
-          return status;
-        }
-        if (const auto status = emit_event(EV_ABS, ABS_HAT0Y, dpad_axis(state.buttons, dpad_up, dpad_down)); !status.ok()) {
-          return status;
+        if (!uses_uinput_dpad_buttons(profile_kind_)) {
+          if (const auto status = emit_event(EV_ABS, ABS_HAT0X, dpad_axis(state.buttons, dpad_left, dpad_right)); !status.ok()) {
+            return status;
+          }
+          if (const auto status = emit_event(EV_ABS, ABS_HAT0Y, dpad_axis(state.buttons, dpad_up, dpad_down)); !status.ok()) {
+            return status;
+          }
         }
 
         const std::array stick_axes {
@@ -2679,19 +2709,13 @@ namespace lvh::detail {
           return;
         }
 
-        if (upload.effect.type == FF_RUMBLE) {
-          auto effect = UinputRumbleEffect {
-            .weak_magnitude = upload.effect.u.rumble.weak_magnitude,
-            .strong_magnitude = upload.effect.u.rumble.strong_magnitude,
-            .length = std::chrono::milliseconds {upload.effect.replay.length},
-            .delay = std::chrono::milliseconds {upload.effect.replay.delay},
-          };
+        if (auto effect = normalize_rumble_effect(upload.effect); effect.has_value()) {
           if (const auto existing = rumble_effects_.find(upload.effect.id); existing != rumble_effects_.end()) {
-            effect.start = existing->second.start;
-            effect.end = existing->second.end;
-            effect.active = existing->second.active;
+            effect->start = existing->second.start;
+            effect->end = existing->second.end;
+            effect->active = existing->second.active;
           }
-          rumble_effects_.insert_or_assign(upload.effect.id, effect);
+          rumble_effects_.insert_or_assign(upload.effect.id, *effect);
         }
 
         upload.retval = 0;
@@ -2723,14 +2747,108 @@ namespace lvh::detail {
             effect.active = false;
             continue;
           }
-          weak += effect.weak_magnitude;
-          strong += effect.strong_magnitude;
+          const auto [effect_weak, effect_strong] = rumble_magnitudes(effect, now);
+          weak += effect_weak;
+          strong += effect_strong;
         }
 
         constexpr auto maximum = std::numeric_limits<std::uint16_t>::max();
         const auto scaled_weak = static_cast<std::uint16_t>(std::min<std::uint64_t>(weak, maximum) * gain_ / maximum);
         const auto scaled_strong = static_cast<std::uint16_t>(std::min<std::uint64_t>(strong, maximum) * gain_ / maximum);
         dispatch_rumble(scaled_strong, scaled_weak);
+      }
+
+      static std::uint16_t scale_signed_magnitude(std::int16_t value) {
+        const auto magnitude = static_cast<std::uint32_t>(std::abs(static_cast<int>(value)));
+        return static_cast<std::uint16_t>(std::min<std::uint32_t>(magnitude * 2U, std::numeric_limits<std::uint16_t>::max()));
+      }
+
+      static std::optional<UinputRumbleEffect> normalize_rumble_effect(const ff_effect &source) {
+        auto effect = UinputRumbleEffect {
+          .length = std::chrono::milliseconds {source.replay.length},
+          .delay = std::chrono::milliseconds {source.replay.delay},
+        };
+
+        switch (source.type) {
+          case FF_RUMBLE:
+            effect.start_weak_magnitude = source.u.rumble.weak_magnitude;
+            effect.start_strong_magnitude = source.u.rumble.strong_magnitude;
+            effect.end_weak_magnitude = effect.start_weak_magnitude;
+            effect.end_strong_magnitude = effect.start_strong_magnitude;
+            break;
+          case FF_CONSTANT:
+            {
+              const auto magnitude = scale_signed_magnitude(source.u.constant.level);
+              effect.start_weak_magnitude = magnitude;
+              effect.start_strong_magnitude = magnitude;
+              effect.end_weak_magnitude = magnitude;
+              effect.end_strong_magnitude = magnitude;
+              effect.envelope = source.u.constant.envelope;
+              break;
+            }
+          case FF_PERIODIC:
+            {
+              const auto magnitude = scale_signed_magnitude(source.u.periodic.magnitude);
+              effect.start_weak_magnitude = magnitude;
+              effect.start_strong_magnitude = magnitude;
+              effect.end_weak_magnitude = magnitude;
+              effect.end_strong_magnitude = magnitude;
+              effect.envelope = source.u.periodic.envelope;
+              break;
+            }
+          case FF_RAMP:
+            effect.start_weak_magnitude = scale_signed_magnitude(source.u.ramp.start_level);
+            effect.start_strong_magnitude = effect.start_weak_magnitude;
+            effect.end_weak_magnitude = scale_signed_magnitude(source.u.ramp.end_level);
+            effect.end_strong_magnitude = effect.end_weak_magnitude;
+            effect.envelope = source.u.ramp.envelope;
+            break;
+          default:
+            return std::nullopt;
+        }
+
+        return effect;
+      }
+
+      static std::uint16_t interpolate_magnitude(std::uint16_t start, std::uint16_t end, std::uint64_t elapsed, std::uint64_t length) {
+        if (length == 0U || elapsed >= length) {
+          return end;
+        }
+        const auto weighted = static_cast<std::uint64_t>(start) * (length - elapsed) + static_cast<std::uint64_t>(end) * elapsed;
+        return static_cast<std::uint16_t>(weighted / length);
+      }
+
+      static std::uint16_t apply_envelope(
+        std::uint16_t magnitude,
+        const ff_envelope &envelope,
+        std::uint64_t elapsed,
+        std::uint64_t remaining
+      ) {
+        if (envelope.attack_length > 0U && elapsed < envelope.attack_length) {
+          return interpolate_magnitude(envelope.attack_level, magnitude, elapsed, envelope.attack_length);
+        }
+        if (envelope.fade_length > 0U && remaining < envelope.fade_length) {
+          return interpolate_magnitude(envelope.fade_level, magnitude, remaining, envelope.fade_length);
+        }
+        return magnitude;
+      }
+
+      static std::pair<std::uint16_t, std::uint16_t> rumble_magnitudes(
+        const UinputRumbleEffect &effect,
+        std::chrono::steady_clock::time_point now
+      ) {
+        const auto elapsed = static_cast<std::uint64_t>(std::max<std::int64_t>(
+          std::chrono::duration_cast<std::chrono::milliseconds>(now - effect.start).count(),
+          0
+        ));
+        const auto length = static_cast<std::uint64_t>(std::max<std::int64_t>(effect.length.count(), 0));
+        const auto remaining = elapsed >= length ? 0U : length - elapsed;
+        const auto weak = interpolate_magnitude(effect.start_weak_magnitude, effect.end_weak_magnitude, elapsed, length);
+        const auto strong = interpolate_magnitude(effect.start_strong_magnitude, effect.end_strong_magnitude, elapsed, length);
+        return {
+          apply_envelope(weak, effect.envelope, elapsed, remaining),
+          apply_envelope(strong, effect.envelope, elapsed, remaining),
+        };
       }
 
       void dispatch_rumble(std::uint16_t low_frequency, std::uint16_t high_frequency) {
@@ -2970,11 +3088,7 @@ namespace lvh::detail {
             send_get_report_reply(event.u.get_report.id, event.u.get_report.rnum);
             break;
           case UHID_SET_REPORT:
-            dispatch_output_report(
-              event.u.set_report.data,
-              event.u.set_report.size,
-              event.u.set_report.rnum
-            );
+            dispatch_output_report(event.u.set_report.data, event.u.set_report.size);
             send_set_report_reply(event.u.set_report.id, 0);
             break;
           default:
@@ -3000,11 +3114,7 @@ namespace lvh::detail {
         }
       }
 
-      void dispatch_output_report(
-        const __u8 *data,
-        std::size_t report_size,
-        std::optional<std::uint8_t> report_number = std::nullopt
-      ) {
+      void dispatch_output_report(const __u8 *data, std::size_t report_size) {
         OutputCallback callback;
         {
           std::lock_guard lock {callback_mutex_};
@@ -3017,14 +3127,6 @@ namespace lvh::detail {
 
         const auto size = std::min<std::size_t>(report_size, UHID_DATA_MAX);
         std::vector<std::uint8_t> report(data, data + size);
-        const auto omits_report_number = profile_.output_report_size > 0U &&
-                                         report.size() + 1U == profile_.output_report_size;
-        if (
-          report_number.has_value() &&
-          (omits_report_number || report.empty() || report.front() != *report_number)
-        ) {
-          report.insert(report.begin(), *report_number);
-        }
         for (const auto &output : reports::parse_output_reports(profile_, report)) {
           callback(output);
         }

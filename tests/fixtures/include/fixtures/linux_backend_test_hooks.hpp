@@ -613,9 +613,13 @@ namespace lvh::detail::test {
    * @brief Exercise uinput gamepad force-feedback upload and playback.
    *
    * @param kind Gamepad profile kind.
+   * @param effect_type Linux force-feedback effect type.
    * @return Creation, callback, and close results.
    */
-  LinuxUinputRumbleResult linux_uinput_gamepad_fake_rumble(GamepadProfileKind kind);
+  LinuxUinputRumbleResult linux_uinput_gamepad_fake_rumble(
+    GamepadProfileKind kind,
+    std::uint16_t effect_type
+  );
 
   /**
    * @brief Try creating a libevdev uinput mouse on an invalid file descriptor.

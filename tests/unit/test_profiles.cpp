@@ -26,6 +26,16 @@ TEST(ProfileTest, BuiltInProfilesHaveDescriptors) {
   }
 }
 
+TEST(ProfileTest, BuiltInProfilesUseDefaultDeviceNames) {
+  EXPECT_EQ(lvh::profiles::generic_gamepad().name, "(libvirtualhid) Generic Controller");
+  EXPECT_EQ(lvh::profiles::xbox_360().name, "(libvirtualhid) X-Box 360 Controller");
+  EXPECT_EQ(lvh::profiles::xbox_one().name, "(libvirtualhid) X-Box One Controller");
+  EXPECT_EQ(lvh::profiles::xbox_series().name, "(libvirtualhid) X-Box Series Controller");
+  EXPECT_EQ(lvh::profiles::dualshock4().name, "(libvirtualhid) PS4 Controller");
+  EXPECT_EQ(lvh::profiles::dualsense().name, "(libvirtualhid) PS5 Controller");
+  EXPECT_EQ(lvh::profiles::switch_pro().name, "(libvirtualhid) Nintendo Pro Controller");
+}
+
 TEST(ProfileTest, StreamingControllerProfilesArePresent) {
   const auto xbox_one = lvh::profiles::xbox_one();
   const auto dualshock4 = lvh::profiles::dualshock4();
@@ -44,7 +54,6 @@ TEST(ProfileTest, StreamingControllerProfilesArePresent) {
   EXPECT_EQ(xbox_series.vendor_id, 0x045E);
   EXPECT_EQ(xbox_series.product_id, 0x0B12);
   EXPECT_EQ(xbox_series.bus_type, lvh::BusType::usb);
-  EXPECT_EQ(xbox_series.name, "Xbox Controller");
   EXPECT_EQ(xbox_series.manufacturer, "Microsoft");
   EXPECT_EQ(xbox_series.report_id, 0);
   EXPECT_EQ(xbox_series.input_report_size, 17U);
@@ -152,7 +161,6 @@ TEST(ProfileTest, StreamingControllerProfilesArePresent) {
   EXPECT_EQ(dualshock4.vendor_id, 0x054C);
   EXPECT_EQ(dualshock4.product_id, 0x05C4);
   EXPECT_EQ(dualshock4.version, 0x0100);
-  EXPECT_EQ(dualshock4.name, "Wireless Controller");
   EXPECT_EQ(dualshock4.input_report_size, 64U);
   EXPECT_EQ(dualshock4.output_report_size, 32U);
   EXPECT_TRUE(dualshock4.capabilities.supports_motion);
@@ -165,7 +173,7 @@ TEST(ProfileTest, StreamingControllerProfilesArePresent) {
   const auto dualshock4_bluetooth = lvh::profiles::dualshock4_bluetooth();
   EXPECT_EQ(dualshock4_bluetooth.bus_type, lvh::BusType::bluetooth);
   EXPECT_EQ(dualshock4_bluetooth.version, 0x0100);
-  EXPECT_EQ(dualshock4_bluetooth.name, "Wireless Controller");
+  EXPECT_EQ(dualshock4_bluetooth.name, "(libvirtualhid) PS4 Controller");
   EXPECT_EQ(dualshock4_bluetooth.manufacturer, "Sony Computer Entertainment");
   EXPECT_EQ(dualshock4_bluetooth.report_id, 0x11);
   EXPECT_EQ(dualshock4_bluetooth.input_report_size, 78U);
@@ -173,7 +181,6 @@ TEST(ProfileTest, StreamingControllerProfilesArePresent) {
   EXPECT_NE(dualshock4_bluetooth.report_descriptor, dualshock4.report_descriptor);
 
   EXPECT_EQ(dualsense.vendor_id, 0x054C);
-  EXPECT_EQ(dualsense.name, "Wireless Controller");
   EXPECT_TRUE(dualsense.capabilities.supports_motion);
   EXPECT_TRUE(dualsense.capabilities.supports_touchpad);
   EXPECT_TRUE(dualsense.capabilities.supports_rgb_led);
@@ -184,7 +191,7 @@ TEST(ProfileTest, StreamingControllerProfilesArePresent) {
 
   const auto dualsense_bluetooth = lvh::profiles::dualsense_bluetooth();
   EXPECT_EQ(dualsense_bluetooth.bus_type, lvh::BusType::bluetooth);
-  EXPECT_EQ(dualsense_bluetooth.name, "Wireless Controller");
+  EXPECT_EQ(dualsense_bluetooth.name, "(libvirtualhid) PS5 Controller");
   EXPECT_EQ(dualsense_bluetooth.report_id, 0x31);
   EXPECT_EQ(dualsense_bluetooth.input_report_size, 78U);
   EXPECT_EQ(dualsense_bluetooth.output_report_size, 78U);
@@ -192,7 +199,6 @@ TEST(ProfileTest, StreamingControllerProfilesArePresent) {
 
   EXPECT_EQ(switch_pro.vendor_id, 0x057E);
   EXPECT_EQ(switch_pro.product_id, 0x2009);
-  EXPECT_EQ(switch_pro.name, "Pro Controller");
   EXPECT_EQ(switch_pro.manufacturer, "Nintendo Co., Ltd.");
   EXPECT_EQ(switch_pro.report_id, 0x30);
   EXPECT_EQ(switch_pro.input_report_size, 64U);

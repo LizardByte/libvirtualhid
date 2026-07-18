@@ -6,6 +6,7 @@
 // standard includes
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
@@ -323,7 +324,9 @@ namespace {
     SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
     SDL_SetHint("SDL_JOYSTICK_HIDAPI", "1");
     SDL_SetHint("SDL_JOYSTICK_HIDAPI_PS4", "1");
+    SDL_SetHint("SDL_JOYSTICK_HIDAPI_PS4_RUMBLE", "1");
     SDL_SetHint("SDL_JOYSTICK_HIDAPI_PS5", "1");
+    SDL_SetHint("SDL_JOYSTICK_HIDAPI_PS5_RUMBLE", "1");
   }
 
   lvh::GamepadCreationResult create_sdl_gamepad(lvh::Runtime &runtime, const SdlGamepadConsumerCase &test_case) {
@@ -381,6 +384,34 @@ namespace {
     }
   }
 
+  void expect_sdl_rumble_callback(SDL_GameController *controller, lvh::Gamepad &gamepad) {
+    struct RumbleState {
+      std::atomic_uint16_t low_frequency {0};
+      std::atomic_uint16_t high_frequency {0};
+    };
+
+    const auto rumble = std::make_shared<RumbleState>();
+    gamepad.set_output_callback([rumble](const lvh::GamepadOutput &output) {
+      if (output.kind == lvh::GamepadOutputKind::rumble) {
+        rumble->low_frequency = output.low_frequency_rumble;
+        rumble->high_frequency = output.high_frequency_rumble;
+      }
+    });
+
+    ASSERT_EQ(SDL_GameControllerRumble(controller, 0x5678, 0x1234, 1000), 0) << SDL_GetError();
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds {3};
+    while (
+      std::chrono::steady_clock::now() < deadline &&
+      rumble->low_frequency.load() == 0 && rumble->high_frequency.load() == 0
+    ) {
+      pump_sdl_events();
+      std::this_thread::sleep_for(std::chrono::milliseconds {20});
+    }
+
+    EXPECT_GT(rumble->low_frequency.load(), 0);
+    EXPECT_GT(rumble->high_frequency.load(), 0);
+  }
+
   void exercise_sdl_playstation_controller(
     const SdlGamepadConsumerCase &test_case,
     const lvh::DeviceProfile &expected_profile,
@@ -419,6 +450,7 @@ namespace {
     expect_sdl_playstation_controller_profile(controller.get());
     if (test_case.expect_live_input) {
       EXPECT_TRUE(wait_for_sdl_controller_input(controller.get())) << describe_sdl_controller_state(controller.get());
+      expect_sdl_rumble_callback(controller.get(), gamepad);
     }
   }
 
@@ -501,6 +533,7 @@ namespace {
     }
     EXPECT_GT(SDL_GameControllerGetAxis(controller.get(), SDL_CONTROLLER_AXIS_TRIGGERLEFT), 0);
     EXPECT_GT(SDL_GameControllerGetAxis(controller.get(), SDL_CONTROLLER_AXIS_TRIGGERRIGHT), 16000);
+    expect_sdl_rumble_callback(controller.get(), gamepad);
   }
 
   void run_sdl_canonical_gamepad_test(const SdlGamepadConsumerCase &test_case) {
@@ -633,6 +666,18 @@ TEST_F(LinuxConsumerTest, SdlSeesXboxSeriesCanonicalButtons) {
     .minimum_axes = 6,
   };
   run_sdl_canonical_gamepad_test(test_case);
+}
+
+TEST_F(LinuxConsumerTest, SdlSeesSwitchProCanonicalButtons) {
+  ASSERT_TRUE(HasReadableWritableDeviceNode("/dev/uinput"));
+
+  run_sdl_canonical_gamepad_test({
+    .profile = lvh::profiles::switch_pro(),
+    .name_suffix = "SDL Switch Pro",
+    .stable_id = "libvirtualhid-sdl-switch-pro-test",
+    .minimum_buttons = 14,
+    .minimum_axes = 4,
+  });
 }
 
 TEST_F(LinuxConsumerTest, SdlSeesDualSenseUsbControllerBehavior) {

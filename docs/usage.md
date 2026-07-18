@@ -164,15 +164,21 @@ touch, motion, battery, feedback, and lifecycle updates onto the platform-neutra
 
 ## Built-In Profiles
 
-Built-in gamepad profiles include:
+Built-in gamepad profiles and their platform-neutral default device names are:
 
-- Generic HID gamepad.
-- Xbox 360.
-- Xbox One.
-- Xbox Series.
-- DualShock 4 USB and Bluetooth.
-- DualSense USB and Bluetooth.
-- Nintendo Switch Pro.
+| Profile | Default device name |
+| --- | --- |
+| Generic HID gamepad | `(libvirtualhid) Generic Controller` |
+| Xbox 360 | `(libvirtualhid) X-Box 360 Controller` |
+| Xbox One | `(libvirtualhid) X-Box One Controller` |
+| Xbox Series | `(libvirtualhid) X-Box Series Controller` |
+| DualShock 4 USB and Bluetooth | `(libvirtualhid) PS4 Controller` |
+| DualSense USB and Bluetooth | `(libvirtualhid) PS5 Controller` |
+| Nintendo Switch Pro | `(libvirtualhid) Nintendo Pro Controller` |
+
+Consumers may replace `DeviceProfile::name` before creating a gamepad, for
+example to prepend an application name while preserving the default controller
+identity across platform backends.
 
 Profiles advertise support for features such as rumble, trigger rumble, RGB
 LEDs, adaptive triggers, motion sensors, touchpads, battery state, profile
