@@ -923,6 +923,15 @@ namespace lvh::detail::test {
     return hidraw_name_matches(std::filesystem::path {std::string {path}}, name);
   }
 
+  std::vector<DeviceNode> linux_discover_hidraw_nodes_by_metadata(
+    std::string_view name,
+    std::string_view physical_id,
+    std::string_view unique_id,
+    const std::string &hidraw_root
+  ) {
+    return discover_hidraw_nodes_by_metadata(name, physical_id, unique_id, hidraw_root);
+  }
+
   std::vector<DeviceNode> linux_discover_nodes_by_name(const std::string &name) {
     return discover_input_nodes_by_name(name);
   }
@@ -1111,7 +1120,7 @@ namespace lvh::detail::test {
     }
     options.profile = *profile;
     result.create_status = gamepad.create(8, options);
-    for (auto attempt = 0; attempt < 100 && callback_count.load() == 0; ++attempt) {
+    for (auto attempt = 0; attempt < 500 && callback_count.load() == 0; ++attempt) {
       std::this_thread::sleep_for(std::chrono::milliseconds {1});
     }
     result.close_status = gamepad.close();
@@ -1466,6 +1475,20 @@ namespace lvh::detail::test {
     static_cast<void>(write_uhid_event(descriptors[1], event));
 
     event = {};
+    event.type = UHID_SET_REPORT;
+    event.u.set_report.id = 20;
+    event.u.set_report.rnum = 0x02;
+    event.u.set_report.rtype = UHID_OUTPUT_REPORT;
+    event.u.set_report.size = 62;
+    event.u.set_report.data[0] = 0x03;
+    event.u.set_report.data[2] = 0x12;
+    event.u.set_report.data[3] = 0x56;
+    static_cast<void>(write_uhid_event(descriptors[1], event));
+    if (read_uhid_event_type(descriptors[1], UHID_SET_REPORT_REPLY, event)) {
+      result.saw_set_report_reply = event.u.set_report_reply.id == 20 && event.u.set_report_reply.err == 0;
+    }
+
+    event = {};
     event.type = UHID_GET_REPORT;
     event.u.get_report.id = 11;
     event.u.get_report.rnum = 0x05;
@@ -1607,11 +1630,10 @@ namespace lvh::detail::test {
     event.u.set_report.id = 21;
     event.u.set_report.rnum = 0x05;
     event.u.set_report.rtype = UHID_OUTPUT_REPORT;
-    event.u.set_report.size = 32;
-    event.u.set_report.data[0] = 0x05;
-    event.u.set_report.data[1] = 0x03;
-    event.u.set_report.data[4] = 0x12;
-    event.u.set_report.data[5] = 0x56;
+    event.u.set_report.size = 31;
+    event.u.set_report.data[0] = 0x03;
+    event.u.set_report.data[3] = 0x12;
+    event.u.set_report.data[4] = 0x56;
     static_cast<void>(write_uhid_event(descriptors[1], event));
     if (read_uhid_event_type(descriptors[1], UHID_SET_REPORT_REPLY, event)) {
       result.saw_set_report_reply = event.u.set_report_reply.id == 21 && event.u.set_report_reply.err == 0;

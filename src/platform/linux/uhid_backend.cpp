@@ -78,6 +78,7 @@ namespace lvh::detail {
     constexpr auto tablet_distance_max = 1024;
     constexpr auto tablet_resolution = 28;
     constexpr auto poll_timeout_ms = 100;
+    constexpr auto uinput_feedback_startup_delay = std::chrono::milliseconds {100};
     constexpr auto xbox_trigger_max = 255;
     // The Bluetooth bus selects the sparse evdev mapping that matches the
     // button capabilities exposed by these Xbox uinput devices.
@@ -541,10 +542,6 @@ namespace lvh::detail {
       return kind == generic || kind == xbox_360 || kind == xbox_one || kind == xbox_series;
     }
 
-    bool uses_uinput_dpad_buttons(GamepadProfileKind kind) {
-      return kind == GamepadProfileKind::generic;
-    }
-
     std::uint16_t to_uhid_bus(BusType bus_type) {
       if (bus_type == BusType::bluetooth) {
         return BUS_BLUETOOTH;
@@ -599,6 +596,16 @@ namespace lvh::detail {
       nodes.push_back({.kind = kind, .path = path.string()});
     }
 
+    void append_node_if_missing(std::vector<DeviceNode> &nodes, DeviceNodeKind kind, const std::filesystem::path &path) {
+      const auto path_string = path.string();
+      const auto existing = std::ranges::find_if(nodes, [kind, &path_string](const DeviceNode &node) {
+        return node.kind == kind && node.path == path_string;
+      });
+      if (existing == nodes.end()) {
+        nodes.push_back({.kind = kind, .path = path_string});
+      }
+    }
+
     bool hidraw_name_matches(const std::filesystem::path &uevent_path, std::string_view name) {
       std::ifstream file {uevent_path};
       if (!file) {
@@ -614,6 +621,67 @@ namespace lvh::detail {
       }
 
       return false;
+    }
+
+    bool hidraw_metadata_matches(
+      const std::filesystem::path &uevent_path,
+      std::string_view name,
+      std::string_view physical_id,
+      std::string_view unique_id
+    ) {
+      std::ifstream file {uevent_path};
+      if (!file) {
+        return false;
+      }
+
+      std::string line;
+      while (std::getline(file, line)) {
+        constexpr std::string_view name_key {"HID_NAME="};
+        if (!name.empty() && line.starts_with(name_key) && line.size() == name_key.size() + name.size() && line.ends_with(name)) {
+          return true;
+        }
+
+        constexpr std::string_view phys_key {"HID_PHYS="};
+        if (
+          !physical_id.empty() && line.starts_with(phys_key) &&
+          line.size() == phys_key.size() + physical_id.size() && line.ends_with(physical_id)
+        ) {
+          return true;
+        }
+
+        constexpr std::string_view uniq_key {"HID_UNIQ="};
+        if (!unique_id.empty() && line.starts_with(uniq_key) && line.size() == uniq_key.size() + unique_id.size() && line.ends_with(unique_id)) {
+          return true;
+        }
+      }
+
+      return false;
+    }
+
+    std::vector<DeviceNode> discover_hidraw_nodes_by_metadata(
+      std::string_view name,
+      std::string_view physical_id,
+      std::string_view unique_id,
+      const std::filesystem::path &hidraw_root = "/sys/class/hidraw"
+    ) {
+      using enum DeviceNodeKind;
+
+      std::vector<DeviceNode> nodes;
+      std::error_code error;
+      if (!std::filesystem::exists(hidraw_root, error)) {
+        return nodes;
+      }
+
+      for (std::filesystem::directory_iterator it {hidraw_root, error}, end; !error && it != end; it.increment(error)) {
+        if (!hidraw_metadata_matches(it->path() / "device" / "uevent", name, physical_id, unique_id)) {
+          continue;
+        }
+
+        append_node(nodes, hidraw, std::filesystem::path {"/dev"} / it->path().filename());
+        append_node(nodes, sysfs, it->path());
+      }
+
+      return nodes;
     }
 
     std::vector<DeviceNode> discover_input_nodes_by_name(
@@ -1390,23 +1458,14 @@ namespace lvh::detail {
           return status;
         }
       }
-      if (uses_uinput_dpad_buttons(profile_kind)) {
-        for (const auto button : {BTN_DPAD_UP, BTN_DPAD_DOWN, BTN_DPAD_LEFT, BTN_DPAD_RIGHT}) {
-          if (const auto status = enable_evdev_code(device, EV_KEY, button, "gamepad directional button"); !status.ok()) {
-            return status;
-          }
-        }
-      }
       return OperationStatus::success();
     }
 
     OperationStatus configure_evdev_gamepad_axes(libevdev *device, GamepadProfileKind profile_kind) {
-      if (!uses_uinput_dpad_buttons(profile_kind)) {
-        auto dpad = make_absinfo(-1, 1);
-        for (const auto code : {ABS_HAT0X, ABS_HAT0Y}) {
-          if (const auto status = enable_evdev_code(device, EV_ABS, code, "gamepad directional axis", &dpad); !status.ok()) {
-            return status;
-          }
+      auto dpad = make_absinfo(-1, 1);
+      for (const auto code : {ABS_HAT0X, ABS_HAT0Y}) {
+        if (const auto status = enable_evdev_code(device, EV_ABS, code, "gamepad directional axis", &dpad); !status.ok()) {
+          return status;
         }
       }
 
@@ -2565,28 +2624,17 @@ namespace lvh::detail {
             return status;
           }
         }
-        if (uses_uinput_dpad_buttons(profile_kind_)) {
-          constexpr std::array dpad_button_map {
-            std::pair {dpad_up, BTN_DPAD_UP},
-            std::pair {dpad_down, BTN_DPAD_DOWN},
-            std::pair {dpad_left, BTN_DPAD_LEFT},
-            std::pair {dpad_right, BTN_DPAD_RIGHT},
-          };
-          return emit_button_map(buttons, dpad_button_map);
-        }
         return OperationStatus::success();
       }
 
       OperationStatus emit_axis_state(const GamepadState &state) {
         using enum GamepadButton;
 
-        if (!uses_uinput_dpad_buttons(profile_kind_)) {
-          if (const auto status = emit_event(EV_ABS, ABS_HAT0X, dpad_axis(state.buttons, dpad_left, dpad_right)); !status.ok()) {
-            return status;
-          }
-          if (const auto status = emit_event(EV_ABS, ABS_HAT0Y, dpad_axis(state.buttons, dpad_up, dpad_down)); !status.ok()) {
-            return status;
-          }
+        if (const auto status = emit_event(EV_ABS, ABS_HAT0X, dpad_axis(state.buttons, dpad_left, dpad_right)); !status.ok()) {
+          return status;
+        }
+        if (const auto status = emit_event(EV_ABS, ABS_HAT0Y, dpad_axis(state.buttons, dpad_up, dpad_down)); !status.ok()) {
+          return status;
         }
 
         const std::array stick_axes {
@@ -2629,6 +2677,7 @@ namespace lvh::detail {
       }
 
       void read_output_loop(std::stop_token stop_token) {
+        std::this_thread::sleep_for(uinput_feedback_startup_delay);
         while (!stop_token.stop_requested() && running_) {
           pollfd descriptor {};
           descriptor.fd = file_descriptor();
@@ -2911,15 +2960,16 @@ namespace lvh::detail {
         }
 
         event.type = UHID_CREATE2;
-        auto unique_id = options.metadata.stable_id.empty() ? std::to_string(id) : options.metadata.stable_id;
+        unique_id_ = options.metadata.stable_id.empty() ? std::to_string(id) : options.metadata.stable_id;
         if (is_playstation_profile(options.profile.gamepad_kind)) {
           playstation_mac_address_ = parse_mac_address(options.metadata.stable_id).value_or(generated_mac_address(id));
-          unique_id = format_mac_address(playstation_mac_address_);
+          unique_id_ = format_mac_address(playstation_mac_address_);
         }
+        physical_id_ = std::format("libvirtualhid/uhid/{}", id);
 
         copy_string(request.name, options.profile.name);
-        copy_string(request.phys, std::format("libvirtualhid/uhid/{}", id));
-        copy_string(request.uniq, unique_id);
+        copy_string(request.phys, physical_id_);
+        copy_string(request.uniq, unique_id_);
         request.rd_size = static_cast<std::uint16_t>(options.profile.report_descriptor.size());
         request.bus = to_uhid_bus(options.profile);
         request.vendor = options.profile.vendor_id;
@@ -2979,7 +3029,11 @@ namespace lvh::detail {
       }
 
       std::vector<DeviceNode> device_nodes() const override {
-        return discover_input_nodes_by_name(device_name_);
+        auto nodes = discover_input_nodes_by_name(device_name_);
+        for (const auto &node : discover_hidraw_nodes_by_metadata(device_name_, physical_id_, unique_id_)) {
+          append_node_if_missing(nodes, node.kind, node.path);
+        }
+        return nodes;
       }
 
       OperationStatus close() override {
@@ -3088,7 +3142,7 @@ namespace lvh::detail {
             send_get_report_reply(event.u.get_report.id, event.u.get_report.rnum);
             break;
           case UHID_SET_REPORT:
-            dispatch_output_report(event.u.set_report.data, event.u.set_report.size);
+            dispatch_set_report(event.u.set_report.rnum, event.u.set_report.data, event.u.set_report.size);
             send_set_report_reply(event.u.set_report.id, 0);
             break;
           default:
@@ -3115,6 +3169,21 @@ namespace lvh::detail {
       }
 
       void dispatch_output_report(const __u8 *data, std::size_t report_size) {
+        const auto size = std::min<std::size_t>(report_size, UHID_DATA_MAX);
+        std::vector<std::uint8_t> report(data, data + size);
+        dispatch_output_report(report);
+      }
+
+      void dispatch_set_report(std::uint8_t report_number, const __u8 *data, std::size_t report_size) {
+        const auto size = std::min<std::size_t>(report_size, UHID_DATA_MAX);
+        std::vector<std::uint8_t> report(data, data + size);
+        if (report_number != 0 && (report.empty() || report.front() != report_number)) {
+          report.insert(report.begin(), report_number);
+        }
+        dispatch_output_report(report);
+      }
+
+      void dispatch_output_report(const std::vector<std::uint8_t> &report) {
         OutputCallback callback;
         {
           std::lock_guard lock {callback_mutex_};
@@ -3125,8 +3194,6 @@ namespace lvh::detail {
           return;
         }
 
-        const auto size = std::min<std::size_t>(report_size, UHID_DATA_MAX);
-        std::vector<std::uint8_t> report(data, data + size);
         for (const auto &output : reports::parse_output_reports(profile_, report)) {
           callback(output);
         }
@@ -3218,6 +3285,8 @@ namespace lvh::detail {
       int fd_ = -1;
       DeviceProfile profile_;
       std::string device_name_;
+      std::string physical_id_;
+      std::string unique_id_;
       std::array<std::uint8_t, 6> playstation_mac_address_ {};
       std::vector<std::uint8_t> last_report_;
       std::atomic_bool open_ = true;

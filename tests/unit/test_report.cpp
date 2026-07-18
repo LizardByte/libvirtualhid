@@ -124,7 +124,7 @@ TEST(ReportTest, PacksStandardGamepadReport) {
   ASSERT_EQ(report.size(), profile.input_report_size);
   EXPECT_EQ(report[0], profile.report_id);
   EXPECT_EQ(report[1], 0x81);  // A and Start.
-  EXPECT_EQ(report[2], 0x6C);  // Guide, Misc/share, and D-pad-left hat value.
+  EXPECT_EQ(report[2], 0x4C);  // Guide, Misc/share, and D-pad-left button.
   EXPECT_EQ(report[3], 255);  // Left stick X.
   EXPECT_EQ(report[4], 255);  // Left stick Y.
   EXPECT_EQ(report[5], 191);  // Right stick X.

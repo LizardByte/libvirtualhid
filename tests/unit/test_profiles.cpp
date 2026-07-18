@@ -208,33 +208,13 @@ TEST(ProfileTest, StreamingControllerProfilesArePresent) {
   EXPECT_TRUE(switch_pro.capabilities.supports_battery);
 
   const auto generic = lvh::profiles::generic_gamepad();
-  const std::array<std::uint8_t, 36> standard_button_descriptor {
+  const std::array<std::uint8_t, 16> standard_button_descriptor {
     0x05,
-    0x09,
-    0x09,
-    0x01,
-    0x09,
-    0x02,
-    0x09,
-    0x04,
-    0x09,
-    0x05,
-    0x09,
-    0x07,
-    0x09,
-    0x08,
-    0x09,
-    0x0B,
-    0x09,
-    0x0C,
-    0x09,
-    0x0E,
-    0x09,
-    0x0F,
-    0x09,
-    0x0D,
-    0x09,
-    0x06,
+    0x09,  // Usage Page (Button)
+    0x19,
+    0x01,  // Usage Minimum (Button 1)
+    0x29,
+    0x10,  // Usage Maximum (Button 16)
     0x15,
     0x00,
     0x25,
@@ -242,7 +222,7 @@ TEST(ProfileTest, StreamingControllerProfilesArePresent) {
     0x75,
     0x01,
     0x95,
-    0x0C,
+    0x10,
     0x81,
     0x02,
   };

@@ -497,6 +497,22 @@ namespace lvh::detail::test {
   bool linux_hidraw_name_matches(std::string_view path, std::string_view name);
 
   /**
+   * @brief Discover hidraw nodes using UHID metadata.
+   *
+   * @param name Expected HID name.
+   * @param physical_id Expected HID physical path.
+   * @param unique_id Expected HID unique id.
+   * @param hidraw_root Test hidraw sysfs root.
+   * @return Matching hidraw device nodes.
+   */
+  std::vector<DeviceNode> linux_discover_hidraw_nodes_by_metadata(
+    std::string_view name,
+    std::string_view physical_id,
+    std::string_view unique_id,
+    const std::string &hidraw_root
+  );
+
+  /**
    * @brief Discover Linux input nodes for a device name.
    *
    * @param name Device name to discover.

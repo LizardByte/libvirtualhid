@@ -180,6 +180,11 @@ Consumers may replace `DeviceProfile::name` before creating a gamepad, for
 example to prepend an application name while preserving the default controller
 identity across platform backends.
 
+The platform-neutral Generic HID descriptor reports the D-pad as buttons 13
+through 16 in the input report. Linux may still route that profile through
+`uinput`, where the backend exposes those same logical directions through the
+standard `ABS_HAT0X` and `ABS_HAT0Y` axes expected by evdev consumers.
+
 Profiles advertise support for features such as rumble, trigger rumble, RGB
 LEDs, adaptive triggers, motion sensors, touchpads, battery state, profile
 specific buttons, and raw output reports. Consumers should query profile and

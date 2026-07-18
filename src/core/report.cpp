@@ -214,6 +214,17 @@ namespace lvh::reports {
       };
     }
 
+    constexpr auto standard_dpad_button_map() {
+      using enum GamepadButton;
+
+      return std::array {
+        ButtonBit {12U, dpad_up},
+        ButtonBit {13U, dpad_down},
+        ButtonBit {14U, dpad_left},
+        ButtonBit {15U, dpad_right},
+      };
+    }
+
     constexpr auto xbox_extra_button_map() {
       using enum GamepadButton;
 
@@ -250,6 +261,13 @@ namespace lvh::reports {
         button_bits(face_shoulder_button_map(), buttons) |
         button_bits(common_menu_button_map(), buttons) |
         button_bits(common_extra_button_map(), buttons)
+      );
+    }
+
+    std::uint16_t standard_gamepad_button_bits(const ButtonSet &buttons) {
+      return static_cast<std::uint16_t>(
+        common_button_bits(buttons) |
+        button_bits(standard_dpad_button_map(), buttons)
       );
     }
 
@@ -828,7 +846,7 @@ namespace lvh::reports {
     std::vector<std::uint8_t> report;
     report.reserve(standard_report_size);
     report.push_back(profile.report_id);
-    append_u16(report, static_cast<std::uint16_t>(common_button_bits(normalized.buttons) | dpad_hat_bits(normalized.buttons)));
+    append_u16(report, standard_gamepad_button_bits(normalized.buttons));
     report.push_back(normalize_u8_axis(normalized.left_stick.x));
     report.push_back(normalize_u8_axis(-normalized.left_stick.y));
     report.push_back(normalize_u8_axis(normalized.right_stick.x));

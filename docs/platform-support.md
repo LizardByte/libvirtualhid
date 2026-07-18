@@ -58,14 +58,16 @@ feature reports, and output reports matter for controller compatibility.
 Generic, Xbox-family, and Switch Pro profiles instead use `uinput` so SDL,
 Steam, browser Gamepad API implementations, and other evdev consumers receive
 canonical Linux gamepad events. Face buttons, shoulders, menu buttons, stick
-clicks, and Guide use their native evdev codes; sticks use absolute axes.
-Generic exposes its directional pad only through `BTN_DPAD_*`, while Xbox and
-Switch Pro use `ABS_HAT0X` and `ABS_HAT0Y`; each profile therefore has one
-unambiguous D-pad representation. Generic and Xbox triggers remain independent
-analog `ABS_Z` and `ABS_RZ` axes. Switch Pro uses the Nintendo face-button
-positions, button events for ZL/ZR, and `BTN_Z` for Capture. Profiles with
-rumble support normalize rumble, constant, periodic, and ramp uinput
-force-feedback effects back into the public callback.
+clicks, and Guide use their native evdev codes; sticks use absolute axes. Every
+uinput gamepad exposes its directional pad only through `ABS_HAT0X` and
+`ABS_HAT0Y`, giving consumers one unambiguous D-pad representation. Generic and
+Xbox triggers remain independent analog `ABS_Z` and `ABS_RZ` axes. Switch Pro
+uses the Nintendo face-button positions, button events for ZL/ZR, and `BTN_Z`
+for Capture. Profiles with rumble support normalize rumble, constant, periodic,
+and ramp uinput force-feedback effects back into the public callback. The Linux
+backend lets a new uinput device settle before reading those effects so an early
+poll error cannot disable feedback for the device lifetime. PlayStation rumble
+is read from native UHID interrupt-channel output reports.
 
 Xbox 360 retains its `0x045E:0x028E` identity, while its Linux uinput device uses
 the Bluetooth bus so consumers select the sparse button mapping.
@@ -82,8 +84,9 @@ gamepad consumers.
 DualShock 4 and DualSense remain on `uhid` so their descriptors, motion,
 touchpad, battery, feature reports, and profile-specific output reports stay
 available. The backend accepts PlayStation output through both UHID interrupt
-and control channels, including control reports whose report number is supplied
-separately from the payload.
+and control channels. Numbered control-channel output is normalized before
+parsing, whether the kernel includes the report number in the payload or
+provides it separately on the UHID event.
 
 Switch Pro keeps its Nintendo identity on the Linux uinput path. This follows
 the evdev layout used by Linux-native virtual-controller implementations and
