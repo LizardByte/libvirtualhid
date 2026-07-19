@@ -38,12 +38,27 @@ HID consumers can enumerate, including SDL/HIDAPI, DirectInput,
 Windows.Gaming.Input/GameInput, and browser Gamepad API clients. XInput is not a
 direct target of the HID backend.
 
-The Generic descriptor advertises its four rumble actuators through the HID
-Physical Interface Device usage page instead of an opaque vendor output. Xbox
-One and Xbox Series use the same native eight-byte PID payload exposed by the
+The built-in Generic profile remains a platform-neutral Game Pad publicly. At
+the Windows transport boundary, VHF presents it as a DirectInput-compatible
+Joystick with the standard PID allocation/control handshake and Constant Force
+and Sine effects. Windows also applies DirectInput's idle-at-maximum Z/Rz
+trigger polarity. PID effects are normalized back into the same rumble callback
+used by the other backends. Start delay, duration, and loop count are honored;
+finite effects emit a zero-rumble callback when they expire, while explicit
+stop commands take effect immediately.
+
+Xbox One and Xbox Series use the native eight-byte PID payload exposed by the
 Windows Xbox HID stack. The library applies the actuator-enable mask and
 duration field, then reports the body motors as normalized low/high-frequency
-rumble and the independent trigger motors as trigger-rumble output.
+rumble and the independent trigger motors as trigger-rumble output. Xbox Series
+keeps its public `0x045E:0x0B12` identity while using the Share-capable
+`0x045E:0x0B13&IG_00` XInputHID match identity internally.
+
+The VHF driver answers the calibration, pairing, and firmware feature reports
+used to initialize DualShock 4 and DualSense HIDAPI output. It also answers the
+Switch Pro USB and subcommand initialization sequence and accepts the native
+`0x30` input layout, so descriptor-aware consumers can initialize those
+controllers before sending their native output reports.
 
 See [Windows driver package](windows-driver.md) for build, install, validation,
 and signing details.
@@ -66,22 +81,22 @@ Generic, Xbox-family, and Switch Pro profiles instead use `uinput` so SDL,
 Steam, browser Gamepad API implementations, and other evdev consumers receive
 canonical Linux gamepad events. Face buttons, shoulders, menu buttons, stick
 clicks, and Guide use their native evdev codes; sticks use absolute axes. Every
-uinput gamepad exposes its directional pad only through `ABS_HAT0X` and
-`ABS_HAT0Y`, giving consumers one unambiguous D-pad representation. Generic and
-Xbox triggers remain independent analog `ABS_Z` and `ABS_RZ` axes. Switch Pro
-uses the Nintendo face-button positions, button events for ZL/ZR, and `BTN_Z`
-for Capture. Profiles with rumble support normalize rumble, constant, periodic,
-and ramp uinput force-feedback effects back into the public callback. The Linux
-backend lets a new uinput device settle before reading those effects so an early
-poll error cannot disable feedback for the device lifetime. PlayStation rumble
-is read from native UHID interrupt-channel output reports.
+uinput gamepad exposes its directional pad through `ABS_HAT0X` and `ABS_HAT0Y`.
+Generic also publishes `BTN_DPAD_*` events so consumers can select either
+kernel-standard representation. Generic and Xbox triggers remain independent
+analog `ABS_Z` and `ABS_RZ` axes. Switch Pro uses the Nintendo face-button
+positions, button events for ZL/ZR, and `BTN_Z` for Capture. Profiles with rumble
+support normalize rumble, constant, periodic, and ramp uinput force-feedback
+effects back into the public callback. A zero-length effect remains active until
+its explicit stop event, matching the infinite-effect contract used by SDL and
+Steam. The Linux backend lets a new uinput device settle before reading those
+effects so an early poll error cannot disable feedback for the device lifetime.
+PlayStation rumble is read from native UHID interrupt-channel output reports.
 
-The Generic profile keeps its public `0x1209:0x0001` identity on descriptor-
-driven backends. Its Linux uinput device uses the proven compact Xbox-compatible
-`0x045E:0x02EA` evdev identity used by Inputtino. Linux browser and Steam mapping
-tables do not define a standard mapping for the vendor-neutral identity; the
-compatible uinput identity makes the hat axes appear as logical D-pad buttons
-and exposes standard force feedback without changing the public profile name.
+The Generic profile keeps its public `0x1209:0x0001` identity and compact button
+layout on every backend. Its Linux uinput device publishes D-pad directions as
+both hat axes and semantic D-pad buttons, preserving the Generic identity while
+supporting consumers that prefer either Linux input representation.
 
 Xbox 360 retains its `0x045E:0x028E` identity, while its Linux uinput device uses
 the Bluetooth bus so consumers select the sparse button mapping.
@@ -122,8 +137,9 @@ rather than an unconditional default.
 
 ### Permissions
 
-Linux deployment is usually a permissions problem, not a kernel-module problem.
-Install udev rules such as `/etc/udev/rules.d/60-libvirtualhid.rules`:
+Linux deployment requires both device-node permissions and the kernel modules
+for the selected virtual-controller path. Install udev rules such as
+`/etc/udev/rules.d/60-libvirtualhid.rules`:
 
 ```udev
 # Allows libvirtualhid consumers to access /dev/uinput
@@ -142,18 +158,24 @@ KERNEL=="hidraw*", ATTRS{name}=="Your App Controller*", GROUP="input", MODE="066
 SUBSYSTEMS=="input", ATTRS{name}=="Your App Controller*", GROUP="input", MODE="0660", TAG+="uaccess"
 ```
 
-For descriptor-driven `uhid` gamepad support, install a modules-load entry such as
-`/etc/modules-load.d/60-libvirtualhid.conf`:
+For gamepad support, install a modules-load entry such as
+`/etc/modules-load.d/60-libvirtualhid.conf`. `hid_playstation` is required for
+the kernel force-feedback path used by virtual DualShock 4 and DualSense
+controllers:
 
 ```text
 uhid
+uinput
+hid_playstation
 ```
 
-After installing the rules, load `uhid`, reload udev, and trigger the device
-nodes:
+After installing the rules, load the modules, reload udev, and trigger the
+device nodes:
 
 ```bash
 sudo modprobe uhid
+sudo modprobe uinput
+sudo modprobe hid_playstation
 sudo udevadm control --reload-rules
 sudo udevadm trigger --property-match=DEVNAME=/dev/uinput
 sudo udevadm trigger --property-match=DEVNAME=/dev/uhid

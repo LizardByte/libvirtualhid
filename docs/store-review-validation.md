@@ -33,8 +33,9 @@ In the libvirtualhid control window, leave the default Xbox Series profile selec
 Expected result:
 - The backend status reports windows-umdf with gamepad support available
 - A virtual HID gamepad is created and appears in the device list
-- A virtual HID gamepad child device starts, matching either
-  HID\VID_045E&PID_0B12&IG_00 or HID\VID_045E&PID_02FF&IG_00
+- A virtual HID gamepad child device starts with the Share-capable XInputHID
+  match ID HID\VID_045E&PID_0B13&IG_00 while preserving the public
+  HID\VID_045E&PID_0B12 identity
 - Button and axis values in the UI can be pressed or moved without errors
 
 Optional browser validation:

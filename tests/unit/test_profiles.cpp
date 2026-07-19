@@ -23,6 +23,12 @@ namespace {
     std::uint16_t bit;
   };
 
+  struct PackedByteButtonCase {
+    lvh::GamepadButton button;
+    std::size_t offset;
+    std::uint8_t mask;
+  };
+
   template<std::size_t Size>
   void expect_descriptor_contains(
     const lvh::DeviceProfile &profile,
@@ -33,8 +39,10 @@ namespace {
   }
 
   std::uint16_t read_u16_le(const std::vector<std::uint8_t> &report, std::size_t offset) {
+    const auto low = std::byte {report[offset]};
+    const auto high = std::byte {report[offset + 1U]};
     return static_cast<std::uint16_t>(
-      report[offset] | static_cast<std::uint16_t>(static_cast<std::uint16_t>(report[offset + 1U]) << 8U)
+      std::to_integer<std::uint16_t>(low) | (std::to_integer<std::uint16_t>(high) << 8U)
     );
   }
 
@@ -395,32 +403,65 @@ TEST(ProfileTest, NativeControllerPackedButtonsUseExpectedBitSlots) {
     EXPECT_EQ(report[15], 1U);
   }
 
-  const std::vector<PackedButtonCase> switch_button_cases {
-    {a, 0U},
-    {b, 1U},
-    {x, 2U},
-    {y, 3U},
-    {left_shoulder, 4U},
-    {right_shoulder, 5U},
-    {back, 8U},
-    {start, 9U},
-    {left_stick, 10U},
-    {right_stick, 11U},
-    {guide, 12U},
-    {misc1, 13U},
+  const std::vector<PackedByteButtonCase> switch_button_cases {
+    {a, 3U, 0x08U},
+    {b, 3U, 0x04U},
+    {x, 3U, 0x02U},
+    {y, 3U, 0x01U},
+    {right_shoulder, 3U, 0x40U},
+    {back, 4U, 0x01U},
+    {start, 4U, 0x02U},
+    {right_stick, 4U, 0x04U},
+    {left_stick, 4U, 0x08U},
+    {guide, 4U, 0x10U},
+    {misc1, 4U, 0x20U},
+    {dpad_down, 5U, 0x01U},
+    {dpad_up, 5U, 0x02U},
+    {dpad_right, 5U, 0x04U},
+    {dpad_left, 5U, 0x08U},
+    {left_shoulder, 5U, 0x40U},
   };
-  expect_packed_button_bits(switch_pro, switch_button_cases, 1U);
+  for (const auto &[button, offset, mask] : switch_button_cases) {
+    lvh::GamepadState state;
+    state.buttons.set(button);
+    const auto report = lvh::reports::pack_input_report(switch_pro, state);
+
+    ASSERT_GT(report.size(), offset);
+    EXPECT_EQ(report[offset], mask) << "logical button " << static_cast<unsigned>(std::to_underlying(button));
+  }
 
   lvh::GamepadState trigger_state;
   trigger_state.left_trigger = 1.0F;
   trigger_state.right_trigger = 1.0F;
   const auto trigger_report = lvh::reports::pack_input_report(switch_pro, trigger_state);
-  ASSERT_GT(trigger_report.size(), 2U);
-  EXPECT_EQ(read_u16_le(trigger_report, 1U), static_cast<std::uint16_t>((1U << 6U) | (1U << 7U)));
+  ASSERT_GT(trigger_report.size(), 5U);
+  EXPECT_EQ(trigger_report[3], 0x80U);
+  EXPECT_EQ(trigger_report[5], 0x80U);
+}
 
-  // Switch usages 15 through 18 are inactive compatibility slots in the upper
-  // nibble after the hat, not public logical paddle buttons.
-  EXPECT_EQ(trigger_report[11] & 0xF0U, 0U);
+TEST(ProfileTest, SwitchProPacksNativeFullControllerState) {
+  const auto profile = lvh::profiles::switch_pro();
+  lvh::GamepadState state;
+  state.left_stick = {.x = 1.0F, .y = 0.0F};
+  state.right_stick = {.x = 0.0F, .y = -1.0F};
+
+  const auto report = lvh::reports::pack_input_report(profile, state);
+  ASSERT_EQ(report.size(), 64U);
+  EXPECT_EQ(report[0], 0x30U);
+  EXPECT_EQ(report[2], 0x81U);
+
+  // Nintendo packs each stick as two little-endian 12-bit values across three bytes.
+  EXPECT_EQ(report[6], 0xFFU);
+  EXPECT_EQ(report[7], 0x0FU);
+  EXPECT_EQ(report[8], 0x80U);
+  EXPECT_EQ(report[9], 0x00U);
+  EXPECT_EQ(report[10], 0xF8U);
+  EXPECT_EQ(report[11], 0xFFU);
+
+  state.battery = lvh::GamepadBattery {.state = lvh::GamepadBatteryState::full, .percentage = 100};
+  EXPECT_EQ(lvh::reports::pack_input_report(profile, state)[2], 0x81U);
+  state.battery = lvh::GamepadBattery {.state = lvh::GamepadBatteryState::charging, .percentage = 50};
+  EXPECT_EQ(lvh::reports::pack_input_report(profile, state)[2], 0x51U);
 }
 
 TEST(ProfileTest, RumbleProfilesExposeOutputReports) {

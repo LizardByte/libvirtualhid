@@ -436,8 +436,15 @@ TEST_F(LinuxBackendTest, PipeBackedUinputGamepadsUseCanonicalLinuxEvents) {
     };
     EXPECT_EQ(event_value(EV_ABS, ABS_HAT0X), 1);
     EXPECT_EQ(event_value(EV_ABS, ABS_HAT0Y), -1);
-    for (const auto dpad_button : {BTN_DPAD_UP, BTN_DPAD_DOWN, BTN_DPAD_LEFT, BTN_DPAD_RIGHT}) {
-      EXPECT_EQ(event_value(EV_KEY, dpad_button), std::nullopt);
+    constexpr std::array dpad_button_values {
+      std::pair {BTN_DPAD_UP, 1},
+      std::pair {BTN_DPAD_DOWN, 0},
+      std::pair {BTN_DPAD_LEFT, 0},
+      std::pair {BTN_DPAD_RIGHT, 1},
+    };
+    for (const auto &[dpad_button, expected_value] : dpad_button_values) {
+      const auto expected = kind == generic ? std::optional {expected_value} : std::nullopt;
+      EXPECT_EQ(event_value(EV_KEY, dpad_button), expected);
     }
     EXPECT_EQ(event_value(EV_ABS, ABS_X), lvh::reports::normalize_axis(-0.5F));
     EXPECT_EQ(event_value(EV_ABS, ABS_Y), lvh::reports::normalize_axis(-0.25F));
@@ -480,6 +487,38 @@ TEST_F(LinuxBackendTest, UinputGamepadsNormalizeForceFeedback) {
       }
     }
   }
+}
+
+TEST_F(LinuxBackendTest, UinputGamepadKeepsInfiniteRumbleActiveUntilExplicitStop) {
+  const auto result = lvh::detail::test::linux_uinput_gamepad_fake_rumble(
+    lvh::GamepadProfileKind::switch_pro,
+    FF_RUMBLE,
+    0,
+    true
+  );
+
+  ASSERT_TRUE(result.create_status.ok()) << result.create_status.message();
+  EXPECT_TRUE(result.close_status.ok()) << result.close_status.message();
+  ASSERT_GE(result.nonzero_callback_count, 1U);
+  EXPECT_GE(result.zero_callback_count_before_close, 1U);
+  EXPECT_EQ(result.last_output.kind, lvh::GamepadOutputKind::rumble);
+  EXPECT_EQ(result.last_output.low_frequency_rumble, 0x5678);
+  EXPECT_EQ(result.last_output.high_frequency_rumble, 0x1234);
+}
+
+TEST_F(LinuxBackendTest, UinputGamepadRecalculatesActiveRumbleEndAfterReupload) {
+  const auto result = lvh::detail::test::linux_uinput_gamepad_fake_rumble(
+    lvh::GamepadProfileKind::switch_pro,
+    FF_RUMBLE,
+    0,
+    false,
+    1
+  );
+
+  ASSERT_TRUE(result.create_status.ok()) << result.create_status.message();
+  EXPECT_TRUE(result.close_status.ok()) << result.close_status.message();
+  EXPECT_GE(result.nonzero_callback_count, 1U);
+  EXPECT_GE(result.zero_callback_count_before_close, 1U);
 }
 
 TEST_F(LinuxBackendTest, HandlesUinputMouseInvalidFileDescriptorPaths) {
@@ -890,7 +929,7 @@ TEST_F(LinuxBackendTest, FakeUinputConstructionCoversCapabilitiesAndFailureBranc
   };
 
   constexpr std::array gamepad_cases {
-    GamepadCase {generic, BUS_USB, 0x045E, 0x02EA, true, false, false},
+    GamepadCase {generic, BUS_USB, 0x1209, 0x0001, true, false, false},
     GamepadCase {xbox_360, BUS_BLUETOOTH, 0x045E, 0x028E, false, true, false},
     GamepadCase {xbox_one, BUS_BLUETOOTH, 0x045E, 0x0B20, false, true, false},
     GamepadCase {xbox_series, BUS_BLUETOOTH, 0x045E, 0x0B13, true, true, false},
@@ -936,7 +975,7 @@ TEST_F(LinuxBackendTest, FakeUinputConstructionCoversCapabilitiesAndFailureBranc
         << "unexpected reserved gamepad button slot state for " << button;
     }
     for (const auto button : dpad_buttons) {
-      EXPECT_EQ(find_code(gamepad, EV_KEY, button), nullptr)
+      EXPECT_EQ(find_code(gamepad, EV_KEY, button) != nullptr, kind == generic)
         << "unexpected directional gamepad button capability for " << button;
     }
     EXPECT_NE(find_code(gamepad, EV_ABS, ABS_HAT0X), nullptr);

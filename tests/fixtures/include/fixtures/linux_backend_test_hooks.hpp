@@ -7,6 +7,7 @@
 // standard includes
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -69,6 +70,16 @@ namespace lvh::detail::test {
      * @brief Number of normalized rumble callbacks received.
      */
     std::size_t callback_count = 0;
+
+    /**
+     * @brief Number of non-zero rumble callbacks received.
+     */
+    std::size_t nonzero_callback_count = 0;
+
+    /**
+     * @brief Number of zero-rumble callbacks received before the gamepad was closed.
+     */
+    std::size_t zero_callback_count_before_close = 0;
 
     /**
      * @brief Last normalized rumble callback.
@@ -630,11 +641,17 @@ namespace lvh::detail::test {
    *
    * @param kind Gamepad profile kind.
    * @param effect_type Linux force-feedback effect type.
+   * @param replay_length Effect duration in milliseconds, or zero for an infinite effect.
+   * @param send_stop Whether to send an explicit stop event after starting the effect.
+   * @param reupload_length Replacement duration to upload while the effect is active.
    * @return Creation, callback, and close results.
    */
   LinuxUinputRumbleResult linux_uinput_gamepad_fake_rumble(
     GamepadProfileKind kind,
-    std::uint16_t effect_type
+    std::uint16_t effect_type,
+    std::uint16_t replay_length = 1000,
+    bool send_stop = false,
+    std::optional<std::uint16_t> reupload_length = std::nullopt
   );
 
   /**

@@ -46,7 +46,11 @@
 #include <vector>
 
 // local includes
+#include "generic_pid_protocol.hpp"
 #include "lvh_windows_protocol.h"
+#include "playstation_feature_protocol.hpp"
+#include "switch_pro_protocol.hpp"
+#include "windows_device_identity.hpp"
 
 using VhfContext = PVOID;  // NOSONAR(cpp:S5008): VHF callback ABI requires PVOID; client context narrows to DeviceRecord.
 
@@ -58,6 +62,8 @@ EVT_WDF_FILE_CLEANUP LvhEvtFileCleanup;
 EVT_WDF_IO_QUEUE_IO_DEVICE_CONTROL LvhEvtIoDeviceControl;
 EVT_WDF_OBJECT_CONTEXT_CLEANUP LvhEvtDeviceCleanup;
 EVT_WDF_REQUEST_CANCEL LvhEvtOutputReadCanceled;
+EVT_VHF_ASYNC_OPERATION LvhEvtVhfGetFeature;
+EVT_VHF_ASYNC_OPERATION LvhEvtVhfSetFeature;
 EVT_VHF_ASYNC_OPERATION LvhEvtVhfWriteReport;
 
 namespace {
@@ -76,6 +82,7 @@ namespace {
     VHFHANDLE vhf_handle {};
     std::vector<UCHAR> report_descriptor;
     std::wstring hardware_ids;
+    lvh::detail::windows::GenericPidFeatureState generic_pid_feature_state;
   };
 
   struct PendingOutputRequest {
@@ -410,62 +417,6 @@ namespace {
     delete_vhf_devices_for_device(device);
   }
 
-  wchar_t hex_digit(unsigned value) {
-    constexpr wchar_t digits[] = L"0123456789ABCDEF";
-    return digits[value & 0x0FU];
-  }
-
-  void append_hex4(std::wstring &text, std::uint16_t value) {
-    text.push_back(hex_digit(value >> 12U));
-    text.push_back(hex_digit(value >> 8U));
-    text.push_back(hex_digit(value >> 4U));
-    text.push_back(hex_digit(value));
-  }
-
-  void append_hid_vid_pid(
-    std::wstring &hardware_ids,
-    std::uint16_t vendor_id,
-    std::uint16_t product_id
-  ) {
-    hardware_ids.append(L"HID\\VID_");
-    append_hex4(hardware_ids, vendor_id);
-    hardware_ids.append(L"&PID_");
-    append_hex4(hardware_ids, product_id);
-  }
-
-  std::uint16_t xinputhid_match_product_id(const LvhWindowsCreateGamepadRequest &request) {
-    if (request.gamepad_kind == LVH_WINDOWS_GAMEPAD_XBOX_SERIES) {
-      return 0x02FF;
-    }
-
-    return request.hardware_ids.product_id;
-  }
-
-  bool is_xbox_gamepad(std::uint32_t gamepad_kind) {
-    return gamepad_kind == LVH_WINDOWS_GAMEPAD_XBOX_360 || gamepad_kind == LVH_WINDOWS_GAMEPAD_XBOX_ONE ||
-           gamepad_kind == LVH_WINDOWS_GAMEPAD_XBOX_SERIES;
-  }
-
-  std::wstring make_hardware_ids(const LvhWindowsCreateGamepadRequest &request) {
-    const auto &ids = request.hardware_ids;
-    std::wstring hardware_ids;
-    if (is_xbox_gamepad(request.gamepad_kind)) {
-      append_hid_vid_pid(hardware_ids, ids.vendor_id, xinputhid_match_product_id(request));
-      hardware_ids.append(L"&IG_00");
-      hardware_ids.push_back(L'\0');
-    }
-
-    append_hid_vid_pid(hardware_ids, ids.vendor_id, ids.product_id);
-    hardware_ids.append(L"&REV_");
-    append_hex4(hardware_ids, ids.device_version);
-    hardware_ids.push_back(L'\0');
-
-    append_hid_vid_pid(hardware_ids, ids.vendor_id, ids.product_id);
-    hardware_ids.push_back(L'\0');
-    hardware_ids.push_back(L'\0');
-    return hardware_ids;
-  }
-
   NTSTATUS create_vhf_device(WDFDEVICE device, const std::shared_ptr<DeviceRecord> &record) {
     auto status = initialize_vhf_target(device, record);
     if (!NT_SUCCESS(status)) {
@@ -477,7 +428,7 @@ namespace {
       record->request.report_descriptor,
       record->request.report_descriptor + descriptor_size
     );
-    record->hardware_ids = make_hardware_ids(record->request);
+    record->hardware_ids = lvh::detail::windows::make_hardware_ids(record->request);
 
     VHF_CONFIG vhf_config;
     VHF_CONFIG_INIT(
@@ -492,6 +443,8 @@ namespace {
     vhf_config.VersionNumber = record->request.hardware_ids.device_version;
     vhf_config.HardwareIDsLength = static_cast<USHORT>(record->hardware_ids.size() * sizeof(wchar_t));
     vhf_config.HardwareIDs = record->hardware_ids.data();
+    vhf_config.EvtVhfAsyncOperationGetFeature = LvhEvtVhfGetFeature;
+    vhf_config.EvtVhfAsyncOperationSetFeature = LvhEvtVhfSetFeature;
     vhf_config.EvtVhfAsyncOperationWriteReport = LvhEvtVhfWriteReport;
 
     status = VhfCreate(&vhf_config, &record->vhf_handle);
@@ -590,6 +543,90 @@ namespace {
     }
 
     event.report_size = static_cast<std::uint32_t>(report_id_size + payload_size);
+  }
+
+  void submit_switch_pro_reply(DeviceRecord &record, const LvhWindowsOutputReportEvent &event) {
+    if (record.request.gamepad_kind != LVH_WINDOWS_GAMEPAD_SWITCH_PRO) {
+      return;
+    }
+
+    auto reply = lvh::detail::windows::make_switch_pro_reply({event.report, event.report_size});
+    if (!reply.has_value()) {
+      return;
+    }
+
+    HID_XFER_PACKET packet {};
+    packet.reportBuffer = reply->data();
+    packet.reportBufferLen = static_cast<ULONG>(reply->size());
+    packet.reportId = reply->front();
+
+    // Keep teardown from deleting the VHF handle while the reply is being
+    // submitted. delete_vhf_device() clears the handle under the same mutex
+    // before calling VhfDelete, so no new submission can start afterward.
+    std::lock_guard lock {record.mutex};
+    if (record.vhf_handle == nullptr) {
+      return;
+    }
+    trace_status("switch_pro_reply VhfReadReportSubmit", VhfReadReportSubmit(record.vhf_handle, &packet));
+  }
+
+  LvhWindowsOutputReportEvent make_output_event(DeviceRecord &record, const HID_XFER_PACKET &packet) {
+    LvhWindowsOutputReportEvent event {};
+    event.version = LVH_WINDOWS_CONTROL_PROTOCOL_VERSION;
+    event.size = sizeof(event);
+    event.driver_device_id = record.driver_device_id;
+    copy_vhf_output_payload(event, packet);
+    return event;
+  }
+
+  NTSTATUS copy_vhf_feature_report(DeviceRecord &record, HID_XFER_PACKET &packet) {
+    auto report_number = packet.reportId;
+    if (report_number == 0U && packet.reportBufferLen > 0U) {
+      report_number = packet.reportBuffer[0];
+    }
+
+    auto report = std::optional<std::vector<std::uint8_t>> {};
+    if (record.request.gamepad_kind == LVH_WINDOWS_GAMEPAD_GENERIC) {
+      std::lock_guard lock {record.mutex};
+      report = record.generic_pid_feature_state.get_feature_report(report_number);
+    } else {
+      report = lvh::detail::windows::make_playstation_feature_report(record.request, report_number);
+    }
+    if (!report.has_value()) {
+      return STATUS_NOT_SUPPORTED;
+    }
+    if (packet.reportBufferLen < report->size()) {
+      return STATUS_BUFFER_TOO_SMALL;
+    }
+
+    std::fill_n(packet.reportBuffer, packet.reportBufferLen, UCHAR {});
+    std::copy(report->begin(), report->end(), packet.reportBuffer);
+    return STATUS_SUCCESS;
+  }
+
+  bool handle_vhf_set_feature(DeviceRecord &record, const HID_XFER_PACKET &packet) {
+    if (record.request.gamepad_kind == LVH_WINDOWS_GAMEPAD_GENERIC) {
+      auto event = make_output_event(record, packet);
+      const auto report_id = packet.reportId == 0U && event.report_size > 0U ? event.report[0] : packet.reportId;
+      std::lock_guard lock {record.mutex};
+      return record.generic_pid_feature_state.handle_set_feature(
+        static_cast<std::uint8_t>(report_id),
+        {event.report, event.report_size}
+      );
+    }
+    return lvh::detail::windows::is_playstation_gamepad(record.request.gamepad_kind);
+  }
+
+  void handle_vhf_output_report(DeviceRecord &record, const LvhWindowsOutputReportEvent &event) {
+    if (record.request.gamepad_kind != LVH_WINDOWS_GAMEPAD_GENERIC) {
+      return;
+    }
+
+    std::lock_guard lock {record.mutex};
+    static_cast<void>(record.generic_pid_feature_state.handle_output_report(
+      static_cast<std::uint8_t>(event.report[0]),
+      {event.report, event.report_size}
+    ));
   }
 
   void set_device_path(std::uint64_t driver_device_id, char (&device_path)[LVH_WINDOWS_MAX_DEVICE_PATH_SIZE]) {
@@ -879,6 +916,47 @@ void LvhEvtOutputReadCanceled(WDFREQUEST request) {
   }
 }
 
+void LvhEvtVhfGetFeature(
+  VhfContext vhf_client_context,
+  VHFOPERATIONHANDLE vhf_operation_handle,
+  VhfContext vhf_operation_context,
+  PHID_XFER_PACKET hid_transfer_packet
+) {
+  UNREFERENCED_PARAMETER(vhf_operation_context);
+
+  auto *record = static_cast<DeviceRecord *>(vhf_client_context);
+  if (record == nullptr || hid_transfer_packet == nullptr || hid_transfer_packet->reportBuffer == nullptr) {
+    static_cast<void>(VhfAsyncOperationComplete(vhf_operation_handle, STATUS_INVALID_PARAMETER));
+    return;
+  }
+
+  const auto status = copy_vhf_feature_report(*record, *hid_transfer_packet);
+  trace_status("EvtVhfGetFeature complete", status);
+  static_cast<void>(VhfAsyncOperationComplete(vhf_operation_handle, status));
+}
+
+void LvhEvtVhfSetFeature(
+  VhfContext vhf_client_context,
+  VHFOPERATIONHANDLE vhf_operation_handle,
+  VhfContext vhf_operation_context,
+  PHID_XFER_PACKET hid_transfer_packet
+) {
+  UNREFERENCED_PARAMETER(vhf_operation_context);
+
+  auto *record = static_cast<DeviceRecord *>(vhf_client_context);
+  if (record == nullptr || hid_transfer_packet == nullptr || hid_transfer_packet->reportBuffer == nullptr) {
+    static_cast<void>(VhfAsyncOperationComplete(vhf_operation_handle, STATUS_INVALID_PARAMETER));
+    return;
+  }
+  if (!handle_vhf_set_feature(*record, *hid_transfer_packet)) {
+    static_cast<void>(VhfAsyncOperationComplete(vhf_operation_handle, STATUS_NOT_SUPPORTED));
+    return;
+  }
+
+  queue_output_event(record->owner_file, make_output_event(*record, *hid_transfer_packet));
+  static_cast<void>(VhfAsyncOperationComplete(vhf_operation_handle, STATUS_SUCCESS));
+}
+
 void LvhEvtVhfWriteReport(
   VhfContext vhf_client_context,
   VHFOPERATIONHANDLE vhf_operation_handle,
@@ -893,12 +971,10 @@ void LvhEvtVhfWriteReport(
     return;
   }
 
-  LvhWindowsOutputReportEvent event {};
-  event.version = LVH_WINDOWS_CONTROL_PROTOCOL_VERSION;
-  event.size = sizeof(event);
-  event.driver_device_id = record->driver_device_id;
-  copy_vhf_output_payload(event, *hid_transfer_packet);
+  auto event = make_output_event(*record, *hid_transfer_packet);
 
+  submit_switch_pro_reply(*record, event);
+  handle_vhf_output_report(*record, event);
   queue_output_event(record->owner_file, event);
   static_cast<void>(VhfAsyncOperationComplete(vhf_operation_handle, STATUS_SUCCESS));
 }

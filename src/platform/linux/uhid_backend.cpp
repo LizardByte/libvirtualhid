@@ -60,6 +60,7 @@
 
 // local includes
 #include "core/backend.hpp"
+#include "shared/playstation_feature_reports.hpp"
 
 #include <libvirtualhid/profiles.hpp>
 #include <libvirtualhid/report.hpp>
@@ -83,308 +84,10 @@ namespace lvh::detail {
     // The Bluetooth bus selects the sparse evdev mapping that matches the
     // button capabilities exposed by these Xbox uinput devices.
     constexpr auto xbox_sparse_uinput_bus = BUS_BLUETOOTH;
-    constexpr std::uint16_t xbox_uinput_vendor_id = 0x045E;
-    constexpr std::uint16_t xbox_one_usb_uinput_product_id = 0x02EA;
     constexpr std::uint16_t xbox_wireless_uinput_product_id = 0x0B20;
     constexpr std::uint16_t xbox_series_uinput_product_id = 0x0B13;
-    constexpr auto dualshock4_usb_calibration_report = 0x02;
-    constexpr auto dualshock4_bluetooth_calibration_report = 0x05;
-    constexpr auto dualshock4_pairing_report = 0x12;
-    constexpr auto dualshock4_firmware_report = 0xA3;
+    using namespace playstation_feature_reports;
     constexpr auto playstation_periodic_report_ms = 10;
-    constexpr std::uint8_t playstation_feature_crc_seed = 0xA3;
-    constexpr auto dualsense_calibration_report = 0x05;
-    constexpr auto dualsense_pairing_report = 0x09;
-    constexpr auto dualsense_firmware_report = 0x20;
-
-    constexpr std::uint8_t dualshock4_usb_calibration_info[] {
-      0x02,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x10,
-      0x27,
-      0xF0,
-      0xD8,
-      0x10,
-      0x27,
-      0xF0,
-      0xD8,
-      0x10,
-      0x27,
-      0xF0,
-      0xD8,
-      0xF4,
-      0x01,
-      0xF4,
-      0x01,
-      0x10,
-      0x27,
-      0xF0,
-      0xD8,
-      0x10,
-      0x27,
-      0xF0,
-      0xD8,
-      0x10,
-      0x27,
-      0xF0,
-      0xD8,
-      0x00,
-      0x00,
-    };
-
-    constexpr std::uint8_t dualshock4_bluetooth_calibration_info[] {
-      0x05,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x10,
-      0x27,
-      0xF0,
-      0xD8,
-      0x10,
-      0x27,
-      0xF0,
-      0xD8,
-      0x10,
-      0x27,
-      0xF0,
-      0xD8,
-      0xF4,
-      0x01,
-      0xF4,
-      0x01,
-      0x10,
-      0x27,
-      0xF0,
-      0xD8,
-      0x10,
-      0x27,
-      0xF0,
-      0xD8,
-      0x10,
-      0x27,
-      0xF0,
-      0xD8,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-    };
-
-    constexpr std::uint8_t dualshock4_firmware_info[] {
-      0xA3,
-      0x41,
-      0x75,
-      0x67,
-      0x20,
-      0x20,
-      0x33,
-      0x20,
-      0x32,
-      0x30,
-      0x31,
-      0x33,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x30,
-      0x37,
-      0x3A,
-      0x30,
-      0x31,
-      0x3A,
-      0x31,
-      0x32,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x01,
-      0x00,
-      0x31,
-      0x03,
-      0x00,
-      0x00,
-      0x00,
-      0x49,
-      0x00,
-      0x05,
-      0x00,
-      0x00,
-      0x80,
-      0x03,
-      0x00,
-    };
-
-    constexpr std::uint8_t dualshock4_pairing_info[] {
-      0x12,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-    };
-
-    constexpr std::uint8_t dualsense_calibration_info[] {
-      0x05,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x10,
-      0x27,
-      0xF0,
-      0xD8,
-      0x10,
-      0x27,
-      0xF0,
-      0xD8,
-      0x10,
-      0x27,
-      0xF0,
-      0xD8,
-      0xF4,
-      0x01,
-      0xF4,
-      0x01,
-      0x10,
-      0x27,
-      0xF0,
-      0xD8,
-      0x10,
-      0x27,
-      0xF0,
-      0xD8,
-      0x10,
-      0x27,
-      0xF0,
-      0xD8,
-      0x0B,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-    };
-
-    constexpr std::uint8_t dualsense_firmware_info[] {
-      0x20,
-      0x4A,
-      0x75,
-      0x6E,
-      0x20,
-      0x31,
-      0x39,
-      0x20,
-      0x32,
-      0x30,
-      0x32,
-      0x33,
-      0x31,
-      0x34,
-      0x3A,
-      0x34,
-      0x37,
-      0x3A,
-      0x33,
-      0x34,
-      0x03,
-      0x00,
-      0x44,
-      0x00,
-      0x08,
-      0x02,
-      0x00,
-      0x01,
-      0x36,
-      0x00,
-      0x00,
-      0x01,
-      0xC1,
-      0xC8,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x54,
-      0x01,
-      0x00,
-      0x00,
-      0x14,
-      0x00,
-      0x00,
-      0x00,
-      0x0B,
-      0x00,
-      0x01,
-      0x00,
-      0x06,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-    };
-
-    constexpr std::uint8_t dualsense_pairing_info[] {
-      0x09,
-      0x74,
-      0xE7,
-      0xD6,
-      0x3A,
-      0x53,
-      0x35,
-      0x08,
-      0x25,
-      0x00,
-      0x1E,
-      0x00,
-      0xEE,
-      0x74,
-      0xD0,
-      0xBC,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-    };
 
     int system_access(const char *path, int mode) {
       return ::access(path, mode);
@@ -542,6 +245,10 @@ namespace lvh::detail {
       using enum GamepadProfileKind;
 
       return kind == xbox_360 || kind == xbox_one || kind == xbox_series;
+    }
+
+    bool uses_uinput_dpad_buttons(GamepadProfileKind kind) {
+      return kind == GamepadProfileKind::generic;
     }
 
     std::uint16_t to_uhid_bus(BusType bus_type) {
@@ -1442,6 +1149,14 @@ namespace lvh::detail {
           }
         }
       }
+      if (uses_uinput_dpad_buttons(profile_kind)) {
+        constexpr std::array dpad_buttons {BTN_DPAD_UP, BTN_DPAD_DOWN, BTN_DPAD_LEFT, BTN_DPAD_RIGHT};
+        for (const auto button : dpad_buttons) {
+          if (const auto status = enable_evdev_code(device, EV_KEY, button, "gamepad D-pad button"); !status.ok()) {
+            return status;
+          }
+        }
+      }
       if (profile_kind == GamepadProfileKind::switch_pro) {
         for (const auto button : {BTN_TL2, BTN_TR2}) {
           if (const auto status = enable_evdev_code(device, EV_KEY, button, "gamepad trigger button"); !status.ok()) {
@@ -1547,21 +1262,13 @@ namespace lvh::detail {
       }
 
       libevdev_set_name(device.get(), profile.name.c_str());
-      const auto generic = profile.gamepad_kind == GamepadProfileKind::generic;
       const auto xbox_360 = profile.gamepad_kind == GamepadProfileKind::xbox_360;
       const auto xbox_one = profile.gamepad_kind == GamepadProfileKind::xbox_one;
       const auto xbox_series = profile.gamepad_kind == GamepadProfileKind::xbox_series;
       const auto uses_sparse_xbox_mapping = xbox_360 || xbox_one || xbox_series;
       auto vendor_id = profile.vendor_id;
       auto product_id = profile.product_id;
-      if (generic) {
-        // Linux consumers do not have a standard mapping for libvirtualhid's
-        // vendor-neutral identity. Use the same compact, Xbox-compatible evdev
-        // identity as Inputtino so hats and force feedback are recognized by
-        // Steam and browser Gamepad API implementations.
-        vendor_id = xbox_uinput_vendor_id;
-        product_id = xbox_one_usb_uinput_product_id;
-      } else if (xbox_one) {
+      if (xbox_one) {
         product_id = xbox_wireless_uinput_product_id;
       } else if (xbox_series) {
         product_id = xbox_series_uinput_product_id;
@@ -2506,6 +2213,8 @@ namespace lvh::detail {
       std::chrono::milliseconds delay {0};
       std::chrono::steady_clock::time_point start {};
       std::chrono::steady_clock::time_point end {};
+      int playback_count = 1;
+      bool infinite = false;
       bool active = false;
     };
 
@@ -2628,6 +2337,16 @@ namespace lvh::detail {
           if (const auto status = emit_event(EV_KEY, *misc1_button, buttons.test(misc1) ? 1 : 0); !status.ok()) {
             return status;
           }
+        }
+
+        if (uses_uinput_dpad_buttons(profile_kind_)) {
+          constexpr std::array dpad_button_map {
+            std::pair {dpad_up, BTN_DPAD_UP},
+            std::pair {dpad_down, BTN_DPAD_DOWN},
+            std::pair {dpad_left, BTN_DPAD_LEFT},
+            std::pair {dpad_right, BTN_DPAD_RIGHT},
+          };
+          return emit_button_map(buttons, dpad_button_map);
         }
         return OperationStatus::success();
       }
@@ -2753,7 +2472,8 @@ namespace lvh::detail {
         const auto now = std::chrono::steady_clock::now();
         effect->second.active = true;
         effect->second.start = now + effect->second.delay;
-        effect->second.end = effect->second.start + effect->second.length * std::max(event.value, 1);
+        effect->second.playback_count = std::max(event.value, 1);
+        effect->second.end = rumble_effect_end(effect->second);
       }
 
       void upload_rumble_effect(int request_id) {
@@ -2765,9 +2485,12 @@ namespace lvh::detail {
 
         if (auto effect = normalize_rumble_effect(upload.effect); effect.has_value()) {
           if (const auto existing = rumble_effects_.find(upload.effect.id); existing != rumble_effects_.end()) {
-            effect->start = existing->second.start;
-            effect->end = existing->second.end;
             effect->active = existing->second.active;
+            if (effect->active) {
+              effect->start = existing->second.start;
+              effect->playback_count = existing->second.playback_count;
+              effect->end = rumble_effect_end(*effect);
+            }
           }
           rumble_effects_.insert_or_assign(upload.effect.id, *effect);
         }
@@ -2797,7 +2520,7 @@ namespace lvh::detail {
           if (!effect.active || now < effect.start) {
             continue;
           }
-          if (now >= effect.end) {
+          if (!effect.infinite && now >= effect.end) {
             effect.active = false;
             continue;
           }
@@ -2821,6 +2544,7 @@ namespace lvh::detail {
         auto effect = UinputRumbleEffect {
           .length = std::chrono::milliseconds {source.replay.length},
           .delay = std::chrono::milliseconds {source.replay.delay},
+          .infinite = source.replay.length == 0U,
         };
 
         switch (source.type) {
@@ -2864,6 +2588,13 @@ namespace lvh::detail {
         return effect;
       }
 
+      static std::chrono::steady_clock::time_point rumble_effect_end(const UinputRumbleEffect &effect) {
+        if (effect.infinite) {
+          return std::chrono::steady_clock::time_point::max();
+        }
+        return effect.start + effect.length * effect.playback_count;
+      }
+
       static std::uint16_t interpolate_magnitude(std::uint16_t start, std::uint16_t end, std::uint64_t elapsed, std::uint64_t length) {
         if (length == 0U || elapsed >= length) {
           return end;
@@ -2895,6 +2626,13 @@ namespace lvh::detail {
           std::chrono::duration_cast<std::chrono::milliseconds>(now - effect.start).count(),
           0
         ));
+        if (effect.infinite) {
+          constexpr auto no_finite_end = std::numeric_limits<std::uint64_t>::max();
+          return {
+            apply_envelope(effect.start_weak_magnitude, effect.envelope, elapsed, no_finite_end),
+            apply_envelope(effect.start_strong_magnitude, effect.envelope, elapsed, no_finite_end),
+          };
+        }
         const auto length = static_cast<std::uint64_t>(std::max<std::int64_t>(effect.length.count(), 0));
         const auto remaining = elapsed >= length ? 0U : length - elapsed;
         const auto weak = interpolate_magnitude(effect.start_weak_magnitude, effect.end_weak_magnitude, elapsed, length);

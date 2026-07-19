@@ -160,15 +160,23 @@ standard HID devices after the driver is installed.
 
 The built-in Xbox One and Xbox Series profiles use XboxGIP-shaped HID
 descriptors. The Xbox Series profile keeps the public physical USB identity
-`VID_045E&PID_0B12`; the driver also publishes a compatible driver-matching
-hardware ID for Windows binding. The Xbox 360 profile is rejected by the
-UMDF/VHF backend because a real Xbox 360 controller is an XUSB device rather
-than a VHF HID gamepad.
+`VID_045E&PID_0B12`; the driver also publishes the Share-capable
+`VID_045E&PID_0B13&IG_00` hardware ID for Windows XInputHID binding. The Xbox
+360 profile is rejected by the UMDF/VHF backend because a real Xbox 360
+controller is an XUSB device rather than a VHF HID gamepad.
 
-DualShock 4, DualSense, Switch Pro, and generic HID profiles are descriptor
-driven. Consumers that display raw HID strings may still show the Windows VHF
-product label because VHF does not provide a product/manufacturer string
-callback.
+DualShock 4 and DualSense answer the calibration, pairing, and firmware feature
+requests used by their Windows HIDAPI initialization paths. Switch Pro answers
+the native USB and subcommand handshake and submits native `0x30` input reports.
+The built-in Generic profile is presented to Windows as a DirectInput PID
+Joystick supporting Constant Force and Sine effects; PID output is normalized
+to the portable gamepad rumble callback. The backend honors PID start delay,
+duration, and loop count, and automatically stops finite effects. These changes
+remain private to the Windows transport and do not alter the public
+platform-neutral profile API.
+
+Consumers that display raw HID strings may still show the Windows VHF product
+label because VHF does not provide a product/manufacturer string callback.
 
 ## Signing
 

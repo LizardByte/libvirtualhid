@@ -28,6 +28,7 @@
 #include "core/backend.hpp"
 #include "platform/windows/control_protocol.hpp"
 #include "platform/windows/keylayout.hpp"
+#include "platform/windows/shared/generic_pid_rumble.hpp"
 
 #include <libvirtualhid/profiles.hpp>
 #include <libvirtualhid/report.hpp>
@@ -38,6 +39,7 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -709,12 +711,17 @@ namespace lvh::detail {
           client_id {client_device_id},
           driver_id {driver_device_id},
           profile {std::move(device_profile)},
-          path {std::move(device_path)} {}
+          path {std::move(device_path)} {
+        if (profile.gamepad_kind == GamepadProfileKind::generic && profile.capabilities.supports_rumble) {
+          uses_generic_pid = !windows::make_generic_pid_report_descriptor(profile.report_descriptor).empty();
+        }
+      }
 
     private:
       friend class WindowsBackendContext;
       friend class WindowsGamepad;
 
+      std::mutex output_dispatch_mutex_;
       mutable std::mutex mutex_;
       DeviceId client_id;
       std::uint64_t driver_id;
@@ -722,6 +729,8 @@ namespace lvh::detail {
       std::string path;
       bool open = true;
       OutputCallback output_callback;
+      bool uses_generic_pid = false;
+      windows::GenericPidRumbleState generic_pid_rumble;
     };
 
     class WindowsGamepad final: public BackendGamepad {
@@ -771,6 +780,9 @@ namespace lvh::detail {
         output_thread_ = std::jthread {[this](std::stop_token stop_token) {
           output_loop(stop_token);
         }};
+        pid_timer_thread_ = std::jthread {[this](std::stop_token stop_token) {
+          pid_timer_loop(stop_token);
+        }};
       }
 
       void stop() {
@@ -780,7 +792,17 @@ namespace lvh::detail {
 
         if (output_thread_.joinable()) {
           output_thread_.request_stop();
+        }
+        if (pid_timer_thread_.joinable()) {
+          pid_timer_thread_.request_stop();
+        }
+        notify_pid_timer();
+
+        if (output_thread_.joinable()) {
           output_thread_.join();
+        }
+        if (pid_timer_thread_.joinable()) {
+          pid_timer_thread_.join();
         }
       }
 
@@ -805,6 +827,7 @@ namespace lvh::detail {
           std::lock_guard lock {devices_mutex_};
           gamepads_[state->driver_id] = state;
         }
+        notify_pid_timer();
 
         auto gamepad = std::make_unique<WindowsGamepad>(shared_from_this(), std::move(state));
         return {OperationStatus::success(), std::move(gamepad)};
@@ -834,11 +857,15 @@ namespace lvh::detail {
           std::lock_guard lock {devices_mutex_};
           gamepads_.erase(driver_id);
         }
+        notify_pid_timer();
 
         return command_channel_->destroy_device(driver_id);
       }
 
     private:
+      using PidClock = windows::GenericPidRumbleState::Clock;
+      using PidTimePoint = windows::GenericPidRumbleState::TimePoint;
+
       void output_loop(std::stop_token stop_token) {
         while (!stop_token.stop_requested()) {
           auto event = event_channel_->read_output_report(stop_event_.get());
@@ -848,6 +875,74 @@ namespace lvh::detail {
 
           dispatch_output_report(*event);
         }
+      }
+
+      void pid_timer_loop(std::stop_token stop_token) {
+        while (!stop_token.stop_requested()) {
+          const auto generation = pid_timer_generation_.load();
+          const auto next_transition = dispatch_pid_transitions();
+          std::unique_lock lock {pid_timer_mutex_};
+          const auto interrupted = [this, generation, &stop_token] {
+            return stop_token.stop_requested() || pid_timer_generation_.load() != generation;
+          };
+          if (next_transition.has_value()) {
+            static_cast<void>(pid_timer_ready_.wait_until(lock, *next_transition, interrupted));
+          } else {
+            pid_timer_ready_.wait(lock, interrupted);
+          }
+        }
+      }
+
+      std::optional<PidTimePoint> dispatch_pid_transitions() {
+        std::vector<std::shared_ptr<WindowsGamepadState>> states;
+        {
+          std::lock_guard lock {devices_mutex_};
+          states.reserve(gamepads_.size());
+          for (const auto &[driver_id, weak_state] : gamepads_) {
+            static_cast<void>(driver_id);
+            if (auto state = weak_state.lock(); state) {
+              states.push_back(std::move(state));
+            }
+          }
+        }
+
+        const auto now = PidClock::now();
+        std::optional<PidTimePoint> next_transition;
+        for (const auto &state : states) {
+          std::unique_lock dispatch_lock {state->output_dispatch_mutex_};
+          OutputCallback callback;
+          windows::GenericPidRumbleUpdate update;
+          {
+            std::lock_guard lock {state->mutex_};
+            if (!state->open || !state->uses_generic_pid) {
+              continue;
+            }
+
+            update = state->generic_pid_rumble.advance(now);
+            if (const auto candidate = state->generic_pid_rumble.next_transition();
+                candidate.has_value() && (!next_transition.has_value() || *candidate < *next_transition)) {
+              next_transition = candidate;
+            }
+            callback = state->output_callback;
+          }
+
+          if (callback && update.rumble_changed) {
+            GamepadOutput output;
+            output.kind = GamepadOutputKind::rumble;
+            output.low_frequency_rumble = update.strength;
+            output.high_frequency_rumble = update.strength;
+            callback(output);
+          }
+        }
+        return next_transition;
+      }
+
+      void notify_pid_timer() {
+        {
+          std::lock_guard lock {pid_timer_mutex_};
+          pid_timer_generation_.fetch_add(1U);
+        }
+        pid_timer_ready_.notify_one();
       }
 
       void dispatch_output_report(const LvhWindowsOutputReportEvent &event) {
@@ -863,8 +958,15 @@ namespace lvh::detail {
           return;
         }
 
+        std::unique_lock dispatch_lock {state->output_dispatch_mutex_};
+        std::vector<std::uint8_t> report(
+          event.report,
+          event.report + std::min(event.report_size, static_cast<std::uint32_t>(LVH_WINDOWS_MAX_OUTPUT_REPORT_SIZE))
+        );
+
         DeviceProfile profile;
         OutputCallback callback;
+        std::optional<windows::GenericPidRumbleUpdate> pid_update;
         {
           std::lock_guard lock {state->mutex_};
           if (!state->open || !state->output_callback) {
@@ -873,12 +975,24 @@ namespace lvh::detail {
 
           profile = state->profile;
           callback = state->output_callback;
+          if (state->uses_generic_pid) {
+            pid_update = state->generic_pid_rumble.handle_output_report(report);
+          }
         }
 
-        std::vector<std::uint8_t> report(
-          event.report,
-          event.report + std::min(event.report_size, static_cast<std::uint32_t>(LVH_WINDOWS_MAX_OUTPUT_REPORT_SIZE))
-        );
+        if (pid_update.has_value() && pid_update->recognized) {
+          notify_pid_timer();
+          GamepadOutput output;
+          output.raw_report = report;
+          if (pid_update->rumble_changed) {
+            output.kind = GamepadOutputKind::rumble;
+            output.low_frequency_rumble = pid_update->strength;
+            output.high_frequency_rumble = pid_update->strength;
+          }
+          callback(output);
+          return;
+        }
+
         for (const auto &output : reports::parse_output_reports(profile, report)) {
           callback(output);
         }
@@ -888,6 +1002,10 @@ namespace lvh::detail {
       std::unique_ptr<WindowsControlChannel> event_channel_;
       UniqueHandle stop_event_ {make_unique_handle(::CreateEventA(nullptr, TRUE, FALSE, nullptr))};
       std::jthread output_thread_;
+      std::jthread pid_timer_thread_;
+      std::condition_variable pid_timer_ready_;
+      std::mutex pid_timer_mutex_;
+      std::atomic_uint64_t pid_timer_generation_ = 0;
       std::mutex devices_mutex_;
       std::map<std::uint64_t, std::weak_ptr<WindowsGamepadState>> gamepads_;
     };
@@ -902,6 +1020,10 @@ namespace lvh::detail {
         std::lock_guard lock {state_->mutex_};
         if (!state_->open) {
           return OperationStatus::failure(device_closed, "Windows gamepad is closed");
+        }
+
+        if (state_->uses_generic_pid) {
+          return context_->submit_gamepad_report(state_, windows::make_generic_windows_input_report(report));
         }
       }
 

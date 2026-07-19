@@ -65,6 +65,7 @@ namespace {
     std::optional<std::uint16_t> expected_product_id;
     int minimum_buttons = 1;
     int minimum_axes = 2;
+    bool require_sdl_rumble = false;
     bool expect_live_input = true;
   };
 
@@ -167,6 +168,20 @@ namespace {
     const auto vendor_id = SDL_JoystickGetDeviceVendor(index);
     const auto product_id = SDL_JoystickGetDeviceProduct(index);
     return vendor_id == profile.vendor_id && product_id == profile.product_id;
+  }
+
+  bool sdl_joystick_supports_rumble(int index) {
+    if (SDL_IsGameController(index) != SDL_TRUE) {
+      return false;
+    }
+
+    SdlGameController controller {SDL_GameControllerOpen(index), &SDL_GameControllerClose};
+    if (!controller) {
+      return false;
+    }
+
+    auto *joystick = SDL_GameControllerGetJoystick(controller.get());
+    return joystick != nullptr && SDL_JoystickHasRumble(joystick) == SDL_TRUE;
   }
 
   void pump_sdl_events() {
@@ -302,13 +317,20 @@ namespace {
     std::cout << "SDL joystick count: " << joystick_count << '\n';
     for (int index = 0; index < joystick_count; ++index) {
       const auto *name = SDL_JoystickNameForIndex(index);
+#if SDL_VERSION_ATLEAST(2, 24, 0)
+      const auto *path = SDL_JoystickPathForIndex(index);
+#endif
       std::cout << "SDL joystick[" << index << "]: " << (name == nullptr ? "<unknown>" : name)
                 << " vendor=" << SDL_JoystickGetDeviceVendor(index)
-                << " product=" << SDL_JoystickGetDeviceProduct(index) << '\n';
+                << " product=" << SDL_JoystickGetDeviceProduct(index)
+#if SDL_VERSION_ATLEAST(2, 24, 0)
+                << " path=" << (path == nullptr ? "<unknown>" : path)
+#endif
+                << " rumble=" << sdl_joystick_supports_rumble(index) << '\n';
     }
   }
 
-  int wait_for_sdl_joystick(const lvh::DeviceProfile &profile) {
+  int wait_for_sdl_joystick(const lvh::DeviceProfile &profile, bool require_rumble) {
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds {3};
 
     while (std::chrono::steady_clock::now() < deadline) {
@@ -316,7 +338,10 @@ namespace {
 
       const auto joystick_count = SDL_NumJoysticks();
       for (int index = 0; index < joystick_count; ++index) {
-        if (sdl_joystick_matches_profile(index, profile)) {
+        if (
+          sdl_joystick_matches_profile(index, profile) &&
+          (!require_rumble || sdl_joystick_supports_rumble(index))
+        ) {
           return index;
         }
       }
@@ -488,7 +513,7 @@ namespace {
     auto created = create_sdl_gamepad(*runtime, test_case);
     ASSERT_TRUE(created) << created.status.message();
 
-    const auto joystick_index = wait_for_sdl_joystick(expected_profile);
+    const auto joystick_index = wait_for_sdl_joystick(expected_profile, test_case.require_sdl_rumble);
     ASSERT_GE(joystick_index, 0);
 
     test_body(expected_profile, joystick_index, *created.gamepad);
@@ -567,6 +592,10 @@ namespace {
 
     auto *joystick = SDL_GameControllerGetJoystick(controller.get());
     ASSERT_NE(joystick, nullptr) << SDL_GetError();
+    if (test_case.require_sdl_rumble) {
+      ASSERT_EQ(SDL_JoystickHasRumble(joystick), SDL_TRUE)
+        << "SDL selected a PlayStation transport without rumble support";
+    }
     expect_sdl_joystick_profile(
       joystick,
       expected_profile,
@@ -767,9 +796,7 @@ TEST_F(LinuxConsumerTest, SdlSeesGenericCanonicalButtons) {
     .profile = lvh::profiles::generic_gamepad(),
     .name_suffix = "SDL Generic Gamepad",
     .stable_id = "libvirtualhid-sdl-gamepad-test",
-    .expected_vendor_id = 0x045E,
-    .expected_product_id = 0x02EA,
-    .minimum_buttons = 11,
+    .minimum_buttons = 15,
     .minimum_axes = 6,
   });
 }
@@ -834,6 +861,7 @@ TEST_F(LinuxConsumerTest, SdlSeesDualSenseUsbControllerBehavior) {
     .stable_id = "02:00:00:00:00:01",
     .minimum_buttons = 10,
     .minimum_axes = 4,
+    .require_sdl_rumble = true,
   });
 }
 
@@ -846,6 +874,7 @@ TEST_F(LinuxConsumerTest, SdlSeesDualShock4UsbControllerBehavior) {
     .stable_id = "02:00:00:00:00:03",
     .minimum_buttons = 10,
     .minimum_axes = 4,
+    .require_sdl_rumble = true,
   });
 }
 

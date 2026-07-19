@@ -460,6 +460,101 @@ namespace lvh::detail {
       return result;
     }
 
+    WindowsGenericPidOrderingResult windows_backend_generic_pid_callback_ordering() {
+      WindowsGenericPidOrderingResult result;
+      auto command_state = std::make_shared<FakeWindowsControlChannelState>();
+      auto event_state = std::make_shared<FakeWindowsControlChannelState>();
+      auto backend = make_fake_windows_backend(command_state, event_state);
+
+      CreateGamepadOptions options;
+      options.profile = profiles::generic_gamepad();
+      auto created = backend->create_gamepad(30, options);
+      if (!created) {
+        return result;
+      }
+
+      std::mutex gate_mutex;
+      std::condition_variable gate_ready;
+      bool zero_waiting = false;
+      bool release_zero = false;
+      std::mutex strengths_mutex;
+      created.gamepad->set_output_callback([&](const GamepadOutput &output) {
+        if (output.kind != GamepadOutputKind::rumble) {
+          return;
+        }
+        if (output.low_frequency_rumble == 0U) {
+          std::unique_lock lock {gate_mutex};
+          zero_waiting = true;
+          gate_ready.notify_all();
+          gate_ready.wait(lock, [&release_zero] {
+            return release_zero;
+          });
+        }
+        std::lock_guard lock {strengths_mutex};
+        result.strengths.push_back(output.low_frequency_rumble);
+      });
+
+      const auto driver_id = last_created_driver_id(command_state);
+      const auto enqueue_report = [&](std::span<const std::uint8_t> report) {
+        LvhWindowsOutputReportEvent event {};
+        event.version = LVH_WINDOWS_CONTROL_PROTOCOL_VERSION;
+        event.size = sizeof(event);
+        event.driver_device_id = driver_id;
+        event.report_size = static_cast<std::uint32_t>(report.size());
+        std::ranges::copy(report, event.report);
+        event_state->enqueue_output_event(event);
+      };
+
+      std::array<std::uint8_t, windows::generic_pid_output_report_size> set_effect {};
+      set_effect[0] = windows::generic_pid_set_effect_report_id;
+      set_effect[1] = 1;
+      set_effect[2] = 1;
+      set_effect[3] = 10;  // Ten millisecond duration.
+      set_effect[11] = 255;
+      std::array<std::uint8_t, windows::generic_pid_output_report_size> set_magnitude {};
+      set_magnitude[0] = windows::generic_pid_set_constant_force_report_id;
+      set_magnitude[1] = 1;
+      set_magnitude[2] = 0x10;
+      set_magnitude[3] = 0x27;
+      std::array<std::uint8_t, windows::generic_pid_output_report_size> start_effect {};
+      start_effect[0] = windows::generic_pid_effect_operation_report_id;
+      start_effect[1] = 1;
+      start_effect[2] = 1;
+      start_effect[3] = 1;
+
+      enqueue_report(set_effect);
+      enqueue_report(set_magnitude);
+      enqueue_report(start_effect);
+      const auto saw_start = wait_until([&] {
+        std::lock_guard lock {strengths_mutex};
+        return !result.strengths.empty() && result.strengths.front() > 0U;
+      });
+      bool saw_expiry = false;
+      if (saw_start) {
+        std::unique_lock lock {gate_mutex};
+        saw_expiry = gate_ready.wait_for(lock, std::chrono::milliseconds {250}, [&zero_waiting] {
+          return zero_waiting;
+        });
+      }
+
+      if (saw_expiry) {
+        enqueue_report(start_effect);
+        wait_for_output_events_to_drain(event_state);
+      }
+      {
+        std::lock_guard lock {gate_mutex};
+        release_zero = true;
+      }
+      gate_ready.notify_all();
+
+      result.completed = saw_expiry && wait_until([&] {
+                           std::lock_guard lock {strengths_mutex};
+                           return result.strengths.size() >= 3U;
+                         });
+      static_cast<void>(created.gamepad->close());
+      return result;
+    }
+
     WindowsBackendFailureResult windows_backend_fake_channel_failures() {
       WindowsBackendFailureResult result;
       result.invalid_argument_status = create_gamepad_with_protocol_status(LVH_WINDOWS_STATUS_INVALID_ARGUMENT);

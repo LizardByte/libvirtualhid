@@ -15,6 +15,7 @@
 #include <vector>
 
 // driver includes
+#include "generic_pid_protocol.hpp"
 #include "lvh_windows_protocol.h"
 
 // local includes
@@ -115,6 +116,19 @@ namespace lvh::detail::windows {
     DeviceId device_id,
     const CreateGamepadOptions &options
   ) {
+    auto report_descriptor = options.profile.report_descriptor;
+    auto output_report_size = options.profile.output_report_size;
+    if (
+      options.profile.gamepad_kind == GamepadProfileKind::generic &&
+      options.profile.capabilities.supports_rumble
+    ) {
+      auto pid_descriptor = make_generic_pid_report_descriptor(report_descriptor);
+      if (!pid_descriptor.empty()) {
+        report_descriptor = std::move(pid_descriptor);
+        output_report_size = generic_pid_output_report_size;
+      }
+    }
+
     LvhWindowsCreateGamepadRequest request {};
     request.version = LVH_WINDOWS_CONTROL_PROTOCOL_VERSION;
     request.size = sizeof(request);
@@ -130,10 +144,10 @@ namespace lvh::detail::windows {
       std::min(options.profile.input_report_size, static_cast<std::size_t>(LVH_WINDOWS_MAX_INPUT_REPORT_SIZE))
     );
     request.report_sizes.output_report_size = static_cast<std::uint32_t>(
-      std::min(options.profile.output_report_size, static_cast<std::size_t>(LVH_WINDOWS_MAX_OUTPUT_REPORT_SIZE))
+      std::min(output_report_size, static_cast<std::size_t>(LVH_WINDOWS_MAX_OUTPUT_REPORT_SIZE))
     );
     request.report_sizes.report_descriptor_size =
-      copy_bytes(request.report_descriptor, options.profile.report_descriptor);
+      copy_bytes(request.report_descriptor, report_descriptor);
     request.report_sizes.name_size = copy_string(request.name, options.profile.name);
     request.report_sizes.manufacturer_size = copy_string(request.manufacturer, options.profile.manufacturer);
     request.report_sizes.stable_id_size = copy_string(request.stable_id, options.metadata.stable_id);

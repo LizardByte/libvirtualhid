@@ -140,6 +140,8 @@ namespace lvh::detail::test {
       uhid_event read_event {};
       std::vector<input_event> read_input_events;
       ff_effect uploaded_ff_effect {};
+      std::vector<ff_effect> uploaded_ff_effects;
+      std::atomic_size_t uploaded_ff_effect_index = 0;
       bool provide_uploaded_ff_effect = false;
       bool override_xtest_query = false;
       bool xtest_query_result = true;
@@ -245,7 +247,11 @@ int lvh_linux_test_ioctl(int fd, unsigned long request, unsigned long argument) 
       lvh::detail::test::active_test_syscalls()->provide_uploaded_ff_effect
     ) {
       auto *upload = std::bit_cast<uinput_ff_upload *>(argument);
-      upload->effect = lvh::detail::test::active_test_syscalls()->uploaded_ff_effect;
+      auto &syscalls = *lvh::detail::test::active_test_syscalls();
+      const auto upload_index = syscalls.uploaded_ff_effect_index++;
+      upload->effect = upload_index < syscalls.uploaded_ff_effects.size() ?
+                         syscalls.uploaded_ff_effects[upload_index] :
+                         syscalls.uploaded_ff_effect;
     }
     return 0;
   }
@@ -1049,13 +1055,16 @@ namespace lvh::detail::test {
 
   LinuxUinputRumbleResult linux_uinput_gamepad_fake_rumble(
     GamepadProfileKind kind,
-    std::uint16_t effect_type
+    std::uint16_t effect_type,
+    std::uint16_t replay_length,
+    bool send_stop,
+    std::optional<std::uint16_t> reupload_length
   ) {
     LinuxTestSyscalls syscalls;
     enable_fake_device_syscalls(syscalls);
     syscalls.override_poll = true;
-    syscalls.poll_results = {1, 1, 0};
-    syscalls.poll_revents = {POLLIN, POLLIN, 0};
+    syscalls.poll_results = {1, 1};
+    syscalls.poll_revents = {POLLIN, POLLIN};
     syscalls.override_read = true;
     syscalls.read_results = {
       static_cast<std::ptrdiff_t>(sizeof(input_event)),
@@ -1065,6 +1074,20 @@ namespace lvh::detail::test {
       input_event {.type = EV_UINPUT, .code = UI_FF_UPLOAD, .value = 7},
       input_event {.type = EV_FF, .code = 3, .value = 1},
     };
+    if (reupload_length.has_value()) {
+      syscalls.poll_results.push_back(1);
+      syscalls.poll_revents.push_back(POLLIN);
+      syscalls.read_results.push_back(static_cast<std::ptrdiff_t>(sizeof(input_event)));
+      syscalls.read_input_events.push_back(input_event {.type = EV_UINPUT, .code = UI_FF_UPLOAD, .value = 8});
+    }
+    if (send_stop) {
+      syscalls.poll_results.push_back(1);
+      syscalls.poll_revents.push_back(POLLIN);
+      syscalls.read_results.push_back(static_cast<std::ptrdiff_t>(sizeof(input_event)));
+      syscalls.read_input_events.push_back(input_event {.type = EV_FF, .code = 3, .value = 0});
+    }
+    syscalls.poll_results.push_back(0);
+    syscalls.poll_revents.push_back(0);
     syscalls.provide_uploaded_ff_effect = true;
     syscalls.uploaded_ff_effect.type = effect_type;
     syscalls.uploaded_ff_effect.id = 3;
@@ -1087,7 +1110,12 @@ namespace lvh::detail::test {
       default:
         break;
     }
-    syscalls.uploaded_ff_effect.replay.length = 1000;
+    syscalls.uploaded_ff_effect.replay.length = replay_length;
+    if (reupload_length.has_value()) {
+      auto replacement = syscalls.uploaded_ff_effect;
+      replacement.replay.length = *reupload_length;
+      syscalls.uploaded_ff_effects = {syscalls.uploaded_ff_effect, replacement};
+    }
     ScopedLinuxTestSyscalls scoped_syscalls {syscalls};
 
     LinuxUinputRumbleResult result;
@@ -1099,13 +1127,20 @@ namespace lvh::detail::test {
     }
 
     std::atomic_size_t callback_count = 0;
+    std::atomic_size_t nonzero_callback_count = 0;
+    std::atomic_size_t zero_callback_count = 0;
     std::mutex output_mutex;
     GamepadOutput last_output;
     UinputGamepad gamepad {fd, kind};
-    gamepad.set_output_callback([&callback_count, &last_output, &output_mutex](const GamepadOutput &output) {
+    gamepad.set_output_callback([&callback_count, &nonzero_callback_count, &zero_callback_count, &last_output, &output_mutex](
+                                  const GamepadOutput &output
+                                ) {
       if (output.low_frequency_rumble != 0 || output.high_frequency_rumble != 0) {
         std::lock_guard lock {output_mutex};
         last_output = output;
+        ++nonzero_callback_count;
+      } else {
+        ++zero_callback_count;
       }
       ++callback_count;
     });
@@ -1120,9 +1155,15 @@ namespace lvh::detail::test {
     }
     options.profile = *profile;
     result.create_status = gamepad.create(8, options);
-    for (auto attempt = 0; attempt < 500 && callback_count.load() == 0; ++attempt) {
+    const auto expect_zero_callback = send_stop || reupload_length.has_value();
+    const auto callbacks_complete = [&]() {
+      return nonzero_callback_count.load() > 0 && (!expect_zero_callback || zero_callback_count.load() > 0);
+    };
+    for (auto attempt = 0; attempt < 500 && !callbacks_complete(); ++attempt) {
       std::this_thread::sleep_for(std::chrono::milliseconds {1});
     }
+    result.nonzero_callback_count = nonzero_callback_count.load();
+    result.zero_callback_count_before_close = zero_callback_count.load();
     result.close_status = gamepad.close();
     result.callback_count = callback_count.load();
     {

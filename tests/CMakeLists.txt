@@ -52,7 +52,8 @@ elseif(WIN32)
     list(APPEND LIBVIRTUALHID_TEST_SOURCES
          "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/windows_backend_test_hooks.cpp"
          "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_windows_backend.cpp"
-         "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_windows_consumers.cpp")
+         "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_windows_consumers.cpp"
+         "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_windows_driver_protocol.cpp")
 elseif(APPLE)
     list(APPEND LIBVIRTUALHID_TEST_SOURCES
          "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/macos_backend_test_hooks.cpp"
@@ -96,6 +97,8 @@ elseif(APPLE)
 elseif(WIN32)
     target_link_libraries(${TEST_BINARY}
       PRIVATE
+      dinput8
+      dxguid
       hid
       setupapi)
 endif()

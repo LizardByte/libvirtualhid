@@ -132,6 +132,10 @@ jobs:
               echo "::warning::${message}"
             fi
           done
+          if ! sudo modprobe hid_playstation; then
+            echo "::error::Unable to load hid_playstation; PlayStation force-feedback tests require it."
+            exit 1
+          fi
           for node in /dev/uhid /dev/uinput; do
             if [[ -e "${node}" ]]; then
               sudo chmod a+rw "${node}"

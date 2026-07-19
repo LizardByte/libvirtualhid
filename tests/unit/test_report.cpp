@@ -175,13 +175,20 @@ TEST(ReportTest, PacksSwitchProReport) {
   const auto report = lvh::reports::pack_input_report(profile, state);
 
   ASSERT_EQ(report.size(), profile.input_report_size);
-  EXPECT_EQ(report[0], 0x30);
-  EXPECT_EQ(read_u16_le(report, 1U), 0x3243);  // B, A, ZL, Plus, Home, and Capture.
-  EXPECT_EQ(read_u16_le(report, 3U), 0xFFFF);  // Left stick X.
-  EXPECT_EQ(read_u16_le(report, 5U), 0xFFFF);  // Left stick Y.
-  EXPECT_EQ(read_u16_le(report, 7U), 0xBFFF);  // Right stick X.
-  EXPECT_EQ(read_u16_le(report, 9U), 0xBFFF);  // Right stick Y.
-  EXPECT_EQ(report[11] & 0x0F, 6);  // D-pad left.
+  EXPECT_EQ(report[0], 0x30U);
+  EXPECT_EQ(report[1], 0x00U);  // Packet timer.
+  EXPECT_EQ(report[2], 0x81U);  // Full battery and USB connection when battery state is unknown.
+  EXPECT_EQ(report[3], 0x0CU);  // B and A.
+  EXPECT_EQ(report[4], 0x32U);  // Plus, Home, and Capture.
+  EXPECT_EQ(report[5], 0x88U);  // ZL and D-pad left.
+
+  // Nintendo packs each stick as two little-endian 12-bit values across three bytes.
+  EXPECT_EQ(report[6], 0xFFU);
+  EXPECT_EQ(report[7], 0xFFU);
+  EXPECT_EQ(report[8], 0xFFU);
+  EXPECT_EQ(report[9], 0xFFU);
+  EXPECT_EQ(report[10], 0xFBU);
+  EXPECT_EQ(report[11], 0xBFU);
 }
 
 TEST(ReportTest, PacksXboxGipNeutralReport) {

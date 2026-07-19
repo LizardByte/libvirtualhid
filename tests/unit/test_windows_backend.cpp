@@ -94,6 +94,16 @@ TEST_F(WindowsBackendTest, FakeChannelExercisesLifecycleSubmitCloseAndOutput) {
   EXPECT_EQ(result.last_output.raw_report[0], 0x03U);
 }
 
+TEST_F(WindowsBackendTest, GenericPidTimerCannotDeliverStaleStopAfterNewStart) {
+  const auto result = lvh::detail::test::windows_backend_generic_pid_callback_ordering();
+
+  ASSERT_TRUE(result.completed);
+  ASSERT_GE(result.strengths.size(), 3U);
+  EXPECT_GT(result.strengths[0], 0U);
+  EXPECT_EQ(result.strengths[1], 0U);
+  EXPECT_GT(result.strengths[2], 0U);
+}
+
 TEST_F(WindowsBackendTest, FakeChannelCoversCreateFailureBranches) {
   const auto result = lvh::detail::test::windows_backend_fake_channel_failures();
 

@@ -361,10 +361,10 @@ namespace lvh::reports {
         return std::nullopt;
       }
 
-      const auto enabled = report[*offset] & 0x0FU;
+      const auto enabled = std::byte {report[*offset]} & std::byte {0x0F};
       const auto duration = report[*offset + 5U];
-      const auto enabled_magnitude = [&](std::uint8_t enable_bit, std::size_t magnitude_index) {
-        if (duration == 0U || (enabled & enable_bit) == 0U) {
+      const auto enabled_magnitude = [duration, enabled, magnitudes](std::uint8_t enable_bit, std::size_t magnitude_index) {
+        if (duration == 0U || (enabled & std::byte {enable_bit}) == zero_byte) {
           return std::uint16_t {0};
         }
         return scale_pid_rumble_magnitude(magnitudes[magnitude_index]);
@@ -387,15 +387,18 @@ namespace lvh::reports {
       const std::vector<std::uint8_t> &report,
       std::size_t offset
     ) {
-      const auto high_frequency_index = static_cast<std::size_t>((report[offset + 1U] & 0xFEU) / 2U);
+      const auto high_frequency_code = std::byte {report[offset + 1U]} & std::byte {0xFE};
+      const auto high_frequency_index = std::to_integer<std::size_t>(high_frequency_code) / 2U;
 
-      const auto low_frequency_code = report[offset + 3U];
-      if (high_frequency_index >= switch_rumble_amplitudes.size() || low_frequency_code < 0x40U || low_frequency_code > 0x72U) {
+      const auto low_frequency_code = std::byte {report[offset + 3U]};
+      const auto low_frequency_value = std::to_integer<std::uint8_t>(low_frequency_code);
+      if (high_frequency_index >= switch_rumble_amplitudes.size() || low_frequency_value < 0x40U || low_frequency_value > 0x72U) {
         return std::nullopt;
       }
 
-      const auto low_frequency_index =
-        static_cast<std::size_t>((low_frequency_code - 0x40U) * 2U) + ((report[offset + 2U] & 0x80U) != 0U ? 1U : 0U);
+      const auto low_frequency_high_bit = std::byte {report[offset + 2U]} & std::byte {0x80};
+      const auto low_frequency_index = static_cast<std::size_t>((low_frequency_value - 0x40U) * 2U) +
+                                       (low_frequency_high_bit != zero_byte ? 1U : 0U);
       if (low_frequency_index >= switch_rumble_amplitudes.size()) {
         return std::nullopt;
       }
@@ -485,19 +488,6 @@ namespace lvh::reports {
       };
     }
 
-    constexpr auto switch_menu_button_map() {
-      using enum GamepadButton;
-
-      return std::array {
-        ButtonBit {8U, back},
-        ButtonBit {9U, start},
-        ButtonBit {10U, left_stick},
-        ButtonBit {11U, right_stick},
-        ButtonBit {12U, guide},
-        ButtonBit {13U, misc1},
-      };
-    }
-
     std::uint16_t button_bits(std::span<const ButtonBit> button_map, const ButtonSet &buttons) {
       auto bits = std::uint16_t {};
       for (const auto [bit, button] : button_map) {
@@ -529,20 +519,6 @@ namespace lvh::reports {
         button_bits(common_menu_button_map(), buttons) |
         button_bits(xbox_extra_button_map(), buttons)
       );
-    }
-
-    std::uint16_t switch_pro_button_bits(const GamepadState &state) {
-      auto bits = static_cast<std::uint16_t>(
-        button_bits(face_shoulder_button_map(), state.buttons) |
-        button_bits(switch_menu_button_map(), state.buttons)
-      );
-      if (state.left_trigger > 0.0F) {
-        bits |= static_cast<std::uint16_t>(1U << 6U);
-      }
-      if (state.right_trigger > 0.0F) {
-        bits |= static_cast<std::uint16_t>(1U << 7U);
-      }
-      return bits;
     }
 
     std::byte dualsense_battery_state(GamepadBatteryState state) {
@@ -1043,6 +1019,28 @@ namespace lvh::reports {
     return static_cast<std::uint16_t>(std::lround(clamp_trigger(value) * 1023.0F));
   }
 
+  std::uint16_t normalize_switch_stick_axis(float value) {
+    return static_cast<std::uint16_t>(std::lround((clamp_axis(value) + 1.0F) * 2047.5F));
+  }
+
+  void write_switch_stick(ByteReport &report, std::size_t offset, std::uint16_t x, std::uint16_t y) {
+    report[offset] = to_byte(x & 0xFFU);
+    report[offset + 1U] = to_byte(((x >> 8U) & 0x0FU) | ((y & 0x0FU) << 4U));
+    report[offset + 2U] = to_byte((y >> 4U) & 0xFFU);
+  }
+
+  std::byte switch_battery_and_connection(const std::optional<GamepadBattery> &battery) {
+    constexpr auto usb_connection = std::byte {0x01};
+    if (!battery.has_value()) {
+      return std::byte {0x81};
+    }
+
+    const auto percentage = std::min<std::uint8_t>(battery->percentage, 100U);
+    const auto level = static_cast<std::uint8_t>(std::lround((static_cast<float>(percentage) / 100.0F) * 4.0F)) * 2U;
+    const auto charging = battery->state == GamepadBatteryState::charging;
+    return (to_byte(static_cast<std::uint8_t>(level)) << 4U) | (charging ? std::byte {0x10} : zero_byte) | usb_connection;
+  }
+
   std::uint8_t xbox_gip_hat_from_buttons(const ButtonSet &buttons) {
     const auto hat = hat_from_buttons(buttons);
     return hat == neutral_hat ? 0 : static_cast<std::uint8_t>(hat + 1U);
@@ -1119,12 +1117,77 @@ namespace lvh::reports {
 
     ByteReport report(profile.input_report_size, zero_byte);
     report[0] = to_byte(profile.report_id);
-    write_u16(report, 1U, switch_pro_button_bits(normalized));
-    write_u16(report, 3U, normalize_unsigned_axis(normalized.left_stick.x));
-    write_u16(report, 5U, normalize_unsigned_axis(-normalized.left_stick.y));
-    write_u16(report, 7U, normalize_unsigned_axis(normalized.right_stick.x));
-    write_u16(report, 9U, normalize_unsigned_axis(-normalized.right_stick.y));
-    report[11] = to_byte(hat_from_buttons(normalized.buttons));
+    report[2] = switch_battery_and_connection(normalized.battery);
+
+    if (normalized.buttons.test(GamepadButton::x)) {
+      add_flag(report, 3U, std::byte {0x02});
+    }
+    if (normalized.buttons.test(GamepadButton::y)) {
+      add_flag(report, 3U, std::byte {0x01});
+    }
+    if (normalized.buttons.test(GamepadButton::a)) {
+      add_flag(report, 3U, std::byte {0x08});
+    }
+    if (normalized.buttons.test(GamepadButton::b)) {
+      add_flag(report, 3U, std::byte {0x04});
+    }
+    if (normalized.buttons.test(GamepadButton::right_shoulder)) {
+      add_flag(report, 3U, std::byte {0x40});
+    }
+    if (normalized.right_trigger > 0.0F) {
+      add_flag(report, 3U, std::byte {0x80});
+    }
+
+    if (normalized.buttons.test(GamepadButton::back)) {
+      add_flag(report, 4U, std::byte {0x01});
+    }
+    if (normalized.buttons.test(GamepadButton::start)) {
+      add_flag(report, 4U, std::byte {0x02});
+    }
+    if (normalized.buttons.test(GamepadButton::right_stick)) {
+      add_flag(report, 4U, std::byte {0x04});
+    }
+    if (normalized.buttons.test(GamepadButton::left_stick)) {
+      add_flag(report, 4U, std::byte {0x08});
+    }
+    if (normalized.buttons.test(GamepadButton::guide)) {
+      add_flag(report, 4U, std::byte {0x10});
+    }
+    if (normalized.buttons.test(GamepadButton::misc1)) {
+      add_flag(report, 4U, std::byte {0x20});
+    }
+
+    if (normalized.buttons.test(GamepadButton::dpad_down)) {
+      add_flag(report, 5U, std::byte {0x01});
+    }
+    if (normalized.buttons.test(GamepadButton::dpad_up)) {
+      add_flag(report, 5U, std::byte {0x02});
+    }
+    if (normalized.buttons.test(GamepadButton::dpad_right)) {
+      add_flag(report, 5U, std::byte {0x04});
+    }
+    if (normalized.buttons.test(GamepadButton::dpad_left)) {
+      add_flag(report, 5U, std::byte {0x08});
+    }
+    if (normalized.buttons.test(GamepadButton::left_shoulder)) {
+      add_flag(report, 5U, std::byte {0x40});
+    }
+    if (normalized.left_trigger > 0.0F) {
+      add_flag(report, 5U, std::byte {0x80});
+    }
+
+    write_switch_stick(
+      report,
+      6U,
+      normalize_switch_stick_axis(normalized.left_stick.x),
+      normalize_switch_stick_axis(-normalized.left_stick.y)
+    );
+    write_switch_stick(
+      report,
+      9U,
+      normalize_switch_stick_axis(normalized.right_stick.x),
+      normalize_switch_stick_axis(-normalized.right_stick.y)
+    );
     return to_uint8_report(report);
   }
 
