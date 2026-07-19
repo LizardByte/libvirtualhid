@@ -376,9 +376,6 @@ TEST(ReportTest, ParsesPidRumbleReports) {
     prefixed_report.insert(prefixed_report.begin(), 0);
     expect_outputs(profile, prefixed_report);
   }
-
-  const std::vector<std::uint8_t> series_bluetooth_report {0x03, 0x0F, 25, 50, 75, 100, 10, 0, 0};
-  expect_outputs(lvh::profiles::xbox_series(), series_bluetooth_report);
 }
 
 TEST(ReportTest, PidRumbleHonorsEnableMaskAndDuration) {

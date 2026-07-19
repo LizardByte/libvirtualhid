@@ -256,7 +256,7 @@ namespace lvh::detail::windows {
       }
     }
 
-    void start_effect(Effect &effect, std::uint8_t loop_count, TimePoint now) {
+    void start_effect(Effect &effect, std::uint8_t loop_count, TimePoint now) const {
       effect.running = true;
       effect.operation_start = now;
       effect.started = effect.start_delay == Milliseconds::zero();
@@ -268,7 +268,7 @@ namespace lvh::detail::windows {
       update_effect_end(effect);
     }
 
-    void reschedule_running_effect(Effect &effect, TimePoint now) {
+    void reschedule_running_effect(Effect &effect, TimePoint now) const {
       if (!effect.running) {
         return;
       }

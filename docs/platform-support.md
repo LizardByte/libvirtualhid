@@ -53,15 +53,12 @@ DirectInput's idle-at-maximum Z/Rz trigger polarity. Start delay, duration, and
 loop count are honored; finite effects emit a zero-rumble callback when they
 expire, while explicit stop commands take effect immediately.
 
-Xbox One uses the native eight-byte PID payload exposed by the Windows Xbox HID
-stack. Xbox Series keeps its platform-neutral public `0x045E:0x0B12` profile,
-but the Windows transport presents Microsoft's `0x045E:0x0B13` Bluetooth HID
-identity and native 17-byte input packet. That route exposes Share as well as
-the common buttons, axes, and report-ID-3 rumble; the inbox `&IG_00` XInputHID
-route only exposes the legacy 15-button XInput surface. The library applies the
-actuator-enable mask and duration field, then reports the body motors as
-normalized low/high-frequency rumble and the independent trigger motors as
-trigger-rumble output.
+Xbox One and Xbox Series use the native eight-byte PID payload exposed by the
+Windows Xbox HID stack. The library applies the actuator-enable mask and
+duration field, then reports the body motors as normalized low/high-frequency
+rumble and the independent trigger motors as trigger-rumble output. Xbox Series
+keeps its public `0x045E:0x0B12` identity while using the Windows
+XInputHID-compatible `0x045E:0x0B13&IG_00` match identity internally.
 
 The VHF driver answers the calibration, pairing, and firmware feature reports
 used to initialize DualShock 4 and DualSense HIDAPI output. It also answers the
@@ -105,9 +102,9 @@ The Generic profile keeps its public `0x1209:0x0001` identity and compact button
 layout on every backend. Its Linux uinput device uses the same sparse button
 slot sequence as the Xbox-family uinput devices, including the reserved
 `BTN_C`, `BTN_Z`, `BTN_TL2`, and `BTN_TR2` positions required by SDL, Steam,
-and browser mappings. D-pad directions are published once through the standard
-hat axes so duplicate key capabilities cannot shift those consumers' button
-indices.
+and browser mappings. D-pad directions are published through both the standard
+hat axes and semantic `BTN_DPAD_*` events for consumers that prefer either
+Linux representation.
 
 Xbox 360 retains its `0x045E:0x028E` identity, while its Linux uinput device uses
 the Bluetooth bus so consumers select the sparse button mapping.

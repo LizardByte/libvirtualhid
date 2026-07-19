@@ -247,6 +247,10 @@ namespace lvh::detail {
       return kind == generic || kind == xbox_360 || kind == xbox_one || kind == xbox_series;
     }
 
+    bool uses_uinput_dpad_buttons(GamepadProfileKind kind) {
+      return kind == GamepadProfileKind::generic;
+    }
+
     std::uint16_t to_uhid_bus(BusType bus_type) {
       if (bus_type == BusType::bluetooth) {
         return BUS_BLUETOOTH;
@@ -1141,6 +1145,14 @@ namespace lvh::detail {
         constexpr std::array reserved_buttons {BTN_C, BTN_Z, BTN_TL2, BTN_TR2};
         for (const auto button : reserved_buttons) {
           if (const auto status = enable_evdev_code(device, EV_KEY, button, "reserved gamepad button slot"); !status.ok()) {
+            return status;
+          }
+        }
+      }
+      if (uses_uinput_dpad_buttons(profile_kind)) {
+        constexpr std::array dpad_buttons {BTN_DPAD_UP, BTN_DPAD_DOWN, BTN_DPAD_LEFT, BTN_DPAD_RIGHT};
+        for (const auto button : dpad_buttons) {
+          if (const auto status = enable_evdev_code(device, EV_KEY, button, "gamepad D-pad button"); !status.ok()) {
             return status;
           }
         }
@@ -2285,6 +2297,7 @@ namespace lvh::detail {
             return status;
           }
         }
+
         return OperationStatus::success();
       }
 
@@ -2327,6 +2340,15 @@ namespace lvh::detail {
           }
         }
 
+        if (uses_uinput_dpad_buttons(profile_kind_)) {
+          constexpr std::array dpad_button_map {
+            std::pair {dpad_up, BTN_DPAD_UP},
+            std::pair {dpad_down, BTN_DPAD_DOWN},
+            std::pair {dpad_left, BTN_DPAD_LEFT},
+            std::pair {dpad_right, BTN_DPAD_RIGHT},
+          };
+          return emit_button_map(buttons, dpad_button_map);
+        }
         return OperationStatus::success();
       }
 

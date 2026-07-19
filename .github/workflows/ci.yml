@@ -133,7 +133,7 @@ jobs:
             fi
           done
           if ! sudo modprobe hid_playstation; then
-            echo "::warning::Unable to load hid_playstation; SDL HIDAPI will exercise the native hidraw output path instead."
+            echo "::warning::Unable to load hid_playstation; SDL HIDAPI will exercise the native hidraw output path."
           fi
           for node in /dev/uhid /dev/uinput; do
             if [[ -e "${node}" ]]; then

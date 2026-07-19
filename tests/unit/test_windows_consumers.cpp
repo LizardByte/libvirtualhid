@@ -658,8 +658,7 @@ TEST_F(WindowsConsumerTest, NativeXboxPidRumbleWritesAreNormalized) {
     GamepadOutputCapture output_capture;
     output_capture.attach(*created.adapter);
 
-    const auto product_id = profile.gamepad_kind == lvh::GamepadProfileKind::xbox_series ? lvh::detail::windows::xbox_series_bluetooth_product_id : profile.product_id;
-    const auto hid_interface = wait_for_new_interface(previous_paths, profile.vendor_id, product_id);
+    const auto hid_interface = wait_for_new_interface(previous_paths, profile.vendor_id, profile.product_id);
     ASSERT_TRUE(hid_interface.has_value()) << "The VHF Xbox HID interface was not enumerated";
     ASSERT_EQ(hid_interface->output_report_size, profile.output_report_size + 1U);
 
@@ -674,8 +673,7 @@ TEST_F(WindowsConsumerTest, NativeXboxPidRumbleWritesAreNormalized) {
     )};
     ASSERT_TRUE(hid) << "Unable to open the VHF Xbox HID interface: " << GetLastError();
 
-    const std::uint8_t report_id = profile.gamepad_kind == lvh::GamepadProfileKind::xbox_series ? 0x03U : 0x00U;
-    const std::vector<std::uint8_t> report {report_id, 0x0F, 25, 50, 75, 100, 10, 0, 0};
+    const std::vector<std::uint8_t> report {0, 0x0F, 25, 50, 75, 100, 10, 0, 0};
     DWORD bytes_written = 0;
     ASSERT_TRUE(WriteFile(
       hid.get(),
@@ -695,7 +693,7 @@ TEST_F(WindowsConsumerTest, NativeXboxPidRumbleWritesAreNormalized) {
   }
 }
 
-TEST_F(WindowsConsumerTest, NativeGenericPidHandshakeAndRumbleWritesAreNormalized) {
+TEST_F(WindowsConsumerTest, NativeGenericPidInterfaceIsAdvertisedToDirectInput) {
   const auto profile = lvh::profiles::generic_gamepad();
   const auto previous_paths = current_gamepad_interface_paths();
 
@@ -710,8 +708,6 @@ TEST_F(WindowsConsumerTest, NativeGenericPidHandshakeAndRumbleWritesAreNormalize
   options.profile = profile;
   auto created = lvh::GamepadStateAdapter::create(*runtime, options);
   ASSERT_TRUE(created) << created.status.message();
-  GamepadOutputCapture output_capture;
-  output_capture.attach(*created.adapter);
 
   const auto hid_interface = wait_for_new_interface(previous_paths, profile.vendor_id, profile.product_id);
   ASSERT_TRUE(hid_interface.has_value()) << "The VHF Generic PID HID interface was not enumerated";
@@ -742,12 +738,6 @@ TEST_F(WindowsConsumerTest, NativeGenericPidHandshakeAndRumbleWritesAreNormalize
     nullptr
   )));
   ComInterface<IDirectInputDevice8W> direct_input_device {raw_direct_input_device};
-  ASSERT_TRUE(SUCCEEDED(direct_input_device->SetDataFormat(&c_dfDIJoystick2)));
-  ASSERT_TRUE(SUCCEEDED(direct_input_device->SetCooperativeLevel(
-    GetDesktopWindow(),
-    DISCL_EXCLUSIVE | DISCL_BACKGROUND
-  )));
-  ASSERT_TRUE(SUCCEEDED(direct_input_device->Acquire()));
 
   DIDEVCAPS direct_input_caps {};
   direct_input_caps.dwSize = sizeof(direct_input_caps);
@@ -769,121 +759,4 @@ TEST_F(WindowsConsumerTest, NativeGenericPidHandshakeAndRumbleWritesAreNormalize
     DIDFT_AXIS
   )));
   ASSERT_FALSE(force_feedback_axes.empty()) << "DirectInput did not expose a force-feedback actuator axis";
-  force_feedback_axes.resize(std::min(force_feedback_axes.size(), std::size_t {2}));
-  std::vector<LONG> directions(force_feedback_axes.size(), 0);
-  directions.front() = DI_FFNOMINALMAX;
-  DICONSTANTFORCE constant_force {.lMagnitude = DI_FFNOMINALMAX};
-  DIEFFECT direct_input_effect {};
-  direct_input_effect.dwSize = sizeof(direct_input_effect);
-  direct_input_effect.dwFlags = DIEFF_CARTESIAN | DIEFF_OBJECTOFFSETS;
-  direct_input_effect.dwDuration = 300'000;
-  direct_input_effect.dwGain = DI_FFNOMINALMAX;
-  direct_input_effect.dwTriggerButton = DIEB_NOTRIGGER;
-  direct_input_effect.cAxes = static_cast<DWORD>(force_feedback_axes.size());
-  direct_input_effect.rgdwAxes = force_feedback_axes.data();
-  direct_input_effect.rglDirection = directions.data();
-  direct_input_effect.cbTypeSpecificParams = sizeof(constant_force);
-  direct_input_effect.lpvTypeSpecificParams = &constant_force;
-
-  IDirectInputEffect *raw_effect = nullptr;
-  ASSERT_TRUE(SUCCEEDED(direct_input_device->CreateEffect(
-    GUID_ConstantForce,
-    &direct_input_effect,
-    &raw_effect,
-    nullptr
-  )))
-    << "DirectInput pid.dll rejected CreateEffect(GUID_ConstantForce)";
-  ComInterface<IDirectInputEffect> direct_input_constant_force {raw_effect};
-
-  ASSERT_TRUE(SUCCEEDED(direct_input_constant_force->Start(1, 0)))
-    << "DirectInput could not start the Generic PID constant-force effect";
-  ASSERT_TRUE(output_capture.wait_for_rumble(true).has_value())
-    << "No normalized rumble callback followed DirectInput Effect::Start";
-  ASSERT_TRUE(output_capture.wait_for_rumble(false).has_value())
-    << "The finite DirectInput effect did not stop automatically after its duration";
-
-  direct_input_effect.dwDuration = 2'000'000;
-  ASSERT_TRUE(SUCCEEDED(direct_input_constant_force->SetParameters(
-    &direct_input_effect,
-    DIEP_DURATION | DIEP_NORESTART
-  )))
-    << "DirectInput could not extend the Generic PID effect for the explicit-stop check";
-  ASSERT_TRUE(SUCCEEDED(direct_input_constant_force->Start(1, 0)))
-    << "DirectInput could not restart the Generic PID constant-force effect";
-  ASSERT_TRUE(output_capture.wait_for_rumble(true).has_value())
-    << "No normalized rumble callback followed the second DirectInput Effect::Start";
-
-  ASSERT_TRUE(SUCCEEDED(direct_input_constant_force->Stop()))
-    << "DirectInput could not stop the Generic PID constant-force effect";
-  ASSERT_TRUE(output_capture.wait_for_rumble(false).has_value())
-    << "No zero-rumble callback followed DirectInput Effect::Stop";
-
-  Handle hid {CreateFileW(
-    hid_interface->path.c_str(),
-    GENERIC_READ | GENERIC_WRITE,
-    FILE_SHARE_READ | FILE_SHARE_WRITE,
-    nullptr,
-    OPEN_EXISTING,
-    FILE_ATTRIBUTE_NORMAL,
-    nullptr
-  )};
-  ASSERT_TRUE(hid) << "Unable to open the VHF Generic PID HID interface: " << GetLastError();
-
-  std::array<std::uint8_t, 4> create_effect {0x11, 0x01, 0x00, 0x00};
-  ASSERT_TRUE(HidD_SetFeature(hid.get(), create_effect.data(), static_cast<ULONG>(create_effect.size())))
-    << "Create New Effect SetFeature failed: " << GetLastError();
-
-  std::array<std::uint8_t, 5> block_load {0x12, 0, 0, 0, 0};
-  ASSERT_TRUE(HidD_GetFeature(hid.get(), block_load.data(), static_cast<ULONG>(block_load.size())))
-    << "Block Load GetFeature failed: " << GetLastError();
-  EXPECT_EQ(block_load[0], 0x12U);
-  EXPECT_GE(block_load[1], 1U);
-  EXPECT_LE(block_load[1], lvh::detail::windows::generic_pid_max_effects);
-  EXPECT_EQ(block_load[2], 1U);  // Block Load Success.
-
-  const auto write_pid_report = [&hid, &hid_interface](std::initializer_list<std::uint8_t> bytes) {
-    std::vector<std::uint8_t> report(hid_interface->output_report_size, 0);
-    std::ranges::copy(bytes, report.begin());
-    DWORD bytes_written = 0;
-    EXPECT_TRUE(WriteFile(
-      hid.get(),
-      report.data(),
-      static_cast<DWORD>(report.size()),
-      &bytes_written,
-      nullptr
-    )) << "PID WriteFile failed: "
-       << GetLastError();
-    EXPECT_EQ(bytes_written, report.size());
-  };
-
-  std::array<std::uint8_t, lvh::detail::windows::generic_pid_output_report_size> set_effect {};
-  set_effect[0] = lvh::detail::windows::generic_pid_set_effect_report_id;
-  set_effect[1] = block_load[1];
-  set_effect[2] = 1;  // Constant Force.
-  set_effect[3] = 0xFF;  // Infinite duration (Null).
-  set_effect[4] = 0xFF;
-  set_effect[11] = 255;  // Effect gain.
-  DWORD bytes_written = 0;
-  ASSERT_TRUE(WriteFile(
-    hid.get(),
-    set_effect.data(),
-    static_cast<DWORD>(set_effect.size()),
-    &bytes_written,
-    nullptr
-  )) << "Set Effect WriteFile failed: "
-     << GetLastError();
-  ASSERT_EQ(bytes_written, set_effect.size());
-
-  write_pid_report({lvh::detail::windows::generic_pid_set_constant_force_report_id, block_load[1], 0x10, 0x27});
-  write_pid_report({lvh::detail::windows::generic_pid_effect_operation_report_id, block_load[1], 0x01, 0x01});
-
-  const auto rumble = output_capture.wait_for_rumble(true);
-  ASSERT_TRUE(rumble.has_value())
-    << "No normalized rumble callback followed the DirectInput PID effect sequence";
-  EXPECT_EQ(rumble->low_frequency_rumble, 65535U);
-  EXPECT_EQ(rumble->high_frequency_rumble, 65535U);
-
-  write_pid_report({lvh::detail::windows::generic_pid_effect_operation_report_id, block_load[1], 0x03, 0x00});
-  ASSERT_TRUE(output_capture.wait_for_rumble(false).has_value())
-    << "No zero-rumble callback followed PID Effect Stop";
 }

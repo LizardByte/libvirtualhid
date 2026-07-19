@@ -261,8 +261,7 @@ namespace lvh::detail::windows {
     static constexpr std::byte state_effect_playing {0x20};
 
     void create_effect(std::span<const std::uint8_t> data) {
-      constexpr auto maximum_effect_type = 12U;
-      if (data.empty() || data[0] < 1U || data[0] > maximum_effect_type) {
+      if (constexpr auto maximum_effect_type = 12U; data.empty() || data[0] < 1U || data[0] > maximum_effect_type) {
         last_effect_block_index_ = 0;
         load_status_ = load_error;
         return;

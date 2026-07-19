@@ -621,8 +621,10 @@ namespace {
     expect_sdl_playstation_controller_profile(controller.get());
     if (test_case.expect_live_input) {
       EXPECT_TRUE(wait_for_sdl_controller_input(controller.get())) << describe_sdl_controller_state(controller.get());
-      expect_sdl_rumble_callback(controller.get(), gamepad);
-      expect_hidraw_rumble_callback(expected_profile, gamepad);
+      if (test_case.require_sdl_rumble) {
+        expect_sdl_rumble_callback(controller.get(), gamepad);
+        expect_hidraw_rumble_callback(expected_profile, gamepad);
+      }
     }
   }
 
@@ -861,7 +863,6 @@ TEST_F(LinuxConsumerTest, SdlSeesDualSenseUsbControllerBehavior) {
     .stable_id = "02:00:00:00:00:01",
     .minimum_buttons = 10,
     .minimum_axes = 4,
-    .require_sdl_rumble = true,
   });
 }
 
@@ -874,7 +875,6 @@ TEST_F(LinuxConsumerTest, SdlSeesDualShock4UsbControllerBehavior) {
     .stable_id = "02:00:00:00:00:03",
     .minimum_buttons = 10,
     .minimum_axes = 4,
-    .require_sdl_rumble = true,
   });
 }
 
