@@ -244,7 +244,7 @@ namespace lvh::detail {
     bool uses_sparse_uinput_button_slots(GamepadProfileKind kind) {
       using enum GamepadProfileKind;
 
-      return kind == generic || kind == xbox_360 || kind == xbox_one || kind == xbox_series;
+      return kind == xbox_360 || kind == xbox_one || kind == xbox_series;
     }
 
     bool uses_uinput_dpad_buttons(GamepadProfileKind kind) {

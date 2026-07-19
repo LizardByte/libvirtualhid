@@ -34,8 +34,8 @@ namespace lvh::detail::windows {
 
   constexpr std::uint16_t xinputhid_match_product_id(const LvhWindowsCreateGamepadRequest &request) {
     if (request.gamepad_kind == LVH_WINDOWS_GAMEPAD_XBOX_SERIES) {
-      // Use Microsoft's XInputHID-compatible Series identity for the Windows
-      // binding while preserving the public profile identity below.
+      // This Series-compatible XInputHID match ID was the path that Steam and
+      // browser consumers mapped correctly before the Bluetooth/02FF rewrites.
       return 0x0B13;
     }
 

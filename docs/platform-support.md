@@ -56,9 +56,11 @@ expire, while explicit stop commands take effect immediately.
 Xbox One and Xbox Series use the native eight-byte PID payload exposed by the
 Windows Xbox HID stack. The library applies the actuator-enable mask and
 duration field, then reports the body motors as normalized low/high-frequency
-rumble and the independent trigger motors as trigger-rumble output. Xbox Series
-keeps its public `0x045E:0x0B12` identity while using the Windows
-XInputHID-compatible `0x045E:0x0B13&IG_00` match identity internally.
+rumble and the independent trigger motors as trigger-rumble output. The public
+Xbox Series profile remains `0x045E:0x0B12`, while the Windows driver publishes
+the `0x045E:0x0B13&IG_00` XInputHID match ID used by the Steam/browser mapping
+path that previously worked. The Series Share button may remain unavailable
+through that Windows compatibility transport.
 
 The VHF driver answers the calibration, pairing, and firmware feature reports
 used to initialize DualShock 4 and DualSense HIDAPI output. It also answers the
@@ -98,13 +100,12 @@ Steam. The Linux backend lets a new uinput device settle before reading those
 effects so an early poll error cannot disable feedback for the device lifetime.
 PlayStation rumble is read from native UHID interrupt-channel output reports.
 
-The Generic profile keeps its public `0x1209:0x0001` identity and compact button
-layout on every backend. Its Linux uinput device uses the same sparse button
-slot sequence as the Xbox-family uinput devices, including the reserved
-`BTN_C`, `BTN_Z`, `BTN_TL2`, and `BTN_TR2` positions required by SDL, Steam,
-and browser mappings. D-pad directions are published through both the standard
-hat axes and semantic `BTN_DPAD_*` events for consumers that prefer either
-Linux representation.
+The Generic profile keeps its public `0x1209:0x0001` identity, USB bus, and
+Generic device name at the Linux transport boundary. Its uinput device exposes
+both `ABS_HAT0X`/`ABS_HAT0Y` hat axes and semantic `BTN_DPAD_*` events so raw
+evdev consumers and higher-level gamepad mappers can observe D-pad movement
+without re-identifying the device as Xbox. It uses a compact Generic button
+layout rather than the sparse Xbox button slots.
 
 Xbox 360 retains its `0x045E:0x028E` identity, while its Linux uinput device uses
 the Bluetooth bus so consumers select the sparse button mapping.

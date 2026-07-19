@@ -164,11 +164,13 @@ Windows.Gaming.Input/GameInput, and browser Gamepad API clients should see
 standard HID devices after the driver is installed.
 
 The built-in Xbox One and Xbox Series profiles use XboxGIP-shaped HID
-descriptors. Xbox Series keeps the public physical USB identity
-`VID_045E&PID_0B12`; the driver also publishes the XInputHID-compatible
-`VID_045E&PID_0B13&IG_00` hardware ID used for the Windows binding. The Xbox
-360 profile is rejected by the UMDF/VHF backend because a real Xbox 360
-controller is an XUSB device rather than a VHF HID gamepad.
+descriptors. The public Xbox Series profile remains `VID_045E&PID_0B12`; the
+driver also publishes the `VID_045E&PID_0B13&IG_00` XInputHID match ID used by
+the Steam/browser mapping path that previously worked. That compatibility path
+provides the standard Xbox surface in Windows consumers, though the Series Share
+button may remain unavailable. The Xbox 360 profile is rejected by the UMDF/VHF
+backend because a real Xbox 360 controller is an XUSB device rather than a VHF
+HID gamepad.
 
 DualShock 4 and DualSense answer the calibration, pairing, and firmware feature
 requests used by their Windows HIDAPI initialization paths. Switch Pro answers

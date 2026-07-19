@@ -214,6 +214,7 @@ TEST(WindowsProtocolTest, PreservesXboxSeriesProfileTransport) {
   );
 
   EXPECT_EQ(request.bus_type, LVH_WINDOWS_BUS_USB);
+  EXPECT_EQ(request.hardware_ids.vendor_id, options.profile.vendor_id);
   EXPECT_EQ(request.hardware_ids.product_id, options.profile.product_id);
   EXPECT_EQ(request.hardware_ids.report_id, options.profile.report_id);
   EXPECT_EQ(request.report_sizes.input_report_size, options.profile.input_report_size);

@@ -798,6 +798,8 @@ TEST_F(LinuxConsumerTest, SdlSeesGenericCanonicalButtons) {
     .profile = lvh::profiles::generic_gamepad(),
     .name_suffix = "SDL Generic Gamepad",
     .stable_id = "libvirtualhid-sdl-gamepad-test",
+    .expected_vendor_id = 0x1209,
+    .expected_product_id = 0x0001,
     .minimum_buttons = 15,
     .minimum_axes = 6,
   });
