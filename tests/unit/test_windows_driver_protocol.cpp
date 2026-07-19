@@ -80,15 +80,14 @@ namespace {
 
 }  // namespace
 
-TEST_F(WindowsDriverProtocolTest, SeriesUsesShareCapableMatchIdAndPreservesPublicIdentity) {
-  const auto request = series_request();
+TEST_F(WindowsDriverProtocolTest, SeriesUsesShareCapableBluetoothHidIdentity) {
+  auto request = series_request();
+  request.hardware_ids.product_id = 0x0B13;
 
-  EXPECT_EQ(lvh::detail::windows::xinputhid_match_product_id(request), 0x0B13);
   const auto entries = hardware_id_entries(lvh::detail::windows::make_hardware_ids(request));
-  ASSERT_EQ(entries.size(), 3U);
-  EXPECT_EQ(entries[0], L"HID\\VID_045E&PID_0B13&IG_00");
-  EXPECT_EQ(entries[1], L"HID\\VID_045E&PID_0B12&REV_0500");
-  EXPECT_EQ(entries[2], L"HID\\VID_045E&PID_0B12");
+  ASSERT_EQ(entries.size(), 2U);
+  EXPECT_EQ(entries[0], L"HID\\VID_045E&PID_0B13&REV_0500");
+  EXPECT_EQ(entries[1], L"HID\\VID_045E&PID_0B13");
 }
 
 TEST_F(WindowsDriverProtocolTest, NonSeriesXboxUsesItsPublicIdentityForMatching) {
@@ -97,7 +96,6 @@ TEST_F(WindowsDriverProtocolTest, NonSeriesXboxUsesItsPublicIdentityForMatching)
   request.hardware_ids.product_id = 0x02EA;
   request.hardware_ids.device_version = 0x0408;
 
-  EXPECT_EQ(lvh::detail::windows::xinputhid_match_product_id(request), 0x02EA);
   const auto entries = hardware_id_entries(lvh::detail::windows::make_hardware_ids(request));
   ASSERT_EQ(entries.size(), 3U);
   EXPECT_EQ(entries[0], L"HID\\VID_045E&PID_02EA&IG_00");

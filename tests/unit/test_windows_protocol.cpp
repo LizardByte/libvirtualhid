@@ -57,7 +57,7 @@ TEST(WindowsProtocolTest, ExposesStableProtocolConstants) {
 
   EXPECT_EQ(sizeof(LvhWindowsGamepadHardwareIds), 14U);
   EXPECT_EQ(sizeof(LvhWindowsGamepadReportSizes), 24U);
-  EXPECT_EQ(sizeof(LvhWindowsCreateGamepadRequest), 1474U);
+  EXPECT_EQ(sizeof(LvhWindowsCreateGamepadRequest), 2498U);
   EXPECT_EQ(sizeof(LvhWindowsCreateGamepadResponse), 284U);
   EXPECT_EQ(sizeof(LvhWindowsDestroyDeviceRequest), 16U);
   EXPECT_EQ(sizeof(LvhWindowsSubmitInputReportRequest), 280U);
@@ -203,6 +203,64 @@ TEST(WindowsProtocolTest, PacksGenericUnknownBusGamepadCreateRequestWithoutOptio
   EXPECT_EQ(request.report_sizes.stable_id_size, 0U);
 }
 
+TEST(WindowsProtocolTest, PresentsXboxSeriesThroughShareCapableBluetoothHid) {
+  lvh::CreateGamepadOptions options;
+  options.profile = lvh::profiles::xbox_series();
+
+  const auto request = lvh::detail::windows::make_create_gamepad_request(8, options);
+  const std::vector<std::uint8_t> descriptor(
+    request.report_descriptor,
+    request.report_descriptor + request.report_sizes.report_descriptor_size
+  );
+
+  EXPECT_EQ(request.bus_type, LVH_WINDOWS_BUS_BLUETOOTH);
+  EXPECT_EQ(request.hardware_ids.product_id, lvh::detail::windows::xbox_series_bluetooth_product_id);
+  EXPECT_EQ(request.hardware_ids.report_id, lvh::detail::windows::xbox_series_bluetooth_input_report_id);
+  EXPECT_EQ(request.report_sizes.input_report_size, lvh::detail::windows::xbox_series_bluetooth_input_report_size);
+  EXPECT_EQ(request.report_sizes.output_report_size, lvh::detail::windows::xbox_series_bluetooth_output_report_size);
+  EXPECT_EQ(descriptor, lvh::detail::windows::xbox_series_bluetooth_report_descriptor());
+
+  constexpr std::array<std::uint8_t, 5> share_usage {0x05, 0x0C, 0x0A, 0x24, 0x02};
+  constexpr std::array<std::uint8_t, 4> rumble_report {0x85, 0x03, 0xA1, 0x02};
+  EXPECT_NE(std::ranges::search(descriptor, share_usage).begin(), descriptor.end());
+  EXPECT_NE(std::ranges::search(descriptor, rumble_report).begin(), descriptor.end());
+}
+
+TEST(WindowsProtocolTest, ConvertsXboxSeriesButtonsToBluetoothPacketSlots) {
+  const std::vector<std::uint8_t> report {
+    0x00,
+    0x01,
+    0x02,
+    0x03,
+    0x04,
+    0x05,
+    0x06,
+    0x07,
+    0x08,
+    0x09,
+    0x0A,
+    0x0B,
+    0xFF,
+    0x0B,
+    0x07,
+    0x01,
+    0x80,
+  };
+
+  const auto windows_report = lvh::detail::windows::make_xbox_series_windows_input_report(report);
+
+  ASSERT_EQ(windows_report.size(), lvh::detail::windows::xbox_series_bluetooth_input_report_size);
+  EXPECT_EQ(windows_report[0], lvh::detail::windows::xbox_series_bluetooth_input_report_id);
+  EXPECT_TRUE(std::ranges::equal(std::span {report}.first(12U), std::span {windows_report}.subspan(1U, 12U)));
+  EXPECT_EQ(windows_report[13], 0x07U);
+  EXPECT_EQ(windows_report[14], 0xDBU);  // A/B/X/Y/LB/RB.
+  EXPECT_EQ(windows_report[15], 0x7CU);  // Back/Start/Guide/L3/R3.
+  EXPECT_EQ(windows_report[16], 0x01U);  // Share.
+
+  const std::vector<std::uint8_t> short_report {1, 2, 3};
+  EXPECT_EQ(lvh::detail::windows::make_xbox_series_windows_input_report(short_report), short_report);
+}
+
 TEST(WindowsProtocolTest, PresentsBuiltInGenericControllerAsDirectInputPidJoystick) {
   lvh::CreateGamepadOptions options;
   options.profile = lvh::profiles::generic_gamepad();
@@ -242,9 +300,10 @@ TEST(WindowsProtocolTest, PresentsBuiltInGenericControllerAsDirectInputPidJoysti
   EXPECT_EQ(std::ranges::search(descriptor, pool_feature).begin(), descriptor.end());
   EXPECT_EQ(std::ranges::search(descriptor, state_feature).begin(), descriptor.end());
 
-  // Unsupported effect types are intentionally not advertised.
+  // DirectInput requires the complete PID Output report set even though the
+  // backend only normalizes Constant and Sine effects as gamepad rumble.
   constexpr std::array<std::uint8_t, 6> set_ramp {0x09, 0x74, 0xA1, 0x02, 0x85, 0x16};
-  EXPECT_EQ(std::ranges::search(descriptor, set_ramp).begin(), descriptor.end());
+  EXPECT_NE(std::ranges::search(descriptor, set_ramp).begin(), descriptor.end());
 
   // The public profile remains platform-neutral; Windows applies its transport contract at creation.
   ASSERT_GE(options.profile.report_descriptor.size(), 4U);

@@ -103,9 +103,7 @@ namespace lvh::detail::windows {
   ) {
     using namespace generic_pid_detail;
 
-    if (source.size() < gamepad_collection_prefix.size() + 1U ||
-        !std::ranges::equal(std::span {source}.first(gamepad_collection_prefix.size()), gamepad_collection_prefix) ||
-        source.back() != 0xC0) {
+    if (source.size() < gamepad_collection_prefix.size() + 1U || !std::ranges::equal(std::span {source}.first(gamepad_collection_prefix.size()), gamepad_collection_prefix) || source.back() != 0xC0) {
       return {};
     }
 
@@ -117,67 +115,32 @@ namespace lvh::detail::windows {
     std::vector<std::uint8_t> descriptor(source.begin(), legacy.begin());
     descriptor[3] = 0x04;  // Usage (Joystick), required by DirectInput's PID mapper.
 
-    // Derived from HIDMaestro's MIT-licensed MinimumViablePidFfbBlock.
-    // Only the two effects normalized as gamepad rumble are advertised: a
-    // constant force and a sine-periodic force. Omitting the other effect
-    // usages prevents consumers from creating effects this backend cannot
-    // render while retaining the standard PID allocation/control contract.
-    append_hex(descriptor, "050F");
-
-    // Set Effect (Output, ID 0x11). Effect array entries are Constant and Sine.
+    // HIDMaestro's MIT-licensed MinimumViablePidFfbBlock, byte-for-byte. The
+    // complete Output report set is required for DirectInput to enumerate the
+    // device as PID force-feedback capable. The runtime currently normalizes
+    // Constant and Sine effects as two-motor gamepad rumble and safely ignores
+    // the other advertised effect payloads.
+    // https://github.com/hifihedgehog/HIDMaestro/blob/master/sdk/HIDMaestro.Core/HidDescriptorBuilder.cs
     append_hex(
       descriptor,
-      "0921A1028511092215012528350145287508950191020925A1020926093125021501350145027508"
-      "95019100C009500954095109A7150026FF7F350046FF7F66031055FD7510950491025500660000"
-      "0952150026FF003500461027750895019102095315012508350145087508950191020955A1020501"
-      "0930093115002501750195029102C0050F095695019102950591030957A1020B01000A000B0200"
-      "0A0066140055FE150027FF7F0000350047A08C00006600007510950291025500660000C0050F"
-      "0958A1020B01000A000B02000A0026FD7F751095029102C0C0"
-    );
-
-    // Set Envelope (Output, ID 0x12).
-    append_hex(
-      descriptor,
-      "095AA102851209221501252835014528750895019102095B095D1600002610273600004610277510"
-      "95029102095C095E66031055FD27FF7F000047FF7F00007520910245006600005500C0"
-    );
-
-    // Set Periodic (Output, ID 0x14).
-    append_hex(
-      descriptor,
-      "096EA102851409221501252835014528750895019102097016000026102736000046102775109501"
-      "9102096F16F0D826102736F0D8461027950175109102097166140055FE1500279F8C0000350047"
-      "9F8C00007510950191020972150027FF7F0000350047FF7F000066031055FD7520950191026600"
-      "005500C0"
-    );
-
-    // Set Constant Force (Output, ID 0x15).
-    append_hex(
-      descriptor,
-      "0973A102851509221501252835014528750895019102097016F0D826102736F0D846102775109501"
-      "9102C0"
-    );
-
-    // Effect Operation, Block Free, Device Control, and Device Gain outputs.
-    append_hex(
-      descriptor,
-      "050F0977A102851A092215012528350145287508950191020978A1020979097A097B150125037508"
-      "95019100C0097C150026FF00350046FF009102C0"
-      "0990A102851B09222528150135014528750895019102C0"
-      "0996A102851C099709980999099A099B099C15012506750895019100C0"
-      "097DA102851D097E150026FF003500461027750895019102C0"
-    );
-
-    // Create New Effect is deliberately the only declared Feature report.
-    // HIDMaestro found that also declaring Block Load, Pool, and State makes
-    // pid.dll fault during CreateEffect; its working UMDF path serves those
-    // three report IDs from GetFeature without descriptor Feature items.
-    // See https://github.com/hifihedgehog/HIDMaestro/blob/master/sdk/HIDMaestro.Core/HidDescriptorBuilder.cs
-    // Create New Effect (Feature, ID 0x11), with the same two effect types.
-    append_hex(
-      descriptor,
-      "09ABA10285110925A10209260931250215013501450275089501B100C00501093B150026FF013500"
-      "46FF01750A9501B1027506B101C0"
+      "050F0921A1028511092215012528350145287508950191020925A102092609270930093109320933093409400941094209430929250C15013501450C"
+      "750895019100C009500954095109A7150026FF7F350046FF7F66031055FD75109504910255006600000952150026FF00350046102775089501910209"
+      "5315012508350145087508950191020955A10205010930093115002501750195029102C0050F095695019102950591030957A1020B01000A000B0200"
+      "0A0066140055FE150027FF7F0000350047A08C00006600007510950291025500660000C0050F0958A1020B01000A000B02000A0026FD7F7510950291"
+      "02C0C0095AA102851209221501252835014528750895019102095B095D160000261027360000461027751095029102095C095E66031055FD27FF7F00"
+      "0047FF7F00007520910245006600005500C0095FA102851309221501252835014528750895019102092315002503350045037504950191020958A102"
+      "0B01000A000B02000A00750295029102C016F0D826102736F0D8461027096075109501910236F0D84610270961096295029102160000261027360000"
+      "46102709630964751095029102096516000026102736000046102795019102C0096EA102851409221501252835014528750895019102097016000026"
+      "1027360000461027751095019102096F16F0D826102736F0D8461027950175109102097166140055FE1500279F8C00003500479F8C00007510950191"
+      "020972150027FF7F0000350047FF7F000066031055FD7520950191026600005500C00973A102851509221501252835014528750895019102097016F0"
+      "D826102736F0D8461027751095019102C00974A1028516092215012528350145287508950191020975097616F0D826102736F0D84610277510950291"
+      "02C00968A102851709221501252835014528750895019102096C1500261027350046102775109501910209691581257F350046FF007508950C920201"
+      "C00966A10285180501093009311581257F350046FF00750895029102C0050F0977A102851A092215012528350145287508950191020978A102097909"
+      "7A097B15012503750895019100C0097C150026FF00350046FF009102C00990A102851B09222528150135014528750895019102C00996A102851C0997"
+      "09980999099A099B099C15012506750895019100C0097DA102851D097E150026FF003500461027750895019102C0096BA102851E0922150125283501"
+      "4528750895019102096D150026FF00350046FF00750895019102095166031055FD150026FF7F350046FF7F7510950191025500660000C009ABA10285"
+      "110925A102092609270930093109320933093409400941094209430929250C15013501450C75089501B100C00501093B150026FF01350046FF01750A"
+      "9501B1027506B101C0"
     );
 
     descriptor.push_back(0xC0);  // End Joystick application collection.
@@ -298,8 +261,8 @@ namespace lvh::detail::windows {
     static constexpr std::byte state_effect_playing {0x20};
 
     void create_effect(std::span<const std::uint8_t> data) {
-      // Array values 1 and 2 select the advertised Constant and Sine usages.
-      if (data.empty() || data[0] < 1U || data[0] > 2U) {
+      constexpr auto maximum_effect_type = 12U;
+      if (data.empty() || data[0] < 1U || data[0] > maximum_effect_type) {
         last_effect_block_index_ = 0;
         load_status_ = load_error;
         return;
@@ -331,8 +294,7 @@ namespace lvh::detail::windows {
     }
 
     void effect_operation(std::uint8_t effect_block_index, std::uint8_t operation) {
-      if (effect_block_index == 0U || effect_block_index > allocated_.size() ||
-          !allocated_[effect_block_index - 1U]) {
+      if (effect_block_index == 0U || effect_block_index > allocated_.size() || !allocated_[effect_block_index - 1U]) {
         return;
       }
       state_effect_block_index_ = effect_block_index;

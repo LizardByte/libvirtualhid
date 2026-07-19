@@ -237,8 +237,7 @@ std::ptrdiff_t lvh_linux_test_write(int fd, const std::byte *buffer, std::size_t
 
 int lvh_linux_test_ioctl(int fd, unsigned long request, unsigned long argument) {
   if (lvh::detail::test::active_test_syscalls() != nullptr && lvh::detail::test::active_test_syscalls()->override_ioctl) {
-    if (const auto call_count = ++lvh::detail::test::active_test_syscalls()->ioctl_call_count;
-        lvh::detail::test::active_test_syscalls()->fail_ioctl_call == call_count) {
+    if (const auto call_count = ++lvh::detail::test::active_test_syscalls()->ioctl_call_count; lvh::detail::test::active_test_syscalls()->fail_ioctl_call == call_count) {
       errno = EINVAL;
       return -1;
     }
@@ -299,8 +298,7 @@ std::ptrdiff_t lvh_linux_test_read(int fd, std::byte *buffer, std::size_t size) 
     }
 
     if (result > 0) {
-      if (const auto &input_events = lvh::detail::test::active_test_syscalls()->read_input_events;
-          call_index < input_events.size()) {
+      if (const auto &input_events = lvh::detail::test::active_test_syscalls()->read_input_events; call_index < input_events.size()) {
         const auto bytes = std::min<std::size_t>(static_cast<std::size_t>(result), std::min(size, sizeof(input_event)));
         std::memcpy(buffer, &input_events[call_index], bytes);
         return static_cast<std::ptrdiff_t>(bytes);
@@ -1623,7 +1621,7 @@ namespace lvh::detail::test {
         const auto crc_offset = report_size - 4U;
         const auto expected_crc = crc32(
           std::span<const std::uint8_t> {event.u.get_report_reply.data, crc_offset},
-          playstation_crc_seed(playstation_feature_crc_seed)
+          playstation_crc_seed(playstation_feature_reports::playstation_feature_crc_seed)
         );
         const auto actual_crc = read_u32_le(event.u.get_report_reply.data + crc_offset);
         result.saw_dualsense_feature_crc = expected_crc == actual_crc;
@@ -1765,7 +1763,7 @@ namespace lvh::detail::test {
         const auto crc_offset = report_size - 4U;
         const auto expected_crc = crc32(
           std::span<const std::uint8_t> {event.u.get_report_reply.data, crc_offset},
-          playstation_crc_seed(playstation_feature_crc_seed)
+          playstation_crc_seed(playstation_feature_reports::playstation_feature_crc_seed)
         );
         const auto actual_crc = read_u32_le(event.u.get_report_reply.data + crc_offset);
         result.saw_dualshock4_feature_crc = expected_crc == actual_crc;

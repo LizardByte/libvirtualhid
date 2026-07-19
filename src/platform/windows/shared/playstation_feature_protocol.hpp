@@ -23,7 +23,7 @@ namespace lvh::detail::windows {
 
   namespace playstation_feature_protocol_detail {
 
-    using namespace playstation_feature_reports;
+    namespace ps = playstation_feature_reports;
 
     inline std::uint32_t crc32(std::span<const std::uint8_t> buffer, std::uint32_t seed = 0) {
       auto crc = seed ^ 0xFFFFFFFFU;
@@ -52,8 +52,7 @@ namespace lvh::detail::windows {
         }
 
         unsigned int value = 0;
-        const auto result = std::from_chars(text.data(), text.data() + 2, value, 16);
-        if (result.ec != std::errc {} || result.ptr != text.data() + 2 || value > 0xFFU) {
+        if (const auto result = std::from_chars(text.data(), text.data() + 2, value, 16); result.ec != std::errc {} || result.ptr != text.data() + 2 || value > 0xFFU) {
           return std::nullopt;
         }
         mac[index] = static_cast<std::uint8_t>(value);
@@ -99,7 +98,7 @@ namespace lvh::detail::windows {
         return;
       }
       const auto crc_offset = report.size() - 4U;
-      const auto seed = crc32(std::span {&playstation_feature_crc_seed, 1U});
+      const auto seed = crc32(std::span {&ps::playstation_feature_crc_seed, 1U});
       write_u32_le(report, crc_offset, crc32(std::span {report.data(), crc_offset}, seed));
     }
 
@@ -118,36 +117,36 @@ namespace lvh::detail::windows {
     auto report = std::vector<std::uint8_t> {};
     if (request.gamepad_kind == LVH_WINDOWS_GAMEPAD_DUALSHOCK4) {
       switch (report_number) {
-        case dualshock4_usb_calibration_report:
-          report = copy_payload(dualshock4_usb_calibration_info);
+        case ps::dualshock4_usb_calibration_report:
+          report = copy_payload(ps::dualshock4_usb_calibration_info);
           break;
-        case dualshock4_bluetooth_calibration_report:
+        case ps::dualshock4_bluetooth_calibration_report:
           if (request.bus_type != LVH_WINDOWS_BUS_BLUETOOTH) {
             return std::nullopt;
           }
-          report = copy_payload(dualshock4_bluetooth_calibration_info);
+          report = copy_payload(ps::dualshock4_bluetooth_calibration_info);
           break;
-        case dualshock4_pairing_report:
-          report = copy_payload(dualshock4_pairing_info);
+        case ps::dualshock4_pairing_report:
+          report = copy_payload(ps::dualshock4_pairing_info);
           set_pairing_mac(report, request);
           break;
-        case dualshock4_firmware_report:
-          report = copy_payload(dualshock4_firmware_info);
+        case ps::dualshock4_firmware_report:
+          report = copy_payload(ps::dualshock4_firmware_info);
           break;
         default:
           return std::nullopt;
       }
     } else if (request.gamepad_kind == LVH_WINDOWS_GAMEPAD_DUALSENSE) {
       switch (report_number) {
-        case dualsense_calibration_report:
-          report = copy_payload(dualsense_calibration_info);
+        case ps::dualsense_calibration_report:
+          report = copy_payload(ps::dualsense_calibration_info);
           break;
-        case dualsense_pairing_report:
-          report = copy_payload(dualsense_pairing_info);
+        case ps::dualsense_pairing_report:
+          report = copy_payload(ps::dualsense_pairing_info);
           set_pairing_mac(report, request);
           break;
-        case dualsense_firmware_report:
-          report = copy_payload(dualsense_firmware_info);
+        case ps::dualsense_firmware_report:
+          report = copy_payload(ps::dualsense_firmware_info);
           break;
         default:
           return std::nullopt;

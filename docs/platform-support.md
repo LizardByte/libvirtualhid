@@ -38,21 +38,30 @@ HID consumers can enumerate, including SDL/HIDAPI, DirectInput,
 Windows.Gaming.Input/GameInput, and browser Gamepad API clients. XInput is not a
 direct target of the HID backend.
 
+The library and driver must use the same Windows control-protocol version. A
+descriptor-capacity change therefore increments the protocol version so a
+stale installed driver fails creation explicitly instead of misreading the
+request.
+
 The built-in Generic profile remains a platform-neutral Game Pad publicly. At
 the Windows transport boundary, VHF presents it as a DirectInput-compatible
-Joystick with the standard PID allocation/control handshake and Constant Force
-and Sine effects. Windows also applies DirectInput's idle-at-maximum Z/Rz
-trigger polarity. PID effects are normalized back into the same rumble callback
-used by the other backends. Start delay, duration, and loop count are honored;
-finite effects emit a zero-rumble callback when they expire, while explicit
-stop commands take effect immediately.
+Joystick with the complete PID output-report contract required by DirectInput.
+Constant Force and Sine effects are normalized back into the same rumble
+callback used by the other backends; unsupported PID effect payloads are
+accepted without producing misleading feedback. Windows also applies
+DirectInput's idle-at-maximum Z/Rz trigger polarity. Start delay, duration, and
+loop count are honored; finite effects emit a zero-rumble callback when they
+expire, while explicit stop commands take effect immediately.
 
-Xbox One and Xbox Series use the native eight-byte PID payload exposed by the
-Windows Xbox HID stack. The library applies the actuator-enable mask and
-duration field, then reports the body motors as normalized low/high-frequency
-rumble and the independent trigger motors as trigger-rumble output. Xbox Series
-keeps its public `0x045E:0x0B12` identity while using the Share-capable
-`0x045E:0x0B13&IG_00` XInputHID match identity internally.
+Xbox One uses the native eight-byte PID payload exposed by the Windows Xbox HID
+stack. Xbox Series keeps its platform-neutral public `0x045E:0x0B12` profile,
+but the Windows transport presents Microsoft's `0x045E:0x0B13` Bluetooth HID
+identity and native 17-byte input packet. That route exposes Share as well as
+the common buttons, axes, and report-ID-3 rumble; the inbox `&IG_00` XInputHID
+route only exposes the legacy 15-button XInput surface. The library applies the
+actuator-enable mask and duration field, then reports the body motors as
+normalized low/high-frequency rumble and the independent trigger motors as
+trigger-rumble output.
 
 The VHF driver answers the calibration, pairing, and firmware feature reports
 used to initialize DualShock 4 and DualSense HIDAPI output. It also answers the
@@ -82,9 +91,8 @@ Steam, browser Gamepad API implementations, and other evdev consumers receive
 canonical Linux gamepad events. Face buttons, shoulders, menu buttons, stick
 clicks, and Guide use their native evdev codes; sticks use absolute axes. Every
 uinput gamepad exposes its directional pad through `ABS_HAT0X` and `ABS_HAT0Y`.
-Generic also publishes `BTN_DPAD_*` events so consumers can select either
-kernel-standard representation. Generic and Xbox triggers remain independent
-analog `ABS_Z` and `ABS_RZ` axes. Switch Pro uses the Nintendo face-button
+Generic and Xbox triggers remain independent analog `ABS_Z` and `ABS_RZ` axes.
+Switch Pro uses the Nintendo face-button
 positions, button events for ZL/ZR, and `BTN_Z` for Capture. Profiles with rumble
 support normalize rumble, constant, periodic, and ramp uinput force-feedback
 effects back into the public callback. A zero-length effect remains active until
@@ -94,9 +102,12 @@ effects so an early poll error cannot disable feedback for the device lifetime.
 PlayStation rumble is read from native UHID interrupt-channel output reports.
 
 The Generic profile keeps its public `0x1209:0x0001` identity and compact button
-layout on every backend. Its Linux uinput device publishes D-pad directions as
-both hat axes and semantic D-pad buttons, preserving the Generic identity while
-supporting consumers that prefer either Linux input representation.
+layout on every backend. Its Linux uinput device uses the same sparse button
+slot sequence as the Xbox-family uinput devices, including the reserved
+`BTN_C`, `BTN_Z`, `BTN_TL2`, and `BTN_TR2` positions required by SDL, Steam,
+and browser mappings. D-pad directions are published once through the standard
+hat axes so duplicate key capabilities cannot shift those consumers' button
+indices.
 
 Xbox 360 retains its `0x045E:0x028E` identity, while its Linux uinput device uses
 the Bluetooth bus so consumers select the sparse button mapping.
@@ -159,9 +170,10 @@ SUBSYSTEMS=="input", ATTRS{name}=="Your App Controller*", GROUP="input", MODE="0
 ```
 
 For gamepad support, install a modules-load entry such as
-`/etc/modules-load.d/60-libvirtualhid.conf`. `hid_playstation` is required for
-the kernel force-feedback path used by virtual DualShock 4 and DualSense
-controllers:
+`/etc/modules-load.d/60-libvirtualhid.conf`. `hid_playstation` enables the
+kernel force-feedback path used by virtual DualShock 4 and DualSense
+controllers; descriptor-aware HIDAPI clients can also write their native
+output reports through `hidraw`:
 
 ```text
 uhid

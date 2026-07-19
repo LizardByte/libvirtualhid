@@ -919,8 +919,7 @@ namespace lvh::detail {
             }
 
             update = state->generic_pid_rumble.advance(now);
-            if (const auto candidate = state->generic_pid_rumble.next_transition();
-                candidate.has_value() && (!next_transition.has_value() || *candidate < *next_transition)) {
+            if (const auto candidate = state->generic_pid_rumble.next_transition(); candidate.has_value() && (!next_transition.has_value() || *candidate < *next_transition)) {
               next_transition = candidate;
             }
             callback = state->output_callback;
@@ -1022,8 +1021,15 @@ namespace lvh::detail {
           return OperationStatus::failure(device_closed, "Windows gamepad is closed");
         }
 
+        if (report.size() > LVH_WINDOWS_MAX_INPUT_REPORT_SIZE) {
+          return OperationStatus::failure(invalid_argument, "Windows gamepad input report exceeds protocol limit");
+        }
+
         if (state_->uses_generic_pid) {
           return context_->submit_gamepad_report(state_, windows::make_generic_windows_input_report(report));
+        }
+        if (state_->profile.gamepad_kind == GamepadProfileKind::xbox_series) {
+          return context_->submit_gamepad_report(state_, windows::make_xbox_series_windows_input_report(report));
         }
       }
 

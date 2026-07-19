@@ -32,17 +32,6 @@ namespace lvh::detail::windows {
     append_hardware_id_hex4(hardware_ids, product_id);
   }
 
-  constexpr std::uint16_t xinputhid_match_product_id(const LvhWindowsCreateGamepadRequest &request) {
-    if (request.gamepad_kind == LVH_WINDOWS_GAMEPAD_XBOX_SERIES) {
-      // The inbox XInputHID INF binds this Series-compatible identity and SDL/
-      // Steam map it with the extra Share button. PID 02FF binds too, but is
-      // identified as an Xbox One controller and therefore drops Share.
-      return 0x0B13;
-    }
-
-    return request.hardware_ids.product_id;
-  }
-
   constexpr bool is_xbox_gamepad(std::uint32_t gamepad_kind) {
     return gamepad_kind == LVH_WINDOWS_GAMEPAD_XBOX_360 || gamepad_kind == LVH_WINDOWS_GAMEPAD_XBOX_ONE ||
            gamepad_kind == LVH_WINDOWS_GAMEPAD_XBOX_SERIES;
@@ -51,8 +40,8 @@ namespace lvh::detail::windows {
   inline std::wstring make_hardware_ids(const LvhWindowsCreateGamepadRequest &request) {
     const auto &ids = request.hardware_ids;
     std::wstring hardware_ids;
-    if (is_xbox_gamepad(request.gamepad_kind)) {
-      append_hid_vid_pid(hardware_ids, ids.vendor_id, xinputhid_match_product_id(request));
+    if (is_xbox_gamepad(request.gamepad_kind) && request.gamepad_kind != LVH_WINDOWS_GAMEPAD_XBOX_SERIES) {
+      append_hid_vid_pid(hardware_ids, ids.vendor_id, ids.product_id);
       hardware_ids.append(L"&IG_00");
       hardware_ids.push_back(L'\0');
     }

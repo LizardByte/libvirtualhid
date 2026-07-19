@@ -133,8 +133,7 @@ jobs:
             fi
           done
           if ! sudo modprobe hid_playstation; then
-            echo "::error::Unable to load hid_playstation; PlayStation force-feedback tests require it."
-            exit 1
+            echo "::warning::Unable to load hid_playstation; SDL HIDAPI will exercise the native hidraw output path instead."
           fi
           for node in /dev/uhid /dev/uinput; do
             if [[ -e "${node}" ]]; then

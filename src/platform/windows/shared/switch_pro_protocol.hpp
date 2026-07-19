@@ -142,7 +142,7 @@ namespace lvh::detail::windows {
       reply[data_offset + 1U] = 0x33;
       reply[data_offset + 2U] = 0x03;  // Pro Controller.
       reply[data_offset + 3U] = 0x02;
-      std::copy(controller_mac.begin(), controller_mac.end(), reply.begin() + static_cast<std::ptrdiff_t>(data_offset + 4U));
+      std::ranges::copy(controller_mac, reply.begin() + static_cast<std::ptrdiff_t>(data_offset + 4U));
       reply[data_offset + 10U] = 0x01;
       reply[data_offset + 11U] = 0x01;
     }
@@ -185,7 +185,13 @@ namespace lvh::detail::windows {
     SwitchProReport reply {};
     reply[0] = 0x21;
     switch_pro_protocol_detail::set_neutral_controller_state(reply, output_report[1]);
-    reply[13] = subcommand == 0x10U ? 0x90U : (subcommand == 0x02U ? 0x82U : 0x80U);
+    auto acknowledgement = std::uint8_t {0x80};
+    if (subcommand == 0x10U) {
+      acknowledgement = 0x90;
+    } else if (subcommand == 0x02U) {
+      acknowledgement = 0x82;
+    }
+    reply[13] = acknowledgement;
     reply[14] = subcommand;
     if (subcommand == 0x10U) {
       switch_pro_protocol_detail::set_spi_reply(reply, output_report);

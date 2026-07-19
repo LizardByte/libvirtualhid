@@ -333,6 +333,12 @@ namespace lvh::reports {
         return std::nullopt;
       }
 
+      // Xbox Series Bluetooth HID uses report ID 3 followed by the same
+      // eight-byte four-motor rumble payload.
+      if (profile.gamepad_kind == xbox_series && report.size() >= pid_rumble_report_size && report[0] == 0x03U) {
+        return 1U;
+      }
+
       // The Windows HID write buffer includes a leading zero for devices that
       // do not use report IDs. VHF may preserve that byte or expose only the
       // eight-byte PID payload, so accept both representations.
@@ -1109,6 +1115,8 @@ namespace lvh::reports {
   }
 
   std::vector<std::uint8_t> pack_switch_pro_input_report(const DeviceProfile &profile, const GamepadState &state) {
+    using enum GamepadButton;
+
     if (constexpr std::size_t switch_pro_input_report_size = 64; profile.input_report_size < switch_pro_input_report_size) {
       return {};
     }
@@ -1119,57 +1127,57 @@ namespace lvh::reports {
     report[0] = to_byte(profile.report_id);
     report[2] = switch_battery_and_connection(normalized.battery);
 
-    if (normalized.buttons.test(GamepadButton::x)) {
+    if (normalized.buttons.test(x)) {
       add_flag(report, 3U, std::byte {0x02});
     }
-    if (normalized.buttons.test(GamepadButton::y)) {
+    if (normalized.buttons.test(y)) {
       add_flag(report, 3U, std::byte {0x01});
     }
-    if (normalized.buttons.test(GamepadButton::a)) {
+    if (normalized.buttons.test(a)) {
       add_flag(report, 3U, std::byte {0x08});
     }
-    if (normalized.buttons.test(GamepadButton::b)) {
+    if (normalized.buttons.test(b)) {
       add_flag(report, 3U, std::byte {0x04});
     }
-    if (normalized.buttons.test(GamepadButton::right_shoulder)) {
+    if (normalized.buttons.test(right_shoulder)) {
       add_flag(report, 3U, std::byte {0x40});
     }
     if (normalized.right_trigger > 0.0F) {
       add_flag(report, 3U, std::byte {0x80});
     }
 
-    if (normalized.buttons.test(GamepadButton::back)) {
+    if (normalized.buttons.test(back)) {
       add_flag(report, 4U, std::byte {0x01});
     }
-    if (normalized.buttons.test(GamepadButton::start)) {
+    if (normalized.buttons.test(start)) {
       add_flag(report, 4U, std::byte {0x02});
     }
-    if (normalized.buttons.test(GamepadButton::right_stick)) {
+    if (normalized.buttons.test(right_stick)) {
       add_flag(report, 4U, std::byte {0x04});
     }
-    if (normalized.buttons.test(GamepadButton::left_stick)) {
+    if (normalized.buttons.test(left_stick)) {
       add_flag(report, 4U, std::byte {0x08});
     }
-    if (normalized.buttons.test(GamepadButton::guide)) {
+    if (normalized.buttons.test(guide)) {
       add_flag(report, 4U, std::byte {0x10});
     }
-    if (normalized.buttons.test(GamepadButton::misc1)) {
+    if (normalized.buttons.test(misc1)) {
       add_flag(report, 4U, std::byte {0x20});
     }
 
-    if (normalized.buttons.test(GamepadButton::dpad_down)) {
+    if (normalized.buttons.test(dpad_down)) {
       add_flag(report, 5U, std::byte {0x01});
     }
-    if (normalized.buttons.test(GamepadButton::dpad_up)) {
+    if (normalized.buttons.test(dpad_up)) {
       add_flag(report, 5U, std::byte {0x02});
     }
-    if (normalized.buttons.test(GamepadButton::dpad_right)) {
+    if (normalized.buttons.test(dpad_right)) {
       add_flag(report, 5U, std::byte {0x04});
     }
-    if (normalized.buttons.test(GamepadButton::dpad_left)) {
+    if (normalized.buttons.test(dpad_left)) {
       add_flag(report, 5U, std::byte {0x08});
     }
-    if (normalized.buttons.test(GamepadButton::left_shoulder)) {
+    if (normalized.buttons.test(left_shoulder)) {
       add_flag(report, 5U, std::byte {0x40});
     }
     if (normalized.left_trigger > 0.0F) {
@@ -1180,13 +1188,13 @@ namespace lvh::reports {
       report,
       6U,
       normalize_switch_stick_axis(normalized.left_stick.x),
-      normalize_switch_stick_axis(-normalized.left_stick.y)
+      normalize_switch_stick_axis(normalized.left_stick.y)
     );
     write_switch_stick(
       report,
       9U,
       normalize_switch_stick_axis(normalized.right_stick.x),
-      normalize_switch_stick_axis(-normalized.right_stick.y)
+      normalize_switch_stick_axis(normalized.right_stick.y)
     );
     return to_uint8_report(report);
   }

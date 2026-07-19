@@ -455,8 +455,8 @@ TEST(ProfileTest, SwitchProPacksNativeFullControllerState) {
   EXPECT_EQ(report[7], 0x0FU);
   EXPECT_EQ(report[8], 0x80U);
   EXPECT_EQ(report[9], 0x00U);
-  EXPECT_EQ(report[10], 0xF8U);
-  EXPECT_EQ(report[11], 0xFFU);
+  EXPECT_EQ(report[10], 0x08U);
+  EXPECT_EQ(report[11], 0x00U);
 
   state.battery = lvh::GamepadBattery {.state = lvh::GamepadBatteryState::full, .percentage = 100};
   EXPECT_EQ(lvh::reports::pack_input_report(profile, state)[2], 0x81U);

@@ -21,10 +21,6 @@
 #include <hidsdi.h>
 #include <SetupAPI.h>
 
-#ifdef interface
-  #undef interface
-#endif
-
 // standard includes
 #include <algorithm>
 #include <array>
@@ -45,7 +41,7 @@
 
 // local includes
 #include "fixtures/fixtures.hpp"
-#include "generic_pid_protocol.hpp"
+#include "platform/windows/control_protocol.hpp"
 
 #include <libvirtualhid/libvirtualhid.hpp>
 
@@ -135,8 +131,7 @@ namespace {
   BOOL CALLBACK find_directinput_device(const DIDEVICEINSTANCEW *instance, void *context) {
     auto &match = *static_cast<DirectInputDeviceMatch *>(context);
     const auto vendor_id = static_cast<std::uint16_t>(LOWORD(instance->guidProduct.Data1));
-    const auto product_id = static_cast<std::uint16_t>(HIWORD(instance->guidProduct.Data1));
-    if (vendor_id != match.vendor_id || product_id != match.product_id) {
+    if (const auto product_id = static_cast<std::uint16_t>(HIWORD(instance->guidProduct.Data1)); vendor_id != match.vendor_id || product_id != match.product_id) {
       return DIENUM_CONTINUE;
     }
 
@@ -153,13 +148,7 @@ namespace {
     const auto deadline = std::chrono::steady_clock::now() + 10s;
     while (std::chrono::steady_clock::now() < deadline) {
       DirectInputDeviceMatch match {.vendor_id = vendor_id, .product_id = product_id};
-      const auto status = direct_input.EnumDevices(
-        DI8DEVCLASS_GAMECTRL,
-        find_directinput_device,
-        &match,
-        DIEDFL_ATTACHEDONLY
-      );
-      if (SUCCEEDED(status) && match.found) {
+      if (const auto status = direct_input.EnumDevices(DI8DEVCLASS_GAMECTRL, find_directinput_device, &match, DIEDFL_ATTACHEDONLY); SUCCEEDED(status) && match.found) {
         return match.instance_guid;
       }
       std::this_thread::sleep_for(100ms);
@@ -280,9 +269,9 @@ namespace {
     const auto deadline = std::chrono::steady_clock::now() + 10s;
     while (std::chrono::steady_clock::now() < deadline) {
       const auto interfaces = enumerate_gamepad_interfaces();
-      if (const auto position = std::ranges::find_if(interfaces, [vendor_id, product_id, &previous_paths](const auto &interface) {
-            return interface.vendor_id == vendor_id && interface.product_id == product_id &&
-                   !previous_paths.contains(interface.path);
+      if (const auto position = std::ranges::find_if(interfaces, [vendor_id, product_id, &previous_paths](const auto &hid_interface) {
+            return hid_interface.vendor_id == vendor_id && hid_interface.product_id == product_id &&
+                   !previous_paths.contains(hid_interface.path);
           });
           position != interfaces.end()) {
         return *position;
@@ -306,19 +295,11 @@ namespace {
     OVERLAPPED overlapped {};
     overlapped.hEvent = event.get();
     DWORD bytes_read = 0;
-    const auto started = ReadFile(
-      hid,
-      report.data(),
-      static_cast<DWORD>(report.size()),
-      &bytes_read,
-      &overlapped
-    );
-    if (started == FALSE && GetLastError() != ERROR_IO_PENDING) {
+    if (const auto started = ReadFile(hid, report.data(), static_cast<DWORD>(report.size()), &bytes_read, &overlapped); started == FALSE && GetLastError() != ERROR_IO_PENDING) {
       return std::nullopt;
     }
 
-    const auto wait_result = WaitForSingleObject(event.get(), static_cast<DWORD>(timeout.count()));
-    if (wait_result != WAIT_OBJECT_0) {
+    if (const auto wait_result = WaitForSingleObject(event.get(), static_cast<DWORD>(timeout.count())); wait_result != WAIT_OBJECT_0) {
       static_cast<void>(CancelIoEx(hid, &overlapped));
       static_cast<void>(WaitForSingleObject(event.get(), INFINITE));
       static_cast<void>(GetOverlappedResult(hid, &overlapped, &bytes_read, FALSE));
@@ -331,6 +312,66 @@ namespace {
     report.resize(bytes_read);
     return report;
   }
+
+  std::optional<lvh::GamepadOutput> wait_for_rumble_output(
+    std::mutex &output_mutex,
+    std::condition_variable &output_ready,
+    const std::vector<lvh::GamepadOutput> &outputs,
+    std::size_t &next_output,
+    bool expect_nonzero
+  ) {
+    const auto matches = [expect_nonzero](const lvh::GamepadOutput &output) {
+      const auto has_strength = output.low_frequency_rumble > 0U || output.high_frequency_rumble > 0U;
+      return output.kind == lvh::GamepadOutputKind::rumble && has_strength == expect_nonzero;
+    };
+    const auto find_next_match = [&outputs, &next_output, &matches] {
+      return std::find_if(
+        outputs.begin() + static_cast<std::ptrdiff_t>(next_output),
+        outputs.end(),
+        matches
+      );
+    };
+
+    if (std::unique_lock lock {output_mutex}; output_ready.wait_for(lock, 5s, [&outputs, &find_next_match] {
+          return find_next_match() != outputs.end();
+        })) {
+      const auto match = find_next_match();
+      next_output = static_cast<std::size_t>(std::distance(outputs.begin(), match)) + 1U;
+      return *match;
+    }
+    return std::nullopt;
+  }
+
+  HidInterfacePaths current_gamepad_interface_paths() {
+    HidInterfacePaths paths;
+    for (const auto &hid_interface : enumerate_gamepad_interfaces()) {
+      paths.insert(hid_interface.path);
+    }
+    return paths;
+  }
+
+  class GamepadOutputCapture {
+  public:
+    void attach(lvh::GamepadStateAdapter &adapter) {
+      adapter.set_output_callback([this](const lvh::GamepadOutput &output) {
+        {
+          std::lock_guard lock {mutex_};
+          outputs_.push_back(output);
+        }
+        ready_.notify_all();
+      });
+    }
+
+    std::optional<lvh::GamepadOutput> wait_for_rumble(bool expect_nonzero) {
+      return wait_for_rumble_output(mutex_, ready_, outputs_, next_output_, expect_nonzero);
+    }
+
+  private:
+    std::mutex mutex_;
+    std::condition_variable ready_;
+    std::vector<lvh::GamepadOutput> outputs_;
+    std::size_t next_output_ = 0;
+  };
 
 }  // namespace
 
@@ -389,34 +430,22 @@ TEST_F(WindowsConsumerTest, NativePlayStationFeatureAndOutputReportsReachOwningR
 
   for (const auto &test_case : test_cases) {
     const auto &profile = test_case.profile;
-    HidInterfacePaths previous_paths;
-    for (const auto &interface : enumerate_gamepad_interfaces()) {
-      previous_paths.insert(interface.path);
-    }
+    const auto previous_paths = current_gamepad_interface_paths();
 
     lvh::CreateGamepadOptions options;
     options.profile = profile;
     options.metadata.stable_id = "02:11:22:33:44:55";
-    std::mutex output_mutex;
-    std::condition_variable output_ready;
-    std::vector<lvh::GamepadOutput> outputs;
-
     auto created = lvh::GamepadStateAdapter::create(*runtime, options);
     ASSERT_TRUE(created) << profile.name << ": " << created.status.message();
-    created.adapter->set_output_callback([&output_mutex, &outputs, &output_ready](const lvh::GamepadOutput &output) {
-      {
-        std::lock_guard lock {output_mutex};
-        outputs.push_back(output);
-      }
-      output_ready.notify_all();
-    });
+    GamepadOutputCapture output_capture;
+    output_capture.attach(*created.adapter);
 
-    const auto interface = wait_for_new_interface(previous_paths, profile.vendor_id, profile.product_id);
-    ASSERT_TRUE(interface.has_value()) << "The VHF " << profile.name << " HID interface was not enumerated";
-    ASSERT_EQ(interface->output_report_size, profile.output_report_size);
+    const auto hid_interface = wait_for_new_interface(previous_paths, profile.vendor_id, profile.product_id);
+    ASSERT_TRUE(hid_interface.has_value()) << "The VHF " << profile.name << " HID interface was not enumerated";
+    ASSERT_EQ(hid_interface->output_report_size, profile.output_report_size);
 
     Handle hid {CreateFileW(
-      interface->path.c_str(),
+      hid_interface->path.c_str(),
       GENERIC_READ | GENERIC_WRITE,
       FILE_SHARE_READ | FILE_SHARE_WRITE,
       nullptr,
@@ -426,8 +455,8 @@ TEST_F(WindowsConsumerTest, NativePlayStationFeatureAndOutputReportsReachOwningR
     )};
     ASSERT_TRUE(hid) << "Unable to open the VHF " << profile.name << " HID interface: " << GetLastError();
 
-    ASSERT_GE(interface->feature_report_size, test_case.minimum_feature_report_size);
-    std::vector<std::uint8_t> calibration(interface->feature_report_size, 0);
+    ASSERT_GE(hid_interface->feature_report_size, test_case.minimum_feature_report_size);
+    std::vector<std::uint8_t> calibration(hid_interface->feature_report_size, 0);
     calibration[0] = test_case.calibration_report_id;
     ASSERT_TRUE(HidD_GetFeature(hid.get(), calibration.data(), static_cast<ULONG>(calibration.size())))
       << profile.name << " calibration GetFeature failed: " << GetLastError();
@@ -435,7 +464,7 @@ TEST_F(WindowsConsumerTest, NativePlayStationFeatureAndOutputReportsReachOwningR
     EXPECT_EQ(calibration[7], 0x10U);
     EXPECT_EQ(calibration[8], 0x27U);
 
-    std::vector<std::uint8_t> pairing(interface->feature_report_size, 0);
+    std::vector<std::uint8_t> pairing(hid_interface->feature_report_size, 0);
     pairing[0] = test_case.pairing_report_id;
     ASSERT_TRUE(HidD_GetFeature(hid.get(), pairing.data(), static_cast<ULONG>(pairing.size())))
       << profile.name << " pairing GetFeature failed: " << GetLastError();
@@ -447,14 +476,14 @@ TEST_F(WindowsConsumerTest, NativePlayStationFeatureAndOutputReportsReachOwningR
     EXPECT_EQ(pairing[5], 0x11U);
     EXPECT_EQ(pairing[6], 0x02U);
 
-    std::vector<std::uint8_t> firmware(interface->feature_report_size, 0);
+    std::vector<std::uint8_t> firmware(hid_interface->feature_report_size, 0);
     firmware[0] = test_case.firmware_report_id;
     ASSERT_TRUE(HidD_GetFeature(hid.get(), firmware.data(), static_cast<ULONG>(firmware.size())))
       << profile.name << " firmware GetFeature failed: " << GetLastError();
     EXPECT_EQ(firmware[0], test_case.firmware_report_id);
     EXPECT_TRUE(std::ranges::equal(test_case.firmware_prefix, std::span {firmware}.subspan(1U, 3U)));
 
-    std::vector<std::uint8_t> report(interface->output_report_size, 0);
+    std::vector<std::uint8_t> report(hid_interface->output_report_size, 0);
     report[0] = test_case.output_report_id;
     report[test_case.valid_flags_offset] = 0x01;
     report[test_case.right_motor_offset] = 0x80;
@@ -471,38 +500,20 @@ TEST_F(WindowsConsumerTest, NativePlayStationFeatureAndOutputReportsReachOwningR
        << GetLastError();
     ASSERT_EQ(bytes_written, report.size());
 
-    lvh::GamepadOutput rumble;
-    {
-      std::unique_lock lock {output_mutex};
-      ASSERT_TRUE(output_ready.wait_for(lock, 5s, [&outputs] {
-        return std::ranges::any_of(outputs, [](const auto &output) {
-          return output.kind == lvh::GamepadOutputKind::rumble && output.low_frequency_rumble > 0U &&
-                 output.high_frequency_rumble > 0U;
-        });
-      }))
-        << "No normalized rumble callback followed the native " << profile.name << " HID output write";
+    const auto rumble = output_capture.wait_for_rumble(true);
+    ASSERT_TRUE(rumble.has_value())
+      << "No normalized rumble callback followed the native " << profile.name << " HID output write";
 
-      const auto position = std::ranges::find_if(outputs, [](const auto &output) {
-        return output.kind == lvh::GamepadOutputKind::rumble && output.low_frequency_rumble > 0U &&
-               output.high_frequency_rumble > 0U;
-      });
-      ASSERT_NE(position, outputs.end());
-      rumble = *position;
-    }
-
-    EXPECT_EQ(rumble.low_frequency_rumble, 16448U);
-    EXPECT_EQ(rumble.high_frequency_rumble, 32896U);
-    EXPECT_EQ(rumble.raw_report, report);
+    EXPECT_EQ(rumble->low_frequency_rumble, 16448U);
+    EXPECT_EQ(rumble->high_frequency_rumble, 32896U);
+    EXPECT_EQ(rumble->raw_report, report);
     ASSERT_TRUE(created.adapter->close().ok());
   }
 }
 
 TEST_F(WindowsConsumerTest, NativeSwitchHandshakeAndInputReportReachHidClient) {
   const auto profile = lvh::profiles::switch_pro();
-  HidInterfacePaths previous_paths;
-  for (const auto &interface : enumerate_gamepad_interfaces()) {
-    previous_paths.insert(interface.path);
-  }
+  const auto previous_paths = current_gamepad_interface_paths();
 
   lvh::RuntimeOptions runtime_options;
   runtime_options.backend = lvh::BackendKind::platform_default;
@@ -513,25 +524,17 @@ TEST_F(WindowsConsumerTest, NativeSwitchHandshakeAndInputReportReachHidClient) {
 
   lvh::CreateGamepadOptions options;
   options.profile = profile;
-  std::mutex output_mutex;
-  std::condition_variable output_ready;
-  std::vector<lvh::GamepadOutput> outputs;
   auto created = lvh::GamepadStateAdapter::create(*runtime, options);
   ASSERT_TRUE(created) << created.status.message();
-  created.adapter->set_output_callback([&output_mutex, &outputs, &output_ready](const lvh::GamepadOutput &output) {
-    {
-      std::lock_guard lock {output_mutex};
-      outputs.push_back(output);
-    }
-    output_ready.notify_all();
-  });
-  const auto interface = wait_for_new_interface(previous_paths, profile.vendor_id, profile.product_id);
-  ASSERT_TRUE(interface.has_value()) << "The VHF Switch Pro HID interface was not enumerated";
-  ASSERT_EQ(interface->input_report_size, profile.input_report_size);
-  ASSERT_EQ(interface->output_report_size, profile.output_report_size);
+  GamepadOutputCapture output_capture;
+  output_capture.attach(*created.adapter);
+  const auto hid_interface = wait_for_new_interface(previous_paths, profile.vendor_id, profile.product_id);
+  ASSERT_TRUE(hid_interface.has_value()) << "The VHF Switch Pro HID interface was not enumerated";
+  ASSERT_EQ(hid_interface->input_report_size, profile.input_report_size);
+  ASSERT_EQ(hid_interface->output_report_size, profile.output_report_size);
 
   Handle writer {CreateFileW(
-    interface->path.c_str(),
+    hid_interface->path.c_str(),
     GENERIC_READ | GENERIC_WRITE,
     FILE_SHARE_READ | FILE_SHARE_WRITE,
     nullptr,
@@ -542,7 +545,7 @@ TEST_F(WindowsConsumerTest, NativeSwitchHandshakeAndInputReportReachHidClient) {
   ASSERT_TRUE(writer) << "Unable to open the VHF Switch Pro HID interface for writes: " << GetLastError();
 
   Handle reader {CreateFileW(
-    interface->path.c_str(),
+    hid_interface->path.c_str(),
     GENERIC_READ | GENERIC_WRITE,
     FILE_SHARE_READ | FILE_SHARE_WRITE,
     nullptr,
@@ -552,8 +555,8 @@ TEST_F(WindowsConsumerTest, NativeSwitchHandshakeAndInputReportReachHidClient) {
   )};
   ASSERT_TRUE(reader) << "Unable to open the VHF Switch Pro HID interface for reads: " << GetLastError();
 
-  const auto send_proprietary_command = [&interface, &reader, &writer](std::uint8_t command) {
-    std::vector<std::uint8_t> output(interface->output_report_size, 0);
+  const auto send_proprietary_command = [&hid_interface, &reader, &writer](std::uint8_t command) {
+    std::vector<std::uint8_t> output(hid_interface->output_report_size, 0);
     output[0] = 0x80;
     output[1] = command;
     DWORD bytes_written = 0;
@@ -566,7 +569,7 @@ TEST_F(WindowsConsumerTest, NativeSwitchHandshakeAndInputReportReachHidClient) {
     )) << "Switch proprietary WriteFile failed: "
        << GetLastError();
     EXPECT_EQ(bytes_written, output.size());
-    return read_hid_report_with_timeout(reader.get(), interface->input_report_size, 5s);
+    return read_hid_report_with_timeout(reader.get(), hid_interface->input_report_size, 5s);
   };
 
   const auto status_reply = send_proprietary_command(0x01);
@@ -582,7 +585,7 @@ TEST_F(WindowsConsumerTest, NativeSwitchHandshakeAndInputReportReachHidClient) {
   EXPECT_EQ(handshake_reply->at(0), 0x81U);
   EXPECT_EQ(handshake_reply->at(1), 0x02U);
 
-  std::vector<std::uint8_t> rumble_report(interface->output_report_size, 0);
+  std::vector<std::uint8_t> rumble_report(hid_interface->output_report_size, 0);
   constexpr std::array native_rumble {
     std::uint8_t {0x10},
     std::uint8_t {0x07},
@@ -607,27 +610,11 @@ TEST_F(WindowsConsumerTest, NativeSwitchHandshakeAndInputReportReachHidClient) {
      << GetLastError();
   ASSERT_EQ(bytes_written, rumble_report.size());
 
-  lvh::GamepadOutput rumble;
-  {
-    std::unique_lock lock {output_mutex};
-    ASSERT_TRUE(output_ready.wait_for(lock, 5s, [&outputs] {
-      return std::ranges::any_of(outputs, [](const auto &output) {
-        return output.kind == lvh::GamepadOutputKind::rumble && output.low_frequency_rumble > 0U &&
-               output.high_frequency_rumble > 0U;
-      });
-    }))
-      << "No normalized rumble callback followed the native Switch 0x10 output write";
-
-    const auto position = std::ranges::find_if(outputs, [](const auto &output) {
-      return output.kind == lvh::GamepadOutputKind::rumble && output.low_frequency_rumble > 0U &&
-             output.high_frequency_rumble > 0U;
-    });
-    ASSERT_NE(position, outputs.end());
-    rumble = *position;
-  }
-  EXPECT_EQ(rumble.low_frequency_rumble, 22251U);
-  EXPECT_EQ(rumble.high_frequency_rumble, 5213U);
-  EXPECT_EQ(rumble.raw_report, rumble_report);
+  const auto rumble = output_capture.wait_for_rumble(true);
+  ASSERT_TRUE(rumble.has_value()) << "No normalized rumble callback followed the native Switch 0x10 output write";
+  EXPECT_EQ(rumble->low_frequency_rumble, 22251U);
+  EXPECT_EQ(rumble->high_frequency_rumble, 5213U);
+  EXPECT_EQ(rumble->raw_report, rumble_report);
 
   lvh::GamepadState state;
   state.buttons.set(lvh::GamepadButton::a);
@@ -638,7 +625,7 @@ TEST_F(WindowsConsumerTest, NativeSwitchHandshakeAndInputReportReachHidClient) {
   state.right_stick = {.x = 0.0F, .y = -1.0F};
   ASSERT_TRUE(created.adapter->set_state(state).ok());
 
-  const auto input = read_hid_report_with_timeout(reader.get(), interface->input_report_size, 5s);
+  const auto input = read_hid_report_with_timeout(reader.get(), hid_interface->input_report_size, 5s);
   ASSERT_TRUE(input.has_value()) << "No native Switch 0x30 input report reached the HID client";
   ASSERT_EQ(input->size(), profile.input_report_size);
   EXPECT_EQ(input->at(0), 0x30U);
@@ -649,8 +636,8 @@ TEST_F(WindowsConsumerTest, NativeSwitchHandshakeAndInputReportReachHidClient) {
   EXPECT_EQ(input->at(7), 0x0FU);
   EXPECT_EQ(input->at(8), 0x80U);
   EXPECT_EQ(input->at(9), 0x00U);
-  EXPECT_EQ(input->at(10), 0xF8U);
-  EXPECT_EQ(input->at(11), 0xFFU);
+  EXPECT_EQ(input->at(10), 0x08U);
+  EXPECT_EQ(input->at(11), 0x00U);
 }
 
 TEST_F(WindowsConsumerTest, NativeXboxPidRumbleWritesAreNormalized) {
@@ -662,33 +649,22 @@ TEST_F(WindowsConsumerTest, NativeXboxPidRumbleWritesAreNormalized) {
     << "The installed libvirtualhid Windows driver is required for this integration test";
 
   for (const auto &profile : {lvh::profiles::xbox_one(), lvh::profiles::xbox_series()}) {
-    HidInterfacePaths previous_paths;
-    for (const auto &interface : enumerate_gamepad_interfaces()) {
-      previous_paths.insert(interface.path);
-    }
+    const auto previous_paths = current_gamepad_interface_paths();
 
     lvh::CreateGamepadOptions options;
     options.profile = profile;
-    std::mutex output_mutex;
-    std::condition_variable output_ready;
-    std::vector<lvh::GamepadOutput> outputs;
-
     auto created = lvh::GamepadStateAdapter::create(*runtime, options);
     ASSERT_TRUE(created) << created.status.message();
-    created.adapter->set_output_callback([&output_mutex, &outputs, &output_ready](const lvh::GamepadOutput &output) {
-      {
-        std::lock_guard lock {output_mutex};
-        outputs.push_back(output);
-      }
-      output_ready.notify_all();
-    });
+    GamepadOutputCapture output_capture;
+    output_capture.attach(*created.adapter);
 
-    const auto interface = wait_for_new_interface(previous_paths, profile.vendor_id, profile.product_id);
-    ASSERT_TRUE(interface.has_value()) << "The VHF Xbox HID interface was not enumerated";
-    ASSERT_EQ(interface->output_report_size, profile.output_report_size + 1U);
+    const auto product_id = profile.gamepad_kind == lvh::GamepadProfileKind::xbox_series ? lvh::detail::windows::xbox_series_bluetooth_product_id : profile.product_id;
+    const auto hid_interface = wait_for_new_interface(previous_paths, profile.vendor_id, product_id);
+    ASSERT_TRUE(hid_interface.has_value()) << "The VHF Xbox HID interface was not enumerated";
+    ASSERT_EQ(hid_interface->output_report_size, profile.output_report_size + 1U);
 
     Handle hid {CreateFileW(
-      interface->path.c_str(),
+      hid_interface->path.c_str(),
       GENERIC_READ | GENERIC_WRITE,
       FILE_SHARE_READ | FILE_SHARE_WRITE,
       nullptr,
@@ -698,7 +674,8 @@ TEST_F(WindowsConsumerTest, NativeXboxPidRumbleWritesAreNormalized) {
     )};
     ASSERT_TRUE(hid) << "Unable to open the VHF Xbox HID interface: " << GetLastError();
 
-    const std::vector<std::uint8_t> report {0, 0x0F, 25, 50, 75, 100, 10, 0, 0};
+    const std::uint8_t report_id = profile.gamepad_kind == lvh::GamepadProfileKind::xbox_series ? 0x03U : 0x00U;
+    const std::vector<std::uint8_t> report {report_id, 0x0F, 25, 50, 75, 100, 10, 0, 0};
     DWORD bytes_written = 0;
     ASSERT_TRUE(WriteFile(
       hid.get(),
@@ -710,32 +687,17 @@ TEST_F(WindowsConsumerTest, NativeXboxPidRumbleWritesAreNormalized) {
        << GetLastError();
     ASSERT_EQ(bytes_written, report.size());
 
-    {
-      std::unique_lock lock {output_mutex};
-      ASSERT_TRUE(output_ready.wait_for(lock, 5s, [&outputs] {
-        return std::ranges::any_of(outputs, [](const auto &output) {
-          return output.kind == lvh::GamepadOutputKind::rumble;
-        });
-      }))
-        << "No normalized Xbox rumble callback followed the native HID output write";
-
-      const auto rumble = std::ranges::find_if(outputs, [](const auto &output) {
-        return output.kind == lvh::GamepadOutputKind::rumble;
-      });
-      ASSERT_NE(rumble, outputs.end());
-      EXPECT_EQ(rumble->low_frequency_rumble, 49151U);
-      EXPECT_EQ(rumble->high_frequency_rumble, 65535U);
-    }
+    const auto rumble = output_capture.wait_for_rumble(true);
+    ASSERT_TRUE(rumble.has_value()) << "No normalized Xbox rumble callback followed the native HID output write";
+    EXPECT_EQ(rumble->low_frequency_rumble, 49151U);
+    EXPECT_EQ(rumble->high_frequency_rumble, 65535U);
     ASSERT_TRUE(created.adapter->close().ok());
   }
 }
 
 TEST_F(WindowsConsumerTest, NativeGenericPidHandshakeAndRumbleWritesAreNormalized) {
   const auto profile = lvh::profiles::generic_gamepad();
-  HidInterfacePaths previous_paths;
-  for (const auto &interface : enumerate_gamepad_interfaces()) {
-    previous_paths.insert(interface.path);
-  }
+  const auto previous_paths = current_gamepad_interface_paths();
 
   lvh::RuntimeOptions runtime_options;
   runtime_options.backend = lvh::BackendKind::platform_default;
@@ -746,49 +708,15 @@ TEST_F(WindowsConsumerTest, NativeGenericPidHandshakeAndRumbleWritesAreNormalize
 
   lvh::CreateGamepadOptions options;
   options.profile = profile;
-  std::mutex output_mutex;
-  std::condition_variable output_ready;
-  std::vector<lvh::GamepadOutput> outputs;
-
   auto created = lvh::GamepadStateAdapter::create(*runtime, options);
   ASSERT_TRUE(created) << created.status.message();
-  created.adapter->set_output_callback([&output_mutex, &outputs, &output_ready](const lvh::GamepadOutput &output) {
-    {
-      std::lock_guard lock {output_mutex};
-      outputs.push_back(output);
-    }
-    output_ready.notify_all();
-  });
-  auto next_output = std::size_t {};
-  const auto wait_for_rumble_output = [&output_mutex, &output_ready, &outputs, &next_output](bool expect_nonzero) {
-    const auto matches = [expect_nonzero](const lvh::GamepadOutput &output) {
-      const auto has_strength = output.low_frequency_rumble > 0U || output.high_frequency_rumble > 0U;
-      return output.kind == lvh::GamepadOutputKind::rumble && has_strength == expect_nonzero;
-    };
-    const auto find_next_match = [&outputs, &next_output, &matches] {
-      return std::find_if(
-        outputs.begin() + static_cast<std::ptrdiff_t>(next_output),
-        outputs.end(),
-        matches
-      );
-    };
+  GamepadOutputCapture output_capture;
+  output_capture.attach(*created.adapter);
 
-    std::unique_lock lock {output_mutex};
-    if (!output_ready.wait_for(lock, 5s, [&outputs, &find_next_match] {
-          return find_next_match() != outputs.end();
-        })) {
-      return std::optional<lvh::GamepadOutput> {};
-    }
-
-    const auto match = find_next_match();
-    next_output = static_cast<std::size_t>(std::distance(outputs.begin(), match)) + 1U;
-    return std::optional<lvh::GamepadOutput> {*match};
-  };
-
-  const auto interface = wait_for_new_interface(previous_paths, profile.vendor_id, profile.product_id);
-  ASSERT_TRUE(interface.has_value()) << "The VHF Generic PID HID interface was not enumerated";
-  EXPECT_EQ(interface->usage, 0x04U);  // DirectInput PID requires a Joystick TLC.
-  ASSERT_EQ(interface->output_report_size, lvh::detail::windows::generic_pid_output_report_size);
+  const auto hid_interface = wait_for_new_interface(previous_paths, profile.vendor_id, profile.product_id);
+  ASSERT_TRUE(hid_interface.has_value()) << "The VHF Generic PID HID interface was not enumerated";
+  EXPECT_EQ(hid_interface->usage, 0x04U);  // DirectInput PID requires a Joystick TLC.
+  ASSERT_EQ(hid_interface->output_report_size, lvh::detail::windows::generic_pid_output_report_size);
 
   void *raw_direct_input = nullptr;
   ASSERT_TRUE(SUCCEEDED(DirectInput8Create(
@@ -869,9 +797,9 @@ TEST_F(WindowsConsumerTest, NativeGenericPidHandshakeAndRumbleWritesAreNormalize
 
   ASSERT_TRUE(SUCCEEDED(direct_input_constant_force->Start(1, 0)))
     << "DirectInput could not start the Generic PID constant-force effect";
-  ASSERT_TRUE(wait_for_rumble_output(true).has_value())
+  ASSERT_TRUE(output_capture.wait_for_rumble(true).has_value())
     << "No normalized rumble callback followed DirectInput Effect::Start";
-  ASSERT_TRUE(wait_for_rumble_output(false).has_value())
+  ASSERT_TRUE(output_capture.wait_for_rumble(false).has_value())
     << "The finite DirectInput effect did not stop automatically after its duration";
 
   direct_input_effect.dwDuration = 2'000'000;
@@ -882,16 +810,16 @@ TEST_F(WindowsConsumerTest, NativeGenericPidHandshakeAndRumbleWritesAreNormalize
     << "DirectInput could not extend the Generic PID effect for the explicit-stop check";
   ASSERT_TRUE(SUCCEEDED(direct_input_constant_force->Start(1, 0)))
     << "DirectInput could not restart the Generic PID constant-force effect";
-  ASSERT_TRUE(wait_for_rumble_output(true).has_value())
+  ASSERT_TRUE(output_capture.wait_for_rumble(true).has_value())
     << "No normalized rumble callback followed the second DirectInput Effect::Start";
 
   ASSERT_TRUE(SUCCEEDED(direct_input_constant_force->Stop()))
     << "DirectInput could not stop the Generic PID constant-force effect";
-  ASSERT_TRUE(wait_for_rumble_output(false).has_value())
+  ASSERT_TRUE(output_capture.wait_for_rumble(false).has_value())
     << "No zero-rumble callback followed DirectInput Effect::Stop";
 
   Handle hid {CreateFileW(
-    interface->path.c_str(),
+    hid_interface->path.c_str(),
     GENERIC_READ | GENERIC_WRITE,
     FILE_SHARE_READ | FILE_SHARE_WRITE,
     nullptr,
@@ -913,8 +841,8 @@ TEST_F(WindowsConsumerTest, NativeGenericPidHandshakeAndRumbleWritesAreNormalize
   EXPECT_LE(block_load[1], lvh::detail::windows::generic_pid_max_effects);
   EXPECT_EQ(block_load[2], 1U);  // Block Load Success.
 
-  const auto write_pid_report = [&hid, &interface](std::initializer_list<std::uint8_t> bytes) {
-    std::vector<std::uint8_t> report(interface->output_report_size, 0);
+  const auto write_pid_report = [&hid, &hid_interface](std::initializer_list<std::uint8_t> bytes) {
+    std::vector<std::uint8_t> report(hid_interface->output_report_size, 0);
     std::ranges::copy(bytes, report.begin());
     DWORD bytes_written = 0;
     EXPECT_TRUE(WriteFile(
@@ -949,13 +877,13 @@ TEST_F(WindowsConsumerTest, NativeGenericPidHandshakeAndRumbleWritesAreNormalize
   write_pid_report({lvh::detail::windows::generic_pid_set_constant_force_report_id, block_load[1], 0x10, 0x27});
   write_pid_report({lvh::detail::windows::generic_pid_effect_operation_report_id, block_load[1], 0x01, 0x01});
 
-  const auto rumble = wait_for_rumble_output(true);
+  const auto rumble = output_capture.wait_for_rumble(true);
   ASSERT_TRUE(rumble.has_value())
     << "No normalized rumble callback followed the DirectInput PID effect sequence";
   EXPECT_EQ(rumble->low_frequency_rumble, 65535U);
   EXPECT_EQ(rumble->high_frequency_rumble, 65535U);
 
   write_pid_report({lvh::detail::windows::generic_pid_effect_operation_report_id, block_load[1], 0x03, 0x00});
-  ASSERT_TRUE(wait_for_rumble_output(false).has_value())
+  ASSERT_TRUE(output_capture.wait_for_rumble(false).has_value())
     << "No zero-rumble callback followed PID Effect Stop";
 }

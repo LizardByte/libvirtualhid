@@ -478,7 +478,12 @@ namespace lvh::detail {
       bool zero_waiting = false;
       bool release_zero = false;
       std::mutex strengths_mutex;
-      created.gamepad->set_output_callback([&](const GamepadOutput &output) {
+      created.gamepad->set_output_callback([&gate_mutex,
+                                            &gate_ready,
+                                            &zero_waiting,
+                                            &release_zero,
+                                            &strengths_mutex,
+                                            &result](const GamepadOutput &output) {
         if (output.kind != GamepadOutputKind::rumble) {
           return;
         }
@@ -525,7 +530,7 @@ namespace lvh::detail {
       enqueue_report(set_effect);
       enqueue_report(set_magnitude);
       enqueue_report(start_effect);
-      const auto saw_start = wait_until([&] {
+      const auto saw_start = wait_until([&strengths_mutex, &result] {
         std::lock_guard lock {strengths_mutex};
         return !result.strengths.empty() && result.strengths.front() > 0U;
       });
@@ -547,7 +552,7 @@ namespace lvh::detail {
       }
       gate_ready.notify_all();
 
-      result.completed = saw_expiry && wait_until([&] {
+      result.completed = saw_expiry && wait_until([&strengths_mutex, &result] {
                            std::lock_guard lock {strengths_mutex};
                            return result.strengths.size() >= 3U;
                          });

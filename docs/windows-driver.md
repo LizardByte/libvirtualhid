@@ -36,6 +36,11 @@ device from the requested descriptor, VID/PID, version, and report layout. Input
 reports are submitted through VHF, and HID output writes are normalized back to
 the C++ output callback path.
 
+The library and installed driver must use the same control-protocol version.
+Protocol version 2 expands the report-descriptor capacity to 2048 bytes for the
+complete DirectInput PID descriptor; a version mismatch is rejected rather
+than interpreting a differently sized request.
+
 Each backend runtime uses one control-file handle for commands and its pending
 output read. The driver associates output events with that handle, so feedback
 from a virtual gamepad is delivered only to the runtime that created it instead
@@ -158,22 +163,24 @@ The Windows backend publishes HID gamepads through VHF. DirectInput, SDL/HIDAPI,
 Windows.Gaming.Input/GameInput, and browser Gamepad API clients should see
 standard HID devices after the driver is installed.
 
-The built-in Xbox One and Xbox Series profiles use XboxGIP-shaped HID
-descriptors. The Xbox Series profile keeps the public physical USB identity
-`VID_045E&PID_0B12`; the driver also publishes the Share-capable
-`VID_045E&PID_0B13&IG_00` hardware ID for Windows XInputHID binding. The Xbox
-360 profile is rejected by the UMDF/VHF backend because a real Xbox 360
-controller is an XUSB device rather than a VHF HID gamepad.
+The built-in Xbox One profile uses its XboxGIP-shaped HID descriptor. Xbox
+Series keeps the public physical USB identity `VID_045E&PID_0B12`, while the
+Windows transport uses Microsoft's `VID_045E&PID_0B13` Bluetooth HID descriptor
+and 17-byte input packet. This exposes Share and report-ID-3 rumble without
+binding the device to the legacy 15-button XInputHID surface. The Xbox 360
+profile is rejected by the UMDF/VHF backend because a real Xbox 360 controller
+is an XUSB device rather than a VHF HID gamepad.
 
 DualShock 4 and DualSense answer the calibration, pairing, and firmware feature
 requests used by their Windows HIDAPI initialization paths. Switch Pro answers
 the native USB and subcommand handshake and submits native `0x30` input reports.
 The built-in Generic profile is presented to Windows as a DirectInput PID
-Joystick supporting Constant Force and Sine effects; PID output is normalized
-to the portable gamepad rumble callback. The backend honors PID start delay,
-duration, and loop count, and automatically stops finite effects. These changes
-remain private to the Windows transport and do not alter the public
-platform-neutral profile API.
+Joystick with the complete output-report set required for DirectInput
+enumeration. Constant Force and Sine output is normalized to the portable
+gamepad rumble callback; other declared effect payloads are ignored safely. The
+backend honors PID start delay, duration, and loop count, and automatically
+stops finite effects. These changes remain private to the Windows transport and
+do not alter the public platform-neutral profile API.
 
 Consumers that display raw HID strings may still show the Windows VHF product
 label because VHF does not provide a product/manufacturer string callback.

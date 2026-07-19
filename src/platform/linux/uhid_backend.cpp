@@ -86,7 +86,7 @@ namespace lvh::detail {
     constexpr auto xbox_sparse_uinput_bus = BUS_BLUETOOTH;
     constexpr std::uint16_t xbox_wireless_uinput_product_id = 0x0B20;
     constexpr std::uint16_t xbox_series_uinput_product_id = 0x0B13;
-    using namespace playstation_feature_reports;
+    namespace ps = playstation_feature_reports;
     constexpr auto playstation_periodic_report_ms = 10;
 
     int system_access(const char *path, int mode) {
@@ -244,11 +244,7 @@ namespace lvh::detail {
     bool uses_sparse_uinput_button_slots(GamepadProfileKind kind) {
       using enum GamepadProfileKind;
 
-      return kind == xbox_360 || kind == xbox_one || kind == xbox_series;
-    }
-
-    bool uses_uinput_dpad_buttons(GamepadProfileKind kind) {
-      return kind == GamepadProfileKind::generic;
+      return kind == generic || kind == xbox_360 || kind == xbox_one || kind == xbox_series;
     }
 
     std::uint16_t to_uhid_bus(BusType bus_type) {
@@ -1145,14 +1141,6 @@ namespace lvh::detail {
         constexpr std::array reserved_buttons {BTN_C, BTN_Z, BTN_TL2, BTN_TR2};
         for (const auto button : reserved_buttons) {
           if (const auto status = enable_evdev_code(device, EV_KEY, button, "reserved gamepad button slot"); !status.ok()) {
-            return status;
-          }
-        }
-      }
-      if (uses_uinput_dpad_buttons(profile_kind)) {
-        constexpr std::array dpad_buttons {BTN_DPAD_UP, BTN_DPAD_DOWN, BTN_DPAD_LEFT, BTN_DPAD_RIGHT};
-        for (const auto button : dpad_buttons) {
-          if (const auto status = enable_evdev_code(device, EV_KEY, button, "gamepad D-pad button"); !status.ok()) {
             return status;
           }
         }
@@ -2339,15 +2327,6 @@ namespace lvh::detail {
           }
         }
 
-        if (uses_uinput_dpad_buttons(profile_kind_)) {
-          constexpr std::array dpad_button_map {
-            std::pair {dpad_up, BTN_DPAD_UP},
-            std::pair {dpad_down, BTN_DPAD_DOWN},
-            std::pair {dpad_left, BTN_DPAD_LEFT},
-            std::pair {dpad_right, BTN_DPAD_RIGHT},
-          };
-          return emit_button_map(buttons, dpad_button_map);
-        }
         return OperationStatus::success();
       }
 
@@ -2951,25 +2930,25 @@ namespace lvh::detail {
         if (profile_.gamepad_kind == GamepadProfileKind::dualshock4) {
           event.u.get_report_reply.err = 0;
           switch (report_number) {
-            case dualshock4_usb_calibration_report:
-              copy_get_report_payload(event, dualshock4_usb_calibration_info);
+            case ps::dualshock4_usb_calibration_report:
+              copy_get_report_payload(event, ps::dualshock4_usb_calibration_info);
               break;
-            case dualshock4_bluetooth_calibration_report:
+            case ps::dualshock4_bluetooth_calibration_report:
               if (profile_.bus_type == BusType::bluetooth) {
-                copy_get_report_payload(event, dualshock4_bluetooth_calibration_info);
+                copy_get_report_payload(event, ps::dualshock4_bluetooth_calibration_info);
                 break;
               }
               event.u.get_report_reply.err = EINVAL;
               break;
-            case dualshock4_pairing_report:
-              copy_get_report_payload(event, dualshock4_pairing_info);
+            case ps::dualshock4_pairing_report:
+              copy_get_report_payload(event, ps::dualshock4_pairing_info);
               for (std::size_t index = 0; index < playstation_mac_address_.size(); ++index) {
                 event.u.get_report_reply.data[1U + index] =
                   playstation_mac_address_[playstation_mac_address_.size() - 1U - index];
               }
               break;
-            case dualshock4_firmware_report:
-              copy_get_report_payload(event, dualshock4_firmware_info);
+            case ps::dualshock4_firmware_report:
+              copy_get_report_payload(event, ps::dualshock4_firmware_info);
               break;
             default:
               event.u.get_report_reply.err = EINVAL;
@@ -2978,18 +2957,18 @@ namespace lvh::detail {
         } else if (profile_.gamepad_kind == GamepadProfileKind::dualsense) {
           event.u.get_report_reply.err = 0;
           switch (report_number) {
-            case dualsense_calibration_report:
-              copy_get_report_payload(event, dualsense_calibration_info);
+            case ps::dualsense_calibration_report:
+              copy_get_report_payload(event, ps::dualsense_calibration_info);
               break;
-            case dualsense_pairing_report:
-              copy_get_report_payload(event, dualsense_pairing_info);
+            case ps::dualsense_pairing_report:
+              copy_get_report_payload(event, ps::dualsense_pairing_info);
               for (std::size_t index = 0; index < playstation_mac_address_.size(); ++index) {
                 event.u.get_report_reply.data[1U + index] =
                   playstation_mac_address_[playstation_mac_address_.size() - 1U - index];
               }
               break;
-            case dualsense_firmware_report:
-              copy_get_report_payload(event, dualsense_firmware_info);
+            case ps::dualsense_firmware_report:
+              copy_get_report_payload(event, ps::dualsense_firmware_info);
               break;
             default:
               event.u.get_report_reply.err = EINVAL;
@@ -3004,7 +2983,7 @@ namespace lvh::detail {
           const auto crc_offset = static_cast<std::size_t>(event.u.get_report_reply.size) - 4U;
           const auto crc = crc32(
             std::span<const std::uint8_t> {event.u.get_report_reply.data, crc_offset},
-            playstation_crc_seed(playstation_feature_crc_seed)
+            playstation_crc_seed(ps::playstation_feature_crc_seed)
           );
           write_u32_le(event.u.get_report_reply.data + crc_offset, crc);
         }

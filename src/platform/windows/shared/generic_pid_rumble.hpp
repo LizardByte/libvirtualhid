@@ -280,7 +280,7 @@ namespace lvh::detail::windows {
       expire_effect(effect, now);
     }
 
-    void update_effect_end(Effect &effect) {
+    static void update_effect_end(Effect &effect) {
       if (effect.duration_is_infinite || effect.loop_count_is_infinite) {
         effect.end.reset();
         return;
@@ -341,8 +341,7 @@ namespace lvh::detail::windows {
 
       std::uint32_t combined = 0;
       for (const auto &effect : effects_) {
-        if (!effect.running || !effect.started || now < effect.start ||
-            (effect.type != 1U && effect.type != 2U)) {
+        if (!effect.running || !effect.started || now < effect.start || (effect.type != 1U && effect.type != 2U)) {
           continue;
         }
         combined += generic_pid_detail::scale_force(effect.magnitude, effect.gain, device_gain_);
