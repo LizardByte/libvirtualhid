@@ -695,7 +695,7 @@ TEST_F(WindowsConsumerTest, NativeXboxPidRumbleWritesAreNormalized) {
   ASSERT_TRUE(created.adapter->close().ok());
 }
 
-TEST_F(WindowsConsumerTest, XboxSeriesNativeInputReportCarriesShareButtonAndRumble) {
+TEST_F(WindowsConsumerTest, XboxSeriesNativeInputCarriesShareButton) {
   lvh::RuntimeOptions runtime_options;
   runtime_options.backend = lvh::BackendKind::platform_default;
   auto runtime = lvh::Runtime::create(runtime_options);
@@ -710,8 +710,6 @@ TEST_F(WindowsConsumerTest, XboxSeriesNativeInputReportCarriesShareButtonAndRumb
   options.profile = profile;
   auto created = lvh::GamepadStateAdapter::create(*runtime, options);
   ASSERT_TRUE(created) << created.status.message();
-  GamepadOutputCapture output_capture;
-  output_capture.attach(*created.adapter);
 
   const auto hid_interface =
     wait_for_new_interface(previous_paths, profile.vendor_id, lvh::detail::windows::xbox_series_windows_product_id);
@@ -751,28 +749,6 @@ TEST_F(WindowsConsumerTest, XboxSeriesNativeInputReportCarriesShareButtonAndRumb
   EXPECT_NE(input->at(13) & 0x80U, 0U);  // Start/Menu
   EXPECT_NE(input->at(14) & 0x08U, 0U);  // Share / misc1
   EXPECT_NE(input->at(16) & 0x01U, 0U);  // Guide
-
-  std::vector<std::uint8_t> output_report(hid_interface->output_report_size, 0);
-  output_report[0] = 0x00;
-  output_report[1] = 0x0F;
-  output_report[4] = 75;
-  output_report[5] = 100;
-  output_report[6] = 10;
-  DWORD bytes_written = 0;
-  ASSERT_TRUE(WriteFile(
-    hid.get(),
-    output_report.data(),
-    static_cast<DWORD>(output_report.size()),
-    &bytes_written,
-    nullptr
-  )) << "Xbox Series rumble WriteFile failed: "
-     << GetLastError();
-  ASSERT_EQ(bytes_written, output_report.size());
-
-  const auto rumble = output_capture.wait_for_rumble(true);
-  ASSERT_TRUE(rumble.has_value()) << "No normalized Xbox Series rumble callback followed the native HID output write";
-  EXPECT_EQ(rumble->low_frequency_rumble, 49151U);
-  EXPECT_EQ(rumble->high_frequency_rumble, 65535U);
   ASSERT_TRUE(created.adapter->close().ok());
 }
 

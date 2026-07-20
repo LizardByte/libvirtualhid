@@ -168,14 +168,15 @@ Xbox Series profile remains `VID_045E&PID_0B12`; the Windows transport presents
 it with release `0x0509` and the `VID_045E&PID_0B12&IG_00` XInputHID match ID
 observed from physical Xbox Series USB and Xbox Wireless Adapter connections.
 The VHF child preserves the native 17-byte GIP-shaped input report, including
-Share/Misc as button bit 12, and accepts the native eight-byte four-motor Xbox
-rumble payload normalized by the public callback. Physical Xbox Series USB,
+Share/Misc as button bit 12, and the report parser accepts the native eight-byte
+four-motor Xbox payload when a consumer delivers it. Physical Xbox Series USB,
 Bluetooth, and Xbox Wireless Adapter transports register in Steam through the
-Xbox HIDAPI path with Share mapped as `misc1:b11`; the VHF child is consumed
-through the Windows XInput path, which does not expose Share. A Steam-visible
-Xbox Series Share button on Windows requires a non-VHF Xbox HIDAPI/GIP
-transport. The Xbox 360 profile is rejected by the UMDF/VHF backend because a
-real Xbox 360 controller is an XUSB device rather than a VHF HID gamepad.
+Xbox HIDAPI path with Share mapped as `misc1:b11`; the VHF child does not follow
+that same consumer path or guarantee registration as an XInput slot. A
+Steam-visible Xbox Series Share button on Windows requires a non-VHF Xbox
+HIDAPI/GIP transport. The Xbox 360 profile is rejected by the UMDF/VHF backend
+because a real Xbox 360 controller is an XUSB device rather than a VHF HID
+gamepad.
 
 DualShock 4 and DualSense answer the calibration, pairing, and firmware feature
 requests used by their Windows HIDAPI initialization paths. Switch Pro answers

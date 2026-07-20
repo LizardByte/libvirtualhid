@@ -60,13 +60,14 @@ and Xbox Wireless Adapter connections. The VHF device preserves the native
 17-byte GIP-shaped input report, including Share/Misc as button bit 12, and the
 native eight-byte four-motor rumble payload. Steam maps physical Xbox Series
 USB, Bluetooth, and Wireless Adapter transports through its Xbox HIDAPI path
-with Share as `misc1:b11`; the Windows VHF Xbox Series child is consumed through
-the XInput path, which does not expose Share. A Steam-visible Xbox Series Share
-button on Windows requires a non-VHF Xbox HIDAPI/GIP transport. The public Xbox
-Series profile remains `0x045E:0x0B12`; the Windows transport applies the
-captured release at device creation. Xbox One and Xbox Series rumble writes use
-the native eight-byte four-motor payload; the library applies the
-actuator-enable mask and duration field, then reports the body motors as
+with Share as `misc1:b11`; the Windows VHF Xbox Series child does not follow that
+same consumer path or guarantee registration as an XInput slot. A Steam-visible
+Xbox Series Share button on Windows requires a non-VHF Xbox HIDAPI/GIP
+transport. The public Xbox Series profile remains `0x045E:0x0B12`; the Windows
+transport applies the captured release at device creation. Xbox One accepts
+native HID rumble writes. The Xbox Series report parser accepts the native
+eight-byte four-motor payload when a consumer delivers it, applies its
+actuator-enable mask and duration field, and reports the body motors as
 normalized low/high-frequency rumble and the independent trigger motors as
 trigger-rumble output.
 
@@ -102,18 +103,21 @@ Generic and Xbox triggers remain independent analog `ABS_Z` and `ABS_RZ` axes.
 Switch Pro uses the Nintendo face-button
 positions, button events for ZL/ZR, and `BTN_Z` for Capture. Profiles with rumble
 support normalize rumble, constant, periodic, and ramp uinput force-feedback
-effects back into the public callback. A zero-length effect remains active until
-its explicit stop event, matching the infinite-effect contract used by SDL and
-Steam. The Linux backend lets a new uinput device settle before reading those
-effects so an early poll error cannot disable feedback for the device lifetime.
-PlayStation rumble is read from native UHID interrupt-channel output reports.
+effects back into the public callback. Each requested playback repetition
+restarts the effect's ramp and envelope timing. A zero-length effect remains
+active until its explicit stop event, matching the infinite-effect contract used
+by SDL and Steam. The Linux backend lets a new uinput device settle before
+reading those effects so an early poll error cannot disable feedback for the
+device lifetime. Generated UHID nodes are correlated by stable physical and
+unique identifiers when available, with device-name matching used only as a
+fallback. PlayStation rumble is read from native UHID interrupt-channel output
+reports.
 
 The Generic profile keeps its public `0x1209:0x0001` identity, USB bus, and
 Generic device name at the Linux transport boundary. Its uinput device exposes
-both `ABS_HAT0X`/`ABS_HAT0Y` hat axes and semantic `BTN_DPAD_*` events so raw
-evdev consumers and higher-level gamepad mappers can observe D-pad movement
-without re-identifying the device as Xbox. It uses a compact Generic button
-layout rather than the sparse Xbox button slots.
+D-pad directions once through the standard `ABS_HAT0X` and `ABS_HAT0Y` axes,
+which avoids changing the raw button capability surface. It uses a compact
+Generic button layout rather than the sparse Xbox button slots.
 
 Xbox 360 retains its `0x045E:0x028E` identity, while its Linux uinput device uses
 the Bluetooth bus so consumers select the sparse button mapping.

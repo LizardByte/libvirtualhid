@@ -221,6 +221,7 @@ TEST_F(LinuxBackendTest, CoversLinuxDiscoveryAndIdentityHelpers) {
   std::filesystem::create_directories(hidraw_root / "hidraw2" / "device");
   std::filesystem::create_directories(hidraw_root / "hidraw3" / "device");
   std::filesystem::create_directories(hidraw_root / "hidraw4" / "device");
+  std::filesystem::create_directories(hidraw_root / "hidraw5" / "device");
   {
     std::ofstream file {input_root / "event0" / "device" / "name"};
     file << "libvirtualhid device\n";
@@ -261,6 +262,12 @@ TEST_F(LinuxBackendTest, CoversLinuxDiscoveryAndIdentityHelpers) {
          << "HID_PHYS=other/physical/path\n"
          << "HID_UNIQ=02:00:00:00:00:02\n";
   }
+  {
+    std::ofstream file {hidraw_root / "hidraw5" / "device" / "uevent"};
+    file << "HID_NAME=missing hidraw name\n"
+         << "HID_PHYS=other/physical/path\n"
+         << "HID_UNIQ=02:00:00:00:00:02\n";
+  }
   const auto nodes = lvh::detail::test::linux_discover_nodes_by_name(
     "libvirtualhid device",
     input_root.string(),
@@ -292,7 +299,7 @@ TEST_F(LinuxBackendTest, CoversLinuxDiscoveryAndIdentityHelpers) {
     return node.kind == lvh::DeviceNodeKind::sysfs && node.path == (hidraw_root / "hidraw3").string();
   }));
   EXPECT_FALSE(std::ranges::any_of(metadata_nodes, [](const auto &node) {
-    return node.path.ends_with("hidraw4");
+    return node.path.ends_with("hidraw4") || node.path.ends_with("hidraw5");
   }));
 
   std::filesystem::remove_all(temp_dir);
@@ -436,15 +443,8 @@ TEST_F(LinuxBackendTest, PipeBackedUinputGamepadsUseCanonicalLinuxEvents) {
     };
     EXPECT_EQ(event_value(EV_ABS, ABS_HAT0X), 1);
     EXPECT_EQ(event_value(EV_ABS, ABS_HAT0Y), -1);
-    constexpr std::array dpad_button_values {
-      std::pair {BTN_DPAD_UP, 1},
-      std::pair {BTN_DPAD_DOWN, 0},
-      std::pair {BTN_DPAD_LEFT, 0},
-      std::pair {BTN_DPAD_RIGHT, 1},
-    };
-    for (const auto &[dpad_button, expected_value] : dpad_button_values) {
-      const auto expected = kind == generic ? std::optional {expected_value} : std::nullopt;
-      EXPECT_EQ(event_value(EV_KEY, dpad_button), expected);
+    for (const auto dpad_button : {BTN_DPAD_UP, BTN_DPAD_DOWN, BTN_DPAD_LEFT, BTN_DPAD_RIGHT}) {
+      EXPECT_EQ(event_value(EV_KEY, dpad_button), std::nullopt);
     }
     EXPECT_EQ(event_value(EV_ABS, ABS_X), lvh::reports::normalize_axis(-0.5F));
     EXPECT_EQ(event_value(EV_ABS, ABS_Y), lvh::reports::normalize_axis(-0.25F));
@@ -519,6 +519,20 @@ TEST_F(LinuxBackendTest, UinputGamepadRecalculatesActiveRumbleEndAfterReupload) 
   EXPECT_TRUE(result.close_status.ok()) << result.close_status.message();
   EXPECT_GE(result.nonzero_callback_count, 1U);
   EXPECT_GE(result.zero_callback_count_before_close, 1U);
+}
+
+TEST_F(LinuxBackendTest, UinputGamepadRestartsTimingForEachRumblePlaybackCycle) {
+  const auto first_cycle = lvh::detail::test::linux_uinput_rumble_cycle_timing(25, 100);
+  EXPECT_EQ(first_cycle.elapsed, 25U);
+  EXPECT_EQ(first_cycle.remaining, 75U);
+
+  const auto second_cycle = lvh::detail::test::linux_uinput_rumble_cycle_timing(125, 100);
+  EXPECT_EQ(second_cycle.elapsed, first_cycle.elapsed);
+  EXPECT_EQ(second_cycle.remaining, first_cycle.remaining);
+
+  const auto cycle_boundary = lvh::detail::test::linux_uinput_rumble_cycle_timing(200, 100);
+  EXPECT_EQ(cycle_boundary.elapsed, 0U);
+  EXPECT_EQ(cycle_boundary.remaining, 100U);
 }
 
 TEST_F(LinuxBackendTest, HandlesUinputMouseInvalidFileDescriptorPaths) {
@@ -975,7 +989,7 @@ TEST_F(LinuxBackendTest, FakeUinputConstructionCoversCapabilitiesAndFailureBranc
         << "unexpected reserved gamepad button slot state for " << button;
     }
     for (const auto button : dpad_buttons) {
-      EXPECT_EQ(find_code(gamepad, EV_KEY, button) != nullptr, kind == generic)
+      EXPECT_EQ(find_code(gamepad, EV_KEY, button), nullptr)
         << "unexpected directional gamepad button capability for " << button;
     }
     EXPECT_NE(find_code(gamepad, EV_ABS, ABS_HAT0X), nullptr);

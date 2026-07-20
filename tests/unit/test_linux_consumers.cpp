@@ -800,7 +800,7 @@ TEST_F(LinuxConsumerTest, SdlSeesGenericCanonicalButtons) {
     .stable_id = "libvirtualhid-sdl-gamepad-test",
     .expected_vendor_id = 0x1209,
     .expected_product_id = 0x0001,
-    .minimum_buttons = 15,
+    .minimum_buttons = 12,  // D-pad directions are exposed through the hat axes.
     .minimum_axes = 6,
   });
 }

@@ -1171,6 +1171,11 @@ namespace lvh::detail::test {
     return result;
   }
 
+  LinuxRumbleCycleTiming linux_uinput_rumble_cycle_timing(std::uint64_t elapsed, std::uint64_t length) {
+    const auto [cycle_elapsed, cycle_remaining] = rumble_effect_cycle_timing(elapsed, length);
+    return {.elapsed = cycle_elapsed, .remaining = cycle_remaining};
+  }
+
   OperationStatus linux_uinput_user_device_invalid_fd() {
     return create_libevdev_uinput_device(-1, profiles::mouse(), 1).status;
   }

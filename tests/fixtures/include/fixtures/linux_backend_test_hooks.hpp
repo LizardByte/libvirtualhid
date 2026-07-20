@@ -88,6 +88,21 @@ namespace lvh::detail::test {
   };
 
   /**
+   * @brief Position within one finite force-feedback playback cycle.
+   */
+  struct LinuxRumbleCycleTiming {
+    /**
+     * @brief Milliseconds elapsed in the current cycle.
+     */
+    std::uint64_t elapsed = 0;
+
+    /**
+     * @brief Milliseconds remaining in the current cycle.
+     */
+    std::uint64_t remaining = 0;
+  };
+
+  /**
    * @brief Result from a socketpair-backed UHID lifecycle test.
    */
   struct LinuxUhidRoundTripResult {
@@ -653,6 +668,15 @@ namespace lvh::detail::test {
     bool send_stop = false,
     std::optional<std::uint16_t> reupload_length = std::nullopt
   );
+
+  /**
+   * @brief Calculate timing within one repeated force-feedback cycle.
+   *
+   * @param elapsed Total milliseconds elapsed across all playback cycles.
+   * @param length Length of one playback cycle in milliseconds.
+   * @return Current-cycle elapsed and remaining time.
+   */
+  LinuxRumbleCycleTiming linux_uinput_rumble_cycle_timing(std::uint64_t elapsed, std::uint64_t length);
 
   /**
    * @brief Try creating a libevdev uinput mouse on an invalid file descriptor.

@@ -247,10 +247,6 @@ namespace lvh::detail {
       return kind == xbox_360 || kind == xbox_one || kind == xbox_series;
     }
 
-    bool uses_uinput_dpad_buttons(GamepadProfileKind kind) {
-      return kind == GamepadProfileKind::generic;
-    }
-
     std::uint16_t to_uhid_bus(BusType bus_type) {
       if (bus_type == BusType::bluetooth) {
         return BUS_BLUETOOTH;
@@ -343,22 +339,41 @@ namespace lvh::detail {
         return false;
       }
 
+      auto actual_name = std::optional<std::string> {};
+      auto actual_physical_id = std::optional<std::string> {};
+      auto actual_unique_id = std::optional<std::string> {};
       std::string line;
       while (std::getline(file, line)) {
-        if (constexpr std::string_view name_key {"HID_NAME="}; !name.empty() && line.starts_with(name_key) && line.size() == name_key.size() + name.size() && line.ends_with(name)) {
-          return true;
+        if (constexpr std::string_view name_key {"HID_NAME="}; line.starts_with(name_key)) {
+          actual_name = line.substr(name_key.size());
+          continue;
         }
-
-        if (constexpr std::string_view phys_key {"HID_PHYS="}; !physical_id.empty() && line.starts_with(phys_key) && line.size() == phys_key.size() + physical_id.size() && line.ends_with(physical_id)) {
-          return true;
+        if (constexpr std::string_view phys_key {"HID_PHYS="}; line.starts_with(phys_key)) {
+          actual_physical_id = line.substr(phys_key.size());
+          continue;
         }
-
-        if (constexpr std::string_view uniq_key {"HID_UNIQ="}; !unique_id.empty() && line.starts_with(uniq_key) && line.size() == uniq_key.size() + unique_id.size() && line.ends_with(unique_id)) {
-          return true;
+        if (constexpr std::string_view uniq_key {"HID_UNIQ="}; line.starts_with(uniq_key)) {
+          actual_unique_id = line.substr(uniq_key.size());
         }
       }
 
-      return false;
+      auto matched_stable_metadata = false;
+      if (!physical_id.empty() && actual_physical_id.has_value()) {
+        matched_stable_metadata = true;
+        if (*actual_physical_id != physical_id) {
+          return false;
+        }
+      }
+      if (!unique_id.empty() && actual_unique_id.has_value()) {
+        matched_stable_metadata = true;
+        if (*actual_unique_id != unique_id) {
+          return false;
+        }
+      }
+      if (matched_stable_metadata) {
+        return true;
+      }
+      return !name.empty() && actual_name.has_value() && *actual_name == name;
     }
 
     std::vector<DeviceNode> discover_hidraw_nodes_by_metadata(
@@ -1145,14 +1160,6 @@ namespace lvh::detail {
         constexpr std::array reserved_buttons {BTN_C, BTN_Z, BTN_TL2, BTN_TR2};
         for (const auto button : reserved_buttons) {
           if (const auto status = enable_evdev_code(device, EV_KEY, button, "reserved gamepad button slot"); !status.ok()) {
-            return status;
-          }
-        }
-      }
-      if (uses_uinput_dpad_buttons(profile_kind)) {
-        constexpr std::array dpad_buttons {BTN_DPAD_UP, BTN_DPAD_DOWN, BTN_DPAD_LEFT, BTN_DPAD_RIGHT};
-        for (const auto button : dpad_buttons) {
-          if (const auto status = enable_evdev_code(device, EV_KEY, button, "gamepad D-pad button"); !status.ok()) {
             return status;
           }
         }
@@ -2218,6 +2225,18 @@ namespace lvh::detail {
       bool active = false;
     };
 
+    std::pair<std::uint64_t, std::uint64_t> rumble_effect_cycle_timing(
+      std::uint64_t elapsed,
+      std::uint64_t length
+    ) {
+      if (length == 0U) {
+        return {elapsed, std::numeric_limits<std::uint64_t>::max()};
+      }
+
+      const auto cycle_elapsed = elapsed % length;
+      return {cycle_elapsed, length - cycle_elapsed};
+    }
+
     /**
      * @brief Standard gamepad exposed through canonical Linux input events.
      */
@@ -2340,15 +2359,6 @@ namespace lvh::detail {
           }
         }
 
-        if (uses_uinput_dpad_buttons(profile_kind_)) {
-          constexpr std::array dpad_button_map {
-            std::pair {dpad_up, BTN_DPAD_UP},
-            std::pair {dpad_down, BTN_DPAD_DOWN},
-            std::pair {dpad_left, BTN_DPAD_LEFT},
-            std::pair {dpad_right, BTN_DPAD_RIGHT},
-          };
-          return emit_button_map(buttons, dpad_button_map);
-        }
         return OperationStatus::success();
       }
 
@@ -2635,12 +2645,14 @@ namespace lvh::detail {
           };
         }
         const auto length = static_cast<std::uint64_t>(std::max<std::int64_t>(effect.length.count(), 0));
-        const auto remaining = elapsed >= length ? 0U : length - elapsed;
-        const auto weak = interpolate_magnitude(effect.start_weak_magnitude, effect.end_weak_magnitude, elapsed, length);
-        const auto strong = interpolate_magnitude(effect.start_strong_magnitude, effect.end_strong_magnitude, elapsed, length);
+        const auto [cycle_elapsed, cycle_remaining] = rumble_effect_cycle_timing(elapsed, length);
+        const auto weak =
+          interpolate_magnitude(effect.start_weak_magnitude, effect.end_weak_magnitude, cycle_elapsed, length);
+        const auto strong =
+          interpolate_magnitude(effect.start_strong_magnitude, effect.end_strong_magnitude, cycle_elapsed, length);
         return {
-          apply_envelope(weak, effect.envelope, elapsed, remaining),
-          apply_envelope(strong, effect.envelope, elapsed, remaining),
+          apply_envelope(weak, effect.envelope, cycle_elapsed, cycle_remaining),
+          apply_envelope(strong, effect.envelope, cycle_elapsed, cycle_remaining),
         };
       }
 
