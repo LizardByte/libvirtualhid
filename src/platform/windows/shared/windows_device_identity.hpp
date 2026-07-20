@@ -32,18 +32,49 @@ namespace lvh::detail::windows {
     append_hardware_id_hex4(hardware_ids, product_id);
   }
 
+  inline void append_xinputhid_match_id(
+    std::wstring &hardware_ids,
+    std::uint16_t vendor_id,
+    std::uint16_t product_id
+  ) {
+    append_hid_vid_pid(hardware_ids, vendor_id, product_id);
+    hardware_ids.append(L"&IG_00");
+    hardware_ids.push_back(L'\0');
+  }
+
+  inline void append_gamepad_compatible_ids(std::wstring &hardware_ids, std::uint16_t vendor_id) {
+    hardware_ids.append(L"HID\\VID_");
+    append_hardware_id_hex4(hardware_ids, vendor_id);
+    hardware_ids.append(L"&UP:0001_U:0005");
+    hardware_ids.push_back(L'\0');
+
+    hardware_ids.append(L"HID_DEVICE_SYSTEM_GAME");
+    hardware_ids.push_back(L'\0');
+
+    hardware_ids.append(L"HID_DEVICE_UP:0001_U:0005");
+    hardware_ids.push_back(L'\0');
+
+    hardware_ids.append(L"HID_DEVICE");
+    hardware_ids.push_back(L'\0');
+  }
+
   constexpr bool is_xbox_gamepad(std::uint32_t gamepad_kind) {
     return gamepad_kind == LVH_WINDOWS_GAMEPAD_XBOX_360 || gamepad_kind == LVH_WINDOWS_GAMEPAD_XBOX_ONE ||
            gamepad_kind == LVH_WINDOWS_GAMEPAD_XBOX_SERIES;
   }
 
+  constexpr bool uses_xinputhid_match_id(std::uint32_t gamepad_kind) {
+    return is_xbox_gamepad(gamepad_kind);
+  }
+
   inline std::wstring make_hardware_ids(const LvhWindowsCreateGamepadRequest &request) {
     const auto &ids = request.hardware_ids;
     std::wstring hardware_ids;
-    if (is_xbox_gamepad(request.gamepad_kind)) {
-      append_hid_vid_pid(hardware_ids, ids.vendor_id, ids.product_id);
-      hardware_ids.append(L"&IG_00");
-      hardware_ids.push_back(L'\0');
+    if (uses_xinputhid_match_id(request.gamepad_kind)) {
+      append_xinputhid_match_id(hardware_ids, ids.vendor_id, ids.product_id);
+      if (request.gamepad_kind == LVH_WINDOWS_GAMEPAD_XBOX_SERIES) {
+        append_xinputhid_match_id(hardware_ids, ids.vendor_id, 0x02FFU);
+      }
     }
 
     append_hid_vid_pid(hardware_ids, ids.vendor_id, ids.product_id);
@@ -53,6 +84,11 @@ namespace lvh::detail::windows {
 
     append_hid_vid_pid(hardware_ids, ids.vendor_id, ids.product_id);
     hardware_ids.push_back(L'\0');
+
+    if (request.gamepad_kind == LVH_WINDOWS_GAMEPAD_XBOX_SERIES) {
+      append_gamepad_compatible_ids(hardware_ids, ids.vendor_id);
+    }
+
     hardware_ids.push_back(L'\0');
     return hardware_ids;
   }

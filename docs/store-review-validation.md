@@ -34,7 +34,7 @@ Expected result:
 - The backend status reports windows-umdf with gamepad support available
 - A virtual HID gamepad is created and appears in the device list
 - A virtual HID gamepad child device starts with the Xbox Series HID ID
-  HID\VID_045E&PID_0B13&IG_00
+  HID\VID_045E&PID_0B12&IG_00
 - Button, axis, and Share values in the UI can be pressed or moved without
   errors
 

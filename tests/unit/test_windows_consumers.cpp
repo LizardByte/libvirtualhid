@@ -648,54 +648,132 @@ TEST_F(WindowsConsumerTest, NativeXboxPidRumbleWritesAreNormalized) {
   ASSERT_TRUE(runtime->capabilities().supports_gamepad)
     << "The installed libvirtualhid Windows driver is required for this integration test";
 
-  for (const auto &profile : {lvh::profiles::xbox_one(), lvh::profiles::xbox_series()}) {
-    const auto previous_paths = current_gamepad_interface_paths();
+  const auto profile = lvh::profiles::xbox_one();
+  const auto previous_paths = current_gamepad_interface_paths();
 
-    lvh::CreateGamepadOptions options;
-    options.profile = profile;
-    auto created = lvh::GamepadStateAdapter::create(*runtime, options);
-    ASSERT_TRUE(created) << created.status.message();
-    GamepadOutputCapture output_capture;
-    output_capture.attach(*created.adapter);
+  lvh::CreateGamepadOptions options;
+  options.profile = profile;
+  auto created = lvh::GamepadStateAdapter::create(*runtime, options);
+  ASSERT_TRUE(created) << created.status.message();
+  GamepadOutputCapture output_capture;
+  output_capture.attach(*created.adapter);
 
-    const auto product_id = profile.gamepad_kind == lvh::GamepadProfileKind::xbox_series ?
-                              lvh::detail::windows::xbox_series_bluetooth_product_id :
-                              profile.product_id;
-    const auto hid_interface = wait_for_new_interface(previous_paths, profile.vendor_id, product_id);
-    ASSERT_TRUE(hid_interface.has_value()) << "The VHF Xbox HID interface was not enumerated";
-    ASSERT_EQ(hid_interface->output_report_size, profile.output_report_size + 1U);
-
-    Handle hid {CreateFileW(
-      hid_interface->path.c_str(),
-      GENERIC_READ | GENERIC_WRITE,
-      FILE_SHARE_READ | FILE_SHARE_WRITE,
-      nullptr,
-      OPEN_EXISTING,
-      FILE_ATTRIBUTE_NORMAL,
-      nullptr
-    )};
-    ASSERT_TRUE(hid) << "Unable to open the VHF Xbox HID interface: " << GetLastError();
-
-    const auto report_id =
-      profile.gamepad_kind == lvh::GamepadProfileKind::xbox_series ? std::uint8_t {0x03U} : std::uint8_t {0x00U};
-    const std::vector<std::uint8_t> report {report_id, 0x0F, 25, 50, 75, 100, 10, 0, 0};
-    DWORD bytes_written = 0;
-    ASSERT_TRUE(WriteFile(
-      hid.get(),
-      report.data(),
-      static_cast<DWORD>(report.size()),
-      &bytes_written,
-      nullptr
-    )) << "WriteFile failed: "
-       << GetLastError();
-    ASSERT_EQ(bytes_written, report.size());
-
-    const auto rumble = output_capture.wait_for_rumble(true);
-    ASSERT_TRUE(rumble.has_value()) << "No normalized Xbox rumble callback followed the native HID output write";
-    EXPECT_EQ(rumble->low_frequency_rumble, 49151U);
-    EXPECT_EQ(rumble->high_frequency_rumble, 65535U);
-    ASSERT_TRUE(created.adapter->close().ok());
+  const auto hid_interface = wait_for_new_interface(previous_paths, profile.vendor_id, profile.product_id);
+  ASSERT_TRUE(hid_interface.has_value()) << "The VHF Xbox HID interface was not enumerated";
+  if (hid_interface->output_report_size == 0U) {
+    GTEST_SKIP() << "The enumerated Xbox HID game-controller child is input-only on this host";
   }
+  ASSERT_EQ(hid_interface->output_report_size, profile.output_report_size + 1U);
+
+  Handle hid {CreateFileW(
+    hid_interface->path.c_str(),
+    GENERIC_READ | GENERIC_WRITE,
+    FILE_SHARE_READ | FILE_SHARE_WRITE,
+    nullptr,
+    OPEN_EXISTING,
+    FILE_ATTRIBUTE_NORMAL,
+    nullptr
+  )};
+  ASSERT_TRUE(hid) << "Unable to open the VHF Xbox HID interface: " << GetLastError();
+
+  const std::vector<std::uint8_t> report {0, 0x0F, 25, 50, 75, 100, 10, 0, 0};
+  DWORD bytes_written = 0;
+  ASSERT_TRUE(WriteFile(
+    hid.get(),
+    report.data(),
+    static_cast<DWORD>(report.size()),
+    &bytes_written,
+    nullptr
+  )) << "WriteFile failed: "
+     << GetLastError();
+  ASSERT_EQ(bytes_written, report.size());
+
+  const auto rumble = output_capture.wait_for_rumble(true);
+  ASSERT_TRUE(rumble.has_value()) << "No normalized Xbox rumble callback followed the native HID output write";
+  EXPECT_EQ(rumble->low_frequency_rumble, 49151U);
+  EXPECT_EQ(rumble->high_frequency_rumble, 65535U);
+  ASSERT_TRUE(created.adapter->close().ok());
+}
+
+TEST_F(WindowsConsumerTest, XboxSeriesNativeInputReportCarriesShareButtonAndRumble) {
+  lvh::RuntimeOptions runtime_options;
+  runtime_options.backend = lvh::BackendKind::platform_default;
+  auto runtime = lvh::Runtime::create(runtime_options);
+  ASSERT_NE(runtime, nullptr);
+  ASSERT_TRUE(runtime->capabilities().supports_gamepad)
+    << "The installed libvirtualhid Windows driver is required for this integration test";
+
+  const auto profile = lvh::profiles::xbox_series();
+  const auto previous_paths = current_gamepad_interface_paths();
+
+  lvh::CreateGamepadOptions options;
+  options.profile = profile;
+  auto created = lvh::GamepadStateAdapter::create(*runtime, options);
+  ASSERT_TRUE(created) << created.status.message();
+  GamepadOutputCapture output_capture;
+  output_capture.attach(*created.adapter);
+
+  const auto hid_interface =
+    wait_for_new_interface(previous_paths, profile.vendor_id, lvh::detail::windows::xbox_series_windows_product_id);
+  ASSERT_TRUE(hid_interface.has_value()) << "The VHF Xbox Series HID interface was not enumerated";
+  ASSERT_EQ(hid_interface->input_report_size, profile.input_report_size + 1U);
+  ASSERT_EQ(hid_interface->output_report_size, profile.output_report_size + 1U);
+
+  Handle hid {CreateFileW(
+    hid_interface->path.c_str(),
+    GENERIC_READ | GENERIC_WRITE,
+    FILE_SHARE_READ | FILE_SHARE_WRITE,
+    nullptr,
+    OPEN_EXISTING,
+    FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED,
+    nullptr
+  )};
+  ASSERT_TRUE(hid) << "Unable to open the VHF Xbox Series HID interface: " << GetLastError();
+
+  lvh::GamepadState state;
+  state.buttons.set(lvh::GamepadButton::a);
+  state.buttons.set(lvh::GamepadButton::back);
+  state.buttons.set(lvh::GamepadButton::start);
+  state.buttons.set(lvh::GamepadButton::guide);
+  state.buttons.set(lvh::GamepadButton::misc1);
+  ASSERT_TRUE(created.adapter->set_state(state).ok());
+
+  const auto input = read_hid_report_with_timeout(
+    hid.get(),
+    hid_interface->input_report_size,
+    5s
+  );
+  ASSERT_TRUE(input.has_value()) << "No Xbox Series input report reached the HID client";
+  ASSERT_EQ(input->size(), hid_interface->input_report_size);
+  EXPECT_EQ(input->at(0), 0U);  // Unnumbered HID read buffers carry a leading zero.
+  EXPECT_NE(input->at(13) & 0x01U, 0U);  // A
+  EXPECT_NE(input->at(13) & 0x40U, 0U);  // Back/View
+  EXPECT_NE(input->at(13) & 0x80U, 0U);  // Start/Menu
+  EXPECT_NE(input->at(14) & 0x08U, 0U);  // Share / misc1
+  EXPECT_NE(input->at(16) & 0x01U, 0U);  // Guide
+
+  std::vector<std::uint8_t> output_report(hid_interface->output_report_size, 0);
+  output_report[0] = 0x00;
+  output_report[1] = 0x0F;
+  output_report[4] = 75;
+  output_report[5] = 100;
+  output_report[6] = 10;
+  DWORD bytes_written = 0;
+  ASSERT_TRUE(WriteFile(
+    hid.get(),
+    output_report.data(),
+    static_cast<DWORD>(output_report.size()),
+    &bytes_written,
+    nullptr
+  )) << "Xbox Series rumble WriteFile failed: "
+     << GetLastError();
+  ASSERT_EQ(bytes_written, output_report.size());
+
+  const auto rumble = output_capture.wait_for_rumble(true);
+  ASSERT_TRUE(rumble.has_value()) << "No normalized Xbox Series rumble callback followed the native HID output write";
+  EXPECT_EQ(rumble->low_frequency_rumble, 49151U);
+  EXPECT_EQ(rumble->high_frequency_rumble, 65535U);
+  ASSERT_TRUE(created.adapter->close().ok());
 }
 
 TEST_F(WindowsConsumerTest, NativeGenericPidInterfaceIsAdvertisedToDirectInput) {

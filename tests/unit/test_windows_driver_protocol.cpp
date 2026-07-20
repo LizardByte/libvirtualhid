@@ -80,15 +80,22 @@ namespace {
 
 }  // namespace
 
-TEST_F(WindowsDriverProtocolTest, SeriesUsesSteamRecognizedShareCapableHidIdentity) {
+TEST_F(WindowsDriverProtocolTest, SeriesUsesCapturedXInputHidIdentity) {
   auto request = series_request();
-  request.hardware_ids.product_id = 0x0B13;
+  request.hardware_ids.product_id = 0x0B12;
+  request.hardware_ids.device_version = 0x0509;
 
   const auto entries = hardware_id_entries(lvh::detail::windows::make_hardware_ids(request));
-  ASSERT_EQ(entries.size(), 3U);
-  EXPECT_EQ(entries[0], L"HID\\VID_045E&PID_0B13&IG_00");
-  EXPECT_EQ(entries[1], L"HID\\VID_045E&PID_0B13&REV_0500");
-  EXPECT_EQ(entries[2], L"HID\\VID_045E&PID_0B13");
+  ASSERT_EQ(entries.size(), 8U);
+  EXPECT_TRUE(lvh::detail::windows::uses_xinputhid_match_id(request.gamepad_kind));
+  EXPECT_EQ(entries[0], L"HID\\VID_045E&PID_0B12&IG_00");
+  EXPECT_EQ(entries[1], L"HID\\VID_045E&PID_02FF&IG_00");
+  EXPECT_EQ(entries[2], L"HID\\VID_045E&PID_0B12&REV_0509");
+  EXPECT_EQ(entries[3], L"HID\\VID_045E&PID_0B12");
+  EXPECT_EQ(entries[4], L"HID\\VID_045E&UP:0001_U:0005");
+  EXPECT_EQ(entries[5], L"HID_DEVICE_SYSTEM_GAME");
+  EXPECT_EQ(entries[6], L"HID_DEVICE_UP:0001_U:0005");
+  EXPECT_EQ(entries[7], L"HID_DEVICE");
 }
 
 TEST_F(WindowsDriverProtocolTest, NonSeriesXboxUsesItsPublicIdentityForMatching) {
@@ -99,6 +106,7 @@ TEST_F(WindowsDriverProtocolTest, NonSeriesXboxUsesItsPublicIdentityForMatching)
 
   const auto entries = hardware_id_entries(lvh::detail::windows::make_hardware_ids(request));
   ASSERT_EQ(entries.size(), 3U);
+  EXPECT_TRUE(lvh::detail::windows::uses_xinputhid_match_id(request.gamepad_kind));
   EXPECT_EQ(entries[0], L"HID\\VID_045E&PID_02EA&IG_00");
   EXPECT_EQ(entries[1], L"HID\\VID_045E&PID_02EA&REV_0408");
   EXPECT_EQ(entries[2], L"HID\\VID_045E&PID_02EA");

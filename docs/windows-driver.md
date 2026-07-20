@@ -164,15 +164,18 @@ Windows.Gaming.Input/GameInput, and browser Gamepad API clients should see
 standard HID devices after the driver is installed.
 
 The built-in Xbox One profile uses its XboxGIP-shaped HID descriptor. The public
-Xbox Series profile remains `VID_045E&PID_0B12`, but the Windows transport
-presents it as the native Bluetooth HID identity `VID_045E&PID_0B13` with report
-ID `1` so descriptor-aware consumers can see the Series Share button as the
-Consumer Record usage. The driver also publishes `VID_045E&PID_0B13&IG_00` so
-Steam and the Windows Xbox HID stack bind it as an Xbox Wireless Controller.
-Series rumble writes use output report ID `3` followed by the same eight-byte
-four-motor Xbox payload normalized by the public callback. The Xbox 360 profile
-is rejected by the UMDF/VHF backend because a real Xbox 360 controller is an
-XUSB device rather than a VHF HID gamepad.
+Xbox Series profile remains `VID_045E&PID_0B12`; the Windows transport presents
+it with release `0x0509` and the `VID_045E&PID_0B12&IG_00` XInputHID match ID
+observed from physical Xbox Series USB and Xbox Wireless Adapter connections.
+The VHF child preserves the native 17-byte GIP-shaped input report, including
+Share/Misc as button bit 12, and accepts the native eight-byte four-motor Xbox
+rumble payload normalized by the public callback. Physical Xbox Series USB,
+Bluetooth, and Xbox Wireless Adapter transports register in Steam through the
+Xbox HIDAPI path with Share mapped as `misc1:b11`; the VHF child is consumed
+through the Windows XInput path, which does not expose Share. A Steam-visible
+Xbox Series Share button on Windows requires a non-VHF Xbox HIDAPI/GIP
+transport. The Xbox 360 profile is rejected by the UMDF/VHF backend because a
+real Xbox 360 controller is an XUSB device rather than a VHF HID gamepad.
 
 DualShock 4 and DualSense answer the calibration, pairing, and firmware feature
 requests used by their Windows HIDAPI initialization paths. Switch Pro answers

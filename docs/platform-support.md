@@ -54,16 +54,21 @@ loop count are honored; finite effects emit a zero-rumble callback when they
 expire, while explicit stop commands take effect immediately.
 
 Xbox One uses the native eight-byte PID payload exposed by the Windows Xbox HID
-stack. Xbox Series uses the native Bluetooth HID identity `0x045E:0x0B13`,
-report ID `1`, and a compact button layout that exposes Share as the Consumer
-Record usage. The driver also publishes the `0x045E:0x0B13&IG_00` Xbox hardware
-ID so Steam and the Windows Xbox HID stack bind it as an Xbox Wireless
-Controller. The public Xbox Series profile remains `0x045E:0x0B12`; the Windows
-transport applies the Share-capable descriptor and identity at device creation.
-Rumble writes use report ID `3` followed by the same eight-byte four-motor
-payload. The library applies the actuator-enable mask and duration field, then
-reports the body motors as normalized low/high-frequency rumble and the
-independent trigger motors as trigger-rumble output.
+stack. Xbox Series keeps the `0x045E:0x0B12` identity, release `0x0509`, and the
+`0x045E:0x0B12&IG_00` XInputHID match ID observed from physical Xbox Series USB
+and Xbox Wireless Adapter connections. The VHF device preserves the native
+17-byte GIP-shaped input report, including Share/Misc as button bit 12, and the
+native eight-byte four-motor rumble payload. Steam maps physical Xbox Series
+USB, Bluetooth, and Wireless Adapter transports through its Xbox HIDAPI path
+with Share as `misc1:b11`; the Windows VHF Xbox Series child is consumed through
+the XInput path, which does not expose Share. A Steam-visible Xbox Series Share
+button on Windows requires a non-VHF Xbox HIDAPI/GIP transport. The public Xbox
+Series profile remains `0x045E:0x0B12`; the Windows transport applies the
+captured release at device creation. Xbox One and Xbox Series rumble writes use
+the native eight-byte four-motor payload; the library applies the
+actuator-enable mask and duration field, then reports the body motors as
+normalized low/high-frequency rumble and the independent trigger motors as
+trigger-rumble output.
 
 The VHF driver answers the calibration, pairing, and firmware feature reports
 used to initialize DualShock 4 and DualSense HIDAPI output. It also answers the
