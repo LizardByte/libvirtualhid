@@ -81,6 +81,8 @@ More complete examples live in `examples/`, including the streaming-host-oriente
   Windows, Linux, macOS, and Linux permission setup.
 - [Windows driver package](docs/windows-driver.md): UMDF/VHF package build,
   installation, validation, diagnostics, and signing notes.
+- [TODO](docs/todo.md): known larger compatibility gaps and proposed solution
+  paths.
 - [Streaming-host integration](docs/streaming-host-integration.md): integration
   contract and remaining replacement-readiness work for streaming hosts.
 - [Development](docs/development.md): local build/test commands, repository
