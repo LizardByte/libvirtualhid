@@ -231,17 +231,19 @@ TEST(WindowsProtocolTest, PresentsXboxSeriesNativeWindowsIdentityAndReportShape)
 }
 
 TEST(WindowsProtocolTest, KeepsXboxSeriesNativeReportShape) {
+  using enum lvh::GamepadButton;
+
   const auto profile = lvh::profiles::xbox_series();
   lvh::GamepadState state;
-  state.buttons.set(lvh::GamepadButton::a);
-  state.buttons.set(lvh::GamepadButton::back);
-  state.buttons.set(lvh::GamepadButton::start);
-  state.buttons.set(lvh::GamepadButton::guide);
-  state.buttons.set(lvh::GamepadButton::left_stick);
-  state.buttons.set(lvh::GamepadButton::right_stick);
-  state.buttons.set(lvh::GamepadButton::left_shoulder);
-  state.buttons.set(lvh::GamepadButton::right_shoulder);
-  state.buttons.set(lvh::GamepadButton::misc1);
+  state.buttons.set(a);
+  state.buttons.set(back);
+  state.buttons.set(start);
+  state.buttons.set(guide);
+  state.buttons.set(left_stick);
+  state.buttons.set(right_stick);
+  state.buttons.set(left_shoulder);
+  state.buttons.set(right_shoulder);
+  state.buttons.set(misc1);
 
   const auto report = lvh::reports::pack_input_report(profile, state);
 
