@@ -53,14 +53,17 @@ DirectInput's idle-at-maximum Z/Rz trigger polarity. Start delay, duration, and
 loop count are honored; finite effects emit a zero-rumble callback when they
 expire, while explicit stop commands take effect immediately.
 
-Xbox One and Xbox Series use the native eight-byte PID payload exposed by the
-Windows Xbox HID stack. The library applies the actuator-enable mask and
-duration field, then reports the body motors as normalized low/high-frequency
-rumble and the independent trigger motors as trigger-rumble output. The public
-Xbox Series profile remains `0x045E:0x0B12`, while the Windows driver publishes
-the `0x045E:0x0B13&IG_00` XInputHID match ID used by the Steam/browser mapping
-path that previously worked. The Series Share button may remain unavailable
-through that Windows compatibility transport.
+Xbox One uses the native eight-byte PID payload exposed by the Windows Xbox HID
+stack. Xbox Series uses the native Bluetooth HID identity `0x045E:0x0B13`,
+report ID `1`, and a compact button layout that exposes Share as the Consumer
+Record usage. The driver also publishes the `0x045E:0x0B13&IG_00` Xbox hardware
+ID so Steam and the Windows Xbox HID stack bind it as an Xbox Wireless
+Controller. The public Xbox Series profile remains `0x045E:0x0B12`; the Windows
+transport applies the Share-capable descriptor and identity at device creation.
+Rumble writes use report ID `3` followed by the same eight-byte four-motor
+payload. The library applies the actuator-enable mask and duration field, then
+reports the body motors as normalized low/high-frequency rumble and the
+independent trigger motors as trigger-rumble output.
 
 The VHF driver answers the calibration, pairing, and firmware feature reports
 used to initialize DualShock 4 and DualSense HIDAPI output. It also answers the

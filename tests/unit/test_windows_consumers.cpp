@@ -658,7 +658,10 @@ TEST_F(WindowsConsumerTest, NativeXboxPidRumbleWritesAreNormalized) {
     GamepadOutputCapture output_capture;
     output_capture.attach(*created.adapter);
 
-    const auto hid_interface = wait_for_new_interface(previous_paths, profile.vendor_id, profile.product_id);
+    const auto product_id = profile.gamepad_kind == lvh::GamepadProfileKind::xbox_series ?
+                              lvh::detail::windows::xbox_series_bluetooth_product_id :
+                              profile.product_id;
+    const auto hid_interface = wait_for_new_interface(previous_paths, profile.vendor_id, product_id);
     ASSERT_TRUE(hid_interface.has_value()) << "The VHF Xbox HID interface was not enumerated";
     ASSERT_EQ(hid_interface->output_report_size, profile.output_report_size + 1U);
 
@@ -673,7 +676,9 @@ TEST_F(WindowsConsumerTest, NativeXboxPidRumbleWritesAreNormalized) {
     )};
     ASSERT_TRUE(hid) << "Unable to open the VHF Xbox HID interface: " << GetLastError();
 
-    const std::vector<std::uint8_t> report {0, 0x0F, 25, 50, 75, 100, 10, 0, 0};
+    const auto report_id =
+      profile.gamepad_kind == lvh::GamepadProfileKind::xbox_series ? std::uint8_t {0x03U} : std::uint8_t {0x00U};
+    const std::vector<std::uint8_t> report {report_id, 0x0F, 25, 50, 75, 100, 10, 0, 0};
     DWORD bytes_written = 0;
     ASSERT_TRUE(WriteFile(
       hid.get(),

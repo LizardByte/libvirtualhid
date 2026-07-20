@@ -32,16 +32,6 @@ namespace lvh::detail::windows {
     append_hardware_id_hex4(hardware_ids, product_id);
   }
 
-  constexpr std::uint16_t xinputhid_match_product_id(const LvhWindowsCreateGamepadRequest &request) {
-    if (request.gamepad_kind == LVH_WINDOWS_GAMEPAD_XBOX_SERIES) {
-      // This Series-compatible XInputHID match ID was the path that Steam and
-      // browser consumers mapped correctly before the Bluetooth/02FF rewrites.
-      return 0x0B13;
-    }
-
-    return request.hardware_ids.product_id;
-  }
-
   constexpr bool is_xbox_gamepad(std::uint32_t gamepad_kind) {
     return gamepad_kind == LVH_WINDOWS_GAMEPAD_XBOX_360 || gamepad_kind == LVH_WINDOWS_GAMEPAD_XBOX_ONE ||
            gamepad_kind == LVH_WINDOWS_GAMEPAD_XBOX_SERIES;
@@ -51,7 +41,7 @@ namespace lvh::detail::windows {
     const auto &ids = request.hardware_ids;
     std::wstring hardware_ids;
     if (is_xbox_gamepad(request.gamepad_kind)) {
-      append_hid_vid_pid(hardware_ids, ids.vendor_id, xinputhid_match_product_id(request));
+      append_hid_vid_pid(hardware_ids, ids.vendor_id, ids.product_id);
       hardware_ids.append(L"&IG_00");
       hardware_ids.push_back(L'\0');
     }

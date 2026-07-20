@@ -1028,6 +1028,9 @@ namespace lvh::detail {
         if (state_->uses_generic_pid) {
           return context_->submit_gamepad_report(state_, windows::make_generic_windows_input_report(report));
         }
+        if (state_->profile.gamepad_kind == GamepadProfileKind::xbox_series) {
+          return context_->submit_gamepad_report(state_, windows::make_xbox_series_windows_input_report(report));
+        }
       }
 
       return context_->submit_gamepad_report(state_, report);

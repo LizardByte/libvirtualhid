@@ -333,6 +333,12 @@ namespace lvh::reports {
         return std::nullopt;
       }
 
+      // Xbox Series Bluetooth HID uses report ID 3 followed by the same
+      // eight-byte four-motor rumble payload.
+      if (profile.gamepad_kind == xbox_series && report.size() >= pid_rumble_report_size && report[0] == 0x03U) {
+        return 1U;
+      }
+
       // The Windows HID write buffer includes a leading zero for devices that
       // do not use report IDs. VHF may preserve that byte or expose only the
       // eight-byte PID payload, so accept both representations.
