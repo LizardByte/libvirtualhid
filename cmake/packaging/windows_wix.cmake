@@ -61,11 +61,20 @@ set(CPACK_WIX_UPGRADE_GUID "71D7B738-9D83-4E57-82E3-C3106D9F8053")
 set(CPACK_WIX_HELP_LINK "https://app.lizardbyte.dev/support")
 set(CPACK_WIX_PRODUCT_URL "${CMAKE_PROJECT_HOMEPAGE_URL}")
 set(CPACK_WIX_PROGRAM_MENU_FOLDER "LizardByte")
+# Force package files to replace existing files when switching between release
+# and PR builds, regardless of their embedded file versions.
+# https://learn.microsoft.com/en-us/windows/win32/msi/reinstallmode
+set(CPACK_WIX_PROPERTY_REINSTALLMODE "amus")
 set(CPACK_WIX_EXTENSIONS
         "WixToolset.UI.wixext")
 
 set(CPACK_WIX_PATCH_FILE
         "${CMAKE_CURRENT_LIST_DIR}/wix_resources/libvirtualhid-driver-installer-patch.xml")
+# CPack's default WiX template blocks downgrades. Users commonly switch between
+# release and PR builds, so allow any build to replace the installed one.
+# https://docs.firegiant.com/wix/schema/wxs/majorupgrade/#allowdowngrades
+set(CPACK_WIX_TEMPLATE
+        "${CMAKE_CURRENT_LIST_DIR}/wix_resources/wix.template.in")
 
 set(LIBVIRTUALHID_DRIVER_CPACK_LICENSE_FILE
     "${CMAKE_BINARY_DIR}/LicenseRef-LizardByte-SAL-1.0.txt")
