@@ -40,6 +40,7 @@ INPUT = ../README.md \
         usage.md \
         platform-support.md \
         windows-driver.md \
+        todo.md \
         streaming-host-integration.md \
         development.md \
         store-review-validation.md \

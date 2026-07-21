@@ -24,8 +24,6 @@ set(TEST_BINARY test_libvirtualhid)
 set(LIBVIRTUALHID_TEST_SOURCES
   "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_gamepad_adapter.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_gamepad_lifecycle.cpp"
-  "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_linux_backend.cpp"
-  "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_linux_consumers.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_profiles.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_report.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_runtime.cpp"
@@ -43,7 +41,9 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     pkg_check_modules(SDL2 REQUIRED IMPORTED_TARGET sdl2)
 
     list(APPEND LIBVIRTUALHID_TEST_SOURCES
-         "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/linux_backend_test_hooks.cpp")
+         "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/linux_backend_test_hooks.cpp"
+         "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_linux_backend.cpp"
+         "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_linux_consumers.cpp")
 
     if(LIBVIRTUALHID_ENABLE_XTEST)
         find_package(X11 QUIET)
@@ -51,7 +51,9 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
 elseif(WIN32)
     list(APPEND LIBVIRTUALHID_TEST_SOURCES
          "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/windows_backend_test_hooks.cpp"
-         "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_windows_backend.cpp")
+         "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_windows_backend.cpp"
+         "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_windows_consumers.cpp"
+         "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_windows_driver_protocol.cpp")
 elseif(APPLE)
     list(APPEND LIBVIRTUALHID_TEST_SOURCES
          "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/macos_backend_test_hooks.cpp"
@@ -92,6 +94,13 @@ elseif(APPLE)
       "-framework Carbon"
       "-framework CoreFoundation"
       "-framework IOKit")
+elseif(WIN32)
+    target_link_libraries(${TEST_BINARY}
+      PRIVATE
+      dinput8
+      dxguid
+      hid
+      setupapi)
 endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND LIBVIRTUALHID_ENABLE_XTEST AND X11_FOUND AND X11_XTest_FOUND)

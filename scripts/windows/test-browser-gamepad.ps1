@@ -36,7 +36,7 @@ function Get-ExpectedGamepadIdPattern {
     "generic" { return "(1209.*0001|vid[_ -]?1209.*pid[_ -]?0001|generic)" }
     "x360" { return "(045e.*028e|vid[_ -]?045e.*pid[_ -]?028e|x-?box.*360)" }
     "xone" { return "(045e.*02ea|vid[_ -]?045e.*pid[_ -]?02ea|xbox one|x-box one)" }
-    "xseries" { return "(045e.*0b12|045e.*02ff|vid[_ -]?045e.*pid[_ -]?0b12|vid[_ -]?045e.*pid[_ -]?02ff|xbox wireless|xbox series)" }
+    "xseries" { return "(045e.*0b12|045e.*0b13|vid[_ -]?045e.*pid[_ -]?0b12|vid[_ -]?045e.*pid[_ -]?0b13|xbox wireless|xbox series)" }
     "ds4" { return "(054c.*05c4|vid[_ -]?054c.*pid[_ -]?05c4|dualshock|wireless controller)" }
     "ds5" { return "(054c.*0ce6|vid[_ -]?054c.*pid[_ -]?0ce6|dualsense|wireless controller)" }
     "switch" { return "(057e.*2009|vid[_ -]?057e.*pid[_ -]?2009|switch|pro controller)" }

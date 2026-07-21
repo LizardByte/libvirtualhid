@@ -36,6 +36,16 @@ device from the requested descriptor, VID/PID, version, and report layout. Input
 reports are submitted through VHF, and HID output writes are normalized back to
 the C++ output callback path.
 
+The library and installed driver must use the same control-protocol version.
+Protocol version 2 expands the report-descriptor capacity to 2048 bytes for the
+complete DirectInput PID descriptor; a version mismatch is rejected rather
+than interpreting a differently sized request.
+
+Each backend runtime uses one control-file handle for commands and its pending
+output read. The driver associates output events with that handle, so feedback
+from a virtual gamepad is delivered only to the runtime that created it instead
+of being consumed by another libvirtualhid client.
+
 The driver opens a separate VHF source target for each virtual gamepad and
 parents that target to the control-file handle that created it. If the creating
 process exits or crashes, Windows cleans up gamepads that were not explicitly
@@ -153,17 +163,34 @@ The Windows backend publishes HID gamepads through VHF. DirectInput, SDL/HIDAPI,
 Windows.Gaming.Input/GameInput, and browser Gamepad API clients should see
 standard HID devices after the driver is installed.
 
-The built-in Xbox One and Xbox Series profiles use XboxGIP-shaped HID
-descriptors. The Xbox Series profile keeps the public physical USB identity
-`VID_045E&PID_0B12`; the driver also publishes a compatible driver-matching
-hardware ID for Windows binding. The Xbox 360 profile is rejected by the
-UMDF/VHF backend because a real Xbox 360 controller is an XUSB device rather
-than a VHF HID gamepad.
+The built-in Xbox One profile uses its XboxGIP-shaped HID descriptor. The public
+Xbox Series profile remains `VID_045E&PID_0B12`; the Windows transport presents
+it with release `0x0509` and the `VID_045E&PID_0B12&IG_00` XInputHID match ID
+observed from physical Xbox Series USB and Xbox Wireless Adapter connections.
+The VHF child preserves the native 17-byte GIP-shaped input report, including
+Share/Misc as button bit 12, and the report parser accepts the native eight-byte
+four-motor Xbox payload when a consumer delivers it. Physical Xbox Series USB,
+Bluetooth, and Xbox Wireless Adapter transports register in Steam through the
+Xbox HIDAPI path with Share mapped as `misc1:b11`; the VHF child does not follow
+that same consumer path or guarantee registration as an XInput slot. A
+Steam-visible Xbox Series Share button on Windows requires a non-VHF Xbox
+HIDAPI/GIP transport. The Xbox 360 profile is rejected by the UMDF/VHF backend
+because a real Xbox 360 controller is an XUSB device rather than a VHF HID
+gamepad.
 
-DualShock 4, DualSense, Switch Pro, and generic HID profiles are descriptor
-driven. Consumers that display raw HID strings may still show the Windows VHF
-product label because VHF does not provide a product/manufacturer string
-callback.
+DualShock 4 and DualSense answer the calibration, pairing, and firmware feature
+requests used by their Windows HIDAPI initialization paths. Switch Pro answers
+the native USB and subcommand handshake and submits native `0x30` input reports.
+The built-in Generic profile is presented to Windows as a DirectInput PID
+Joystick with the complete output-report set required for DirectInput
+enumeration. Constant Force and Sine output is normalized to the portable
+gamepad rumble callback; other declared effect payloads are ignored safely. The
+backend honors PID start delay, duration, and loop count, and automatically
+stops finite effects. These changes remain private to the Windows transport and
+do not alter the public platform-neutral profile API.
+
+Consumers that display raw HID strings may still show the Windows VHF product
+label because VHF does not provide a product/manufacturer string callback.
 
 ## Signing
 

@@ -388,13 +388,14 @@ namespace lvh {
         return OperationStatus::failure(ErrorCode::backend_failure, "failed to pack gamepad input report");
       }
 
+      const auto normalized = reports::normalize_state(state);
       if (device.backend) {
-        if (const auto status = device.backend->submit(report); !status.ok()) {
+        if (const auto status = device.backend->submit(normalized, report); !status.ok()) {
           return status;
         }
       }
 
-      device.last_state = reports::normalize_state(state);
+      device.last_state = normalized;
       device.last_report = std::move(report);
       ++device.submitted_reports;
       return OperationStatus::success();

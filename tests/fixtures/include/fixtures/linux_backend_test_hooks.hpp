@@ -7,6 +7,7 @@
 // standard includes
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -49,6 +50,56 @@ namespace lvh::detail::test {
      * @brief Events written to the pipe.
      */
     std::vector<LinuxInputEventRecord> events;
+  };
+
+  /**
+   * @brief Result from a fake uinput Xbox force-feedback exchange.
+   */
+  struct LinuxUinputRumbleResult {
+    /**
+     * @brief Create operation status.
+     */
+    OperationStatus create_status;
+
+    /**
+     * @brief Close operation status.
+     */
+    OperationStatus close_status;
+
+    /**
+     * @brief Number of normalized rumble callbacks received.
+     */
+    std::size_t callback_count = 0;
+
+    /**
+     * @brief Number of non-zero rumble callbacks received.
+     */
+    std::size_t nonzero_callback_count = 0;
+
+    /**
+     * @brief Number of zero-rumble callbacks received before the gamepad was closed.
+     */
+    std::size_t zero_callback_count_before_close = 0;
+
+    /**
+     * @brief Last normalized rumble callback.
+     */
+    GamepadOutput last_output;
+  };
+
+  /**
+   * @brief Position within one finite force-feedback playback cycle.
+   */
+  struct LinuxRumbleCycleTiming {
+    /**
+     * @brief Milliseconds elapsed in the current cycle.
+     */
+    std::uint64_t elapsed = 0;
+
+    /**
+     * @brief Milliseconds remaining in the current cycle.
+     */
+    std::uint64_t remaining = 0;
   };
 
   /**
@@ -364,6 +415,14 @@ namespace lvh::detail::test {
   std::uint16_t linux_uhid_bus(BusType bus_type);
 
   /**
+   * @brief Select the Linux UHID bus code for a built-in gamepad profile.
+   *
+   * @param kind Built-in gamepad profile kind.
+   * @return Linux UHID bus code.
+   */
+  std::uint16_t linux_gamepad_uhid_bus(GamepadProfileKind kind);
+
+  /**
    * @brief Translate a bus type to a Linux uinput bus code.
    *
    * @param bus_type Bus type.
@@ -462,6 +521,22 @@ namespace lvh::detail::test {
    * @return `true` when the HID name matches.
    */
   bool linux_hidraw_name_matches(std::string_view path, std::string_view name);
+
+  /**
+   * @brief Discover hidraw nodes using UHID metadata.
+   *
+   * @param name Expected HID name.
+   * @param physical_id Expected HID physical path.
+   * @param unique_id Expected HID unique id.
+   * @param hidraw_root Test hidraw sysfs root.
+   * @return Matching hidraw device nodes.
+   */
+  std::vector<DeviceNode> linux_discover_hidraw_nodes_by_metadata(
+    std::string_view name,
+    std::string_view physical_id,
+    std::string_view unique_id,
+    const std::string &hidraw_root
+  );
 
   /**
    * @brief Discover Linux input nodes for a device name.
@@ -566,6 +641,42 @@ namespace lvh::detail::test {
    * @return Submission status and captured input events.
    */
   LinuxInputSubmissionResult linux_uinput_keyboard_submit_pipe(const KeyboardEvent &event);
+
+  /**
+   * @brief Submit normalized state through a pipe-backed uinput gamepad.
+   *
+   * @param kind Gamepad profile kind.
+   * @param state Gamepad state to submit.
+   * @return Submission status and captured input events.
+   */
+  LinuxInputSubmissionResult linux_uinput_gamepad_submit_pipe(GamepadProfileKind kind, const GamepadState &state);
+
+  /**
+   * @brief Exercise uinput gamepad force-feedback upload and playback.
+   *
+   * @param kind Gamepad profile kind.
+   * @param effect_type Linux force-feedback effect type.
+   * @param replay_length Effect duration in milliseconds, or zero for an infinite effect.
+   * @param send_stop Whether to send an explicit stop event after starting the effect.
+   * @param reupload_length Replacement duration to upload while the effect is active.
+   * @return Creation, callback, and close results.
+   */
+  LinuxUinputRumbleResult linux_uinput_gamepad_fake_rumble(
+    GamepadProfileKind kind,
+    std::uint16_t effect_type,
+    std::uint16_t replay_length = 1000,
+    bool send_stop = false,
+    std::optional<std::uint16_t> reupload_length = std::nullopt
+  );
+
+  /**
+   * @brief Calculate timing within one repeated force-feedback cycle.
+   *
+   * @param elapsed Total milliseconds elapsed across all playback cycles.
+   * @param length Length of one playback cycle in milliseconds.
+   * @return Current-cycle elapsed and remaining time.
+   */
+  LinuxRumbleCycleTiming linux_uinput_rumble_cycle_timing(std::uint64_t elapsed, std::uint64_t length);
 
   /**
    * @brief Try creating a libevdev uinput mouse on an invalid file descriptor.
@@ -887,6 +998,14 @@ namespace lvh::detail::test {
    * @return Recorded fake libevdev construction result.
    */
   LinuxLibevdevCreationResult linux_uinput_create_fake_libevdev_device(DeviceType device_type);
+
+  /**
+   * @brief Create a uinput gamepad through the fake libevdev recorder.
+   *
+   * @param kind Gamepad profile kind to create.
+   * @return Recorded fake libevdev construction result.
+   */
+  LinuxLibevdevCreationResult linux_uinput_create_fake_gamepad(GamepadProfileKind kind);
 
   /**
    * @brief Try creating a uinput device while fake libevdev allocation fails.

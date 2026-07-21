@@ -17,6 +17,7 @@
 #include <format>
 #include <fstream>
 #include <iomanip>
+#include <limits>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -59,6 +60,7 @@
 
 // local includes
 #include "core/backend.hpp"
+#include "shared/playstation_feature_reports.hpp"
 
 #include <libvirtualhid/profiles.hpp>
 #include <libvirtualhid/report.hpp>
@@ -77,303 +79,15 @@ namespace lvh::detail {
     constexpr auto tablet_distance_max = 1024;
     constexpr auto tablet_resolution = 28;
     constexpr auto poll_timeout_ms = 100;
-    constexpr auto dualshock4_usb_calibration_report = 0x02;
-    constexpr auto dualshock4_bluetooth_calibration_report = 0x05;
-    constexpr auto dualshock4_pairing_report = 0x12;
-    constexpr auto dualshock4_firmware_report = 0xA3;
+    constexpr auto uinput_feedback_startup_delay = std::chrono::milliseconds {100};
+    constexpr auto xbox_trigger_max = 255;
+    // The Bluetooth bus selects the sparse evdev mapping that matches the
+    // button capabilities exposed by these Xbox uinput devices.
+    constexpr auto xbox_sparse_uinput_bus = BUS_BLUETOOTH;
+    constexpr std::uint16_t xbox_wireless_uinput_product_id = 0x0B20;
+    constexpr std::uint16_t xbox_series_uinput_product_id = 0x0B13;
+    namespace ps = playstation_feature_reports;
     constexpr auto playstation_periodic_report_ms = 10;
-    constexpr std::uint8_t playstation_feature_crc_seed = 0xA3;
-    constexpr auto dualsense_calibration_report = 0x05;
-    constexpr auto dualsense_pairing_report = 0x09;
-    constexpr auto dualsense_firmware_report = 0x20;
-
-    constexpr std::uint8_t dualshock4_usb_calibration_info[] {
-      0x02,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x10,
-      0x27,
-      0xF0,
-      0xD8,
-      0x10,
-      0x27,
-      0xF0,
-      0xD8,
-      0x10,
-      0x27,
-      0xF0,
-      0xD8,
-      0xF4,
-      0x01,
-      0xF4,
-      0x01,
-      0x10,
-      0x27,
-      0xF0,
-      0xD8,
-      0x10,
-      0x27,
-      0xF0,
-      0xD8,
-      0x10,
-      0x27,
-      0xF0,
-      0xD8,
-      0x00,
-      0x00,
-    };
-
-    constexpr std::uint8_t dualshock4_bluetooth_calibration_info[] {
-      0x05,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x10,
-      0x27,
-      0xF0,
-      0xD8,
-      0x10,
-      0x27,
-      0xF0,
-      0xD8,
-      0x10,
-      0x27,
-      0xF0,
-      0xD8,
-      0xF4,
-      0x01,
-      0xF4,
-      0x01,
-      0x10,
-      0x27,
-      0xF0,
-      0xD8,
-      0x10,
-      0x27,
-      0xF0,
-      0xD8,
-      0x10,
-      0x27,
-      0xF0,
-      0xD8,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-    };
-
-    constexpr std::uint8_t dualshock4_firmware_info[] {
-      0xA3,
-      0x41,
-      0x75,
-      0x67,
-      0x20,
-      0x20,
-      0x33,
-      0x20,
-      0x32,
-      0x30,
-      0x31,
-      0x33,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x30,
-      0x37,
-      0x3A,
-      0x30,
-      0x31,
-      0x3A,
-      0x31,
-      0x32,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x01,
-      0x00,
-      0x31,
-      0x03,
-      0x00,
-      0x00,
-      0x00,
-      0x49,
-      0x00,
-      0x05,
-      0x00,
-      0x00,
-      0x80,
-      0x03,
-      0x00,
-    };
-
-    constexpr std::uint8_t dualshock4_pairing_info[] {
-      0x12,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-    };
-
-    constexpr std::uint8_t dualsense_calibration_info[] {
-      0x05,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x10,
-      0x27,
-      0xF0,
-      0xD8,
-      0x10,
-      0x27,
-      0xF0,
-      0xD8,
-      0x10,
-      0x27,
-      0xF0,
-      0xD8,
-      0xF4,
-      0x01,
-      0xF4,
-      0x01,
-      0x10,
-      0x27,
-      0xF0,
-      0xD8,
-      0x10,
-      0x27,
-      0xF0,
-      0xD8,
-      0x10,
-      0x27,
-      0xF0,
-      0xD8,
-      0x0B,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-    };
-
-    constexpr std::uint8_t dualsense_firmware_info[] {
-      0x20,
-      0x4A,
-      0x75,
-      0x6E,
-      0x20,
-      0x31,
-      0x39,
-      0x20,
-      0x32,
-      0x30,
-      0x32,
-      0x33,
-      0x31,
-      0x34,
-      0x3A,
-      0x34,
-      0x37,
-      0x3A,
-      0x33,
-      0x34,
-      0x03,
-      0x00,
-      0x44,
-      0x00,
-      0x08,
-      0x02,
-      0x00,
-      0x01,
-      0x36,
-      0x00,
-      0x00,
-      0x01,
-      0xC1,
-      0xC8,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x54,
-      0x01,
-      0x00,
-      0x00,
-      0x14,
-      0x00,
-      0x00,
-      0x00,
-      0x0B,
-      0x00,
-      0x01,
-      0x00,
-      0x06,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-    };
-
-    constexpr std::uint8_t dualsense_pairing_info[] {
-      0x09,
-      0x74,
-      0xE7,
-      0xD6,
-      0x3A,
-      0x53,
-      0x35,
-      0x08,
-      0x25,
-      0x00,
-      0x1E,
-      0x00,
-      0xEE,
-      0x74,
-      0xD0,
-      0xBC,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-    };
 
     int system_access(const char *path, int mode) {
       return ::access(path, mode);
@@ -490,11 +204,61 @@ namespace lvh::detail {
       return kind == GamepadProfileKind::dualshock4 || kind == GamepadProfileKind::dualsense;
     }
 
+    bool uses_uinput_gamepad_profile(GamepadProfileKind kind) {
+      switch (kind) {
+        using enum GamepadProfileKind;
+
+        case generic:
+        case xbox_360:
+        case xbox_one:
+        case xbox_series:
+        case switch_pro:
+          return true;
+        case dualshock4:
+        case dualsense:
+          return false;
+      }
+
+      return false;
+    }
+
+    std::optional<int> uinput_misc1_button(GamepadProfileKind kind) {
+      switch (kind) {
+        using enum GamepadProfileKind;
+
+        case generic:
+        case xbox_series:
+          return KEY_RECORD;
+        case switch_pro:
+          return BTN_Z;
+        case xbox_360:
+        case xbox_one:
+        case dualshock4:
+        case dualsense:
+          return std::nullopt;
+      }
+
+      return std::nullopt;
+    }
+
+    bool uses_sparse_uinput_button_slots(GamepadProfileKind kind) {
+      using enum GamepadProfileKind;
+
+      return kind == xbox_360 || kind == xbox_one || kind == xbox_series;
+    }
+
     std::uint16_t to_uhid_bus(BusType bus_type) {
       if (bus_type == BusType::bluetooth) {
         return BUS_BLUETOOTH;
       }
       return BUS_USB;
+    }
+
+    std::uint16_t to_uhid_bus(const DeviceProfile &profile) {
+      if (profile.gamepad_kind == GamepadProfileKind::switch_pro) {
+        return BUS_VIRTUAL;
+      }
+      return to_uhid_bus(profile.bus_type);
     }
 
     std::uint16_t to_uinput_bus(BusType bus_type) {
@@ -537,6 +301,16 @@ namespace lvh::detail {
       nodes.push_back({.kind = kind, .path = path.string()});
     }
 
+    void append_node_if_missing(std::vector<DeviceNode> &nodes, DeviceNodeKind kind, const std::filesystem::path &path) {
+      const auto path_string = path.string();
+      const auto existing = std::ranges::find_if(nodes, [kind, &path_string](const DeviceNode &node) {
+        return node.kind == kind && node.path == path_string;
+      });
+      if (existing == nodes.end()) {
+        nodes.push_back({.kind = kind, .path = path_string});
+      }
+    }
+
     bool hidraw_name_matches(const std::filesystem::path &uevent_path, std::string_view name) {
       std::ifstream file {uevent_path};
       if (!file) {
@@ -552,6 +326,80 @@ namespace lvh::detail {
       }
 
       return false;
+    }
+
+    bool hidraw_metadata_matches(
+      const std::filesystem::path &uevent_path,
+      std::string_view name,
+      std::string_view physical_id,
+      std::string_view unique_id
+    ) {
+      std::ifstream file {uevent_path};
+      if (!file) {
+        return false;
+      }
+
+      auto actual_name = std::optional<std::string> {};
+      auto actual_physical_id = std::optional<std::string> {};
+      auto actual_unique_id = std::optional<std::string> {};
+      std::string line;
+      while (std::getline(file, line)) {
+        if (constexpr std::string_view name_key {"HID_NAME="}; line.starts_with(name_key)) {
+          actual_name = line.substr(name_key.size());
+          continue;
+        }
+        if (constexpr std::string_view phys_key {"HID_PHYS="}; line.starts_with(phys_key)) {
+          actual_physical_id = line.substr(phys_key.size());
+          continue;
+        }
+        if (constexpr std::string_view uniq_key {"HID_UNIQ="}; line.starts_with(uniq_key)) {
+          actual_unique_id = line.substr(uniq_key.size());
+        }
+      }
+
+      auto matched_stable_metadata = false;
+      if (!physical_id.empty() && actual_physical_id.has_value()) {
+        matched_stable_metadata = true;
+        if (*actual_physical_id != physical_id) {
+          return false;
+        }
+      }
+      if (!unique_id.empty() && actual_unique_id.has_value()) {
+        matched_stable_metadata = true;
+        if (*actual_unique_id != unique_id) {
+          return false;
+        }
+      }
+      if (matched_stable_metadata) {
+        return true;
+      }
+      return !name.empty() && actual_name.has_value() && *actual_name == name;
+    }
+
+    std::vector<DeviceNode> discover_hidraw_nodes_by_metadata(
+      std::string_view name,
+      std::string_view physical_id,
+      std::string_view unique_id,
+      const std::filesystem::path &hidraw_root = "/sys/class/hidraw"
+    ) {
+      using enum DeviceNodeKind;
+
+      std::vector<DeviceNode> nodes;
+      std::error_code error;
+      if (!std::filesystem::exists(hidraw_root, error)) {
+        return nodes;
+      }
+
+      for (std::filesystem::directory_iterator it {hidraw_root, error}, end; !error && it != end; it.increment(error)) {
+        if (!hidraw_metadata_matches(it->path() / "device" / "uevent", name, physical_id, unique_id)) {
+          continue;
+        }
+
+        append_node(nodes, hidraw, std::filesystem::path {"/dev"} / it->path().filename());
+        append_node(nodes, sysfs, it->path());
+      }
+
+      return nodes;
     }
 
     std::vector<DeviceNode> discover_input_nodes_by_name(
@@ -1273,8 +1121,121 @@ namespace lvh::detail {
       return enable_evdev_property(device, INPUT_PROP_DIRECT, "tablet direct");
     }
 
-    OperationStatus configure_evdev_device(libevdev *device, DeviceType device_type) {
-      switch (device_type) {
+    OperationStatus configure_evdev_gamepad_event_types(libevdev *device, bool supports_rumble) {
+      if (const auto status = enable_evdev_type(device, EV_KEY, "gamepad button events"); !status.ok()) {
+        return status;
+      }
+      if (const auto status = enable_evdev_type(device, EV_ABS, "gamepad absolute events"); !status.ok()) {
+        return status;
+      }
+      if (!supports_rumble) {
+        return OperationStatus::success();
+      }
+      return enable_evdev_type(device, EV_FF, "gamepad force-feedback events");
+    }
+
+    OperationStatus configure_evdev_gamepad_buttons(libevdev *device, GamepadProfileKind profile_kind) {
+      constexpr std::array active_buttons {
+        BTN_SOUTH,
+        BTN_EAST,
+        BTN_NORTH,
+        BTN_WEST,
+        BTN_TL,
+        BTN_TR,
+        BTN_SELECT,
+        BTN_START,
+        BTN_MODE,
+        BTN_THUMBL,
+        BTN_THUMBR,
+      };
+      for (const auto button : active_buttons) {
+        if (const auto status = enable_evdev_code(device, EV_KEY, button, "gamepad button"); !status.ok()) {
+          return status;
+        }
+      }
+
+      if (uses_sparse_uinput_button_slots(profile_kind)) {
+        // Linux gamepad consumers use the sparse button sequence. These unused
+        // capabilities preserve the active button indices.
+        constexpr std::array reserved_buttons {BTN_C, BTN_Z, BTN_TL2, BTN_TR2};
+        for (const auto button : reserved_buttons) {
+          if (const auto status = enable_evdev_code(device, EV_KEY, button, "reserved gamepad button slot"); !status.ok()) {
+            return status;
+          }
+        }
+      }
+      if (profile_kind == GamepadProfileKind::switch_pro) {
+        for (const auto button : {BTN_TL2, BTN_TR2}) {
+          if (const auto status = enable_evdev_code(device, EV_KEY, button, "gamepad trigger button"); !status.ok()) {
+            return status;
+          }
+        }
+      }
+      if (const auto misc1_button = uinput_misc1_button(profile_kind); misc1_button.has_value()) {
+        if (const auto status = enable_evdev_code(device, EV_KEY, *misc1_button, "gamepad auxiliary button"); !status.ok()) {
+          return status;
+        }
+      }
+      return OperationStatus::success();
+    }
+
+    OperationStatus configure_evdev_gamepad_axes(libevdev *device, GamepadProfileKind profile_kind) {
+      auto dpad = make_absinfo(-1, 1);
+      for (const auto code : {ABS_HAT0X, ABS_HAT0Y}) {
+        if (const auto status = enable_evdev_code(device, EV_ABS, code, "gamepad directional axis", &dpad); !status.ok()) {
+          return status;
+        }
+      }
+
+      auto stick = make_absinfo(-32768, 32767, 16, 128);
+      for (const auto code : {ABS_X, ABS_Y, ABS_RX, ABS_RY}) {
+        if (const auto status = enable_evdev_code(device, EV_ABS, code, "gamepad stick axis", &stick); !status.ok()) {
+          return status;
+        }
+      }
+
+      if (profile_kind == GamepadProfileKind::switch_pro) {
+        return OperationStatus::success();
+      }
+
+      auto trigger = make_absinfo(0, xbox_trigger_max);
+      for (const auto code : {ABS_Z, ABS_RZ}) {
+        if (const auto status = enable_evdev_code(device, EV_ABS, code, "gamepad trigger axis", &trigger); !status.ok()) {
+          return status;
+        }
+      }
+      return OperationStatus::success();
+    }
+
+    OperationStatus configure_evdev_gamepad_force_feedback(libevdev *device, bool supports_rumble) {
+      if (!supports_rumble) {
+        return OperationStatus::success();
+      }
+      constexpr std::array effect_codes {FF_RUMBLE, FF_CONSTANT, FF_PERIODIC, FF_SINE, FF_RAMP};
+      for (const auto code : effect_codes) {
+        if (const auto status = enable_evdev_code(device, EV_FF, code, "gamepad force-feedback effect"); !status.ok()) {
+          return status;
+        }
+      }
+      return enable_evdev_code(device, EV_FF, FF_GAIN, "gamepad force-feedback gain");
+    }
+
+    OperationStatus configure_evdev_gamepad(libevdev *device, const DeviceProfile &profile) {
+      const auto supports_rumble = profile.capabilities.supports_rumble;
+      if (const auto status = configure_evdev_gamepad_event_types(device, supports_rumble); !status.ok()) {
+        return status;
+      }
+      if (const auto status = configure_evdev_gamepad_buttons(device, profile.gamepad_kind); !status.ok()) {
+        return status;
+      }
+      if (const auto status = configure_evdev_gamepad_axes(device, profile.gamepad_kind); !status.ok()) {
+        return status;
+      }
+      return configure_evdev_gamepad_force_feedback(device, supports_rumble);
+    }
+
+    OperationStatus configure_evdev_device(libevdev *device, const DeviceProfile &profile) {
+      switch (profile.device_type) {
         using enum DeviceType;
 
         case keyboard:
@@ -1288,7 +1249,10 @@ namespace lvh::detail {
         case pen_tablet:
           return configure_evdev_pen_tablet(device);
         case gamepad:
-          return OperationStatus::failure(ErrorCode::unsupported_profile, "gamepads are created through UHID, not uinput");
+          if (uses_uinput_gamepad_profile(profile.gamepad_kind)) {
+            return configure_evdev_gamepad(device, profile);
+          }
+          return OperationStatus::failure(ErrorCode::unsupported_profile, "gamepad profile is not supported through uinput");
       }
 
       return OperationStatus::failure(ErrorCode::unsupported_profile, "unsupported uinput device type");
@@ -1305,12 +1269,26 @@ namespace lvh::detail {
       }
 
       libevdev_set_name(device.get(), profile.name.c_str());
-      libevdev_set_id_bustype(device.get(), to_uinput_bus(profile.bus_type));
-      libevdev_set_id_vendor(device.get(), profile.vendor_id);
-      libevdev_set_id_product(device.get(), profile.product_id);
+      const auto xbox_360 = profile.gamepad_kind == GamepadProfileKind::xbox_360;
+      const auto xbox_one = profile.gamepad_kind == GamepadProfileKind::xbox_one;
+      const auto xbox_series = profile.gamepad_kind == GamepadProfileKind::xbox_series;
+      const auto uses_sparse_xbox_mapping = xbox_360 || xbox_one || xbox_series;
+      auto vendor_id = profile.vendor_id;
+      auto product_id = profile.product_id;
+      if (xbox_one) {
+        product_id = xbox_wireless_uinput_product_id;
+      } else if (xbox_series) {
+        product_id = xbox_series_uinput_product_id;
+      }
+      libevdev_set_id_bustype(
+        device.get(),
+        uses_sparse_xbox_mapping ? xbox_sparse_uinput_bus : to_uinput_bus(profile.bus_type)
+      );
+      libevdev_set_id_vendor(device.get(), vendor_id);
+      libevdev_set_id_product(device.get(), product_id);
       libevdev_set_id_version(device.get(), profile.version);
 
-      if (const auto status = configure_evdev_device(device.get(), profile.device_type); !status.ok()) {
+      if (const auto status = configure_evdev_device(device.get(), profile); !status.ok()) {
         return {status, nullptr};
       }
 
@@ -2232,6 +2210,486 @@ namespace lvh::detail {
     }
 #endif
 
+    struct UinputRumbleEffect {
+      std::uint16_t start_weak_magnitude = 0;
+      std::uint16_t start_strong_magnitude = 0;
+      std::uint16_t end_weak_magnitude = 0;
+      std::uint16_t end_strong_magnitude = 0;
+      ff_envelope envelope {};
+      std::chrono::milliseconds length {0};
+      std::chrono::milliseconds delay {0};
+      std::chrono::steady_clock::time_point start {};
+      std::chrono::steady_clock::time_point end {};
+      int playback_count = 1;
+      bool infinite = false;
+      bool active = false;
+    };
+
+    std::pair<std::uint64_t, std::uint64_t> rumble_effect_cycle_timing(
+      std::uint64_t elapsed,
+      std::uint64_t length
+    ) {
+      if (length == 0U) {
+        return {elapsed, std::numeric_limits<std::uint64_t>::max()};
+      }
+
+      const auto cycle_elapsed = elapsed % length;
+      return {cycle_elapsed, length - cycle_elapsed};
+    }
+
+    /**
+     * @brief Standard gamepad exposed through canonical Linux input events.
+     */
+    class UinputGamepad final: public BackendGamepad, private UinputDevice {
+    public:
+      UinputGamepad(int file_descriptor, GamepadProfileKind profile_kind):
+          UinputDevice {file_descriptor},
+          profile_kind_ {profile_kind} {}
+
+      ~UinputGamepad() override = default;
+
+      OperationStatus create(DeviceId id, const CreateGamepadOptions &options) {
+        if (options.profile.gamepad_kind != profile_kind_ || !uses_uinput_gamepad_profile(profile_kind_)) {
+          return OperationStatus::failure(ErrorCode::unsupported_profile, "gamepad profile is not supported through uinput");
+        }
+
+        device_name_ = options.profile.name;
+        if (const auto status = create_uinput_device(options.profile, id); !status.ok()) {
+          return status;
+        }
+
+        if (options.profile.capabilities.supports_rumble) {
+          running_ = true;
+          reader_ = std::jthread {[this](std::stop_token stop_token) {
+            read_output_loop(stop_token);
+          }};
+        }
+        return OperationStatus::success();
+      }
+
+      OperationStatus submit(
+        const GamepadState &state,
+        const std::vector<std::uint8_t> & /*report*/
+      ) override {
+        if (!is_open()) {
+          return OperationStatus::failure(ErrorCode::device_closed, "uinput Xbox gamepad is closed");
+        }
+
+        const auto normalized = reports::normalize_state(state);
+        std::lock_guard lock {submit_mutex_};
+        if (const auto status = emit_button_state(normalized.buttons); !status.ok()) {
+          return status;
+        }
+        if (const auto status = emit_axis_state(normalized); !status.ok()) {
+          return status;
+        }
+        return sync();
+      }
+
+      void set_output_callback(OutputCallback callback) override {
+        std::lock_guard lock {callback_mutex_};
+        output_callback_ = std::move(callback);
+      }
+
+      std::vector<DeviceNode> device_nodes() const override {
+        return discover_input_nodes_by_name(device_name_);
+      }
+
+      OperationStatus close() override {
+        running_ = false;
+        if (reader_.joinable()) {
+          reader_.request_stop();
+          reader_.join();
+        }
+        dispatch_rumble(0, 0);
+        return close_uinput("uinput gamepad");
+      }
+
+    private:
+      template<std::size_t Size>
+      OperationStatus emit_button_map(
+        const ButtonSet &buttons,
+        const std::array<std::pair<GamepadButton, int>, Size> &button_map
+      ) {
+        for (const auto &[button, code] : button_map) {
+          if (const auto status = emit_event(EV_KEY, code, buttons.test(button) ? 1 : 0); !status.ok()) {
+            return status;
+          }
+        }
+
+        return OperationStatus::success();
+      }
+
+      OperationStatus emit_button_state(const ButtonSet &buttons) {
+        using enum GamepadButton;
+
+        constexpr std::array standard_face_button_map {
+          std::pair {a, BTN_SOUTH},
+          std::pair {b, BTN_EAST},
+          std::pair {x, BTN_NORTH},
+          std::pair {y, BTN_WEST},
+        };
+        constexpr std::array switch_face_button_map {
+          std::pair {a, BTN_EAST},
+          std::pair {b, BTN_SOUTH},
+          std::pair {x, BTN_NORTH},
+          std::pair {y, BTN_WEST},
+        };
+        constexpr std::array common_button_map {
+          std::pair {left_shoulder, BTN_TL},
+          std::pair {right_shoulder, BTN_TR},
+          std::pair {back, BTN_SELECT},
+          std::pair {start, BTN_START},
+          std::pair {guide, BTN_MODE},
+          std::pair {left_stick, BTN_THUMBL},
+          std::pair {right_stick, BTN_THUMBR},
+        };
+
+        const auto &face_button_map =
+          profile_kind_ == GamepadProfileKind::switch_pro ? switch_face_button_map : standard_face_button_map;
+        if (const auto status = emit_button_map(buttons, face_button_map); !status.ok()) {
+          return status;
+        }
+        if (const auto status = emit_button_map(buttons, common_button_map); !status.ok()) {
+          return status;
+        }
+        if (const auto misc1_button = uinput_misc1_button(profile_kind_); misc1_button.has_value()) {
+          if (const auto status = emit_event(EV_KEY, *misc1_button, buttons.test(misc1) ? 1 : 0); !status.ok()) {
+            return status;
+          }
+        }
+
+        return OperationStatus::success();
+      }
+
+      OperationStatus emit_axis_state(const GamepadState &state) {
+        using enum GamepadButton;
+
+        if (const auto status = emit_event(EV_ABS, ABS_HAT0X, dpad_axis(state.buttons, dpad_left, dpad_right)); !status.ok()) {
+          return status;
+        }
+        if (const auto status = emit_event(EV_ABS, ABS_HAT0Y, dpad_axis(state.buttons, dpad_up, dpad_down)); !status.ok()) {
+          return status;
+        }
+
+        const std::array stick_axes {
+          std::pair {ABS_X, static_cast<int>(reports::normalize_axis(state.left_stick.x))},
+          std::pair {ABS_Y, static_cast<int>(reports::normalize_axis(-state.left_stick.y))},
+          std::pair {ABS_RX, static_cast<int>(reports::normalize_axis(state.right_stick.x))},
+          std::pair {ABS_RY, static_cast<int>(reports::normalize_axis(-state.right_stick.y))},
+        };
+        for (const auto &[code, value] : stick_axes) {
+          if (const auto status = emit_event(EV_ABS, code, value); !status.ok()) {
+            return status;
+          }
+        }
+
+        if (profile_kind_ == GamepadProfileKind::switch_pro) {
+          if (const auto status = emit_event(EV_KEY, BTN_TL2, state.left_trigger > 0.0F ? 1 : 0); !status.ok()) {
+            return status;
+          }
+          return emit_event(EV_KEY, BTN_TR2, state.right_trigger > 0.0F ? 1 : 0);
+        }
+
+        const std::array trigger_axes {
+          std::pair {ABS_Z, static_cast<int>(reports::normalize_trigger(state.left_trigger))},
+          std::pair {ABS_RZ, static_cast<int>(reports::normalize_trigger(state.right_trigger))},
+        };
+        for (const auto &[code, value] : trigger_axes) {
+          if (const auto status = emit_event(EV_ABS, code, value); !status.ok()) {
+            return status;
+          }
+        }
+        return OperationStatus::success();
+      }
+
+      static int dpad_axis(const ButtonSet &buttons, GamepadButton negative, GamepadButton positive) {
+        const auto negative_pressed = buttons.test(negative);
+        if (const auto positive_pressed = buttons.test(positive); negative_pressed == positive_pressed) {
+          return 0;
+        }
+        return negative_pressed ? -1 : 1;
+      }
+
+      void read_output_loop(std::stop_token stop_token) {
+        std::this_thread::sleep_for(uinput_feedback_startup_delay);
+        while (!stop_token.stop_requested() && running_) {
+          pollfd descriptor {};
+          descriptor.fd = file_descriptor();
+          descriptor.events = POLLIN;
+
+          const auto poll_result = system_poll(&descriptor, 1, poll_timeout_ms);
+          if (poll_result < 0) {
+            if (errno == EINTR) {
+              continue;
+            }
+            return;
+          }
+          if (poll_result > 0) {
+            if ((descriptor.revents & (POLLERR | POLLHUP | POLLNVAL)) != 0) {
+              return;
+            }
+            if ((descriptor.revents & POLLIN) != 0 && !read_output_events()) {
+              return;
+            }
+          }
+          update_rumble();
+        }
+      }
+
+      bool read_output_events() {
+        std::array<input_event, 16> events {};
+        const auto result = system_read(file_descriptor(), std::as_writable_bytes(std::span {events}));
+        if (result < 0) {
+          return errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR;
+        }
+        if (result == 0) {
+          return false;
+        }
+
+        const auto event_count = static_cast<std::size_t>(result) / sizeof(input_event);
+        for (std::size_t index = 0; index < event_count; ++index) {
+          handle_output_event(events[index]);
+        }
+        return true;
+      }
+
+      void handle_output_event(const input_event &event) {
+        if (event.type == EV_UINPUT && event.code == UI_FF_UPLOAD) {
+          upload_rumble_effect(event.value);
+          return;
+        }
+        if (event.type == EV_UINPUT && event.code == UI_FF_ERASE) {
+          erase_rumble_effect(event.value);
+          return;
+        }
+        if (event.type != EV_FF) {
+          return;
+        }
+        if (event.code == FF_GAIN) {
+          gain_ = static_cast<std::uint16_t>(std::clamp(event.value, 0, static_cast<int>(std::numeric_limits<std::uint16_t>::max())));
+          return;
+        }
+
+        const auto effect = rumble_effects_.find(event.code);
+        if (effect == rumble_effects_.end()) {
+          return;
+        }
+        if (event.value <= 0) {
+          effect->second.active = false;
+          return;
+        }
+
+        const auto now = std::chrono::steady_clock::now();
+        effect->second.active = true;
+        effect->second.start = now + effect->second.delay;
+        effect->second.playback_count = std::max(event.value, 1);
+        effect->second.end = rumble_effect_end(effect->second);
+      }
+
+      void upload_rumble_effect(int request_id) {
+        uinput_ff_upload upload {};
+        upload.request_id = request_id;
+        if (system_ioctl(file_descriptor(), UI_BEGIN_FF_UPLOAD, reinterpret_cast<unsigned long>(&upload)) < 0) {
+          return;
+        }
+
+        if (auto effect = normalize_rumble_effect(upload.effect); effect.has_value()) {
+          if (const auto existing = rumble_effects_.find(upload.effect.id); existing != rumble_effects_.end()) {
+            effect->active = existing->second.active;
+            if (effect->active) {
+              effect->start = existing->second.start;
+              effect->playback_count = existing->second.playback_count;
+              effect->end = rumble_effect_end(*effect);
+            }
+          }
+          rumble_effects_.insert_or_assign(upload.effect.id, *effect);
+        }
+
+        upload.retval = 0;
+        static_cast<void>(system_ioctl(file_descriptor(), UI_END_FF_UPLOAD, reinterpret_cast<unsigned long>(&upload)));
+      }
+
+      void erase_rumble_effect(int request_id) {
+        uinput_ff_erase erase {};
+        erase.request_id = request_id;
+        if (system_ioctl(file_descriptor(), UI_BEGIN_FF_ERASE, reinterpret_cast<unsigned long>(&erase)) < 0) {
+          return;
+        }
+
+        rumble_effects_.erase(erase.effect_id);
+        erase.retval = 0;
+        static_cast<void>(system_ioctl(file_descriptor(), UI_END_FF_ERASE, reinterpret_cast<unsigned long>(&erase)));
+      }
+
+      void update_rumble() {
+        const auto now = std::chrono::steady_clock::now();
+        auto weak = std::uint64_t {0};
+        auto strong = std::uint64_t {0};
+        for (auto &[id, effect] : rumble_effects_) {
+          static_cast<void>(id);
+          if (!effect.active || now < effect.start) {
+            continue;
+          }
+          if (!effect.infinite && now >= effect.end) {
+            effect.active = false;
+            continue;
+          }
+          const auto [effect_weak, effect_strong] = rumble_magnitudes(effect, now);
+          weak += effect_weak;
+          strong += effect_strong;
+        }
+
+        constexpr auto maximum = std::numeric_limits<std::uint16_t>::max();
+        const auto scaled_weak = static_cast<std::uint16_t>(std::min<std::uint64_t>(weak, maximum) * gain_ / maximum);
+        const auto scaled_strong = static_cast<std::uint16_t>(std::min<std::uint64_t>(strong, maximum) * gain_ / maximum);
+        dispatch_rumble(scaled_strong, scaled_weak);
+      }
+
+      static std::uint16_t scale_signed_magnitude(std::int16_t value) {
+        const auto magnitude = static_cast<std::uint32_t>(std::abs(static_cast<int>(value)));
+        return static_cast<std::uint16_t>(std::min<std::uint32_t>(magnitude * 2U, std::numeric_limits<std::uint16_t>::max()));
+      }
+
+      static std::optional<UinputRumbleEffect> normalize_rumble_effect(const ff_effect &source) {
+        auto effect = UinputRumbleEffect {
+          .length = std::chrono::milliseconds {source.replay.length},
+          .delay = std::chrono::milliseconds {source.replay.delay},
+          .infinite = source.replay.length == 0U,
+        };
+
+        switch (source.type) {
+          case FF_RUMBLE:
+            effect.start_weak_magnitude = source.u.rumble.weak_magnitude;
+            effect.start_strong_magnitude = source.u.rumble.strong_magnitude;
+            effect.end_weak_magnitude = effect.start_weak_magnitude;
+            effect.end_strong_magnitude = effect.start_strong_magnitude;
+            break;
+          case FF_CONSTANT:
+            {
+              const auto magnitude = scale_signed_magnitude(source.u.constant.level);
+              effect.start_weak_magnitude = magnitude;
+              effect.start_strong_magnitude = magnitude;
+              effect.end_weak_magnitude = magnitude;
+              effect.end_strong_magnitude = magnitude;
+              effect.envelope = source.u.constant.envelope;
+              break;
+            }
+          case FF_PERIODIC:
+            {
+              const auto magnitude = scale_signed_magnitude(source.u.periodic.magnitude);
+              effect.start_weak_magnitude = magnitude;
+              effect.start_strong_magnitude = magnitude;
+              effect.end_weak_magnitude = magnitude;
+              effect.end_strong_magnitude = magnitude;
+              effect.envelope = source.u.periodic.envelope;
+              break;
+            }
+          case FF_RAMP:
+            effect.start_weak_magnitude = scale_signed_magnitude(source.u.ramp.start_level);
+            effect.start_strong_magnitude = effect.start_weak_magnitude;
+            effect.end_weak_magnitude = scale_signed_magnitude(source.u.ramp.end_level);
+            effect.end_strong_magnitude = effect.end_weak_magnitude;
+            effect.envelope = source.u.ramp.envelope;
+            break;
+          default:
+            return std::nullopt;
+        }
+
+        return effect;
+      }
+
+      static std::chrono::steady_clock::time_point rumble_effect_end(const UinputRumbleEffect &effect) {
+        if (effect.infinite) {
+          return std::chrono::steady_clock::time_point::max();
+        }
+        return effect.start + effect.length * effect.playback_count;
+      }
+
+      static std::uint16_t interpolate_magnitude(std::uint16_t start, std::uint16_t end, std::uint64_t elapsed, std::uint64_t length) {
+        if (length == 0U || elapsed >= length) {
+          return end;
+        }
+        const auto weighted = static_cast<std::uint64_t>(start) * (length - elapsed) + static_cast<std::uint64_t>(end) * elapsed;
+        return static_cast<std::uint16_t>(weighted / length);
+      }
+
+      static std::uint16_t apply_envelope(
+        std::uint16_t magnitude,
+        const ff_envelope &envelope,
+        std::uint64_t elapsed,
+        std::uint64_t remaining
+      ) {
+        if (envelope.attack_length > 0U && elapsed < envelope.attack_length) {
+          return interpolate_magnitude(envelope.attack_level, magnitude, elapsed, envelope.attack_length);
+        }
+        if (envelope.fade_length > 0U && remaining < envelope.fade_length) {
+          return interpolate_magnitude(envelope.fade_level, magnitude, remaining, envelope.fade_length);
+        }
+        return magnitude;
+      }
+
+      static std::pair<std::uint16_t, std::uint16_t> rumble_magnitudes(
+        const UinputRumbleEffect &effect,
+        std::chrono::steady_clock::time_point now
+      ) {
+        const auto elapsed = static_cast<std::uint64_t>(std::max<std::int64_t>(
+          std::chrono::duration_cast<std::chrono::milliseconds>(now - effect.start).count(),
+          0
+        ));
+        if (effect.infinite) {
+          constexpr auto no_finite_end = std::numeric_limits<std::uint64_t>::max();
+          return {
+            apply_envelope(effect.start_weak_magnitude, effect.envelope, elapsed, no_finite_end),
+            apply_envelope(effect.start_strong_magnitude, effect.envelope, elapsed, no_finite_end),
+          };
+        }
+        const auto length = static_cast<std::uint64_t>(std::max<std::int64_t>(effect.length.count(), 0));
+        const auto [cycle_elapsed, cycle_remaining] = rumble_effect_cycle_timing(elapsed, length);
+        const auto weak =
+          interpolate_magnitude(effect.start_weak_magnitude, effect.end_weak_magnitude, cycle_elapsed, length);
+        const auto strong =
+          interpolate_magnitude(effect.start_strong_magnitude, effect.end_strong_magnitude, cycle_elapsed, length);
+        return {
+          apply_envelope(weak, effect.envelope, cycle_elapsed, cycle_remaining),
+          apply_envelope(strong, effect.envelope, cycle_elapsed, cycle_remaining),
+        };
+      }
+
+      void dispatch_rumble(std::uint16_t low_frequency, std::uint16_t high_frequency) {
+        if (last_low_frequency_ == low_frequency && last_high_frequency_ == high_frequency) {
+          return;
+        }
+        last_low_frequency_ = low_frequency;
+        last_high_frequency_ = high_frequency;
+
+        OutputCallback callback;
+        {
+          std::lock_guard lock {callback_mutex_};
+          callback = output_callback_;
+        }
+        if (callback) {
+          GamepadOutput output;
+          output.kind = GamepadOutputKind::rumble;
+          output.low_frequency_rumble = low_frequency;
+          output.high_frequency_rumble = high_frequency;
+          callback(output);
+        }
+      }
+
+      std::string device_name_;
+      GamepadProfileKind profile_kind_;
+      std::atomic_bool running_ = false;
+      std::mutex submit_mutex_;
+      std::mutex callback_mutex_;
+      OutputCallback output_callback_;
+      std::map<int, UinputRumbleEffect> rumble_effects_;
+      std::uint16_t gain_ = std::numeric_limits<std::uint16_t>::max();
+      std::uint16_t last_low_frequency_ = 0;
+      std::uint16_t last_high_frequency_ = 0;
+      std::jthread reader_;
+    };
+
     /**
      * @brief Backend gamepad backed by one Linux UHID file descriptor.
      */
@@ -2258,17 +2716,18 @@ namespace lvh::detail {
         }
 
         event.type = UHID_CREATE2;
-        auto unique_id = options.metadata.stable_id.empty() ? std::to_string(id) : options.metadata.stable_id;
+        unique_id_ = options.metadata.stable_id.empty() ? std::to_string(id) : options.metadata.stable_id;
         if (is_playstation_profile(options.profile.gamepad_kind)) {
           playstation_mac_address_ = parse_mac_address(options.metadata.stable_id).value_or(generated_mac_address(id));
-          unique_id = format_mac_address(playstation_mac_address_);
+          unique_id_ = format_mac_address(playstation_mac_address_);
         }
+        physical_id_ = std::format("libvirtualhid/uhid/{}", id);
 
         copy_string(request.name, options.profile.name);
-        copy_string(request.phys, std::format("libvirtualhid/uhid/{}", id));
-        copy_string(request.uniq, unique_id);
+        copy_string(request.phys, physical_id_);
+        copy_string(request.uniq, unique_id_);
         request.rd_size = static_cast<std::uint16_t>(options.profile.report_descriptor.size());
-        request.bus = to_uhid_bus(options.profile.bus_type);
+        request.bus = to_uhid_bus(options.profile);
         request.vendor = options.profile.vendor_id;
         request.product = options.profile.product_id;
         request.version = options.profile.version;
@@ -2296,7 +2755,10 @@ namespace lvh::detail {
         return OperationStatus::success();
       }
 
-      OperationStatus submit(const std::vector<std::uint8_t> &report) override {
+      OperationStatus submit(
+        const GamepadState & /*state*/,
+        const std::vector<std::uint8_t> &report
+      ) override {
         if (!open_) {
           return OperationStatus::failure(ErrorCode::device_closed, "UHID gamepad is closed");
         }
@@ -2323,7 +2785,11 @@ namespace lvh::detail {
       }
 
       std::vector<DeviceNode> device_nodes() const override {
-        return discover_input_nodes_by_name(device_name_);
+        auto nodes = discover_input_nodes_by_name(device_name_);
+        for (const auto &node : discover_hidraw_nodes_by_metadata(device_name_, physical_id_, unique_id_)) {
+          append_node_if_missing(nodes, node.kind, node.path);
+        }
+        return nodes;
       }
 
       OperationStatus close() override {
@@ -2432,7 +2898,7 @@ namespace lvh::detail {
             send_get_report_reply(event.u.get_report.id, event.u.get_report.rnum);
             break;
           case UHID_SET_REPORT:
-            dispatch_output_report(event.u.set_report.data, event.u.set_report.size);
+            dispatch_set_report(event.u.set_report.rnum, event.u.set_report.data, event.u.set_report.size);
             send_set_report_reply(event.u.set_report.id, 0);
             break;
           default:
@@ -2453,12 +2919,27 @@ namespace lvh::detail {
             report = last_report_;
           }
           if (!report.empty()) {
-            static_cast<void>(submit(report));
+            static_cast<void>(submit({}, report));
           }
         }
       }
 
       void dispatch_output_report(const __u8 *data, std::size_t report_size) {
+        const auto size = std::min<std::size_t>(report_size, UHID_DATA_MAX);
+        std::vector<std::uint8_t> report(data, data + size);
+        dispatch_output_report(report);
+      }
+
+      void dispatch_set_report(std::uint8_t report_number, const __u8 *data, std::size_t report_size) {
+        const auto size = std::min<std::size_t>(report_size, UHID_DATA_MAX);
+        std::vector<std::uint8_t> report(data, data + size);
+        if (report_number != 0 && (report.empty() || report.front() != report_number)) {
+          report.insert(report.begin(), report_number);
+        }
+        dispatch_output_report(report);
+      }
+
+      void dispatch_output_report(const std::vector<std::uint8_t> &report) {
         OutputCallback callback;
         {
           std::lock_guard lock {callback_mutex_};
@@ -2469,8 +2950,6 @@ namespace lvh::detail {
           return;
         }
 
-        const auto size = std::min<std::size_t>(report_size, UHID_DATA_MAX);
-        std::vector<std::uint8_t> report(data, data + size);
         for (const auto &output : reports::parse_output_reports(profile_, report)) {
           callback(output);
         }
@@ -2485,25 +2964,25 @@ namespace lvh::detail {
         if (profile_.gamepad_kind == GamepadProfileKind::dualshock4) {
           event.u.get_report_reply.err = 0;
           switch (report_number) {
-            case dualshock4_usb_calibration_report:
-              copy_get_report_payload(event, dualshock4_usb_calibration_info);
+            case ps::dualshock4_usb_calibration_report:
+              copy_get_report_payload(event, ps::dualshock4_usb_calibration_info);
               break;
-            case dualshock4_bluetooth_calibration_report:
+            case ps::dualshock4_bluetooth_calibration_report:
               if (profile_.bus_type == BusType::bluetooth) {
-                copy_get_report_payload(event, dualshock4_bluetooth_calibration_info);
+                copy_get_report_payload(event, ps::dualshock4_bluetooth_calibration_info);
                 break;
               }
               event.u.get_report_reply.err = EINVAL;
               break;
-            case dualshock4_pairing_report:
-              copy_get_report_payload(event, dualshock4_pairing_info);
+            case ps::dualshock4_pairing_report:
+              copy_get_report_payload(event, ps::dualshock4_pairing_info);
               for (std::size_t index = 0; index < playstation_mac_address_.size(); ++index) {
                 event.u.get_report_reply.data[1U + index] =
                   playstation_mac_address_[playstation_mac_address_.size() - 1U - index];
               }
               break;
-            case dualshock4_firmware_report:
-              copy_get_report_payload(event, dualshock4_firmware_info);
+            case ps::dualshock4_firmware_report:
+              copy_get_report_payload(event, ps::dualshock4_firmware_info);
               break;
             default:
               event.u.get_report_reply.err = EINVAL;
@@ -2512,18 +2991,18 @@ namespace lvh::detail {
         } else if (profile_.gamepad_kind == GamepadProfileKind::dualsense) {
           event.u.get_report_reply.err = 0;
           switch (report_number) {
-            case dualsense_calibration_report:
-              copy_get_report_payload(event, dualsense_calibration_info);
+            case ps::dualsense_calibration_report:
+              copy_get_report_payload(event, ps::dualsense_calibration_info);
               break;
-            case dualsense_pairing_report:
-              copy_get_report_payload(event, dualsense_pairing_info);
+            case ps::dualsense_pairing_report:
+              copy_get_report_payload(event, ps::dualsense_pairing_info);
               for (std::size_t index = 0; index < playstation_mac_address_.size(); ++index) {
                 event.u.get_report_reply.data[1U + index] =
                   playstation_mac_address_[playstation_mac_address_.size() - 1U - index];
               }
               break;
-            case dualsense_firmware_report:
-              copy_get_report_payload(event, dualsense_firmware_info);
+            case ps::dualsense_firmware_report:
+              copy_get_report_payload(event, ps::dualsense_firmware_info);
               break;
             default:
               event.u.get_report_reply.err = EINVAL;
@@ -2538,7 +3017,7 @@ namespace lvh::detail {
           const auto crc_offset = static_cast<std::size_t>(event.u.get_report_reply.size) - 4U;
           const auto crc = crc32(
             std::span<const std::uint8_t> {event.u.get_report_reply.data, crc_offset},
-            playstation_crc_seed(playstation_feature_crc_seed)
+            playstation_crc_seed(ps::playstation_feature_crc_seed)
           );
           write_u32_le(event.u.get_report_reply.data + crc_offset, crc);
         }
@@ -2562,6 +3041,8 @@ namespace lvh::detail {
       int fd_ = -1;
       DeviceProfile profile_;
       std::string device_name_;
+      std::string physical_id_;
+      std::string unique_id_;
       std::array<std::uint8_t, 6> playstation_mac_address_ {};
       std::vector<std::uint8_t> last_report_;
       std::atomic_bool open_ = true;
@@ -2585,13 +3066,13 @@ namespace lvh::detail {
         const auto xtest_accessible = can_use_xtest();
         capabilities_.backend_name = "linux-uhid-uinput";
         capabilities_.supports_virtual_hid = uhid_accessible || uinput_accessible;
-        capabilities_.supports_gamepad = uhid_accessible;
+        capabilities_.supports_gamepad = uhid_accessible || uinput_accessible;
         capabilities_.supports_keyboard = uinput_accessible || xtest_accessible;
         capabilities_.supports_mouse = uinput_accessible || xtest_accessible;
         capabilities_.supports_touchscreen = uinput_accessible;
         capabilities_.supports_trackpad = uinput_accessible;
         capabilities_.supports_pen_tablet = uinput_accessible;
-        capabilities_.supports_output_reports = uhid_accessible;
+        capabilities_.supports_output_reports = uhid_accessible || uinput_accessible;
         capabilities_.supports_xtest_fallback = xtest_accessible;
       }
 
@@ -2600,7 +3081,21 @@ namespace lvh::detail {
       }
 
       BackendGamepadCreationResult create_gamepad(DeviceId id, const CreateGamepadOptions &options) override {
-        const auto fd = system_open(uhid_path, O_RDWR | O_CLOEXEC | O_NONBLOCK);
+        if (uses_uinput_gamepad_profile(options.profile.gamepad_kind)) {
+          const auto fd = system_open(uinput_path, O_RDWR | O_CLOEXEC | O_NONBLOCK);
+          if (fd < 0) {
+            return {system_error_status(ErrorCode::backend_unavailable, "failed to open /dev/uinput", errno), nullptr};
+          }
+
+          auto gamepad = std::make_unique<UinputGamepad>(fd, options.profile.gamepad_kind);
+          if (const auto status = gamepad->create(id, options); !status.ok()) {
+            static_cast<void>(gamepad->close());
+            return {status, nullptr};
+          }
+          return {OperationStatus::success(), std::move(gamepad)};
+        }
+
+        const auto fd = system_open(uhid_path, O_RDWR | O_CLOEXEC);
         if (fd < 0) {
           return {system_error_status(ErrorCode::backend_unavailable, "failed to open /dev/uhid", errno), nullptr};
         }

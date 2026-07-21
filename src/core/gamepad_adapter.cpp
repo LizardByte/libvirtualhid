@@ -44,12 +44,12 @@ namespace lvh {
         using enum GamepadProfileKind;
 
         case generic:
-        case xbox_360:
-        case xbox_one:
         case xbox_series:
         case dualsense:
         case switch_pro:
           return true;
+        case xbox_360:
+        case xbox_one:
         case dualshock4:
           return false;
       }

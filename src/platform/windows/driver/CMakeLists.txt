@@ -201,6 +201,7 @@ target_include_directories(libvirtualhid_umdf
   PRIVATE
   "${LIBVIRTUALHID_WDF_INCLUDE_DIR}"
   "${LIBVIRTUALHID_VHF_INCLUDE_DIR}"
+  "${PROJECT_SOURCE_DIR}/src"
   "${CMAKE_CURRENT_SOURCE_DIR}/../shared")
 
 target_compile_definitions(libvirtualhid_umdf

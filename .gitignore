@@ -10,6 +10,8 @@ cmake-build-*/
 
 # Local temp directories
 .tmp/
+/artifacts/
+/docs/controller-research/
 
 # doxyconfig
 docs/doxyconfig*

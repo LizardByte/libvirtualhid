@@ -15,6 +15,7 @@
 #include <vector>
 
 // driver includes
+#include "generic_pid_protocol.hpp"
 #include "lvh_windows_protocol.h"
 
 // local includes
@@ -24,6 +25,10 @@ namespace lvh::detail::windows {
 
   inline constexpr std::string_view default_control_device_path {LVH_WINDOWS_CONTROL_DEVICE_PATH};
   inline constexpr std::string_view global_control_device_path {LVH_WINDOWS_GLOBAL_CONTROL_DEVICE_PATH};
+  inline constexpr std::uint16_t xbox_series_windows_product_id = 0x0B12;
+  inline constexpr std::uint16_t xbox_series_windows_device_version = 0x0509;
+  inline constexpr std::size_t xbox_series_windows_input_report_size = 17;
+  inline constexpr std::size_t xbox_series_windows_output_report_size = 8;
 
   inline std::uint32_t gamepad_flags(const GamepadProfileCapabilities &capabilities) {
     std::uint32_t flags = 0;
@@ -115,25 +120,48 @@ namespace lvh::detail::windows {
     DeviceId device_id,
     const CreateGamepadOptions &options
   ) {
+    auto report_descriptor = options.profile.report_descriptor;
+    auto input_report_size = options.profile.input_report_size;
+    auto output_report_size = options.profile.output_report_size;
+    auto bus_type = options.profile.bus_type;
+    auto product_id = options.profile.product_id;
+    auto device_version = options.profile.version;
+    auto report_id = options.profile.report_id;
+    if (
+      options.profile.gamepad_kind == GamepadProfileKind::generic &&
+      options.profile.capabilities.supports_rumble
+    ) {
+      auto pid_descriptor = make_generic_pid_report_descriptor(report_descriptor);
+      if (!pid_descriptor.empty()) {
+        report_descriptor = std::move(pid_descriptor);
+        output_report_size = generic_pid_output_report_size;
+      }
+    }
+    if (options.profile.gamepad_kind == GamepadProfileKind::xbox_series) {
+      input_report_size = xbox_series_windows_input_report_size;
+      output_report_size = xbox_series_windows_output_report_size;
+      product_id = xbox_series_windows_product_id;
+      device_version = xbox_series_windows_device_version;
+    }
     LvhWindowsCreateGamepadRequest request {};
     request.version = LVH_WINDOWS_CONTROL_PROTOCOL_VERSION;
     request.size = sizeof(request);
     request.client_device_id = device_id;
-    request.bus_type = protocol_bus_type(options.profile.bus_type);
+    request.bus_type = protocol_bus_type(bus_type);
     request.gamepad_kind = protocol_gamepad_kind(options.profile.gamepad_kind);
     request.flags = gamepad_flags(options.profile.capabilities);
     request.hardware_ids.vendor_id = options.profile.vendor_id;
-    request.hardware_ids.product_id = options.profile.product_id;
-    request.hardware_ids.device_version = options.profile.version;
-    request.hardware_ids.report_id = options.profile.report_id;
+    request.hardware_ids.product_id = product_id;
+    request.hardware_ids.device_version = device_version;
+    request.hardware_ids.report_id = report_id;
     request.report_sizes.input_report_size = static_cast<std::uint32_t>(
-      std::min(options.profile.input_report_size, static_cast<std::size_t>(LVH_WINDOWS_MAX_INPUT_REPORT_SIZE))
+      std::min(input_report_size, static_cast<std::size_t>(LVH_WINDOWS_MAX_INPUT_REPORT_SIZE))
     );
     request.report_sizes.output_report_size = static_cast<std::uint32_t>(
-      std::min(options.profile.output_report_size, static_cast<std::size_t>(LVH_WINDOWS_MAX_OUTPUT_REPORT_SIZE))
+      std::min(output_report_size, static_cast<std::size_t>(LVH_WINDOWS_MAX_OUTPUT_REPORT_SIZE))
     );
     request.report_sizes.report_descriptor_size =
-      copy_bytes(request.report_descriptor, options.profile.report_descriptor);
+      copy_bytes(request.report_descriptor, report_descriptor);
     request.report_sizes.name_size = copy_string(request.name, options.profile.name);
     request.report_sizes.manufacturer_size = copy_string(request.manufacturer, options.profile.manufacturer);
     request.report_sizes.stable_id_size = copy_string(request.stable_id, options.metadata.stable_id);

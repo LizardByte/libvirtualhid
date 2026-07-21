@@ -5,9 +5,12 @@
 
 // standard includes
 #include <algorithm>
+#include <array>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
 #include <exception>
 #include <filesystem>
 #include <format>
@@ -26,19 +29,16 @@
 #include <vector>
 
 // platform includes
-#if defined(__linux__)
-  #include <cerrno>
-  #include <fcntl.h>
-  #include <linux/input.h>
-  #include <unistd.h>
-#endif
+#include <cerrno>
+#include <fcntl.h>
+#include <linux/input.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 // lib includes
-#if defined(__linux__)
-  #include <libinput.h>
-  #include <SDL.h>
-#endif
+#include <libinput.h>
 #include <libvirtualhid/libvirtualhid.hpp>
+#include <SDL.h>
 
 // local includes
 #include "fixtures/fixtures.hpp"
@@ -50,11 +50,9 @@ class LinuxConsumerTest: public LinuxTest {};
 
 namespace {
 
-#if defined(__linux__)
   using LibinputContext = std::unique_ptr<libinput, void (*)(libinput *)>;
   using LibinputEvent = std::unique_ptr<libinput_event, void (*)(libinput_event *)>;
   using SdlGameController = std::unique_ptr<SDL_GameController, void (*)(SDL_GameController *)>;
-  using SdlJoystick = std::unique_ptr<SDL_Joystick, void (*)(SDL_Joystick *)>;
 
   /**
    * @brief SDL-visible gamepad case.
@@ -63,8 +61,11 @@ namespace {
     lvh::DeviceProfile profile;
     std::string_view name_suffix;
     std::string_view stable_id;
+    std::optional<std::uint16_t> expected_vendor_id;
+    std::optional<std::uint16_t> expected_product_id;
     int minimum_buttons = 1;
     int minimum_axes = 2;
+    bool require_sdl_rumble = false;
     bool expect_live_input = true;
   };
 
@@ -169,6 +170,20 @@ namespace {
     return vendor_id == profile.vendor_id && product_id == profile.product_id;
   }
 
+  bool sdl_joystick_supports_rumble(int index) {
+    if (SDL_IsGameController(index) != SDL_TRUE) {
+      return false;
+    }
+
+    SdlGameController controller {SDL_GameControllerOpen(index), &SDL_GameControllerClose};
+    if (!controller) {
+      return false;
+    }
+
+    auto *joystick = SDL_GameControllerGetJoystick(controller.get());
+    return joystick != nullptr && SDL_JoystickHasRumble(joystick) == SDL_TRUE;
+  }
+
   void pump_sdl_events() {
     SDL_JoystickUpdate();
 
@@ -178,18 +193,144 @@ namespace {
     }
   }
 
+  struct RumbleState {
+    std::atomic_uint16_t low_frequency {0};
+    std::atomic_uint16_t high_frequency {0};
+    std::atomic_bool observed {false};
+  };
+
+  std::shared_ptr<RumbleState> observe_rumble(lvh::Gamepad &gamepad) {
+    const auto rumble = std::make_shared<RumbleState>();
+    gamepad.set_output_callback([rumble](const lvh::GamepadOutput &output) {
+      if (
+        output.kind == lvh::GamepadOutputKind::rumble &&
+        output.low_frequency_rumble > 0 && output.high_frequency_rumble > 0
+      ) {
+        rumble->low_frequency = output.low_frequency_rumble;
+        rumble->high_frequency = output.high_frequency_rumble;
+        rumble->observed = true;
+      }
+    });
+    return rumble;
+  }
+
+  bool wait_for_rumble(const std::shared_ptr<RumbleState> &rumble, bool pump_sdl) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds {3};
+    while (std::chrono::steady_clock::now() < deadline && !rumble->observed.load()) {
+      if (pump_sdl) {
+        pump_sdl_events();
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds {20});
+    }
+    return rumble->observed.load();
+  }
+
+  std::optional<std::filesystem::path> wait_for_hidraw_node(const lvh::Gamepad &gamepad) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds {3};
+    while (std::chrono::steady_clock::now() < deadline) {
+      for (const auto &node : gamepad.device_nodes()) {
+        if (node.kind == lvh::DeviceNodeKind::hidraw) {
+          return std::filesystem::path {node.path};
+        }
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds {50});
+    }
+    return std::nullopt;
+  }
+
+  std::string describe_device_nodes(const std::vector<lvh::DeviceNode> &nodes) {
+    if (nodes.empty()) {
+      return "<none>";
+    }
+
+    std::ostringstream description;
+    for (std::size_t index = 0; index < nodes.size(); ++index) {
+      if (index != 0) {
+        description << ", ";
+      }
+      description << nodes[index].path
+                  << " (kind=" << static_cast<int>(std::to_underlying(nodes[index].kind)) << ')';
+    }
+    return description.str();
+  }
+
+  std::string errno_message(int error) {
+    return std::error_code {error, std::generic_category()}.message();
+  }
+
+  std::string describe_node_permissions(const std::filesystem::path &path) {
+    struct stat status {};
+    if (::stat(path.c_str(), &status) != 0) {
+      const auto stat_error = errno;
+      return std::format(
+        "path={} stat failed: {} (errno={})",
+        path.string(),
+        errno_message(stat_error),
+        stat_error
+      );
+    }
+
+    return std::format(
+      "path={} mode={:04o} uid={} gid={} euid={} egid={}",
+      path.string(),
+      status.st_mode & 07777,
+      status.st_uid,
+      status.st_gid,
+      ::geteuid(),
+      ::getegid()
+    );
+  }
+
+  int wait_for_write_access(const std::filesystem::path &path) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds {3};
+    int access_error = 0;
+    while (std::chrono::steady_clock::now() < deadline) {
+      if (::access(path.c_str(), W_OK) == 0) {
+        return 0;
+      }
+      access_error = errno;
+      std::this_thread::sleep_for(std::chrono::milliseconds {50});
+    }
+    return access_error;
+  }
+
+  std::vector<std::uint8_t> playstation_rumble_report(const lvh::DeviceProfile &profile) {
+    std::vector<std::uint8_t> report(profile.output_report_size, 0);
+    if (profile.gamepad_kind == lvh::GamepadProfileKind::dualshock4 && report.size() >= 32U) {
+      report[0] = 0x05;
+      report[1] = 0x01;
+      report[4] = 0x12;
+      report[5] = 0x56;
+    } else if (profile.gamepad_kind == lvh::GamepadProfileKind::dualsense && report.size() >= 48U) {
+      report[0] = 0x02;
+      report[1] = 0x01;
+      report[3] = 0x12;
+      report[4] = 0x56;
+    } else {
+      report.clear();
+    }
+    return report;
+  }
+
   void dump_sdl_joysticks() {
     const auto joystick_count = SDL_NumJoysticks();
     std::cout << "SDL joystick count: " << joystick_count << '\n';
     for (int index = 0; index < joystick_count; ++index) {
       const auto *name = SDL_JoystickNameForIndex(index);
+#if SDL_VERSION_ATLEAST(2, 24, 0)
+      const auto *path = SDL_JoystickPathForIndex(index);
+#endif
       std::cout << "SDL joystick[" << index << "]: " << (name == nullptr ? "<unknown>" : name)
                 << " vendor=" << SDL_JoystickGetDeviceVendor(index)
-                << " product=" << SDL_JoystickGetDeviceProduct(index) << '\n';
+                << " product=" << SDL_JoystickGetDeviceProduct(index)
+#if SDL_VERSION_ATLEAST(2, 24, 0)
+                << " path=" << (path == nullptr ? "<unknown>" : path)
+#endif
+                << " rumble=" << sdl_joystick_supports_rumble(index) << '\n';
     }
   }
 
-  int wait_for_sdl_joystick(const lvh::DeviceProfile &profile) {
+  int wait_for_sdl_joystick(const lvh::DeviceProfile &profile, bool require_rumble) {
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds {3};
 
     while (std::chrono::steady_clock::now() < deadline) {
@@ -197,7 +338,10 @@ namespace {
 
       const auto joystick_count = SDL_NumJoysticks();
       for (int index = 0; index < joystick_count; ++index) {
-        if (sdl_joystick_matches_profile(index, profile)) {
+        if (
+          sdl_joystick_matches_profile(index, profile) &&
+          (!require_rumble || sdl_joystick_supports_rumble(index))
+        ) {
           return index;
         }
       }
@@ -239,22 +383,6 @@ namespace {
       if (std::abs(static_cast<int>(SDL_JoystickGetAxis(joystick, axis))) > 8000) {
         return true;
       }
-    }
-
-    return false;
-  }
-
-  bool wait_for_sdl_gamepad_input(SDL_Joystick *joystick) {
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds {3};
-
-    while (std::chrono::steady_clock::now() < deadline) {
-      pump_sdl_events();
-
-      if (sdl_joystick_has_pressed_button(joystick) && sdl_joystick_has_moved_axis(joystick)) {
-        return true;
-      }
-
-      std::this_thread::sleep_for(std::chrono::milliseconds {50});
     }
 
     return false;
@@ -323,11 +451,29 @@ namespace {
     return false;
   }
 
+  bool wait_for_sdl_controller_button(
+    SDL_GameController *controller,
+    SDL_GameControllerButton expected_button
+  ) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds {3};
+    while (std::chrono::steady_clock::now() < deadline) {
+      SDL_GameControllerUpdate();
+      pump_sdl_events();
+      if (SDL_GameControllerGetButton(controller, expected_button) != 0) {
+        return true;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds {20});
+    }
+    return false;
+  }
+
   void configure_sdl_hidapi_hints() {
     SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
     SDL_SetHint("SDL_JOYSTICK_HIDAPI", "1");
     SDL_SetHint("SDL_JOYSTICK_HIDAPI_PS4", "1");
+    SDL_SetHint("SDL_JOYSTICK_HIDAPI_PS4_RUMBLE", "1");
     SDL_SetHint("SDL_JOYSTICK_HIDAPI_PS5", "1");
+    SDL_SetHint("SDL_JOYSTICK_HIDAPI_PS5_RUMBLE", "1");
   }
 
   lvh::GamepadCreationResult create_sdl_gamepad(lvh::Runtime &runtime, const SdlGamepadConsumerCase &test_case) {
@@ -355,13 +501,19 @@ namespace {
     const auto expected_profile = [&test_case]() {
       auto profile = test_case.profile;
       profile.name = unique_device_name(test_case.name_suffix);
+      if (test_case.expected_vendor_id.has_value()) {
+        profile.vendor_id = *test_case.expected_vendor_id;
+      }
+      if (test_case.expected_product_id.has_value()) {
+        profile.product_id = *test_case.expected_product_id;
+      }
       return profile;
     }();
 
     auto created = create_sdl_gamepad(*runtime, test_case);
     ASSERT_TRUE(created) << created.status.message();
 
-    const auto joystick_index = wait_for_sdl_joystick(expected_profile);
+    const auto joystick_index = wait_for_sdl_joystick(expected_profile, test_case.require_sdl_rumble);
     ASSERT_GE(joystick_index, 0);
 
     test_body(expected_profile, joystick_index, *created.gamepad);
@@ -382,6 +534,51 @@ namespace {
     }
   }
 
+  void expect_sdl_rumble_callback(SDL_GameController *controller, lvh::Gamepad &gamepad) {
+    const auto rumble = observe_rumble(gamepad);
+
+    ASSERT_EQ(SDL_GameControllerRumble(controller, 0x5678, 0x1234, 1000), 0) << SDL_GetError();
+    EXPECT_TRUE(wait_for_rumble(rumble, true));
+    EXPECT_GT(rumble->low_frequency.load(), 0);
+    EXPECT_GT(rumble->high_frequency.load(), 0);
+  }
+
+  void expect_hidraw_rumble_callback(const lvh::DeviceProfile &profile, lvh::Gamepad &gamepad) {
+    const auto rumble = observe_rumble(gamepad);
+    const auto hidraw_node = wait_for_hidraw_node(gamepad);
+    ASSERT_TRUE(hidraw_node.has_value())
+      << "No hidraw node was discovered. Reported device nodes: "
+      << describe_device_nodes(gamepad.device_nodes());
+
+    const auto report = playstation_rumble_report(profile);
+    ASSERT_FALSE(report.empty());
+
+    const auto access_error = wait_for_write_access(*hidraw_node);
+    ASSERT_EQ(access_error, 0)
+      << "hidraw node is not writable: " << errno_message(access_error)
+      << " (errno=" << access_error << "); " << describe_node_permissions(*hidraw_node);
+
+    errno = 0;
+    const auto descriptor = ::open(hidraw_node->c_str(), O_WRONLY | O_CLOEXEC);
+    const auto open_error = errno;
+    ASSERT_GE(descriptor, 0)
+      << "Failed to open hidraw node: " << errno_message(open_error)
+      << " (errno=" << open_error << "); " << describe_node_permissions(*hidraw_node);
+    ScopeExit close_descriptor {[descriptor]() {
+      static_cast<void>(::close(descriptor));
+    }};
+
+    errno = 0;
+    const auto bytes_written = ::write(descriptor, report.data(), report.size());
+    const auto write_error = errno;
+    ASSERT_EQ(bytes_written, static_cast<ssize_t>(report.size()))
+      << "Failed to write the complete rumble report: " << errno_message(write_error)
+      << " (errno=" << write_error << ")";
+    EXPECT_TRUE(wait_for_rumble(rumble, false));
+    EXPECT_GT(rumble->low_frequency.load(), 0);
+    EXPECT_GT(rumble->high_frequency.load(), 0);
+  }
+
   void exercise_sdl_playstation_controller(
     const SdlGamepadConsumerCase &test_case,
     const lvh::DeviceProfile &expected_profile,
@@ -395,6 +592,10 @@ namespace {
 
     auto *joystick = SDL_GameControllerGetJoystick(controller.get());
     ASSERT_NE(joystick, nullptr) << SDL_GetError();
+    if (test_case.require_sdl_rumble) {
+      ASSERT_EQ(SDL_JoystickHasRumble(joystick), SDL_TRUE)
+        << "SDL selected a PlayStation transport without rumble support";
+    }
     expect_sdl_joystick_profile(
       joystick,
       expected_profile,
@@ -420,31 +621,11 @@ namespace {
     expect_sdl_playstation_controller_profile(controller.get());
     if (test_case.expect_live_input) {
       EXPECT_TRUE(wait_for_sdl_controller_input(controller.get())) << describe_sdl_controller_state(controller.get());
-    }
-  }
-
-  void run_sdl_uhid_joystick_test(const SdlGamepadConsumerCase &test_case) {
-    run_sdl_gamepad_test(
-      test_case,
-      SDL_INIT_JOYSTICK | SDL_INIT_EVENTS,
-      [&test_case](const auto &expected_profile, int joystick_index, lvh::Gamepad &gamepad) {
-        SdlJoystick joystick {SDL_JoystickOpen(joystick_index), &SDL_JoystickClose};
-        ASSERT_NE(joystick.get(), nullptr) << SDL_GetError();
-        expect_sdl_joystick_profile(
-          joystick.get(),
-          expected_profile,
-          test_case.minimum_buttons,
-          test_case.minimum_axes
-        );
-
-        lvh::GamepadState state;
-        state.buttons.set(lvh::GamepadButton::a);
-        state.left_stick = {0.75F, -0.5F};
-        ASSERT_TRUE(gamepad.submit(state).ok());
-
-        EXPECT_TRUE(wait_for_sdl_gamepad_input(joystick.get())) << describe_sdl_state(joystick.get());
+      if (test_case.require_sdl_rumble) {
+        expect_sdl_rumble_callback(controller.get(), gamepad);
+        expect_hidraw_rumble_callback(expected_profile, gamepad);
       }
-    );
+    }
   }
 
   void run_sdl_playstation_controller_test(const SdlGamepadConsumerCase &test_case) {
@@ -453,6 +634,88 @@ namespace {
       SDL_INIT_GAMECONTROLLER | SDL_INIT_JOYSTICK | SDL_INIT_EVENTS,
       [&test_case](const auto &expected_profile, int joystick_index, lvh::Gamepad &gamepad) {
         exercise_sdl_playstation_controller(test_case, expected_profile, joystick_index, gamepad);
+      }
+    );
+  }
+
+  void exercise_sdl_canonical_gamepad_controller(
+    const SdlGamepadConsumerCase &test_case,
+    const lvh::DeviceProfile &expected_profile,
+    int joystick_index,
+    lvh::Gamepad &gamepad
+  ) {
+    using enum lvh::GamepadButton;
+
+    ASSERT_EQ(SDL_IsGameController(joystick_index), SDL_TRUE) << SDL_GetError();
+    SdlGameController controller {SDL_GameControllerOpen(joystick_index), &SDL_GameControllerClose};
+    ASSERT_NE(controller.get(), nullptr) << SDL_GetError();
+
+    auto *joystick = SDL_GameControllerGetJoystick(controller.get());
+    ASSERT_NE(joystick, nullptr) << SDL_GetError();
+    expect_sdl_joystick_profile(joystick, expected_profile, test_case.minimum_buttons, test_case.minimum_axes);
+
+    struct ButtonCase {
+      lvh::GamepadButton logical_button;
+      SDL_GameControllerButton sdl_button;
+    };
+
+    constexpr std::array button_cases {
+      ButtonCase {a, SDL_CONTROLLER_BUTTON_A},
+      ButtonCase {b, SDL_CONTROLLER_BUTTON_B},
+      ButtonCase {x, SDL_CONTROLLER_BUTTON_X},
+      ButtonCase {y, SDL_CONTROLLER_BUTTON_Y},
+      ButtonCase {left_shoulder, SDL_CONTROLLER_BUTTON_LEFTSHOULDER},
+      ButtonCase {right_shoulder, SDL_CONTROLLER_BUTTON_RIGHTSHOULDER},
+      ButtonCase {back, SDL_CONTROLLER_BUTTON_BACK},
+      ButtonCase {start, SDL_CONTROLLER_BUTTON_START},
+      ButtonCase {guide, SDL_CONTROLLER_BUTTON_GUIDE},
+      ButtonCase {left_stick, SDL_CONTROLLER_BUTTON_LEFTSTICK},
+      ButtonCase {right_stick, SDL_CONTROLLER_BUTTON_RIGHTSTICK},
+      ButtonCase {dpad_up, SDL_CONTROLLER_BUTTON_DPAD_UP},
+      ButtonCase {dpad_down, SDL_CONTROLLER_BUTTON_DPAD_DOWN},
+      ButtonCase {dpad_left, SDL_CONTROLLER_BUTTON_DPAD_LEFT},
+      ButtonCase {dpad_right, SDL_CONTROLLER_BUTTON_DPAD_RIGHT},
+    };
+
+    for (const auto &[logical_button, sdl_button] : button_cases) {
+      lvh::GamepadState state;
+      state.buttons.set(logical_button);
+      ASSERT_TRUE(gamepad.submit(state).ok());
+      ASSERT_TRUE(wait_for_sdl_controller_button(controller.get(), sdl_button))
+        << "logical button " << static_cast<int>(std::to_underlying(logical_button)) << " "
+        << describe_sdl_controller_state(controller.get());
+      for (const auto &[other_logical_button, other_sdl_button] : button_cases) {
+        if (other_logical_button != logical_button) {
+          EXPECT_EQ(SDL_GameControllerGetButton(controller.get(), other_sdl_button), 0)
+            << "logical button " << static_cast<int>(std::to_underlying(logical_button));
+        }
+      }
+    }
+
+    lvh::GamepadState trigger_state;
+    trigger_state.left_trigger = 0.25F;
+    trigger_state.right_trigger = 0.75F;
+    ASSERT_TRUE(gamepad.submit(trigger_state).ok());
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds {3};
+    while (
+      std::chrono::steady_clock::now() < deadline &&
+      SDL_GameControllerGetAxis(controller.get(), SDL_CONTROLLER_AXIS_TRIGGERRIGHT) < 16000
+    ) {
+      SDL_GameControllerUpdate();
+      pump_sdl_events();
+      std::this_thread::sleep_for(std::chrono::milliseconds {20});
+    }
+    EXPECT_GT(SDL_GameControllerGetAxis(controller.get(), SDL_CONTROLLER_AXIS_TRIGGERLEFT), 0);
+    EXPECT_GT(SDL_GameControllerGetAxis(controller.get(), SDL_CONTROLLER_AXIS_TRIGGERRIGHT), 16000);
+    expect_sdl_rumble_callback(controller.get(), gamepad);
+  }
+
+  void run_sdl_canonical_gamepad_test(const SdlGamepadConsumerCase &test_case) {
+    run_sdl_gamepad_test(
+      test_case,
+      SDL_INIT_GAMECONTROLLER | SDL_INIT_JOYSTICK | SDL_INIT_EVENTS,
+      [&test_case](const auto &expected_profile, int joystick_index, lvh::Gamepad &gamepad) {
+        exercise_sdl_canonical_gamepad_controller(test_case, expected_profile, joystick_index, gamepad);
       }
     );
   }
@@ -472,7 +735,7 @@ namespace {
   int open_restricted(const char *path, int flags, void *user_data) {  // NOSONAR(cpp:S5008): libinput_interface is a C callback ABI with void* user data.
     static_cast<void>(user_data);
 
-    const auto fd = ::open(path, flags);
+    const auto fd = ::openat(AT_FDCWD, path, flags);
     return fd < 0 ? -errno : fd;
   }
 
@@ -526,18 +789,70 @@ namespace {
     return LibinputEvent {nullptr, destroy_libinput_event};
   }
 
-#endif  // defined(__linux__)
-
 }  // namespace
 
-#if defined(__linux__)
-TEST_F(LinuxConsumerTest, SdlSeesUhidGamepadButtonAndAxisInput) {
-  ASSERT_TRUE(HasReadableWritableDeviceNode("/dev/uhid"));
+TEST_F(LinuxConsumerTest, SdlSeesGenericCanonicalButtons) {
+  ASSERT_TRUE(HasReadableWritableDeviceNode("/dev/uinput"));
 
-  run_sdl_uhid_joystick_test({
+  run_sdl_canonical_gamepad_test({
     .profile = lvh::profiles::generic_gamepad(),
-    .name_suffix = "SDL Gamepad",
+    .name_suffix = "SDL Generic Gamepad",
     .stable_id = "libvirtualhid-sdl-gamepad-test",
+    .expected_vendor_id = 0x1209,
+    .expected_product_id = 0x0001,
+    .minimum_buttons = 12,  // D-pad directions are exposed through the hat axes.
+    .minimum_axes = 6,
+  });
+}
+
+TEST_F(LinuxConsumerTest, SdlSeesXbox360CanonicalButtons) {
+  ASSERT_TRUE(HasReadableWritableDeviceNode("/dev/uinput"));
+
+  run_sdl_canonical_gamepad_test({
+    .profile = lvh::profiles::xbox_360(),
+    .name_suffix = "SDL Xbox 360",
+    .stable_id = "libvirtualhid-sdl-xbox-360-test",
+    .minimum_buttons = 15,
+    .minimum_axes = 6,
+  });
+}
+
+TEST_F(LinuxConsumerTest, SdlSeesXboxOneCanonicalButtons) {
+  ASSERT_TRUE(HasReadableWritableDeviceNode("/dev/uinput"));
+
+  run_sdl_canonical_gamepad_test({
+    .profile = lvh::profiles::xbox_one(),
+    .name_suffix = "SDL Xbox One",
+    .stable_id = "libvirtualhid-sdl-xbox-one-test",
+    .expected_product_id = 0x0B20,
+    .minimum_buttons = 15,
+    .minimum_axes = 6,
+  });
+}
+
+TEST_F(LinuxConsumerTest, SdlSeesXboxSeriesCanonicalButtons) {
+  ASSERT_TRUE(HasReadableWritableDeviceNode("/dev/uinput"));
+
+  const SdlGamepadConsumerCase test_case {
+    .profile = lvh::profiles::xbox_series(),
+    .name_suffix = "SDL Xbox Series",
+    .stable_id = "libvirtualhid-sdl-xbox-series-test",
+    .expected_product_id = 0x0B13,
+    .minimum_buttons = 16,
+    .minimum_axes = 6,
+  };
+  run_sdl_canonical_gamepad_test(test_case);
+}
+
+TEST_F(LinuxConsumerTest, SdlSeesSwitchProCanonicalButtons) {
+  ASSERT_TRUE(HasReadableWritableDeviceNode("/dev/uinput"));
+
+  run_sdl_canonical_gamepad_test({
+    .profile = lvh::profiles::switch_pro(),
+    .name_suffix = "SDL Switch Pro",
+    .stable_id = "libvirtualhid-sdl-switch-pro-test",
+    .minimum_buttons = 14,
+    .minimum_axes = 4,
   });
 }
 
@@ -816,24 +1131,3 @@ TEST_F(LinuxConsumerTest, LibinputSeesUinputPenTabletTool) {
   ASSERT_NE(event.get(), nullptr);
   ASSERT_NE(libinput_event_get_tablet_tool_event(event.get()), nullptr);
 }
-#else
-TEST_F(LinuxConsumerTest, SdlSeesUhidGamepadButtonAndAxisInput) {}
-
-TEST_F(LinuxConsumerTest, SdlSeesDualSenseUsbControllerBehavior) {}
-
-TEST_F(LinuxConsumerTest, SdlSeesDualShock4UsbControllerBehavior) {}
-
-TEST_F(LinuxConsumerTest, SdlSeesDualShock4BluetoothControllerDiscovery) {}
-
-TEST_F(LinuxConsumerTest, SdlSeesDualSenseBluetoothControllerDiscovery) {}
-
-TEST_F(LinuxConsumerTest, LibinputSeesUinputKeyboardKeys) {}
-
-TEST_F(LinuxConsumerTest, LibinputSeesUinputMouseMotionAndButtons) {}
-
-TEST_F(LinuxConsumerTest, LibinputSeesUinputTouchscreenContacts) {}
-
-TEST_F(LinuxConsumerTest, LibinputSeesUinputTrackpadButton) {}
-
-TEST_F(LinuxConsumerTest, LibinputSeesUinputPenTabletTool) {}
-#endif

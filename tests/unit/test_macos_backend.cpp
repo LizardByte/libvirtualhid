@@ -8,20 +8,16 @@
 
 // local includes
 #include "fixtures/fixtures.hpp"
-
-#if defined(__APPLE__) && defined(__MACH__)
-  #include "fixtures/macos_backend_test_hooks.hpp"
+#include "fixtures/macos_backend_test_hooks.hpp"
 
 // platform includes
-  #include <Carbon/Carbon.h>
-#endif
+#include <Carbon/Carbon.h>
 
 /**
  * @brief Test fixture for macOS backend internals.
  */
 class MacosBackendTest: public MacOSTest {};
 
-#if defined(__APPLE__) && defined(__MACH__)
 TEST_F(MacosBackendTest, TranslatesKeyboardKeys) {
   EXPECT_EQ(lvh::detail::test::macos_backend_key_code(0x08), kVK_Delete);
   EXPECT_EQ(lvh::detail::test::macos_backend_key_code(0x09), kVK_Tab);
@@ -138,4 +134,3 @@ TEST_F(MacosBackendTest, ReportsCapabilitiesAndUnsupportedDevices) {
   EXPECT_EQ(result.trackpad_status.code(), lvh::ErrorCode::unsupported_profile);
   EXPECT_EQ(result.pen_tablet_status.code(), lvh::ErrorCode::unsupported_profile);
 }
-#endif

@@ -19,7 +19,10 @@ namespace lvh::detail {
      */
     class FakeGamepad final: public BackendGamepad {
     public:
-      OperationStatus submit(const std::vector<std::uint8_t> & /*report*/) override {
+      OperationStatus submit(
+        const GamepadState & /*state*/,
+        const std::vector<std::uint8_t> & /*report*/
+      ) override {
         return OperationStatus::success();
       }
 

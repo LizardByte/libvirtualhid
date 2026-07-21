@@ -164,17 +164,31 @@ touch, motion, battery, feedback, and lifecycle updates onto the platform-neutra
 
 ## Built-In Profiles
 
-Built-in gamepad profiles include:
+Built-in gamepad profiles and their platform-neutral default device names are:
 
-- Generic HID gamepad.
-- Xbox 360.
-- Xbox One.
-- Xbox Series.
-- DualShock 4 USB and Bluetooth.
-- DualSense USB and Bluetooth.
-- Nintendo Switch Pro.
+| Profile | Default device name |
+| --- | --- |
+| Generic HID gamepad | `(libvirtualhid) Generic Controller` |
+| Xbox 360 | `(libvirtualhid) X-Box 360 Controller` |
+| Xbox One | `(libvirtualhid) X-Box One Controller` |
+| Xbox Series | `(libvirtualhid) X-Box Series Controller` |
+| DualShock 4 USB and Bluetooth | `(libvirtualhid) PS4 Controller` |
+| DualSense USB and Bluetooth | `(libvirtualhid) PS5 Controller` |
+| Nintendo Switch Pro | `(libvirtualhid) Nintendo Pro Controller` |
+
+Consumers may replace `DeviceProfile::name` before creating a gamepad, for
+example to prepend an application name while preserving the default controller
+identity across platform backends.
+
+The platform-neutral Generic HID descriptor reports the D-pad as buttons 13
+through 16 in the input report. Linux may still route that profile through
+`uinput`, where the backend exposes those same logical directions through the
+standard `ABS_HAT0X` and `ABS_HAT0Y` axes.
 
 Profiles advertise support for features such as rumble, trigger rumble, RGB
 LEDs, adaptive triggers, motion sensors, touchpads, battery state, profile
 specific buttons, and raw output reports. Consumers should query profile and
 backend capabilities before warning users about unsupported client features.
+The `misc1` button represents Share/Capture/Mic Mute-style controls and is
+available on the generic, Xbox Series, DualSense, and Switch Pro profiles; Xbox
+360 and Xbox One do not advertise that extra button.

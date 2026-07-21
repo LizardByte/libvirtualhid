@@ -28,6 +28,10 @@ namespace lvh::profiles {
 
     constexpr std::size_t common_output_report_size = 5;
 
+    constexpr std::size_t pid_rumble_payload_size = 8;
+
+    constexpr std::size_t pid_rumble_output_report_size = pid_rumble_payload_size + 1U;
+
     constexpr std::size_t xbox_gip_input_report_size = 17;
 
     constexpr std::uint8_t switch_pro_report_id = 0x30;
@@ -86,6 +90,144 @@ namespace lvh::profiles {
       return descriptor;
     }
 
+    void append_common_gamepad_buttons(std::vector<std::uint8_t> &descriptor, bool include_misc_button) {
+      descriptor.insert(
+        descriptor.end(),
+        {
+          0x05,
+          0x09,  // Usage Page (Button)
+          0x09,
+          0x01,  // Usage (Button 1 / BTN_SOUTH)
+          0x09,
+          0x02,  // Usage (Button 2 / BTN_EAST)
+          0x09,
+          0x04,  // Usage (Button 4 / BTN_NORTH)
+          0x09,
+          0x05,  // Usage (Button 5 / BTN_WEST)
+          0x09,
+          0x07,  // Usage (Button 7 / BTN_TL)
+          0x09,
+          0x08,  // Usage (Button 8 / BTN_TR)
+          0x09,
+          0x0B,  // Usage (Button 11 / BTN_SELECT)
+          0x09,
+          0x0C,  // Usage (Button 12 / BTN_START)
+          0x09,
+          0x0E,  // Usage (Button 14 / BTN_THUMBL)
+          0x09,
+          0x0F,  // Usage (Button 15 / BTN_THUMBR)
+          0x09,
+          0x0D,  // Usage (Button 13 / BTN_MODE)
+        }
+      );
+      if (include_misc_button) {
+        descriptor.insert(
+          descriptor.end(),
+          {
+            0x09,
+            0x06,  // Usage (Button 6 / BTN_Z)
+          }
+        );
+      }
+      descriptor.insert(
+        descriptor.end(),
+        {
+          0x15,
+          0x00,  // Logical Minimum (0)
+          0x25,
+          0x01,  // Logical Maximum (1)
+          0x75,
+          0x01,  // Report Size (1)
+          0x95,
+          static_cast<std::uint8_t>(include_misc_button ? common_button_count : common_button_count - 1U),
+          0x81,
+          0x02,  // Input (Data,Var,Abs)
+        }
+      );
+      if (!include_misc_button) {
+        descriptor.insert(
+          descriptor.end(),
+          {
+            0x75,
+            0x01,  // Report Size (1)
+            0x95,
+            0x01,  // Report Count (1)
+            0x81,
+            0x03,  // Input (Const,Var,Abs)
+          }
+        );
+      }
+    }
+
+    void append_pid_rumble_output(std::vector<std::uint8_t> &descriptor) {
+      descriptor.insert(
+        descriptor.end(),
+        {
+          0xA1,
+          0x02,  // Collection (Logical)
+          0x05,
+          0x0F,  // Usage Page (Physical Interface Device)
+          0x09,
+          0x97,  // Usage (DC Enable Actuators)
+          0x15,
+          0x00,  // Logical Minimum (0)
+          0x25,
+          0x01,  // Logical Maximum (1)
+          0x75,
+          0x04,  // Report Size (4)
+          0x95,
+          0x01,  // Report Count (1)
+          0x91,
+          0x02,  // Output (Data,Var,Abs)
+          0x15,
+          0x00,
+          0x25,
+          0x00,
+          0x91,
+          0x03,  // Output (Const,Var,Abs) padding
+          0x09,
+          0x70,  // Usage (Magnitude)
+          0x15,
+          0x00,
+          0x25,
+          0x64,  // Logical Maximum (100)
+          0x75,
+          0x08,
+          0x95,
+          0x04,  // Four actuator magnitudes
+          0x91,
+          0x02,
+          0x09,
+          0x50,  // Usage (Duration)
+          0x66,
+          0x01,
+          0x10,
+          0x55,
+          0x0E,
+          0x26,
+          0xFF,
+          0x00,
+          0x95,
+          0x01,
+          0x91,
+          0x02,
+          0x09,
+          0xA7,  // Usage (Start Delay)
+          0x91,
+          0x02,
+          0x65,
+          0x00,
+          0x55,
+          0x00,
+          0x09,
+          0x7C,  // Usage (Loop Count)
+          0x91,
+          0x02,
+          0xC0,  // End logical collection
+        }
+      );
+    }
+
     std::vector<std::uint8_t> make_xbox_gip_report_descriptor(bool include_share_button) {
       constexpr std::string_view xbox_one_descriptor =
         "05010905a101a10009300931150027ffff0000950275108102c0a10009330934150027ffff0000950275108102c0"
@@ -126,71 +268,61 @@ namespace lvh::profiles {
         0x01,  // Collection (Application)
         0x85,
         report_id,  // Report ID
-        0x05,
-        0x09,  // Usage Page (Button)
-        0x19,
-        0x01,  // Usage Minimum (Button 1)
-        0x29,
-        common_button_count,  // Usage Maximum
-        0x15,
-        0x00,  // Logical Minimum (0)
-        0x25,
-        0x01,  // Logical Maximum (1)
-        0x75,
-        0x01,  // Report Size (1)
-        0x95,
-        common_button_count,  // Report Count
-        0x81,
-        0x02,  // Input (Data,Var,Abs)
-        0x05,
-        0x01,  // Usage Page (Generic Desktop)
-        0x09,
-        0x39,  // Usage (Hat switch)
-        0x15,
-        0x00,  // Logical Minimum (0)
-        0x25,
-        0x07,  // Logical Maximum (7)
-        0x35,
-        0x00,  // Physical Minimum (0)
-        0x46,
-        0x3B,
-        0x01,  // Physical Maximum (315)
-        0x65,
-        0x14,  // Unit (Eng Rot:Angular Pos)
-        0x75,
-        0x04,  // Report Size (4)
-        0x95,
-        0x01,  // Report Count (1)
-        0x81,
-        0x42,  // Input (Data,Var,Abs,Null)
-        0x65,
-        0x00,  // Unit (None)
-        0x05,
-        0x01,  // Usage Page (Generic Desktop)
-        0x15,
-        0x00,  // Logical Minimum (0)
-        0x26,
-        0xFF,
-        0x00,  // Logical Maximum (255)
-        0x75,
-        0x08,  // Report Size (8)
-        0x95,
-        common_axis_count,  // Report Count
-        0x09,
-        0x30,  // Usage (X)
-        0x09,
-        0x31,  // Usage (Y)
-        0x09,
-        0x32,  // Usage (Z)
-        0x09,
-        0x33,  // Usage (Rx)
-        0x09,
-        0x34,  // Usage (Ry)
-        0x09,
-        0x35,  // Usage (Rz)
-        0x81,
-        0x02,  // Input (Data,Var,Abs)
       };
+      append_common_gamepad_buttons(descriptor, false);
+      descriptor.insert(
+        descriptor.end(),
+        {
+          0x05,
+          0x01,  // Usage Page (Generic Desktop)
+          0x09,
+          0x39,  // Usage (Hat switch)
+          0x15,
+          0x00,  // Logical Minimum (0)
+          0x25,
+          0x07,  // Logical Maximum (7)
+          0x35,
+          0x00,  // Physical Minimum (0)
+          0x46,
+          0x3B,
+          0x01,  // Physical Maximum (315)
+          0x65,
+          0x14,  // Unit (Eng Rot:Angular Pos)
+          0x75,
+          0x04,  // Report Size (4)
+          0x95,
+          0x01,  // Report Count (1)
+          0x81,
+          0x42,  // Input (Data,Var,Abs,Null)
+          0x65,
+          0x00,  // Unit (None)
+          0x05,
+          0x01,  // Usage Page (Generic Desktop)
+          0x15,
+          0x00,  // Logical Minimum (0)
+          0x26,
+          0xFF,
+          0x00,  // Logical Maximum (255)
+          0x75,
+          0x08,  // Report Size (8)
+          0x95,
+          common_axis_count,  // Report Count
+          0x09,
+          0x30,  // Usage (X)
+          0x09,
+          0x31,  // Usage (Y)
+          0x09,
+          0x32,  // Usage (Z)
+          0x09,
+          0x33,  // Usage (Rx)
+          0x09,
+          0x34,  // Usage (Ry)
+          0x09,
+          0x35,  // Usage (Rz)
+          0x81,
+          0x02,  // Input (Data,Var,Abs)
+        }
+      );
 
       if (supports_rumble) {
         descriptor.insert(
@@ -277,27 +409,7 @@ namespace lvh::profiles {
       };
 
       if (supports_rumble) {
-        descriptor.insert(
-          descriptor.end(),
-          {
-            0x06,
-            0x00,
-            0xFF,  // Usage Page (Vendor Defined)
-            0x09,
-            0x01,  // Usage (Vendor Usage 1)
-            0x15,
-            0x00,  // Logical Minimum (0)
-            0x26,
-            0xFF,
-            0x00,  // Logical Maximum (255)
-            0x75,
-            0x08,  // Report Size (8)
-            0x95,
-            0x04,  // Report Count (4)
-            0x91,
-            0x02,  // Output (Data,Var,Abs)
-          }
-        );
+        append_pid_rumble_output(descriptor);
       }
 
       descriptor.push_back(0xC0);  // End Collection
@@ -1810,6 +1922,9 @@ namespace lvh::profiles {
       );
       profile.report_descriptor =
         make_standard_gamepad_report_descriptor(profile.report_id, profile.capabilities.supports_rumble);
+      if (profile.capabilities.supports_rumble) {
+        profile.output_report_size = pid_rumble_output_report_size;
+      }
       return profile;
     }
 
@@ -1829,7 +1944,7 @@ namespace lvh::profiles {
       profile.version = version;
       profile.report_id = 0;
       profile.input_report_size = xbox_gip_input_report_size;
-      profile.output_report_size = common_output_report_size;
+      profile.output_report_size = pid_rumble_payload_size;
       profile.name = std::move(name);
       profile.manufacturer = "Microsoft";
       profile.capabilities = {.supports_rumble = true, .supports_battery = include_share_button};
@@ -1850,7 +1965,7 @@ namespace lvh::profiles {
         bus_type == BusType::bluetooth ? dualshock4_bluetooth_input_report_size : dualshock4_usb_input_report_size;
       profile.output_report_size =
         bus_type == BusType::bluetooth ? dualshock4_bluetooth_output_report_size : dualshock4_usb_output_report_size;
-      profile.name = "Wireless Controller";
+      profile.name = "(libvirtualhid) PS4 Controller";
       profile.manufacturer = "Sony Computer Entertainment";
       profile.capabilities = {
         .supports_rumble = true,
@@ -1877,7 +1992,7 @@ namespace lvh::profiles {
         bus_type == BusType::bluetooth ? dualsense_bluetooth_input_report_size : dualsense_usb_input_report_size;
       profile.output_report_size =
         bus_type == BusType::bluetooth ? dualsense_bluetooth_output_report_size : dualsense_usb_output_report_size;
-      profile.name = "Wireless Controller";
+      profile.name = "(libvirtualhid) PS5 Controller";
       profile.manufacturer = "Sony Interactive Entertainment";
       profile.capabilities = {
         .supports_rumble = true,
@@ -1903,9 +2018,9 @@ namespace lvh::profiles {
       profile.report_id = switch_pro_report_id;
       profile.input_report_size = switch_pro_input_report_size;
       profile.output_report_size = switch_pro_output_report_size;
-      profile.name = "Pro Controller";
+      profile.name = "(libvirtualhid) Nintendo Pro Controller";
       profile.manufacturer = "Nintendo Co., Ltd.";
-      profile.capabilities = {.supports_motion = true, .supports_battery = true};
+      profile.capabilities = {.supports_rumble = true, .supports_motion = true, .supports_battery = true};
       profile.report_descriptor = make_switch_pro_report_descriptor();
       return profile;
     }
@@ -1927,19 +2042,19 @@ namespace lvh::profiles {
   DeviceProfile generic_gamepad() {
     return make_standard_gamepad_profile(
       GamepadProfileKind::generic,
-      "libvirtualhid Generic Gamepad",
+      "(libvirtualhid) Generic Controller",
       "LizardByte",
       0x1209,
       0x0001,
       0x0001,
-      {}
+      {.supports_rumble = true}
     );
   }
 
   DeviceProfile xbox_360() {
     return make_gamepad_profile(
       GamepadProfileKind::xbox_360,
-      "Microsoft X-Box 360 pad",
+      "(libvirtualhid) X-Box 360 Controller",
       "Microsoft",
       0x045E,
       0x028E,
@@ -1951,7 +2066,7 @@ namespace lvh::profiles {
   DeviceProfile xbox_one() {
     return make_xbox_gip_profile(
       GamepadProfileKind::xbox_one,
-      "Xbox One Controller",
+      "(libvirtualhid) X-Box One Controller",
       0x02EA,
       0x0408,
       false
@@ -1961,7 +2076,7 @@ namespace lvh::profiles {
   DeviceProfile xbox_series() {
     return make_xbox_gip_profile(
       GamepadProfileKind::xbox_series,
-      "Xbox Controller",
+      "(libvirtualhid) X-Box Series Controller",
       0x0B12,
       0x0500,
       true
@@ -1990,7 +2105,7 @@ namespace lvh::profiles {
 
   DeviceProfile dualsense_bluetooth() {
     auto profile = make_dualsense_profile(BusType::bluetooth);
-    profile.name = "Wireless Controller";
+    profile.name = "(libvirtualhid) PS5 Controller";
     return profile;
   }
 
