@@ -365,8 +365,7 @@ namespace {
     void render_device_panel(const std::vector<DeviceListItem> &devices) {
       ImGui::TextUnformatted("Profile");
       const auto *choice = current_profile_choice();
-      if (const auto preview = choice == nullptr ? std::string {"Select profile"} : to_utf8(choice->label);
-          ImGui::BeginCombo("##profile", preview.c_str())) {
+      if (const auto preview = choice == nullptr ? std::string {"Select profile"} : to_utf8(choice->label); ImGui::BeginCombo("##profile", preview.c_str())) {
         for (std::size_t index = 0; index < profile_choices.size(); ++index) {
           const auto label = to_utf8(profile_choices[index].label);
           const auto selected = index == profile_index_;
@@ -549,8 +548,7 @@ namespace {
 
       {
         ScopedDisabled disabled {!enabled};
-        if (const auto state_label = to_utf8(battery_choices[static_cast<std::size_t>(battery_state_index_)].label);
-            ImGui::BeginCombo("State", state_label.c_str())) {
+        if (const auto state_label = to_utf8(battery_choices[static_cast<std::size_t>(battery_state_index_)].label); ImGui::BeginCombo("State", state_label.c_str())) {
           for (std::size_t index = 0; index < battery_choices.size(); ++index) {
             const auto label = to_utf8(battery_choices[index].label);
             const auto selected_state = static_cast<int>(index) == battery_state_index_;

@@ -699,8 +699,7 @@ namespace {
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds {3};
     while (
       std::chrono::steady_clock::now() < deadline &&
-      SDL_GameControllerGetAxis(controller.get(), SDL_CONTROLLER_AXIS_TRIGGERRIGHT) < 16000
-    ) {
+      SDL_GameControllerGetAxis(controller.get(), SDL_CONTROLLER_AXIS_TRIGGERRIGHT) < 16000) {
       SDL_GameControllerUpdate();
       pump_sdl_events();
       std::this_thread::sleep_for(std::chrono::milliseconds {20});
