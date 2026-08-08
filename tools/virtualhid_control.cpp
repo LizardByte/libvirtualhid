@@ -271,11 +271,15 @@ namespace {
       ImGui::Begin("libvirtualhid control", nullptr, window_flags);
 
       const auto backend = backend_text(*runtime_);
-      ImGui::TextUnformatted(backend.c_str());
+      ImGui::TextWrapped("%s", backend.c_str());
       ImGui::Separator();
 
-      if (ImGui::BeginTable("control-layout", 2, ImGuiTableFlags_Resizable | ImGuiTableFlags_BordersInnerV)) {
-        ImGui::TableSetupColumn("Devices", ImGuiTableColumnFlags_WidthFixed, 330.0F);
+      if (ImGui::GetContentRegionAvail().x < 760.0F) {
+        render_device_panel(devices);
+        ImGui::Separator();
+        render_control_panel(selected);
+      } else if (ImGui::BeginTable("control-layout", 2, ImGuiTableFlags_Resizable | ImGuiTableFlags_BordersInnerV)) {
+        ImGui::TableSetupColumn("Devices", ImGuiTableColumnFlags_WidthFixed, 220.0F);
         ImGui::TableSetupColumn("Controls", ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableNextRow();
 
@@ -459,7 +463,8 @@ namespace {
         button_active_.fill(false);
       }
 
-      if (ImGui::BeginTable("buttons", 4, ImGuiTableFlags_SizingStretchSame)) {
+      const auto column_count = ImGui::GetContentRegionAvail().x < 480.0F ? 3 : 4;
+      if (ImGui::BeginTable("buttons", column_count, ImGuiTableFlags_SizingStretchSame)) {
         for (std::size_t index = 0; index < button_choices.size(); ++index) {
           if (!visible_buttons[index]) {
             continue;
@@ -955,9 +960,9 @@ namespace {
       main_scale = 1.0F;
     }
 
-    constexpr auto base_width = 1120;
+    constexpr auto base_width = 860;
     constexpr auto base_height = 760;
-    constexpr auto minimum_width = 980;
+    constexpr auto minimum_width = 600;
     constexpr auto minimum_height = 700;
     const auto window_flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIDDEN | SDL_WINDOW_HIGH_PIXEL_DENSITY;
     auto *window = SDL_CreateWindow(
