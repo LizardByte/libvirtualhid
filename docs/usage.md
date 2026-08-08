@@ -103,6 +103,8 @@ normalized gamepad output such as rumble, RGB LED, adaptive trigger, trigger
 rumble, and raw report events delivered through the normal callback path. Button
 controls are momentary by default so they behave like physical gamepad buttons;
 enable `Lock buttons` to keep the old click-to-toggle behavior for held inputs.
+The resizable window supports a compact width. Its device and control panels
+stack, and the button grid reflows, to keep controls usable when it is narrowed.
 The UI intentionally does not use gamepad navigation so virtual devices created
 by the tool cannot drive the tool's own controls.
 
