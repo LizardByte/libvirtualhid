@@ -26,27 +26,7 @@ cover-img:
     <div class="container px-auto">
         <h2 class="text-center fw-bolder my-5">Features</h2>
         <div class="row gx-5">
-            {% for feature in site.data.features %}
-            <div class="col-md-6 col-lg-4 mb-5">
-                <div class="card-custom h-100 shadow border-0 rounded-0">
-                    <div class="card-body p-4">
-                        <div class="d-flex align-items-center">
-                            <div class="icon">
-                                {% if feature.icon_fa %}
-                                <i class="fa-fw fa-2x {{ feature.icon_fa }}"></i>
-                                {% elsif feature.icon_img %}
-                                <img {% if feature.icon_img_invert %}class="invert"{% endif %} src="{{ feature.icon_img }}" alt="{{ feature.icon_img_alt | default: feature.title }}"/>
-                                {% endif %}
-                            </div>
-                            <div class="ms-3">
-                                <h5 class="fw-bolder mb-0">{{ feature.title }}</h5>
-                                <p class="mb-0">{{ feature.description }}</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            {% endfor %}
+            {% include feature-cards.html features=site.data.features %}
         </div>
     </div>
 </section>
@@ -54,6 +34,30 @@ cover-img:
 <!-- More cards -->
 <div class="container py-5 px-auto">
     <div class="container col-md-10">
+        <!-- Windows driver section -->
+        <section class="py-4" id="WindowsDriver">
+            <div class="card-custom shadow border-0 rounded-0">
+                <div class="card-body p-4">
+                    <div class="d-flex align-items-center">
+                        <i class="fa-fw fa-2x fas fa-gamepad"></i>
+                        <div class="ms-3">
+                            <h2 class="fw-bolder mb-0">Virtual HID Driver</h2>
+                            <p class="mb-0">
+                                Explore the separate Windows driver package for compatible applications that create
+                                virtual HID gamepads.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-footer p-3 px-4">
+                    <a class="btn btn-outline-theme me-3 mb-3" href="{{ '/virtual-hid-driver' | relative_url }}">
+                        <img class="icon-sm invert" src="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/icons/windows.svg" alt="Windows"/>
+                        Driver overview
+                    </a>
+                </div>
+            </div>
+        </section>
+
         <!-- Docs section -->
         <section class="py-4" id="Docs">
             <div class="card-custom shadow border-0 rounded-0">

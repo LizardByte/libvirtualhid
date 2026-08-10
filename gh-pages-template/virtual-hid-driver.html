@@ -1,0 +1,135 @@
+---
+title: Virtual HID Driver
+subtitle: User-mode virtual gamepads for Windows
+layout: page
+full-width: true
+after-content:
+  - donate.html
+  - support.html
+cover-img:
+  - /libvirtualhid/assets/img/banners/libvirtualhid.jpeg
+---
+
+<!-- About section -->
+<section class="py-5" id="About">
+    <div class="container px-auto">
+        <p class="lead text-center mx-auto mt-0 mb-4">
+            Virtual HID Driver is the Windows gamepad backend for libvirtualhid. It installs the user-mode driver
+            component that compatible applications use to create virtual HID gamepads discoverable by Windows apps.
+            The driver package is separate from the portable C++ library and is currently packaged for AMD64 systems.
+        </p>
+        <div class="text-center">
+            <a class="btn btn-outline-theme me-3 mb-3" href="https://github.com/LizardByte/libvirtualhid/releases" target="_blank" rel="noopener">
+                <img class="icon-sm invert" src="https://cdn.jsdelivr.net/npm/simple-icons@16/icons/github.svg" alt="GitHub"/>
+                View releases
+            </a>
+            <a class="btn btn-outline-theme me-3 mb-3" href="https://docs.lizardbyte.dev/projects/libvirtualhid" target="_blank" rel="noopener">
+                <img class="icon-sm invert" src="https://cdn.jsdelivr.net/npm/simple-icons@16/icons/readthedocs.svg" alt="Read the Docs"/>
+                Driver documentation
+            </a>
+            <a class="btn btn-outline-theme me-3 mb-3" href="/libvirtualhid/">
+                <i class="fa-fw fa-lg fas fa-arrow-left"></i>
+                libvirtualhid overview
+            </a>
+        </div>
+    </div>
+</section>
+
+<!-- Features section -->
+<section class="py-5" id="Features">
+    <div class="container px-auto">
+        <h2 class="text-center fw-bolder my-5">Driver features</h2>
+        <div class="row gx-5">
+            {% include feature-cards.html features=site.data.driver_features %}
+        </div>
+    </div>
+</section>
+
+<!-- Product details -->
+<div class="container py-5 px-auto">
+    <div class="container col-md-10">
+        <section class="py-4" id="Applications">
+            <div class="card-custom shadow border-0 rounded-0">
+                <div class="card-body p-4">
+                    <div class="d-flex align-items-start">
+                        <i class="fa-fw fa-2x fas fa-code mt-1"></i>
+                        <div class="ms-3">
+                            <h2 class="fw-bolder mb-2">For compatible applications</h2>
+                            <p>
+                                Applications create and update gamepads through libvirtualhid's platform-neutral C++
+                                API. The Windows backend communicates with the installed driver, while platform-specific
+                                HID details stay out of consumer code. The library and driver must use matching control
+                                protocol versions.
+                            </p>
+                            <p class="mb-0">
+                                The installed package also includes the <code>virtualhid_control</code> diagnostic UI
+                                and the <code>gamepad_adapter</code> example for local validation.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-footer p-3 px-4">
+                    <a class="btn btn-outline-theme me-3 mb-3" href="https://github.com/LizardByte/libvirtualhid/tree/master/examples" target="_blank" rel="noopener">
+                        <i class="fa-fw fa-lg fas fa-puzzle-piece"></i>
+                        Integration examples
+                    </a>
+                    <a class="btn btn-outline-theme me-3 mb-3" href="https://github.com/LizardByte/libvirtualhid" target="_blank" rel="noopener">
+                        <img class="icon-sm invert" src="https://cdn.jsdelivr.net/npm/simple-icons@16/icons/github.svg" alt="GitHub"/>
+                        Browse source
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <section class="py-4" id="Compatibility">
+            <div class="card-custom shadow border-0 rounded-0">
+                <div class="card-body p-4">
+                    <div class="d-flex align-items-start">
+                        <i class="fa-fw fa-2x fas fa-circle-info mt-1"></i>
+                        <div class="ms-3">
+                            <h2 class="fw-bolder mb-2">Compatibility notes</h2>
+                            <ul class="mb-0">
+                                <li>
+                                    The driver is for virtual gamepads. libvirtualhid's Windows keyboard and mouse
+                                    support does not require this package.
+                                </li>
+                                <li>
+                                    Xbox 360 is not available through this UMDF/VHF backend because a real Xbox 360
+                                    controller uses XUSB rather than standard HID.
+                                </li>
+                                <li>
+                                    Xbox-style HID profiles do not guarantee an XInput slot. Applications that require
+                                    XInput-specific behavior should review the profile compatibility documentation.
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="py-4" id="License">
+            <div class="card-custom shadow border-0 rounded-0">
+                <div class="card-body p-4">
+                    <div class="d-flex align-items-center">
+                        <i class="fa-fw fa-2x fas fa-file-contract"></i>
+                        <div class="ms-3">
+                            <h2 class="fw-bolder mb-0">License</h2>
+                            <p class="mb-0">
+                                The Windows UMDF driver source and generated driver package artifacts use the
+                                LizardByte Source-Available License 1.0. Packaged helper components may use the MIT
+                                License as documented in the repository license map.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-footer p-3 px-4">
+                    <a class="btn btn-outline-theme me-3 mb-3" href="https://github.com/LizardByte/libvirtualhid/blob/master/LICENSES/README.md" target="_blank" rel="noopener">
+                        <i class="fa-fw fa-lg fas fa-scale-balanced"></i>
+                        View license map
+                    </a>
+                </div>
+            </div>
+        </section>
+    </div>
+</div>
