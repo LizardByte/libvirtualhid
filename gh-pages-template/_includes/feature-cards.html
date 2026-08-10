@@ -1,0 +1,21 @@
+{% for feature in include.features %}
+<div class="col-md-6 col-lg-4 mb-5">
+    <div class="card-custom h-100 shadow border-0 rounded-0">
+        <div class="card-body p-4">
+            <div class="d-flex align-items-center">
+                <div class="icon">
+                    {% if feature.icon_fa %}
+                    <i class="fa-fw fa-2x {{ feature.icon_fa }}"></i>
+                    {% elsif feature.icon_img %}
+                    <img {% if feature.icon_img_invert %}class="invert"{% endif %} src="{{ feature.icon_img }}" alt="{{ feature.icon_img_alt | default: feature.title }}"/>
+                    {% endif %}
+                </div>
+                <div class="ms-3">
+                    <h5 class="fw-bolder mb-0">{{ feature.title }}</h5>
+                    <p class="mb-0">{{ feature.description }}</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endfor %}

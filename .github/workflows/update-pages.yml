@@ -40,6 +40,7 @@ jobs:
       GH_BOT_EMAIL: ${{ secrets.GH_BOT_EMAIL }}
       GH_BOT_TOKEN: ${{ secrets.GH_BOT_TOKEN }}
     with:
+      base_url: '_auto'
       clean_gh_pages: true
       gh_bot_name: ${{ vars.GH_BOT_NAME }}
       site_artifact: 'prep'

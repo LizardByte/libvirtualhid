@@ -1,0 +1,38 @@
+---
+- title: "User-mode by design"
+  icon_img: "https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/icons/windows.svg"
+  icon_img_alt: "Windows"
+  icon_img_invert: true
+  description: >
+    Uses a UMDF2 control driver backed by Windows Virtual HID Framework, with no
+    custom kernel-mode driver added by libvirtualhid.
+
+- title: "Standard HID gamepads"
+  icon_fa: "fas fa-gamepad"
+  description: >
+    Publishes virtual HID devices for compatible DirectInput, SDL/HIDAPI,
+    Windows Gaming Input, GameInput, and browser Gamepad API consumers.
+
+- title: "Process-owned lifecycle"
+  icon_fa: "fas fa-link"
+  description: >
+    Associates each virtual gamepad with the client that created it so Windows
+    can clean up the device if that process exits or crashes.
+
+- title: "Built-in diagnostic UI"
+  icon_fa: "fas fa-sliders"
+  description: >
+    Includes a native tool for creating, controlling, and monitoring gamepads,
+    device nodes, battery state, and output feedback.
+
+- title: "Multiple controller profiles"
+  icon_fa: "fas fa-layer-group"
+  description: >
+    Supports Generic, Xbox One, Xbox Series, DualShock 4, DualSense, and Nintendo
+    Switch Pro-style virtual controller profiles.
+
+- title: "Output feedback"
+  icon_fa: "fas fa-wave-square"
+  description: >
+    Normalizes supported rumble, RGB LED, adaptive trigger, and raw output
+    events for the application that owns the virtual gamepad.
