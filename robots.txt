@@ -1,1 +1,1 @@
-Sitemap: http://app.lizardbyte.dev/sitemap.xml
+Sitemap: http://app.lizardbyte.dev/libvirtualhid/sitemap.xml

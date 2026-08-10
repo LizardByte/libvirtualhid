@@ -7,8 +7,8 @@
     
     <description>LizardByte</description>
     
-    <link>http://app.lizardbyte.dev/</link>
-    <atom:link href="http://app.lizardbyte.dev/feed.xml" rel="self" type="application/rss+xml" />
+    <link>http://app.lizardbyte.dev/libvirtualhid/</link>
+    <atom:link href="http://app.lizardbyte.dev/libvirtualhid/feed.xml" rel="self" type="application/rss+xml" />
     
     
   </channel>
