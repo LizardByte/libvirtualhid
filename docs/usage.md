@@ -76,6 +76,9 @@ unless they explicitly enable additional options.
   fallback.
 - `LIBVIRTUALHID_BUILD_WINDOWS_DRIVER`: build the Windows UMDF2 driver package
   with the Microsoft WDK/MSVC toolchain.
+- `LIBVIRTUALHID_BUILD_WINDOWS_BROKER`: build the Windows broker service used by
+  the driver package for gamepad creation, active-device limits, and license
+  state.
 - `LIBVIRTUALHID_ENABLE_PACKAGING`: enable CPack package metadata.
 - `LIBVIRTUALHID_WARNINGS_AS_ERRORS`: treat project warnings as errors.
 
@@ -102,6 +105,14 @@ capabilities, list device nodes reported for UI-created devices, and display
 normalized gamepad output such as rumble, RGB LED, adaptive trigger, trigger
 rumble, and raw report events delivered through the normal callback path. Button
 controls are momentary by default so they behave like physical gamepad buttons;
+on Windows, the UI also displays broker license status and can activate,
+refresh, or deactivate a machine license. Outside the explicitly marked GitHub
+Actions test environment, every Windows UMDF gamepad creation requires a
+current successful license validation response and there is no offline grace
+period. The CI-only exception is a single five-minute window that begins with
+the first gamepad creation attempt. Purchase and account-management buttons use
+the compiled URLs in
+`src/platform/windows/shared/lvh_windows_broker_config.hpp`.
 enable `Lock buttons` to keep the old click-to-toggle behavior for held inputs.
 The resizable window supports a compact width. Its device and control panels
 stack, and the button grid reflows, to keep controls usable when it is narrowed.
@@ -119,6 +130,10 @@ The API centers on portable device concepts:
 
 - `Runtime`: owns backend discovery, initialization, device creation, and
   shutdown.
+- `get_license_status`, `activate_license`, `validate_license`, and
+  `deactivate_license`: provider-neutral machine license operations for host
+  applications. On Windows these call the installed local broker; license keys
+  are not retained by the client library or returned to the application.
 - `VirtualDevice`: common lifecycle for created devices.
 - `Gamepad`: submits normalized gamepad state and receives output callbacks.
 - `Keyboard`: submits key press/release and UTF-8 text input.

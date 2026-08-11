@@ -300,6 +300,21 @@ jobs:
             throw "Windows driver installer exited with code $($process.ExitCode)."
           }
 
+      - name: Enable GitHub Actions evaluation window
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $serviceName = "libvirtualhid_broker"
+          $serviceRegistryPath = "HKLM:\SYSTEM\CurrentControlSet\Services\$serviceName"
+          New-ItemProperty `
+            -LiteralPath $serviceRegistryPath `
+            -Name Environment `
+            -PropertyType MultiString `
+            -Value @("GITHUB_ACTIONS=true") `
+            -Force | Out-Null
+          Restart-Service -Name $serviceName -Force
+          (Get-Service -Name $serviceName).WaitForStatus("Running", [TimeSpan]::FromSeconds(15))
+
       - name: Verify Windows test driver package
         if: runner.os == 'Windows'
         shell: pwsh
@@ -319,6 +334,9 @@ jobs:
               -Profile $profile `
               -Verbose
           }
+
+      - name: Run gamepad adapter example
+        run: cmake --build cmake-build-ci --config ${{ env.CMAKE_BUILD_CONFIG }} --target run_gamepad_adapter_example
 
       - name: Prepare report directory
         run: cmake -E make_directory cmake-build-ci/reports
@@ -383,9 +401,6 @@ jobs:
           }
 
           $coverage.Save($coveragePath)
-
-      - name: Run gamepad adapter example
-        run: cmake --build cmake-build-ci --config ${{ env.CMAKE_BUILD_CONFIG }} --target run_gamepad_adapter_example
 
       - name: Generate gcov report
         id: test_report
@@ -506,7 +521,7 @@ jobs:
         run: >-
           cmake --build cmake-build-driver
           --config ${{ env.DRIVER_BUILD_CONFIG }}
-          --target libvirtualhid_windows_catalog gamepad_adapter virtualhid_control
+          --target libvirtualhid_windows_catalog libvirtualhid_broker gamepad_adapter virtualhid_control
           --parallel 2
 
       - name: Validate Azure signing configuration

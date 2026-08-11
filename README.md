@@ -15,6 +15,16 @@
   <a href="https://sonarcloud.io/project/overview?id=LizardByte_libvirtualhid"><img src="https://img.shields.io/sonar/quality_gate/LizardByte_libvirtualhid.svg?server=https%3A%2F%2Fsonarcloud.io&style=for-the-badge&logo=sonarqubecloud&label=sonarcloud" alt="SonarCloud"></a>
 </div>
 
+<div align="center">
+  <h2>🎮 Windows Virtual HID Driver License</h2>
+  <p>
+    <strong>A license is required to create virtual gamepads with the Windows driver.</strong><br>
+    This requirement is Windows-only; non-Windows backends do not currently require a license.<br>
+    Yearly and lifetime options are available.
+  </p>
+  <a href="https://buy.polar.sh/polar_cl_zj6Io5NVukXfZSl97ULtFvImfI5L1jbL2cSnc0Y72Pt"><img src="https://img.shields.io/badge/Buy_a_Windows_license-0078D4?logo=windows11&logoColor=white&style=for-the-badge" alt="Buy a Windows license"></a>
+</div>
+
 # Overview
 
 ## ℹ️ About

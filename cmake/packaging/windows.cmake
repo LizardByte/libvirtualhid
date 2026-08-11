@@ -34,6 +34,12 @@ if(NOT TARGET virtualhid_control)
             "so the virtualhid_control UI tool can be packaged.")
 endif()
 
+if(NOT TARGET libvirtualhid_broker)
+    message(FATAL_ERROR
+            "The Windows driver installer requires LIBVIRTUALHID_BUILD_WINDOWS_BROKER=ON "
+            "so the broker service can be packaged.")
+endif()
+
 install(TARGETS gamepad_adapter
   RUNTIME DESTINATION "tools/windows"
   COMPONENT driver)

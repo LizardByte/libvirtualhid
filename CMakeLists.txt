@@ -42,6 +42,9 @@ option(LIBVIRTUALHID_TOOLS_FULLY_STATIC "Attempt to link libvirtualhid tools as 
 option(LIBVIRTUALHID_TOOLS_STATIC_SDL3 "Prefer a static SDL3 diagnostic UI dependency when available" ON)
 option(LIBVIRTUALHID_ENABLE_XTEST "Enable X11/XTest keyboard and mouse fallback on Linux" ON)
 option(LIBVIRTUALHID_BUILD_WINDOWS_DRIVER "Build the Windows UMDF2 driver package with the WDK/MSVC toolchain" OFF)
+option(LIBVIRTUALHID_BUILD_WINDOWS_BROKER
+       "Build the Windows broker service used by the monetized UMDF driver package"
+       ${LIBVIRTUALHID_BUILD_WINDOWS_DRIVER})
 option(LIBVIRTUALHID_INSTALL
         "Install libvirtualhid targets, headers, and CMake package files" ${LIBVIRTUALHID_IS_TOP_LEVEL})
 option(LIBVIRTUALHID_ENABLE_PACKAGING "Enable CPack package metadata" ${LIBVIRTUALHID_INSTALL})
@@ -65,6 +68,31 @@ endif()
 if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME AND BUILD_TESTS AND NOT CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     set(CMAKE_CXX_FLAGS "-fprofile-arcs -ftest-coverage -ggdb -O0")
     set(CMAKE_C_FLAGS "-fprofile-arcs -ftest-coverage -ggdb -O0")
+endif()
+
+set(LIBVIRTUALHID_USES_LIZARDBYTE_COMMON OFF)
+if(WIN32)
+    set(LIBVIRTUALHID_USES_LIZARDBYTE_COMMON ON)
+endif()
+
+if(LIBVIRTUALHID_USES_LIZARDBYTE_COMMON OR BUILD_TESTS)
+    set(LIZARDBYTE_COMMON_BUILD_TEST_SUPPORT
+        ${BUILD_TESTS}
+        CACHE BOOL "Build lizardbyte-common GoogleTest support helpers" FORCE)
+    set(LIZARDBYTE_COMMON_INSTALL
+        ${LIBVIRTUALHID_INSTALL}
+        CACHE BOOL "Install lizardbyte-common targets and package configuration" FORCE)
+    if(NOT TARGET lizardbyte::common)
+        add_subdirectory(third-party/lizardbyte-common)
+    endif()
+    if(MSVC AND LIBVIRTUALHID_BUILD_WINDOWS_DRIVER)
+        set_property(TARGET lizardbyte_common PROPERTY
+          MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        if(TARGET lizardbyte_common_test_support)
+            set_property(TARGET lizardbyte_common_test_support PROPERTY
+              MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+    endif()
 endif()
 
 # Copy MinGW runtime DLLs beside a target when using GNU toolchains on Windows.
@@ -101,6 +129,10 @@ add_subdirectory(src)
 if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
     if(WIN32 AND LIBVIRTUALHID_BUILD_WINDOWS_DRIVER)
         add_subdirectory(src/platform/windows/driver)
+    endif()
+
+    if(WIN32 AND LIBVIRTUALHID_BUILD_WINDOWS_BROKER)
+        add_subdirectory(src/platform/windows/broker)
     endif()
 
     if(BUILD_DOCS)

@@ -9,8 +9,10 @@ if(WIN32)
 endif()
 
 include(GoogleTest)
-add_subdirectory("${PROJECT_SOURCE_DIR}/third-party/lizardbyte-common/third-party/googletest"
-                 "third-party/googletest")
+if(NOT TARGET gtest)
+    add_subdirectory("${PROJECT_SOURCE_DIR}/third-party/lizardbyte-common/third-party/googletest"
+                     "third-party/googletest")
+endif()
 
 set(LIZARDBYTE_COMMON_BUILD_TEST_SUPPORT ON CACHE BOOL "Build lizardbyte-common GoogleTest support helpers" FORCE)
 if(NOT TARGET lizardbyte::common)
@@ -24,6 +26,7 @@ set(TEST_BINARY test_libvirtualhid)
 set(LIBVIRTUALHID_TEST_SOURCES
   "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_gamepad_adapter.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_gamepad_lifecycle.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_license.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_profiles.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_report.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_runtime.cpp"

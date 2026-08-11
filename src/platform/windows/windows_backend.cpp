@@ -26,12 +26,17 @@
 
 // local includes
 #include "core/backend.hpp"
+#include "lvh_windows_broker_protocol.h"
 #include "platform/windows/control_protocol.hpp"
 #include "platform/windows/keylayout.hpp"
 #include "platform/windows/shared/generic_pid_rumble.hpp"
+#include "platform/windows/windows_broker_client.hpp"
 
 #include <libvirtualhid/profiles.hpp>
 #include <libvirtualhid/report.hpp>
+
+// lib includes
+#include <lizardbyte/common/env.h>
 
 // standard includes
 #include <algorithm>
@@ -418,12 +423,8 @@ namespace lvh::detail {
 
     std::vector<std::string> resolve_control_device_paths() {
       constexpr auto environment_name = "LIBVIRTUALHID_WINDOWS_CONTROL_DEVICE";
-      if (const auto required_size = ::GetEnvironmentVariableA(environment_name, nullptr, 0); required_size > 1U) {
-        std::string path(required_size - 1U, '\0');
-        const auto copied_size = ::GetEnvironmentVariableA(environment_name, path.data(), required_size);
-        if (copied_size > 0U && copied_size < required_size) {
-          return {path};
-        }
+      if (std::string override_path; lizardbyte::common::get_env(environment_name, override_path) && !override_path.empty()) {
+        return {override_path};
       }
 
       auto paths = enumerate_control_device_interface_paths();
@@ -486,15 +487,23 @@ namespace lvh::detail {
 
       virtual const std::string &path() const = 0;
 
+      virtual HANDLE native_handle() const {
+        return nullptr;
+      }
+
       virtual OperationStatus create_gamepad(
         const LvhWindowsCreateGamepadRequest &request,
         LvhWindowsCreateGamepadResponse &response
       ) const = 0;
 
-      virtual OperationStatus destroy_device(std::uint64_t driver_device_id) const = 0;
+      virtual OperationStatus destroy_device(
+        std::uint64_t driver_device_id,
+        const LvhWindowsSessionToken &session_token
+      ) const = 0;
 
       virtual OperationStatus submit_input_report(
         std::uint64_t driver_device_id,
+        const LvhWindowsSessionToken &session_token,
         const std::vector<std::uint8_t> &report
       ) const = 0;
 
@@ -541,6 +550,10 @@ namespace lvh::detail {
         return path_;
       }
 
+      HANDLE native_handle() const override {
+        return handle_->value.get();
+      }
+
       OperationStatus create_gamepad(
         const LvhWindowsCreateGamepadRequest &request,
         LvhWindowsCreateGamepadResponse &response
@@ -560,8 +573,11 @@ namespace lvh::detail {
         return protocol_status(response.status, "Windows driver rejected gamepad creation");
       }
 
-      OperationStatus destroy_device(std::uint64_t driver_device_id) const override {
-        auto request = windows::make_destroy_device_request(driver_device_id);
+      OperationStatus destroy_device(
+        std::uint64_t driver_device_id,
+        const LvhWindowsSessionToken &session_token
+      ) const override {
+        auto request = windows::make_destroy_device_request(driver_device_id, session_token);
         DWORD bytes_returned = 0;
         return device_io_control(
           LVH_WINDOWS_IOCTL_DESTROY_DEVICE,
@@ -573,6 +589,7 @@ namespace lvh::detail {
 
       OperationStatus submit_input_report(
         std::uint64_t driver_device_id,
+        const LvhWindowsSessionToken &session_token,
         const std::vector<std::uint8_t> &report
       ) const override {
         using enum ErrorCode;
@@ -581,7 +598,7 @@ namespace lvh::detail {
           return OperationStatus::failure(invalid_argument, "input report exceeds Windows control protocol limit");
         }
 
-        auto request = windows::make_submit_input_report_request(driver_device_id, report);
+        auto request = windows::make_submit_input_report_request(driver_device_id, session_token, report);
         DWORD bytes_returned = 0;
         return device_io_control(
           LVH_WINDOWS_IOCTL_SUBMIT_INPUT_REPORT,
@@ -700,16 +717,115 @@ namespace lvh::detail {
       return {};
     }
 
+    class BrokeredWindowsControlChannel final: public WindowsControlChannel {
+    public:
+      explicit BrokeredWindowsControlChannel(std::unique_ptr<WindowsControlChannel> direct_channel):
+          direct_channel_ {std::move(direct_channel)} {}
+
+      static std::unique_ptr<WindowsControlChannel> open(std::unique_ptr<WindowsControlChannel> direct_channel) {
+        if (!direct_channel) {
+          return nullptr;
+        }
+
+        auto brokered_channel = std::make_unique<BrokeredWindowsControlChannel>(std::move(direct_channel));
+        if (!brokered_channel->broker_available()) {
+          return nullptr;
+        }
+
+        return brokered_channel;
+      }
+
+      const std::string &path() const override {
+        return direct_channel_->path();
+      }
+
+      HANDLE native_handle() const override {
+        return direct_channel_->native_handle();
+      }
+
+      OperationStatus create_gamepad(
+        const LvhWindowsCreateGamepadRequest &request,
+        LvhWindowsCreateGamepadResponse &response
+      ) const override {
+        LvhWindowsBrokerCreateGamepadRequest broker_request {};
+        broker_request.header = windows_broker::make_request_header(
+          LvhWindowsBrokerRequestType::create_gamepad,
+          sizeof(broker_request)
+        );
+        broker_request.client_control_handle = static_cast<std::uint64_t>(
+          reinterpret_cast<std::uintptr_t>(direct_channel_->native_handle())
+        );
+        broker_request.gamepad = request;
+
+        LvhWindowsBrokerCreateGamepadResponse broker_response {};
+        if (const auto status = windows_broker::call(broker_request, broker_response, "create Windows gamepad through broker"); !status.ok()) {
+          return status;
+        }
+
+        response = broker_response.gamepad;
+        return protocol_status(response.status, "Windows driver rejected gamepad creation");
+      }
+
+      OperationStatus destroy_device(
+        std::uint64_t driver_device_id,
+        const LvhWindowsSessionToken &session_token
+      ) const override {
+        LvhWindowsBrokerDestroyDeviceRequest broker_request {};
+        broker_request.header = windows_broker::make_request_header(
+          LvhWindowsBrokerRequestType::destroy_device,
+          sizeof(broker_request)
+        );
+        broker_request.device = windows::make_destroy_device_request(driver_device_id, session_token);
+
+        LvhWindowsBrokerDestroyDeviceResponse broker_response {};
+        return windows_broker::call(broker_request, broker_response, "destroy Windows virtual HID device through broker");
+      }
+
+      OperationStatus submit_input_report(
+        std::uint64_t driver_device_id,
+        const LvhWindowsSessionToken &session_token,
+        const std::vector<std::uint8_t> &report
+      ) const override {
+        return direct_channel_->submit_input_report(driver_device_id, session_token, report);
+      }
+
+      std::optional<LvhWindowsOutputReportEvent> read_output_report(HANDLE stop_event) const override {
+        return direct_channel_->read_output_report(stop_event);
+      }
+
+    private:
+      bool broker_available() const {
+        LvhWindowsBrokerStatusRequest request {};
+        request.header = windows_broker::make_request_header(
+          LvhWindowsBrokerRequestType::status,
+          sizeof(request)
+        );
+
+        LvhWindowsBrokerStatusResponse response {};
+        return windows_broker::call(request, response, "query Windows broker status").ok();
+      }
+
+      std::unique_ptr<WindowsControlChannel> direct_channel_;
+    };
+
+    WindowsControlChannels open_brokered_control_channels() {
+      auto channels = open_control_channels();
+      channels.command = BrokeredWindowsControlChannel::open(std::move(channels.command));
+      return channels;
+    }
+
     class WindowsGamepadState {
     public:
       WindowsGamepadState(
         DeviceId client_device_id,
         std::uint64_t driver_device_id,
+        const LvhWindowsSessionToken &session_token,
         DeviceProfile device_profile,
         std::string device_path
       ):
           client_id {client_device_id},
           driver_id {driver_device_id},
+          token {session_token},
           profile {std::move(device_profile)},
           path {std::move(device_path)} {
         if (profile.gamepad_kind == GamepadProfileKind::generic && profile.capabilities.supports_rumble) {
@@ -725,6 +841,7 @@ namespace lvh::detail {
       mutable std::mutex mutex_;
       DeviceId client_id;
       std::uint64_t driver_id;
+      LvhWindowsSessionToken token {};
       DeviceProfile profile;
       std::string path;
       bool open = true;
@@ -819,6 +936,7 @@ namespace lvh::detail {
         auto state = std::make_shared<WindowsGamepadState>(
           id,
           response.driver_device_id,
+          response.session_token,
           options.profile,
           response.device_path[0] == '\0' ? command_channel_->path() : std::string {response.device_path}
         );
@@ -838,11 +956,13 @@ namespace lvh::detail {
         const std::vector<std::uint8_t> &report
       ) const {
         const auto driver_id = state->driver_id;
-        return command_channel_->submit_input_report(driver_id, report);
+        const auto token = state->token;
+        return command_channel_->submit_input_report(driver_id, token, report);
       }
 
       OperationStatus close_gamepad(const std::shared_ptr<WindowsGamepadState> &state) {
         std::uint64_t driver_id = 0;
+        LvhWindowsSessionToken token {};
         {
           std::lock_guard lock {state->mutex_};
           if (!state->open) {
@@ -851,6 +971,7 @@ namespace lvh::detail {
 
           state->open = false;
           driver_id = state->driver_id;
+          token = state->token;
         }
 
         {
@@ -859,7 +980,7 @@ namespace lvh::detail {
         }
         notify_pid_timer();
 
-        return command_channel_->destroy_device(driver_id);
+        return command_channel_->destroy_device(driver_id, token);
       }
 
     private:
@@ -1736,7 +1857,7 @@ namespace lvh::detail {
     class WindowsBackend final: public Backend {
     public:
       WindowsBackend():
-          WindowsBackend(open_control_channels()) {}
+          WindowsBackend(open_brokered_control_channels()) {}
 
       explicit WindowsBackend(WindowsControlChannels channels):
           WindowsBackend(std::move(channels.command), std::move(channels.event)) {}

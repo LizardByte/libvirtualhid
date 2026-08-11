@@ -29,6 +29,7 @@ namespace lvh::detail::windows {
   inline constexpr std::uint16_t xbox_series_windows_device_version = 0x0509;
   inline constexpr std::size_t xbox_series_windows_input_report_size = 17;
   inline constexpr std::size_t xbox_series_windows_output_report_size = 8;
+  inline constexpr LvhWindowsSessionToken empty_session_token {};
 
   inline std::uint32_t gamepad_flags(const GamepadProfileCapabilities &capabilities) {
     std::uint32_t flags = 0;
@@ -169,11 +170,34 @@ namespace lvh::detail::windows {
     return request;
   }
 
-  inline LvhWindowsDestroyDeviceRequest make_destroy_device_request(std::uint64_t driver_device_id) {
+  inline LvhWindowsDestroyDeviceRequest make_destroy_device_request(
+    std::uint64_t driver_device_id,
+    const LvhWindowsSessionToken &session_token
+  ) {
     LvhWindowsDestroyDeviceRequest request {};
     request.version = LVH_WINDOWS_CONTROL_PROTOCOL_VERSION;
     request.size = sizeof(request);
     request.driver_device_id = driver_device_id;
+    request.session_token = session_token;
+
+    return request;
+  }
+
+  inline LvhWindowsDestroyDeviceRequest make_destroy_device_request(std::uint64_t driver_device_id) {
+    return make_destroy_device_request(driver_device_id, empty_session_token);
+  }
+
+  inline LvhWindowsSubmitInputReportRequest make_submit_input_report_request(
+    std::uint64_t driver_device_id,
+    const LvhWindowsSessionToken &session_token,
+    const std::vector<std::uint8_t> &report
+  ) {
+    LvhWindowsSubmitInputReportRequest request {};
+    request.version = LVH_WINDOWS_CONTROL_PROTOCOL_VERSION;
+    request.size = sizeof(request);
+    request.driver_device_id = driver_device_id;
+    request.session_token = session_token;
+    request.report_size = copy_bytes(request.report, report);
 
     return request;
   }
@@ -182,13 +206,7 @@ namespace lvh::detail::windows {
     std::uint64_t driver_device_id,
     const std::vector<std::uint8_t> &report
   ) {
-    LvhWindowsSubmitInputReportRequest request {};
-    request.version = LVH_WINDOWS_CONTROL_PROTOCOL_VERSION;
-    request.size = sizeof(request);
-    request.driver_device_id = driver_device_id;
-    request.report_size = copy_bytes(request.report, report);
-
-    return request;
+    return make_submit_input_report_request(driver_device_id, empty_session_token, report);
   }
 
 }  // namespace lvh::detail::windows

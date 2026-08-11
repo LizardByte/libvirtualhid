@@ -214,6 +214,233 @@ namespace {
     return text;
   }
 
+  struct LicenseSnapshot {
+    bool broker_supported = false;
+    bool broker_available = false;
+    bool licensed = false;
+    std::string plan_name = "Unavailable";
+    std::string customer_email;
+    std::string expires_at;
+    std::string state_text = "License broker unavailable.";
+    std::string message;
+    std::string purchase_url;
+    std::string manage_account_url;
+    std::uint32_t active_devices = 0;
+    std::uint32_t free_limit = 0;
+    std::uint32_t activation_limit = 0;
+    std::uint32_t activation_usage = 0;
+  };
+
+  bool open_url(std::string_view url, std::string &error) {
+    if (url.empty()) {
+      error = "URL is not configured.";
+      return false;
+    }
+    if (SDL_OpenURL(std::string {url}.c_str())) {
+      return true;
+    }
+
+    error = SDL_GetError();
+    if (error.empty()) {
+      error = "Unable to open URL.";
+    }
+    return false;
+  }
+
+  std::string license_state_name(lvh::LicenseState state) {
+    using enum lvh::LicenseState;
+
+    switch (state) {
+      case unlicensed:
+        return "Unlicensed";
+      case licensed:
+        return "Licensed";
+      case expired:
+        return "Expired";
+      case disabled:
+        return "Disabled";
+      case invalid:
+        return "Invalid";
+      case unavailable:
+      default:
+        return "Unavailable";
+    }
+  }
+
+  LicenseSnapshot license_snapshot_from(const lvh::LicenseResult &result) {
+    const auto &status = result.license;
+    LicenseSnapshot snapshot;
+    snapshot.broker_supported = status.state != lvh::LicenseState::unavailable;
+    snapshot.broker_available = status.service_available;
+    snapshot.licensed = status.licensed();
+    snapshot.plan_name = status.plan_name;
+    snapshot.customer_email = status.customer_email;
+    snapshot.expires_at = status.expires_at;
+    snapshot.message = status.message.empty() ? result.status.message() : status.message;
+    snapshot.purchase_url = status.purchase_url;
+    snapshot.manage_account_url = status.manage_account_url;
+    snapshot.active_devices = status.active_devices;
+    snapshot.activation_limit = status.activation_limit;
+    snapshot.activation_usage = status.activation_usage;
+
+    const auto state = license_state_name(status.state);
+    snapshot.state_text = state;
+    if (!snapshot.plan_name.empty() && snapshot.plan_name != state) {
+      snapshot.state_text += " | " + snapshot.plan_name;
+    }
+    snapshot.state_text += std::format(" | active devices {}", status.active_devices);
+    if (status.licensed()) {
+      snapshot.state_text += " / unlimited";
+    } else {
+      snapshot.state_text += " | license required";
+    }
+    if (status.activation_limit > 0U) {
+      snapshot.state_text += std::format(" | machine limit {}", status.activation_limit);
+    }
+    if (!snapshot.expires_at.empty()) {
+      snapshot.state_text += " | expires " + snapshot.expires_at;
+    }
+    return snapshot;
+  }
+
+  LicenseSnapshot license_snapshot_from(const lvh::LicenseResult &result, std::string &error) {
+    error = result.status.ok() ? std::string {} : result.status.message();
+    return license_snapshot_from(result);
+  }
+
+  class LicensePanel {
+  public:
+    LicensePanel() {
+      refresh();
+    }
+
+    void refresh() {
+      std::string ignored;
+      apply_result(lvh::get_license_status(), ignored);
+    }
+
+    template<typename ErrorHandler>
+    void render(ErrorHandler show_error) {
+      ImGui::TextUnformatted("License");
+      ImGui::TextWrapped("%s", snapshot_.state_text.c_str());
+      if (!snapshot_.customer_email.empty()) {
+        ImGui::TextWrapped("%s", snapshot_.customer_email.c_str());
+      }
+      if (!snapshot_.message.empty()) {
+        ImGui::TextWrapped("%s", snapshot_.message.c_str());
+      }
+
+#if defined(_WIN32)
+      ImGui::TextUnformatted("License key");
+      ImGui::InputText("##license-key", license_key_input_.data(), license_key_input_.size());
+      {
+        ScopedDisabled disabled {!snapshot_.broker_available || license_key_input_[0] == '\0'};
+        if (ImGui::Button("Activate license", {-FLT_MIN, 0.0F})) {
+          activate(show_error);
+        }
+      }
+      {
+        ScopedDisabled disabled {!snapshot_.broker_available};
+        if (ImGui::Button("Refresh", {-FLT_MIN, 0.0F})) {
+          validate(show_error);
+        }
+        if (ImGui::Button("Deactivate this machine", {-FLT_MIN, 0.0F})) {
+          deactivate(show_error);
+        }
+      }
+#else
+      if (ImGui::Button("Refresh", {-FLT_MIN, 0.0F})) {
+        refresh_and_report(show_error);
+      }
+#endif
+
+      {
+        ScopedDisabled disabled {buy_url_.empty()};
+        if (ImGui::Button("Buy license", {-FLT_MIN, 0.0F})) {
+          open_configured_url(buy_url_, show_error);
+        }
+      }
+      {
+        ScopedDisabled disabled {manage_account_url_.empty()};
+        if (ImGui::Button("Manage account", {-FLT_MIN, 0.0F})) {
+          open_configured_url(manage_account_url_, show_error);
+        }
+      }
+    }
+
+    template<typename CreateHandler>
+    void render_create_button(CreateHandler create_gamepad) const {
+#if defined(_WIN32)
+      ScopedDisabled disabled {!snapshot_.broker_available || !snapshot_.licensed};
+#endif
+      if (ImGui::Button("Create", {-FLT_MIN, 0.0F})) {
+        create_gamepad();
+      }
+    }
+
+  private:
+    void apply_result(const lvh::LicenseResult &result, std::string &error) {
+      snapshot_ = license_snapshot_from(result, error);
+      buy_url_ = snapshot_.purchase_url;
+      manage_account_url_ = snapshot_.manage_account_url;
+    }
+
+    template<typename ErrorHandler>
+    void refresh_and_report(ErrorHandler &show_error) {
+      std::string error;
+      apply_result(lvh::get_license_status(), error);
+      if (!error.empty()) {
+        show_error(error);
+      }
+    }
+
+    template<typename ErrorHandler>
+    void open_configured_url(const std::string &url, ErrorHandler &show_error) const {
+      std::string error;
+      if (!open_url(url, error)) {
+        show_error(error);
+      }
+    }
+
+#if defined(_WIN32)
+    template<typename ErrorHandler>
+    void activate(ErrorHandler &show_error) {
+      std::string error;
+      apply_result(lvh::activate_license(license_key_input_.data()), error);
+      if (!error.empty()) {
+        show_error(error);
+      } else {
+        license_key_input_.fill('\0');
+      }
+    }
+
+    template<typename ErrorHandler>
+    void validate(ErrorHandler &show_error) {
+      std::string error;
+      apply_result(lvh::validate_license(), error);
+      if (!error.empty()) {
+        show_error(error);
+      }
+    }
+
+    template<typename ErrorHandler>
+    void deactivate(ErrorHandler &show_error) {
+      std::string error;
+      apply_result(lvh::deactivate_license(), error);
+      if (!error.empty()) {
+        show_error(error);
+      }
+    }
+#endif
+
+    LicenseSnapshot snapshot_;
+#if defined(_WIN32)
+    std::array<char, 128> license_key_input_ {};
+#endif
+    std::string buy_url_;
+    std::string manage_account_url_;
+  };
+
   int axis_position(const SelectedSnapshot &selected, std::size_t index) {
     if (!selected.has_device) {
       return 0;
@@ -367,6 +594,11 @@ namespace {
     }
 
     void render_device_panel(const std::vector<DeviceListItem> &devices) {
+      license_panel_.render([this](std::string_view message) {
+        show_error(message);
+      });
+      ImGui::Separator();
+
       ImGui::TextUnformatted("Profile");
       const auto *choice = current_profile_choice();
       if (const auto preview = choice == nullptr ? std::string {"Select profile"} : to_utf8(choice->label); ImGui::BeginCombo("##profile", preview.c_str())) {
@@ -383,9 +615,9 @@ namespace {
         ImGui::EndCombo();
       }
 
-      if (ImGui::Button("Create", {-FLT_MIN, 0.0F})) {
+      license_panel_.render_create_button([this] {
         create_gamepad();
-      }
+      });
 
       ImGui::Spacing();
       ImGui::TextUnformatted("Devices");
@@ -675,6 +907,7 @@ namespace {
         devices_[id] = std::move(device);
       }
       selected_id_ = id;
+      license_panel_.refresh();
     }
 
     void reset_selected_device() {
@@ -714,12 +947,14 @@ namespace {
           show_error(status.message());
         }
       }
+      license_panel_.refresh();
     }
 
     void remove_all_devices() {
       const auto adapters = take_all_adapters();
       button_active_.fill(false);
       close_adapters(adapters, true);
+      license_panel_.refresh();
     }
 
     void toggle_selected_button(std::size_t index) {
@@ -946,6 +1181,7 @@ namespace {
     bool open_error_popup_ = false;
     std::uint64_t next_metadata_index_ = 0;
     std::uint64_t next_output_sequence_ = 1;
+    LicensePanel license_panel_;
     static constexpr std::size_t max_output_events_ = 50;
   };
 

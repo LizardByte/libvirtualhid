@@ -64,6 +64,7 @@ if(WIN32)
     target_include_directories(virtualhid_control
       PRIVATE
       "${CMAKE_CURRENT_SOURCE_DIR}/windows"
+      "${PROJECT_SOURCE_DIR}/src/platform/windows/shared"
       "${PROJECT_SOURCE_DIR}")
     target_compile_definitions(virtualhid_control
       PRIVATE

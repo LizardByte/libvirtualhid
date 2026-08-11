@@ -49,7 +49,9 @@ if(LIBVIRTUALHID_USES_THREADS)
 elseif(WIN32)
     target_sources(${PROJECT_NAME}
       PRIVATE
-      "${CMAKE_CURRENT_SOURCE_DIR}/platform/windows/windows_backend.cpp")
+      "${CMAKE_CURRENT_SOURCE_DIR}/platform/windows/windows_backend.cpp"
+      "${CMAKE_CURRENT_SOURCE_DIR}/platform/windows/windows_broker_client.cpp"
+      "${CMAKE_CURRENT_SOURCE_DIR}/platform/windows/windows_license.cpp")
     target_include_directories(${PROJECT_NAME}
       PRIVATE
       "${CMAKE_CURRENT_SOURCE_DIR}/platform/windows/shared")
@@ -60,10 +62,12 @@ elseif(WIN32)
       _WIN32_WINNT=0x0600)
     target_link_libraries(${PROJECT_NAME}
       PRIVATE
-      setupapi)
+      setupapi
+      lizardbyte::common)
 elseif(APPLE)
     target_sources(${PROJECT_NAME}
       PRIVATE
+      "${CMAKE_CURRENT_SOURCE_DIR}/platform/license_unavailable.cpp"
       "${CMAKE_CURRENT_SOURCE_DIR}/platform/macos/macos_backend.cpp")
     target_link_libraries(${PROJECT_NAME}
       PRIVATE
@@ -74,7 +78,14 @@ elseif(APPLE)
 else()
     target_sources(${PROJECT_NAME}
       PRIVATE
+      "${CMAKE_CURRENT_SOURCE_DIR}/platform/license_unavailable.cpp"
       "${CMAKE_CURRENT_SOURCE_DIR}/platform/unsupported_backend.cpp")
+endif()
+
+if(LIBVIRTUALHID_USES_THREADS)
+    target_sources(${PROJECT_NAME}
+      PRIVATE
+      "${CMAKE_CURRENT_SOURCE_DIR}/platform/license_unavailable.cpp")
 endif()
 
 target_include_directories(${PROJECT_NAME}

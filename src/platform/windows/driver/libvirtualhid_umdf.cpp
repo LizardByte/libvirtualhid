@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 David Lane
+// SPDX-FileCopyrightText: 2026 LIZARDBYTE LLC
 // SPDX-License-Identifier: LicenseRef-LizardByte-SAL-1.0
 
 /**
@@ -28,11 +28,14 @@
 #if defined(_MSC_VER)
   #pragma warning(pop)
 #endif
+#include <bcrypt.h>
 
 // standard includes
 #include <algorithm>
 #include <atomic>
+#include <bit>
 #include <charconv>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <format>
@@ -41,8 +44,11 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 // local includes
@@ -70,7 +76,54 @@ namespace {
 
   constexpr auto symbolic_link_name = L"\\DosDevices\\LibVirtualHid";
   constexpr auto global_symbolic_link_name = L"\\DosDevices\\Global\\LibVirtualHid";
+  constexpr auto broker_service_name = L"libvirtualhid_broker";
+  constexpr auto broker_service_account_name = L"NT SERVICE\\libvirtualhid_broker";
   constexpr auto trace_file_name = std::wstring_view {L"libvirtualhid-umdf-driver.log"};
+
+  using UniqueServiceHandle = std::unique_ptr<
+    std::remove_pointer_t<SC_HANDLE>,
+    decltype(&::CloseServiceHandle)>;
+
+  class UniqueHandle {
+  public:
+    explicit UniqueHandle(HANDLE handle = nullptr):
+        handle_ {handle} {}
+
+    UniqueHandle(const UniqueHandle &) = delete;
+    UniqueHandle &operator=(const UniqueHandle &) = delete;
+
+    UniqueHandle(UniqueHandle &&other) noexcept:
+        handle_ {std::exchange(other.handle_, nullptr)} {}
+
+    UniqueHandle &operator=(UniqueHandle &&other) noexcept {
+      if (this != &other) {
+        reset(std::exchange(other.handle_, nullptr));
+      }
+      return *this;
+    }
+
+    ~UniqueHandle() {
+      reset();
+    }
+
+    HANDLE get() const {
+      return handle_;
+    }
+
+    explicit operator bool() const {
+      return handle_ != nullptr && handle_ != INVALID_HANDLE_VALUE;
+    }
+
+    void reset(HANDLE handle = nullptr) {
+      if (handle_ != nullptr && handle_ != INVALID_HANDLE_VALUE) {
+        static_cast<void>(CloseHandle(handle_));
+      }
+      handle_ = handle;
+    }
+
+  private:
+    HANDLE handle_ {};
+  };
 
   struct DeviceRecord {
     std::mutex mutex;
@@ -79,6 +132,7 @@ namespace {
     WDFFILEOBJECT owner_file {};
     WDFIOTARGET vhf_io_target {};
     LvhWindowsCreateGamepadRequest request {};
+    LvhWindowsSessionToken session_token {};
     VHFHANDLE vhf_handle {};
     std::vector<UCHAR> report_descriptor;
     std::wstring hardware_ids;
@@ -480,6 +534,171 @@ namespace {
            request.report_size <= LVH_WINDOWS_MAX_INPUT_REPORT_SIZE;
   }
 
+  bool valid_destroy_device_request(const LvhWindowsDestroyDeviceRequest &request) {
+    return valid_header(request.version, request.size, sizeof(request));
+  }
+
+  bool session_token_matches(const DeviceRecord &record, const LvhWindowsSessionToken &session_token) {
+    return std::memcmp(record.session_token.bytes, session_token.bytes, sizeof(record.session_token.bytes)) == 0;
+  }
+
+  NTSTATUS generate_session_token(LvhWindowsSessionToken &session_token) {
+    const auto status = BCryptGenRandom(
+      nullptr,
+      session_token.bytes,
+      static_cast<ULONG>(sizeof(session_token.bytes)),
+      BCRYPT_USE_SYSTEM_PREFERRED_RNG
+    );
+    if (!NT_SUCCESS(status)) {
+      return status;
+    }
+
+    const auto all_zero = std::ranges::all_of(session_token.bytes, [](const auto value) {
+      return value == 0U;
+    });
+    return all_zero ? STATUS_UNSUCCESSFUL : STATUS_SUCCESS;
+  }
+
+  std::optional<std::vector<std::uint8_t>> lookup_account_sid(const wchar_t *account_name) {
+    auto sid_size = DWORD {};
+    auto domain_size = DWORD {};
+    auto sid_name_use = SID_NAME_USE {};
+    static_cast<void>(LookupAccountNameW(
+      nullptr,
+      account_name,
+      nullptr,
+      &sid_size,
+      nullptr,
+      &domain_size,
+      &sid_name_use
+    ));
+    if (GetLastError() != ERROR_INSUFFICIENT_BUFFER || sid_size == 0U) {
+      trace_status("lookup broker service sid size failed");
+      return std::nullopt;
+    }
+
+    auto sid = std::vector<std::uint8_t>(sid_size);
+    auto domain = std::wstring(domain_size, L'\0');
+    if (LookupAccountNameW(nullptr, account_name, sid.data(), &sid_size, domain.data(), &domain_size, &sid_name_use) == FALSE) {
+      trace_status("lookup broker service sid failed");
+      return std::nullopt;
+    }
+
+    sid.resize(sid_size);
+    return sid;
+  }
+
+  std::optional<std::vector<std::uint8_t>> broker_service_sid() {
+    static std::mutex mutex;
+    static auto sid = std::optional<std::vector<std::uint8_t>> {};
+
+    std::lock_guard lock {mutex};
+    if (!sid) {
+      sid = lookup_account_sid(broker_service_account_name);
+    }
+    return sid;
+  }
+
+  bool token_has_sid(HANDLE token, const std::vector<std::uint8_t> &sid) {
+    if (sid.empty()) {
+      return false;
+    }
+
+    auto sid_to_check = sid;
+    if (IsValidSid(sid_to_check.data()) == FALSE) {
+      return false;
+    }
+
+    auto token_groups_size = DWORD {};
+    static_cast<void>(GetTokenInformation(token, TokenGroups, nullptr, 0, &token_groups_size));
+    if (GetLastError() != ERROR_INSUFFICIENT_BUFFER || token_groups_size == 0U) {
+      trace_status("broker service sid membership failed: token group size");
+      return false;
+    }
+
+    auto token_groups_buffer = std::make_unique_for_overwrite<std::byte[]>(token_groups_size);
+    auto *token_groups = static_cast<TOKEN_GROUPS *>(static_cast<void *>(token_groups_buffer.get()));
+    if (GetTokenInformation(token, TokenGroups, token_groups, token_groups_size, &token_groups_size) == FALSE) {
+      trace_status("broker service sid membership failed: token groups");
+      return false;
+    }
+
+    for (auto index = DWORD {0}; index < token_groups->GroupCount; ++index) {
+      const auto &group = token_groups->Groups[index];
+      if ((group.Attributes & SE_GROUP_ENABLED) != 0U && EqualSid(group.Sid, sid_to_check.data()) != FALSE) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool requestor_is_running_broker_service(DWORD requestor_process_id) {
+    auto service_manager = UniqueServiceHandle {
+      ::OpenSCManagerW(nullptr, nullptr, SC_MANAGER_CONNECT),
+      &::CloseServiceHandle
+    };
+    if (!service_manager) {
+      trace_status("broker service identity failed: open service manager");
+      return false;
+    }
+
+    auto service = UniqueServiceHandle {
+      ::OpenServiceW(service_manager.get(), broker_service_name, SERVICE_QUERY_STATUS),
+      &::CloseServiceHandle
+    };
+    if (!service) {
+      trace_status("broker service identity failed: open service");
+      return false;
+    }
+
+    SERVICE_STATUS_PROCESS status {};
+    const auto status_bytes = std::as_writable_bytes(std::span {&status, 1});
+    auto bytes_needed = DWORD {};
+    if (::QueryServiceStatusEx(service.get(), SC_STATUS_PROCESS_INFO, std::bit_cast<LPBYTE>(status_bytes.data()), static_cast<DWORD>(status_bytes.size()), &bytes_needed) == FALSE) {
+      trace_status("broker service identity failed: query status");
+      return false;
+    }
+
+    return status.dwCurrentState == SERVICE_RUNNING &&
+           status.dwProcessId == requestor_process_id;
+  }
+
+  bool request_is_authorized_broker_service(WDFREQUEST request) {
+    const auto requestor_process_id = WdfRequestGetRequestorProcessId(request);
+    if (requestor_process_id == 0U) {
+      trace_status("broker service access denied: missing requestor pid");
+      return false;
+    }
+
+    auto process = UniqueHandle {
+      OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, requestor_process_id)
+    };
+    if (!process) {
+      trace_status("broker service identity: open requestor process failed");
+      return requestor_is_running_broker_service(requestor_process_id);
+    }
+
+    auto token_handle = HANDLE {};
+    if (OpenProcessToken(process.get(), TOKEN_QUERY, &token_handle) == FALSE) {
+      trace_status("broker service identity: open requestor token failed");
+      return requestor_is_running_broker_service(requestor_process_id);
+    }
+
+    const auto token = UniqueHandle {token_handle};
+    const auto service_sid = broker_service_sid();
+    if (service_sid && token_has_sid(token.get(), *service_sid)) {
+      return true;
+    }
+
+    if (requestor_is_running_broker_service(requestor_process_id)) {
+      trace_status("broker service authorized by running service identity");
+      return true;
+    }
+
+    trace_status("broker service access denied: service identity not present");
+    return false;
+  }
+
   bool symbolic_link_already_exists(NTSTATUS status) {
     const auto value = static_cast<std::uint32_t>(status);
     return value == 0xC0000035U || value == 0x800700B7U || value == 0x900700B7U;
@@ -650,6 +869,11 @@ namespace {
   }
 
   void handle_create_gamepad_request(WDFDEVICE device, WDFREQUEST request) {
+    if (!request_is_authorized_broker_service(request)) {
+      complete_request(request, STATUS_ACCESS_DENIED);
+      return;
+    }
+
     auto *create_request = static_cast<LvhWindowsCreateGamepadRequest *>(nullptr);
     auto status = retrieve_input_buffer(request, create_request);
     if (!NT_SUCCESS(status)) {
@@ -681,6 +905,14 @@ namespace {
     record->owner_device = device;
     record->owner_file = WdfRequestGetFileObject(request);
     record->request = *create_request;
+    status = generate_session_token(record->session_token);
+    if (!NT_SUCCESS(status)) {
+      trace_status("create_gamepad token failed", status);
+      create_response->status = LVH_WINDOWS_STATUS_BACKEND_FAILURE;
+      complete_request(request, STATUS_SUCCESS, sizeof(*create_response));
+      return;
+    }
+
     trace_status("create_gamepad begin");
 
     status = create_vhf_device(device, record);
@@ -697,12 +929,18 @@ namespace {
     }
     create_response->status = LVH_WINDOWS_STATUS_SUCCESS;
     create_response->driver_device_id = driver_device_id;
+    create_response->session_token = record->session_token;
     set_device_path(driver_device_id, create_response->device_path);
     trace_status("create_gamepad success");
     complete_request(request, STATUS_SUCCESS, sizeof(*create_response));
   }
 
   void handle_destroy_device_request(WDFREQUEST request) {
+    if (!request_is_authorized_broker_service(request)) {
+      complete_request(request, STATUS_ACCESS_DENIED);
+      return;
+    }
+
     auto *destroy_request = static_cast<LvhWindowsDestroyDeviceRequest *>(nullptr);
     const auto status = retrieve_input_buffer(request, destroy_request);
     if (!NT_SUCCESS(status)) {
@@ -710,7 +948,7 @@ namespace {
       return;
     }
 
-    if (!valid_header(destroy_request->version, destroy_request->size, sizeof(*destroy_request))) {
+    if (!valid_destroy_device_request(*destroy_request)) {
       complete_request(request, STATUS_INVALID_PARAMETER);
       return;
     }
@@ -721,6 +959,12 @@ namespace {
       std::lock_guard lock {state.devices_mutex};
       const auto iter = state.devices.find(destroy_request->driver_device_id);
       if (iter != state.devices.end()) {
+        if (!session_token_matches(*iter->second, destroy_request->session_token)) {
+          trace_status("destroy_device access denied");
+          complete_request(request, STATUS_ACCESS_DENIED);
+          return;
+        }
+
         record = iter->second;
         state.devices.erase(iter);
         trace_status("destroy_device found");
@@ -751,6 +995,12 @@ namespace {
     if (!record) {
       trace_status("submit_input_report missing device");
       complete_request(request, STATUS_OBJECT_NAME_NOT_FOUND);
+      return;
+    }
+
+    if (!session_token_matches(*record, submit_request->session_token)) {
+      trace_status("submit_input_report access denied");
+      complete_request(request, STATUS_ACCESS_DENIED);
       return;
     }
 

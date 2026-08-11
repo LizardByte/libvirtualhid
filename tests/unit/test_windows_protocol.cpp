@@ -46,12 +46,21 @@ namespace {
     return values;
   }
 
+  LvhWindowsSessionToken test_session_token() {
+    LvhWindowsSessionToken token {};
+    for (std::uint8_t index = 0; index < LVH_WINDOWS_SESSION_TOKEN_SIZE; ++index) {
+      token.bytes[index] = static_cast<std::uint8_t>(0xA0U + index);
+    }
+    return token;
+  }
+
 }  // namespace
 
 TEST(WindowsProtocolTest, ExposesStableProtocolConstants) {
   EXPECT_STREQ(lvh::detail::windows::default_control_device_path.data(), R"(\\.\LibVirtualHid)");
   EXPECT_STREQ(lvh::detail::windows::global_control_device_path.data(), R"(\\.\Global\LibVirtualHid)");
 
+  EXPECT_EQ(LVH_WINDOWS_CONTROL_PROTOCOL_VERSION, 2U);
   EXPECT_EQ(LVH_WINDOWS_IOCTL_CREATE_GAMEPAD, 0x8000E000U);
   EXPECT_EQ(LVH_WINDOWS_IOCTL_DESTROY_DEVICE, 0x8000E004U);
   EXPECT_EQ(LVH_WINDOWS_IOCTL_SUBMIT_INPUT_REPORT, 0x8000E008U);
@@ -60,9 +69,10 @@ TEST(WindowsProtocolTest, ExposesStableProtocolConstants) {
   EXPECT_EQ(sizeof(LvhWindowsGamepadHardwareIds), 14U);
   EXPECT_EQ(sizeof(LvhWindowsGamepadReportSizes), 24U);
   EXPECT_EQ(sizeof(LvhWindowsCreateGamepadRequest), 2498U);
-  EXPECT_EQ(sizeof(LvhWindowsCreateGamepadResponse), 284U);
-  EXPECT_EQ(sizeof(LvhWindowsDestroyDeviceRequest), 16U);
-  EXPECT_EQ(sizeof(LvhWindowsSubmitInputReportRequest), 280U);
+  EXPECT_EQ(sizeof(LvhWindowsSessionToken), 32U);
+  EXPECT_EQ(sizeof(LvhWindowsCreateGamepadResponse), 316U);
+  EXPECT_EQ(sizeof(LvhWindowsDestroyDeviceRequest), 48U);
+  EXPECT_EQ(sizeof(LvhWindowsSubmitInputReportRequest), 312U);
   EXPECT_EQ(sizeof(LvhWindowsOutputReportEvent), 280U);
 }
 
@@ -546,19 +556,34 @@ TEST(WindowsProtocolTest, TruncatesOversizedGamepadCreateRequestFields) {
 
 TEST(WindowsProtocolTest, PacksSubmitAndDestroyRequests) {
   const std::vector<std::uint8_t> report {1, 2, 3, 4, 5};
+  const auto session_token = test_session_token();
 
-  const auto submit = lvh::detail::windows::make_submit_input_report_request(17, report);
+  const auto submit = lvh::detail::windows::make_submit_input_report_request(17, session_token, report);
   EXPECT_EQ(submit.version, LVH_WINDOWS_CONTROL_PROTOCOL_VERSION);
   EXPECT_EQ(submit.size, sizeof(submit));
   EXPECT_EQ(submit.driver_device_id, 17U);
+  EXPECT_EQ(submit.session_token.bytes[0], session_token.bytes[0]);
+  EXPECT_EQ(submit.session_token.bytes[LVH_WINDOWS_SESSION_TOKEN_SIZE - 1U], session_token.bytes[LVH_WINDOWS_SESSION_TOKEN_SIZE - 1U]);
   EXPECT_EQ(submit.report_size, report.size());
   EXPECT_EQ(submit.report[0], report[0]);
   EXPECT_EQ(submit.report[4], report[4]);
 
-  const auto destroy = lvh::detail::windows::make_destroy_device_request(17);
+  const auto destroy = lvh::detail::windows::make_destroy_device_request(17, session_token);
   EXPECT_EQ(destroy.version, LVH_WINDOWS_CONTROL_PROTOCOL_VERSION);
   EXPECT_EQ(destroy.size, sizeof(destroy));
   EXPECT_EQ(destroy.driver_device_id, 17U);
+  EXPECT_EQ(destroy.session_token.bytes[0], session_token.bytes[0]);
+  EXPECT_EQ(destroy.session_token.bytes[LVH_WINDOWS_SESSION_TOKEN_SIZE - 1U], session_token.bytes[LVH_WINDOWS_SESSION_TOKEN_SIZE - 1U]);
+}
+
+TEST(WindowsProtocolTest, CompatibilityRequestHelpersUseEmptySessionToken) {
+  const auto submit = lvh::detail::windows::make_submit_input_report_request(17, std::vector<std::uint8_t> {1});
+  const auto destroy = lvh::detail::windows::make_destroy_device_request(17);
+
+  EXPECT_EQ(submit.session_token.bytes[0], 0U);
+  EXPECT_EQ(submit.session_token.bytes[LVH_WINDOWS_SESSION_TOKEN_SIZE - 1U], 0U);
+  EXPECT_EQ(destroy.session_token.bytes[0], 0U);
+  EXPECT_EQ(destroy.session_token.bytes[LVH_WINDOWS_SESSION_TOKEN_SIZE - 1U], 0U);
 }
 
 TEST(WindowsProtocolTest, SubmitInputReportTruncatesAndZeroFills) {
