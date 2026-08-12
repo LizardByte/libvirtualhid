@@ -202,11 +202,23 @@ and returns purchase and account-management URLs with the status. Applications
 must treat activation keys as transient secrets and must not persist or log
 them.
 
-Development driver builds write a lightweight UMDF trace to:
+### Driver Diagnostic Logs
+
+The UMDF driver writes lifecycle events and operational failures to the
+following path (normally `C:\Windows\Temp`):
 
 ```text
-C:\Windows\Temp\libvirtualhid-umdf-driver.log
+%WINDIR%\Temp\libvirtualhid-umdf-driver.log
 ```
+
+Successful input reports are deliberately excluded because they are the
+latency-sensitive hot path. When the active log would exceed 5 MiB, the driver
+rotates it before writing the next entry. Five previous logs are retained as
+`libvirtualhid-umdf-driver.log.1` through
+`libvirtualhid-umdf-driver.log.5`; `.1` is the newest backup. The active log
+and all numbered backups use at most approximately 30 MiB in total. Include
+the active log and any numbered backups when reporting a driver installation,
+device-lifecycle, authorization, or input-submission problem.
 
 During rapid development reinstalls, the fixed global control symbolic link can
 briefly outlive the previous root device. The driver treats that collision as

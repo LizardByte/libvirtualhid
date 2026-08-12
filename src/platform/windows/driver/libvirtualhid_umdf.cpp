@@ -39,7 +39,6 @@
 #include <cstdint>
 #include <cstring>
 #include <format>
-#include <limits>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -48,14 +47,15 @@
 #include <string>
 #include <string_view>
 #include <type_traits>
-#include <utility>
 #include <vector>
 
 // local includes
 #include "generic_pid_protocol.hpp"
 #include "lvh_windows_protocol.h"
 #include "playstation_feature_protocol.hpp"
+#include "rotating_trace_log.hpp"
 #include "switch_pro_protocol.hpp"
+#include "unique_win32_handle.hpp"
 #include "windows_device_identity.hpp"
 
 using VhfContext = PVOID;  // NOSONAR(cpp:S5008): VHF callback ABI requires PVOID; client context narrows to DeviceRecord.
@@ -83,47 +83,6 @@ namespace {
   using UniqueServiceHandle = std::unique_ptr<
     std::remove_pointer_t<SC_HANDLE>,
     decltype(&::CloseServiceHandle)>;
-
-  class UniqueHandle {
-  public:
-    explicit UniqueHandle(HANDLE handle = nullptr):
-        handle_ {handle} {}
-
-    UniqueHandle(const UniqueHandle &) = delete;
-    UniqueHandle &operator=(const UniqueHandle &) = delete;
-
-    UniqueHandle(UniqueHandle &&other) noexcept:
-        handle_ {std::exchange(other.handle_, nullptr)} {}
-
-    UniqueHandle &operator=(UniqueHandle &&other) noexcept {
-      if (this != &other) {
-        reset(std::exchange(other.handle_, nullptr));
-      }
-      return *this;
-    }
-
-    ~UniqueHandle() {
-      reset();
-    }
-
-    HANDLE get() const {
-      return handle_;
-    }
-
-    explicit operator bool() const {
-      return handle_ != nullptr && handle_ != INVALID_HANDLE_VALUE;
-    }
-
-    void reset(HANDLE handle = nullptr) {
-      if (handle_ != nullptr && handle_ != INVALID_HANDLE_VALUE) {
-        static_cast<void>(CloseHandle(handle_));
-      }
-      handle_ = handle;
-    }
-
-  private:
-    HANDLE handle_ {};
-  };
 
   struct DeviceRecord {
     std::mutex mutex;
@@ -183,19 +142,6 @@ namespace {
     trace_file_path.append(trace_directory);
     trace_file_path.append(trace_file_name);
 
-    const auto file = CreateFileW(
-      trace_file_path.c_str(),
-      FILE_APPEND_DATA,
-      FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-      nullptr,
-      OPEN_ALWAYS,
-      FILE_ATTRIBUTE_NORMAL,
-      nullptr
-    );
-    if (file == INVALID_HANDLE_VALUE) {
-      return;
-    }
-
     SYSTEMTIME time {};
     GetSystemTime(&time);
 
@@ -212,12 +158,7 @@ namespace {
       step,
       static_cast<unsigned long>(status)
     );
-    DWORD bytes_written {};
-    const auto bytes_to_write =
-      static_cast<DWORD>(std::min(line.size(), static_cast<std::size_t>(std::numeric_limits<DWORD>::max())));
-    static_cast<void>(WriteFile(file, line.data(), bytes_to_write, &bytes_written, nullptr));
-
-    static_cast<void>(CloseHandle(file));
+    static_cast<void>(lvh::detail::windows::append_rotating_trace_log(trace_file_path, line));
   }
 
   bool valid_header(std::uint32_t version, std::uint32_t size, std::uint32_t expected_size) {
@@ -670,9 +611,9 @@ namespace {
       return false;
     }
 
-    auto process = UniqueHandle {
+    auto process = lvh::detail::windows::make_unique_win32_handle(
       OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, requestor_process_id)
-    };
+    );
     if (!process) {
       trace_status("broker service identity: open requestor process failed");
       return requestor_is_running_broker_service(requestor_process_id);
@@ -684,7 +625,7 @@ namespace {
       return requestor_is_running_broker_service(requestor_process_id);
     }
 
-    const auto token = UniqueHandle {token_handle};
+    const auto token = lvh::detail::windows::make_unique_win32_handle(token_handle);
     const auto service_sid = broker_service_sid();
     if (service_sid && token_has_sid(token.get(), *service_sid)) {
       return true;
@@ -786,7 +727,10 @@ namespace {
     if (record.vhf_handle == nullptr) {
       return;
     }
-    trace_status("switch_pro_reply VhfReadReportSubmit", VhfReadReportSubmit(record.vhf_handle, &packet));
+    const auto submit_status = VhfReadReportSubmit(record.vhf_handle, &packet);
+    if (!NT_SUCCESS(submit_status)) {
+      trace_status("switch_pro_reply VhfReadReportSubmit", submit_status);
+    }
   }
 
   LvhWindowsOutputReportEvent make_output_event(DeviceRecord &record, const HID_XFER_PACKET &packet) {
@@ -989,8 +933,6 @@ namespace {
       return;
     }
 
-    trace_status("submit_input_report begin");
-
     auto record = find_device(submit_request->driver_device_id);
     if (!record) {
       trace_status("submit_input_report missing device");
@@ -1024,7 +966,9 @@ namespace {
     packet.reportId = record->request.hardware_ids.report_id;
 
     const auto submit_status = VhfReadReportSubmit(record->vhf_handle, &packet);
-    trace_status("submit_input_report VhfReadReportSubmit", submit_status);
+    if (!NT_SUCCESS(submit_status)) {
+      trace_status("submit_input_report VhfReadReportSubmit", submit_status);
+    }
     complete_request(request, submit_status);
   }
 
@@ -1181,7 +1125,9 @@ void LvhEvtVhfGetFeature(
   }
 
   const auto status = copy_vhf_feature_report(*record, *hid_transfer_packet);
-  trace_status("EvtVhfGetFeature complete", status);
+  if (!NT_SUCCESS(status)) {
+    trace_status("EvtVhfGetFeature complete", status);
+  }
   static_cast<void>(VhfAsyncOperationComplete(vhf_operation_handle, status));
 }
 
