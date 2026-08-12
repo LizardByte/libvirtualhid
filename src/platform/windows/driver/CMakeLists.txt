@@ -195,7 +195,8 @@ configure_file(
   @ONLY)
 
 add_library(libvirtualhid_umdf SHARED
-  "${CMAKE_CURRENT_SOURCE_DIR}/libvirtualhid_umdf.cpp")
+  "${CMAKE_CURRENT_SOURCE_DIR}/libvirtualhid_umdf.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/rotating_trace_log.cpp")
 
 target_include_directories(libvirtualhid_umdf
   PRIVATE

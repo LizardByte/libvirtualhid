@@ -53,10 +53,12 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     endif()
 elseif(WIN32)
     list(APPEND LIBVIRTUALHID_TEST_SOURCES
+         "${PROJECT_SOURCE_DIR}/src/platform/windows/driver/rotating_trace_log.cpp"
          "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/windows_backend_test_hooks.cpp"
          "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_windows_backend.cpp"
          "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_windows_consumers.cpp"
-         "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_windows_driver_protocol.cpp")
+         "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_windows_driver_protocol.cpp"
+         "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_windows_rotating_trace_log.cpp")
 elseif(APPLE)
     list(APPEND LIBVIRTUALHID_TEST_SOURCES
          "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/macos_backend_test_hooks.cpp"
@@ -98,6 +100,9 @@ elseif(APPLE)
       "-framework CoreFoundation"
       "-framework IOKit")
 elseif(WIN32)
+    target_compile_definitions(${TEST_BINARY}
+      PRIVATE
+      LIBVIRTUALHID_TEST_BINARY_DIR="${CMAKE_CURRENT_BINARY_DIR}")
     target_link_libraries(${TEST_BINARY}
       PRIVATE
       dinput8
