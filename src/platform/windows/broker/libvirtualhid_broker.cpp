@@ -15,6 +15,7 @@
 
 // platform includes
 // clang-format off
+#include <AclAPI.h>
 #include <Windows.h>
 #include <dpapi.h>
 #include <sddl.h>
@@ -22,6 +23,7 @@
 // clang-format on
 
 // local includes
+#include "broker_request_validation.hpp"
 #include "lvh_windows_broker_config.hpp"
 #include "lvh_windows_broker_protocol.h"
 #include "lvh_windows_github_actions_evaluation.hpp"
@@ -48,6 +50,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <span>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -58,11 +61,15 @@
 namespace {
 
   using UniqueHandle = std::unique_ptr<void, decltype(&::CloseHandle)>;
+  using UniqueLocalMemory = std::unique_ptr<void, decltype(&::LocalFree)>;
   using UniqueWinHttpHandle = std::unique_ptr<void, decltype(&::WinHttpCloseHandle)>;
 
   constexpr auto service_name = L"libvirtualhid_broker";
+  constexpr auto service_account_name = L"NT SERVICE\\libvirtualhid_broker";
   constexpr auto broker_instance_name = "libvirtualhid Windows broker";
   constexpr auto pipe_buffer_size = 8192U;
+  constexpr auto pipe_connect_timeout = 1000U;
+  constexpr auto pipe_io_timeout = 5000U;
   // Message-mode clients need the complete GENERIC_READ mapping plus individual write rights.
   constexpr auto pipe_client_granted_access = FILE_GENERIC_READ | FILE_WRITE_DATA | FILE_WRITE_ATTRIBUTES;
   constexpr auto pipe_security_descriptor = L"D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;0x0012018B;;;AU)";
@@ -104,6 +111,94 @@ namespace {
 
   UniqueWinHttpHandle make_unique_winhttp_handle(HINTERNET handle) {
     return {handle, &::WinHttpCloseHandle};
+  }
+
+  bool complete_pending_pipe_io(
+    HANDLE pipe,
+    OVERLAPPED &overlapped,
+    HANDLE requested_stop_event,
+    DWORD timeout,
+    DWORD &bytes_transferred
+  ) {
+    std::array<HANDLE, 2> wait_handles {
+      overlapped.hEvent,
+      requested_stop_event,
+    };
+    const auto handle_count = requested_stop_event == nullptr ? 1U : 2U;
+    if (const auto wait_result = ::WaitForMultipleObjects(handle_count, wait_handles.data(), FALSE, timeout); wait_result == WAIT_OBJECT_0) {
+      return ::GetOverlappedResult(
+               pipe,
+               &overlapped,
+               &bytes_transferred,
+               FALSE
+             ) != FALSE;
+    }
+
+    static_cast<void>(::CancelIoEx(pipe, &overlapped));
+    DWORD ignored = 0;
+    static_cast<void>(::GetOverlappedResult(pipe, &overlapped, &ignored, TRUE));
+    return false;
+  }
+
+  bool read_pipe_message(
+    HANDLE pipe,
+    std::span<std::byte> buffer,
+    HANDLE requested_stop_event,
+    DWORD &bytes_read
+  ) {
+    auto operation_event = make_unique_handle(::CreateEventW(nullptr, TRUE, FALSE, nullptr));
+    if (!operation_event) {
+      return false;
+    }
+
+    OVERLAPPED overlapped {};
+    overlapped.hEvent = operation_event.get();
+    bytes_read = 0;
+    if (::ReadFile(pipe, buffer.data(), static_cast<DWORD>(buffer.size()), &bytes_read, &overlapped) != FALSE) {
+      return true;
+    }
+    if (::GetLastError() != ERROR_IO_PENDING) {
+      return false;
+    }
+
+    return complete_pending_pipe_io(
+      pipe,
+      overlapped,
+      requested_stop_event,
+      pipe_io_timeout,
+      bytes_read
+    );
+  }
+
+  bool write_pipe_message(
+    HANDLE pipe,
+    std::span<const std::byte> buffer,
+    HANDLE requested_stop_event
+  ) {
+    auto operation_event = make_unique_handle(::CreateEventW(nullptr, TRUE, FALSE, nullptr));
+    if (!operation_event) {
+      return false;
+    }
+
+    OVERLAPPED overlapped {};
+    overlapped.hEvent = operation_event.get();
+    const auto buffer_size = static_cast<DWORD>(buffer.size());
+    DWORD bytes_written = 0;
+    if (::WriteFile(pipe, buffer.data(), buffer_size, &bytes_written, &overlapped) != FALSE) {
+      return bytes_written == buffer_size;
+    }
+    if (::GetLastError() != ERROR_IO_PENDING) {
+      return false;
+    }
+
+    return complete_pending_pipe_io(
+             pipe,
+             overlapped,
+             requested_stop_event,
+             pipe_io_timeout,
+             bytes_written
+           ) &&
+           bytes_written == buffer_size;
   }
 
   template<std::size_t Size>
@@ -200,6 +295,173 @@ namespace {
     return broker_state_path("github-actions-evaluation.dat");
   }
 
+  std::optional<std::vector<std::byte>> lookup_account_sid(const wchar_t *account_name) {
+    DWORD sid_size = 0;
+    DWORD domain_size = 0;
+    SID_NAME_USE sid_name_use {};
+    static_cast<void>(::LookupAccountNameW(
+      nullptr,
+      account_name,
+      nullptr,
+      &sid_size,
+      nullptr,
+      &domain_size,
+      &sid_name_use
+    ));
+    if (::GetLastError() != ERROR_INSUFFICIENT_BUFFER || sid_size == 0U) {
+      return std::nullopt;
+    }
+
+    auto sid = std::vector<std::byte>(sid_size);
+    if (auto domain = std::wstring(domain_size, L'\0'); ::LookupAccountNameW(nullptr, account_name, sid.data(), &sid_size, domain.data(), &domain_size, &sid_name_use) == FALSE) {
+      return std::nullopt;
+    }
+
+    sid.resize(sid_size);
+    return sid;
+  }
+
+  std::optional<UniqueLocalMemory> make_state_security_descriptor(
+    std::string_view state_name,
+    std::string &message
+  ) {
+    auto service_sid = lookup_account_sid(service_account_name);
+    if (!service_sid || ::IsValidSid(service_sid->data()) == FALSE) {
+      message = "Unable to resolve the broker service identity for " +
+                std::string {state_name} + " state.";
+      return std::nullopt;
+    }
+
+    LPWSTR raw_service_sid = nullptr;
+    if (::ConvertSidToStringSidW(service_sid->data(), &raw_service_sid) == FALSE) {
+      message = "Unable to format the broker service identity for " +
+                std::string {state_name} + " state: " +
+                windows_error_message(::GetLastError());
+      return std::nullopt;
+    }
+    auto service_sid_text = UniqueLocalMemory {raw_service_sid, &::LocalFree};
+
+    const auto sddl = std::format(
+      L"O:SYD:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;FA;;;{})",
+      static_cast<const wchar_t *>(service_sid_text.get())
+    );
+    PSECURITY_DESCRIPTOR raw_descriptor = nullptr;
+    if (::ConvertStringSecurityDescriptorToSecurityDescriptorW(sddl.c_str(), SDDL_REVISION_1, &raw_descriptor, nullptr) == FALSE) {
+      message = "Unable to create the access policy for " +
+                std::string {state_name} + " state: " +
+                windows_error_message(::GetLastError());
+      return std::nullopt;
+    }
+
+    return UniqueLocalMemory {raw_descriptor, &::LocalFree};
+  }
+
+  PACL security_descriptor_dacl(PSECURITY_DESCRIPTOR descriptor) {
+    BOOL dacl_present = FALSE;
+    BOOL dacl_defaulted = FALSE;
+    PACL dacl = nullptr;
+    if (::GetSecurityDescriptorDacl(descriptor, &dacl_present, &dacl, &dacl_defaulted) == FALSE || dacl_present == FALSE || dacl == nullptr) {
+      return nullptr;
+    }
+    return dacl;
+  }
+
+  DWORD set_state_path_security(
+    const std::filesystem::path &path,
+    PSID owner,
+    PACL dacl
+  ) {
+    auto mutable_path = path.native();
+    return ::SetNamedSecurityInfoW(
+      mutable_path.data(),
+      SE_FILE_OBJECT,
+      OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION |
+        PROTECTED_DACL_SECURITY_INFORMATION,
+      owner,
+      nullptr,
+      dacl,
+      nullptr
+    );
+  }
+
+  bool apply_state_path_acl(
+    const std::filesystem::path &path,
+    PSECURITY_DESCRIPTOR descriptor,
+    std::string_view state_name,
+    std::string &message
+  ) {
+    const auto dacl = security_descriptor_dacl(descriptor);
+    if (dacl == nullptr) {
+      message = "Unable to read the access policy for " +
+                std::string {state_name} + " state.";
+      return false;
+    }
+
+    BOOL owner_defaulted = FALSE;
+    PSID owner = nullptr;
+    if (::GetSecurityDescriptorOwner(descriptor, &owner, &owner_defaulted) == FALSE || owner == nullptr || ::IsValidSid(owner) == FALSE) {
+      message = "Unable to read the owner policy for " +
+                std::string {state_name} + " state.";
+      return false;
+    }
+
+    if (const auto result = set_state_path_security(path, owner, dacl); result != ERROR_SUCCESS) {
+      message = "Unable to restrict " + std::string {state_name} +
+                " state access: " + windows_error_message(result);
+      return false;
+    }
+    return true;
+  }
+
+  bool ensure_secure_state_directory(
+    const std::filesystem::path &directory,
+    PSECURITY_DESCRIPTOR descriptor,
+    std::string_view state_name,
+    std::string &message
+  ) {
+    if (SECURITY_ATTRIBUTES security_attributes {
+          .nLength = sizeof(SECURITY_ATTRIBUTES),
+          .lpSecurityDescriptor = descriptor,
+          .bInheritHandle = FALSE,
+        };
+        ::CreateDirectoryW(directory.c_str(), &security_attributes) == FALSE && ::GetLastError() != ERROR_ALREADY_EXISTS) {
+      message = "Unable to create " + std::string {state_name} +
+                " state directory: " + windows_error_message(::GetLastError());
+      return false;
+    }
+
+    if (const auto attributes = ::GetFileAttributesW(directory.c_str()); attributes == INVALID_FILE_ATTRIBUTES || (attributes & FILE_ATTRIBUTE_DIRECTORY) == 0U || (attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0U) {
+      message = "The " + std::string {state_name} +
+                " state directory is missing or unsafe.";
+      return false;
+    }
+
+    return apply_state_path_acl(
+      directory,
+      descriptor,
+      state_name,
+      message
+    );
+  }
+
+  bool secure_existing_state_file(
+    const std::filesystem::path &path,
+    PSECURITY_DESCRIPTOR descriptor,
+    std::string_view state_name,
+    std::string &message
+  ) {
+    const auto attributes = ::GetFileAttributesW(path.c_str());
+    if (attributes == INVALID_FILE_ATTRIBUTES) {
+      return ::GetLastError() == ERROR_FILE_NOT_FOUND;
+    }
+    if ((attributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) != 0U) {
+      message = "The " + std::string {state_name} + " state file is unsafe.";
+      return false;
+    }
+
+    return apply_state_path_acl(path, descriptor, state_name, message);
+  }
+
   struct PolarLicenseState {
     std::string provider;
     std::string license_key;
@@ -236,7 +498,15 @@ namespace {
     return parsed;
   }
 
-  std::optional<std::string> load_protected_state(const std::filesystem::path &path) {
+  std::optional<std::string> load_protected_state(
+    const std::filesystem::path &path,
+    std::string_view state_name
+  ) {
+    std::string security_message;
+    if (auto security_descriptor = make_state_security_descriptor(state_name, security_message); !security_descriptor || !ensure_secure_state_directory(path.parent_path(), security_descriptor->get(), state_name, security_message) || !secure_existing_state_file(path, security_descriptor->get(), state_name, security_message)) {
+      return std::nullopt;
+    }
+
     std::ifstream input {path, std::ios::binary};
     if (!input) {
       return std::nullopt;
@@ -284,27 +554,45 @@ namespace {
       return false;
     }
 
-    std::error_code ec;
-    std::filesystem::create_directories(path.parent_path(), ec);
-    if (ec) {
-      static_cast<void>(::LocalFree(encrypted_blob.pbData));
-      message = "Unable to create " + std::string {state_name} + " state directory: " + ec.message();
+    auto encrypted_data = UniqueLocalMemory {encrypted_blob.pbData, &::LocalFree};
+    auto security_descriptor = make_state_security_descriptor(state_name, message);
+    if (!security_descriptor || !ensure_secure_state_directory(path.parent_path(), security_descriptor->get(), state_name, message) || !secure_existing_state_file(path, security_descriptor->get(), state_name, message)) {
       return false;
     }
 
-    std::ofstream output {path, std::ios::binary | std::ios::trunc};
-    if (!output) {
-      static_cast<void>(::LocalFree(encrypted_blob.pbData));
-      message = "Unable to write " + std::string {state_name} + " state.";
+    SECURITY_ATTRIBUTES security_attributes {
+      .nLength = sizeof(SECURITY_ATTRIBUTES),
+      .lpSecurityDescriptor = security_descriptor->get(),
+      .bInheritHandle = FALSE,
+    };
+    const auto output = ::CreateFileW(path.c_str(), GENERIC_WRITE, 0, &security_attributes, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (output == INVALID_HANDLE_VALUE) {
+      message = "Unable to write " + std::string {state_name} +
+                " state: " + windows_error_message(::GetLastError());
       return false;
     }
 
-    output.write(
-      reinterpret_cast<const char *>(encrypted_blob.pbData),
-      encrypted_blob.cbData
-    );
-    static_cast<void>(::LocalFree(encrypted_blob.pbData));
-    return true;
+    DWORD bytes_written = 0;
+    const auto persisted = ::WriteFile(output, encrypted_data.get(), encrypted_blob.cbData, &bytes_written, nullptr) != FALSE &&
+                           bytes_written == encrypted_blob.cbData &&
+                           ::FlushFileBuffers(output) != FALSE;
+    const auto persist_error = persisted ? ERROR_SUCCESS : ::GetLastError();
+    const auto closed = ::CloseHandle(output) != FALSE;
+    const auto close_error = closed ? ERROR_SUCCESS : ::GetLastError();
+
+    if (!persisted) {
+      message = "Unable to persist " + std::string {state_name} +
+                " state: " + windows_error_message(persist_error);
+      return false;
+    }
+
+    if (!closed) {
+      message = "Unable to close " + std::string {state_name} +
+                " state: " + windows_error_message(close_error);
+      return false;
+    }
+
+    return apply_state_path_acl(path, security_descriptor->get(), state_name, message);
   }
 
   PolarLicenseState deserialize_license_state(std::string_view serialized) {
@@ -348,7 +636,7 @@ namespace {
   }
 
   std::optional<PolarLicenseState> load_license_state() {
-    const auto serialized = load_protected_state(license_state_path());
+    const auto serialized = load_protected_state(license_state_path(), "license");
     if (!serialized) {
       return std::nullopt;
     }
@@ -409,7 +697,10 @@ namespace {
   }
 
   std::optional<GitHubActionsEvaluationState> load_github_actions_evaluation_state() {
-    const auto serialized = load_protected_state(github_actions_evaluation_state_path());
+    const auto serialized = load_protected_state(
+      github_actions_evaluation_state_path(),
+      "GitHub Actions evaluation"
+    );
     if (!serialized) {
       return std::nullopt;
     }
@@ -592,16 +883,6 @@ namespace {
     return benefit == lvh::windows::broker_config::allowed_benefits.end() ?
              std::string_view {} :
              benefit->plan_name;
-  }
-
-  bool valid_broker_header(
-    const LvhWindowsBrokerRequestHeader &header,
-    LvhWindowsBrokerRequestType expected_type,
-    std::uint32_t expected_size
-  ) {
-    return header.version == LVH_WINDOWS_BROKER_PROTOCOL_VERSION &&
-           header.size == expected_size &&
-           header.type == std::to_underlying(expected_type);
   }
 
   bool session_token_matches(
@@ -837,11 +1118,7 @@ namespace {
       response.gamepad.version = LVH_WINDOWS_CONTROL_PROTOCOL_VERSION;
       response.gamepad.size = sizeof(response.gamepad);
 
-      if (!valid_broker_header(
-            request.header,
-            LvhWindowsBrokerRequestType::create_gamepad,
-            sizeof(request)
-          )) {
+      if (!lvh::windows::broker_validation::valid_request(request)) {
         response.status = std::to_underlying(LvhWindowsBrokerStatusCode::invalid_argument);
         copy_c_string(response.message, "Invalid broker create request.");
         fill_license_status(response.license);
@@ -915,11 +1192,7 @@ namespace {
       response.version = LVH_WINDOWS_BROKER_PROTOCOL_VERSION;
       response.size = sizeof(response);
 
-      if (!valid_broker_header(
-            request.header,
-            LvhWindowsBrokerRequestType::destroy_device,
-            sizeof(request)
-          )) {
+      if (!lvh::windows::broker_validation::valid_request(request)) {
         response.status = std::to_underlying(LvhWindowsBrokerStatusCode::invalid_argument);
         copy_c_string(response.message, "Invalid broker destroy request.");
         fill_license_status(response.license);
@@ -997,10 +1270,9 @@ namespace {
       response.version = LVH_WINDOWS_BROKER_PROTOCOL_VERSION;
       response.size = sizeof(response);
 
-      if (!valid_broker_header(
-            request.header,
-            LvhWindowsBrokerRequestType::activate_license,
-            sizeof(request)
+      if (!lvh::windows::broker_validation::valid_request(
+            request,
+            LvhWindowsBrokerRequestType::activate_license
           )) {
         response.status = std::to_underlying(LvhWindowsBrokerStatusCode::invalid_argument);
         copy_c_string(response.message, "Invalid broker activate request.");
@@ -1098,10 +1370,9 @@ namespace {
       response.version = LVH_WINDOWS_BROKER_PROTOCOL_VERSION;
       response.size = sizeof(response);
 
-      if (!valid_broker_header(
-            request.header,
-            LvhWindowsBrokerRequestType::validate_license,
-            sizeof(request)
+      if (!lvh::windows::broker_validation::valid_request(
+            request,
+            LvhWindowsBrokerRequestType::validate_license
           )) {
         response.status = std::to_underlying(LvhWindowsBrokerStatusCode::invalid_argument);
         copy_c_string(response.message, "Invalid broker validate request.");
@@ -1123,10 +1394,9 @@ namespace {
       response.version = LVH_WINDOWS_BROKER_PROTOCOL_VERSION;
       response.size = sizeof(response);
 
-      if (!valid_broker_header(
-            request.header,
-            LvhWindowsBrokerRequestType::deactivate_license,
-            sizeof(request)
+      if (!lvh::windows::broker_validation::valid_request(
+            request,
+            LvhWindowsBrokerRequestType::deactivate_license
           )) {
         response.status = std::to_underlying(LvhWindowsBrokerStatusCode::invalid_argument);
         copy_c_string(response.message, "Invalid broker deactivate request.");
@@ -1432,55 +1702,68 @@ namespace {
   }
 
   template<typename Response>
-  void write_response(HANDLE pipe, const Response &response) {
-    DWORD bytes_written = 0;
-    static_cast<void>(::WriteFile(
+  bool write_response(
+    HANDLE pipe,
+    const Response &response,
+    HANDLE requested_stop_event
+  ) {
+    return write_pipe_message(
       pipe,
-      &response,
-      sizeof(response),
-      &bytes_written,
-      nullptr
-    ));
+      std::as_bytes(std::span<const Response> {&response, 1}),
+      requested_stop_event
+    );
   }
 
   template<typename Request, std::size_t Size>
-  Request request_from_buffer(const std::array<std::uint8_t, Size> &buffer) {
+  Request request_from_buffer(const std::array<std::byte, Size> &buffer) {
     Request request {};
     std::memcpy(&request, buffer.data(), sizeof(request));
     return request;
   }
 
-  void handle_pipe_client(HANDLE pipe) {
+  void handle_pipe_client(HANDLE pipe, HANDLE requested_stop_event) {
     broker_state().cleanup_devices();
 
-    std::array<std::uint8_t, pipe_buffer_size> request_buffer {};
+    const auto send_response = [pipe, requested_stop_event](const auto &response) {
+      return write_response(pipe, response, requested_stop_event);
+    };
+
+    std::array<std::byte, pipe_buffer_size> request_buffer {};
     DWORD bytes_read = 0;
-    if (::ReadFile(pipe, request_buffer.data(), static_cast<DWORD>(request_buffer.size()), &bytes_read, nullptr) == FALSE || bytes_read < sizeof(LvhWindowsBrokerRequestHeader)) {
+    if (!read_pipe_message(pipe, request_buffer, requested_stop_event, bytes_read) || bytes_read < sizeof(LvhWindowsBrokerRequestHeader)) {
       auto response = broker_state().handle_status();
       response.status = std::to_underlying(LvhWindowsBrokerStatusCode::invalid_argument);
       copy_c_string(response.message, "Broker request was empty or truncated.");
-      write_response(pipe, response);
+      static_cast<void>(send_response(response));
       return;
     }
 
     const auto header = request_from_buffer<LvhWindowsBrokerRequestHeader>(request_buffer);
-    if (header.version != LVH_WINDOWS_BROKER_PROTOCOL_VERSION || header.size > bytes_read) {
+    if (header.version != LVH_WINDOWS_BROKER_PROTOCOL_VERSION || header.size != bytes_read) {
       auto response = broker_state().handle_status();
       response.status = std::to_underlying(LvhWindowsBrokerStatusCode::invalid_argument);
       copy_c_string(response.message, "Broker request header is invalid.");
-      write_response(pipe, response);
+      static_cast<void>(send_response(response));
       return;
     }
 
     switch (static_cast<LvhWindowsBrokerRequestType>(header.type)) {
       case LvhWindowsBrokerRequestType::status:
-        write_response(pipe, broker_state().handle_status());
-        return;
+        if (header.size == sizeof(LvhWindowsBrokerStatusRequest)) {
+          const auto request = request_from_buffer<LvhWindowsBrokerStatusRequest>(request_buffer);
+          if (lvh::windows::broker_validation::valid_request(request)) {
+            static_cast<void>(send_response(broker_state().handle_status()));
+            return;
+          }
+        }
+        break;
 
       case LvhWindowsBrokerRequestType::create_gamepad:
         if (header.size == sizeof(LvhWindowsBrokerCreateGamepadRequest)) {
           const auto request = request_from_buffer<LvhWindowsBrokerCreateGamepadRequest>(request_buffer);
-          write_response(pipe, broker_state().handle_create(request, pipe_client_process_id(pipe)));
+          static_cast<void>(send_response(
+            broker_state().handle_create(request, pipe_client_process_id(pipe))
+          ));
           return;
         }
         break;
@@ -1488,7 +1771,7 @@ namespace {
       case LvhWindowsBrokerRequestType::destroy_device:
         if (header.size == sizeof(LvhWindowsBrokerDestroyDeviceRequest)) {
           const auto request = request_from_buffer<LvhWindowsBrokerDestroyDeviceRequest>(request_buffer);
-          write_response(pipe, broker_state().handle_destroy(request));
+          static_cast<void>(send_response(broker_state().handle_destroy(request)));
           return;
         }
         break;
@@ -1496,7 +1779,7 @@ namespace {
       case LvhWindowsBrokerRequestType::activate_license:
         if (header.size == sizeof(LvhWindowsBrokerLicenseRequest)) {
           const auto request = request_from_buffer<LvhWindowsBrokerLicenseRequest>(request_buffer);
-          write_response(pipe, broker_state().handle_activate_license(request));
+          static_cast<void>(send_response(broker_state().handle_activate_license(request)));
           return;
         }
         break;
@@ -1504,7 +1787,7 @@ namespace {
       case LvhWindowsBrokerRequestType::validate_license:
         if (header.size == sizeof(LvhWindowsBrokerLicenseRequest)) {
           const auto request = request_from_buffer<LvhWindowsBrokerLicenseRequest>(request_buffer);
-          write_response(pipe, broker_state().handle_validate_license(request));
+          static_cast<void>(send_response(broker_state().handle_validate_license(request)));
           return;
         }
         break;
@@ -1512,7 +1795,7 @@ namespace {
       case LvhWindowsBrokerRequestType::deactivate_license:
         if (header.size == sizeof(LvhWindowsBrokerLicenseRequest)) {
           const auto request = request_from_buffer<LvhWindowsBrokerLicenseRequest>(request_buffer);
-          write_response(pipe, broker_state().handle_deactivate_license(request));
+          static_cast<void>(send_response(broker_state().handle_deactivate_license(request)));
           return;
         }
         break;
@@ -1521,7 +1804,7 @@ namespace {
     auto response = broker_state().handle_status();
     response.status = std::to_underlying(LvhWindowsBrokerStatusCode::invalid_argument);
     copy_c_string(response.message, "Broker request type or size is unsupported.");
-    write_response(pipe, response);
+    static_cast<void>(send_response(response));
   }
 
   std::optional<UniqueHandle> wait_for_pipe_client(HANDLE requested_stop_event) {
@@ -1539,12 +1822,12 @@ namespace {
       .bInheritHandle = FALSE,
     };
 
-    auto pipe = make_unique_handle(::CreateNamedPipeA(LVH_WINDOWS_BROKER_PIPE_PATH, PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED, PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS, PIPE_UNLIMITED_INSTANCES, pipe_buffer_size, pipe_buffer_size, 1000, &security_attributes));
+    auto pipe = make_unique_handle(::CreateNamedPipeA(LVH_WINDOWS_BROKER_PIPE_PATH, PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED | FILE_FLAG_FIRST_PIPE_INSTANCE, PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS, PIPE_UNLIMITED_INSTANCES, pipe_buffer_size, pipe_buffer_size, pipe_connect_timeout, &security_attributes));
     if (!pipe) {
       return std::nullopt;
     }
 
-    auto connected_event = make_unique_handle(::CreateEventA(nullptr, TRUE, FALSE, nullptr));
+    auto connected_event = make_unique_handle(::CreateEventW(nullptr, TRUE, FALSE, nullptr));
     if (!connected_event) {
       return std::nullopt;
     }
@@ -1554,37 +1837,22 @@ namespace {
     if (::ConnectNamedPipe(pipe.get(), &overlapped) == FALSE) {
       const auto error = ::GetLastError();
       if (error == ERROR_PIPE_CONNECTED) {
-        static_cast<void>(::SetEvent(connected_event.get()));
-      } else if (error != ERROR_IO_PENDING) {
+        return pipe;
+      }
+      if (error != ERROR_IO_PENDING) {
         return std::nullopt;
       }
-    }
 
-    std::array<HANDLE, 2> wait_handles {
-      connected_event.get(),
-      requested_stop_event,
-    };
-    const auto wait_result = ::WaitForMultipleObjects(
-      static_cast<DWORD>(wait_handles.size()),
-      wait_handles.data(),
-      FALSE,
-      1000
-    );
-    if (wait_result == WAIT_TIMEOUT) {
-      static_cast<void>(::CancelIoEx(pipe.get(), &overlapped));
-      return std::nullopt;
-    }
-    if (wait_result == WAIT_OBJECT_0 + 1U) {
-      static_cast<void>(::CancelIoEx(pipe.get(), &overlapped));
-      return std::nullopt;
-    }
-    if (wait_result != WAIT_OBJECT_0) {
-      static_cast<void>(::CancelIoEx(pipe.get(), &overlapped));
-      return std::nullopt;
-    }
-
-    if (DWORD ignored = 0; ::GetOverlappedResult(pipe.get(), &overlapped, &ignored, FALSE) == FALSE && ::GetLastError() != ERROR_PIPE_CONNECTED) {
-      return std::nullopt;
+      DWORD ignored = 0;
+      if (!complete_pending_pipe_io(
+            pipe.get(),
+            overlapped,
+            requested_stop_event,
+            pipe_connect_timeout,
+            ignored
+          )) {
+        return std::nullopt;
+      }
     }
 
     return pipe;
@@ -1622,8 +1890,7 @@ namespace {
         continue;
       }
 
-      handle_pipe_client(pipe->get());
-      static_cast<void>(::FlushFileBuffers(pipe->get()));
+      handle_pipe_client(pipe->get(), requested_stop_event);
       static_cast<void>(::DisconnectNamedPipe(pipe->get()));
     }
 

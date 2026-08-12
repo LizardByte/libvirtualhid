@@ -107,7 +107,7 @@ effects back into the public callback. Each requested playback repetition
 restarts the effect's ramp and envelope timing. A zero-length effect remains
 active until its explicit stop event, matching the infinite-effect contract used
 by SDL and Steam. The Linux backend lets a new uinput device settle before
-reading those effects so an early poll error cannot disable feedback for the
+reading those effects, so an early poll error cannot disable feedback for the
 device lifetime. Generated UHID nodes are correlated by stable physical and
 unique identifiers when available, with device-name matching used only as a
 fallback. PlayStation rumble is read from native UHID interrupt-channel output
@@ -120,7 +120,7 @@ which avoids changing the raw button capability surface. It uses a compact
 Generic button layout rather than the sparse Xbox button slots.
 
 Xbox 360 retains its `0x045E:0x028E` identity, while its Linux uinput device uses
-the Bluetooth bus so consumers select the sparse button mapping.
+the Bluetooth bus, so consumers select the sparse button mapping.
 Xbox One and Xbox Series retain their public USB identities, but their Linux
 uinput devices use the corresponding Bluetooth product identities (`0x0B20`
 and `0x0B13`, respectively), whose standard consumer mappings match the events
@@ -230,7 +230,7 @@ Current macOS capabilities:
   codes.
 - Mouse relative movement, absolute movement on the main display, left/middle/
   right button transitions, and pixel-based vertical/horizontal scroll.
-- Shared keyboard modifier state on mouse events so combinations such as
+- Shared keyboard modifier state on mouse events, so combinations such as
   shift-click continue to work.
 
 Unsupported macOS capabilities currently return `unsupported_profile`:

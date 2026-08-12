@@ -62,6 +62,7 @@ elseif(WIN32)
       _WIN32_WINNT=0x0600)
     target_link_libraries(${PROJECT_NAME}
       PRIVATE
+      advapi32
       setupapi
       lizardbyte::common)
 elseif(APPLE)

@@ -104,23 +104,21 @@ buttons, sticks, triggers, and battery state, show backend and profile
 capabilities, list device nodes reported for UI-created devices, and display
 normalized gamepad output such as rumble, RGB LED, adaptive trigger, trigger
 rumble, and raw report events delivered through the normal callback path. Button
-controls are momentary by default so they behave like physical gamepad buttons;
+controls are momentary by default, so they behave like physical gamepad buttons;
 on Windows, the UI also displays broker license status and can activate,
-refresh, or deactivate a machine license. Outside the explicitly marked GitHub
-Actions test environment, every Windows UMDF gamepad creation requires a
-current successful license validation response and there is no offline grace
-period. The CI-only exception is a single five-minute window that begins with
-the first gamepad creation attempt. Purchase and account-management buttons use
+refresh, or deactivate a machine license without elevation. Every Windows UMDF
+gamepad creation requires a current successful license validation response and
+there is no offline grace period. Purchase and account-management buttons use
 the compiled URLs in
 `src/platform/windows/shared/lvh_windows_broker_config.hpp`.
-enable `Lock buttons` to keep the old click-to-toggle behavior for held inputs.
+Enable `Lock buttons` to click-to-toggle behavior for held inputs.
 The resizable window supports a compact width. Its device and control panels
-stack, and the button grid reflows, to keep controls usable when it is narrowed.
-The UI intentionally does not use gamepad navigation so virtual devices created
+stack, and the button grid reflows to keep controls usable when it is narrowed.
+The UI intentionally does not use gamepad navigation, so virtual devices created
 by the tool cannot drive the tool's own controls.
 
 External devices created by another process, such as Sunshine, are not
-enumerated yet. That requires backend protocol support so the Windows driver or
+enumerated yet. That requires backend protocol support, so the Windows driver or
 Linux backend can expose cross-process device snapshots without letting two
 processes race to control the same virtual device.
 
@@ -133,7 +131,9 @@ The API centers on portable device concepts:
 - `get_license_status`, `activate_license`, `validate_license`, and
   `deactivate_license`: provider-neutral machine license operations for host
   applications. On Windows these call the installed local broker; license keys
-  are not retained by the client library or returned to the application.
+  are not retained by the client library or returned to the application. The
+  client verifies that the named-pipe server is the SCM-registered running
+  broker before sending any request.
 - `VirtualDevice`: common lifecycle for created devices.
 - `Gamepad`: submits normalized gamepad state and receives output callbacks.
 - `Keyboard`: submits key press/release and UTF-8 text input.
@@ -183,18 +183,18 @@ touch, motion, battery, feedback, and lifecycle updates onto the platform-neutra
 
 Built-in gamepad profiles and their platform-neutral default device names are:
 
-| Profile | Default device name |
-| --- | --- |
-| Generic HID gamepad | `(libvirtualhid) Generic Controller` |
-| Xbox 360 | `(libvirtualhid) X-Box 360 Controller` |
-| Xbox One | `(libvirtualhid) X-Box One Controller` |
-| Xbox Series | `(libvirtualhid) X-Box Series Controller` |
-| DualShock 4 USB and Bluetooth | `(libvirtualhid) PS4 Controller` |
-| DualSense USB and Bluetooth | `(libvirtualhid) PS5 Controller` |
-| Nintendo Switch Pro | `(libvirtualhid) Nintendo Pro Controller` |
+| Profile                       | Default device name                       |
+|-------------------------------|-------------------------------------------|
+| Generic HID gamepad           | `(libvirtualhid) Generic Controller`      |
+| Xbox 360                      | `(libvirtualhid) X-Box 360 Controller`    |
+| Xbox One                      | `(libvirtualhid) X-Box One Controller`    |
+| Xbox Series                   | `(libvirtualhid) X-Box Series Controller` |
+| DualShock 4 USB and Bluetooth | `(libvirtualhid) PS4 Controller`          |
+| DualSense USB and Bluetooth   | `(libvirtualhid) PS5 Controller`          |
+| Nintendo Switch Pro           | `(libvirtualhid) Nintendo Pro Controller` |
 
 Consumers may replace `DeviceProfile::name` before creating a gamepad, for
-example to prepend an application name while preserving the default controller
+example, to prepend an application name while preserving the default controller
 identity across platform backends.
 
 The platform-neutral Generic HID descriptor reports the D-pad as buttons 13
@@ -203,8 +203,8 @@ through 16 in the input report. Linux may still route that profile through
 standard `ABS_HAT0X` and `ABS_HAT0Y` axes.
 
 Profiles advertise support for features such as rumble, trigger rumble, RGB
-LEDs, adaptive triggers, motion sensors, touchpads, battery state, profile
-specific buttons, and raw output reports. Consumers should query profile and
+LEDs, adaptive triggers, motion sensors, touchpads, battery state,
+profile-specific buttons, and raw output reports. Consumers should query profile and
 backend capabilities before warning users about unsupported client features.
 The `misc1` button represents Share/Capture/Mic Mute-style controls and is
 available on the generic, Xbox Series, DualSense, and Switch Pro profiles; Xbox

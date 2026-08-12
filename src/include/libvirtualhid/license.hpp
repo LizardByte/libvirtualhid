@@ -81,6 +81,7 @@ namespace lvh {
    *
    * The license key is sent directly to the platform license service. The library does not
    * persist a copy or expose it in the returned status.
+   * On Windows, authenticated local clients can activate or replace a license without elevation.
    *
    * @param license_key License key supplied by the customer.
    * @param instance_name Optional customer-visible name for this machine activation.
@@ -97,6 +98,8 @@ namespace lvh {
 
   /**
    * @brief Deactivate the stored license from this machine.
+   *
+   * On Windows, authenticated local clients can deactivate a license without elevation.
    *
    * @return Deactivation result and latest license details.
    */
