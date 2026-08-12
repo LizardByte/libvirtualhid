@@ -638,6 +638,7 @@ TEST_F(WindowsConsumerTest, NativeSwitchHandshakeAndInputReportReachHidClient) {
   EXPECT_EQ(input->at(9), 0x00U);
   EXPECT_EQ(input->at(10), 0x08U);
   EXPECT_EQ(input->at(11), 0x00U);
+  ASSERT_TRUE(created.adapter->close().ok());
 }
 
 TEST_F(WindowsConsumerTest, NativeXboxPidRumbleWritesAreNormalized) {
