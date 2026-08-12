@@ -28,11 +28,11 @@ function Invoke-CheckedCommand {
     [Parameter(Mandatory = $true)]
     [string[]] $Arguments,
 
-    [switch] $IgnoreFailure
+    [int[]] $SuccessExitCodes = @(0)
   )
 
   & $FilePath @Arguments
-  if ($LASTEXITCODE -ne 0 -and -not $IgnoreFailure) {
+  if ($LASTEXITCODE -notin $SuccessExitCodes) {
     throw "$FilePath exited with code $LASTEXITCODE"
   }
 }
@@ -52,57 +52,105 @@ function Remove-LibVirtualHidBrokerService {
   }
 
   if ($PSCmdlet.ShouldProcess($Name, "Delete libvirtualhid broker service")) {
-    Invoke-CheckedCommand -FilePath "sc.exe" -Arguments @("delete", $Name) -IgnoreFailure
-  }
-}
+    $service.Dispose()
+    Invoke-CheckedCommand -FilePath "sc.exe" -Arguments @("delete", $Name)
 
-function Find-Devcon {
-  if ($env:DEVCON_EXE -and (Test-Path -LiteralPath $env:DEVCON_EXE)) {
-    return $env:DEVCON_EXE
-  }
-
-  $roots = @(
-    $env:WDKContentRoot,
-    $env:WindowsSdkDir,
-    "${env:ProgramFiles(x86)}\Windows Kits\10"
-  ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) }
-
-  foreach ($root in $roots) {
-    $candidate = Get-ChildItem -LiteralPath $root -Recurse -Filter devcon.exe -ErrorAction SilentlyContinue |
-      Where-Object { $_.FullName -match "\\x64\\devcon\.exe$" } |
-      Select-Object -First 1
-    if ($candidate) {
-      return $candidate.FullName
+    $deadline = [DateTime]::UtcNow.AddSeconds(15)
+    while ([DateTime]::UtcNow -lt $deadline) {
+      if (-not (Get-Service -Name $Name -ErrorAction SilentlyContinue)) {
+        return
+      }
+      Start-Sleep -Milliseconds 250
     }
+    throw "The $Name service still exists after deletion."
   }
-
-  return $null
 }
 
 function Find-PublishedName {
-  param([string] $TargetOriginalName)
+  param(
+    [string] $TargetOriginalName,
+    [string] $TargetHardwareId
+  )
 
-  $drivers = & pnputil.exe /enum-drivers
-  $currentPublished = $null
-  $currentOriginal = $null
   $publishedNames = @()
-
-  foreach ($line in $drivers) {
-    if ($line -match "^\s*Published Name\s*:\s*(.+)$") {
-      $currentPublished = $Matches[1].Trim()
-      $currentOriginal = $null
-      continue
-    }
-
-    if ($line -match "^\s*Original Name\s*:\s*(.+)$") {
-      $currentOriginal = $Matches[1].Trim()
-      if ($currentPublished -and $currentOriginal -ieq $TargetOriginalName) {
-        $publishedNames += $currentPublished
-      }
-    }
+  $dismFailure = $null
+  try {
+    $publishedNames = @(
+      Get-WindowsDriver -Online -All -ErrorAction Stop |
+        Where-Object {
+          $_.Driver -match "^oem\d+\.inf$" -and
+          [IO.Path]::GetFileName($_.OriginalFileName) -ieq $TargetOriginalName
+        } |
+        Select-Object -ExpandProperty Driver -Unique
+    )
+  } catch {
+    $dismFailure = $_.Exception.Message
+    Write-Verbose "DISM driver-store enumeration failed: $dismFailure"
+  }
+  if ($publishedNames.Count -gt 0) {
+    return $publishedNames
+  }
+  if (-not $dismFailure) {
+    return @()
   }
 
-  return $publishedNames
+  # Win32_PnPSignedDriver provides a language-neutral fallback for the package
+  # currently bound to the root device if DISM cannot enumerate the store.
+  $targetDeviceIds = @(
+    Get-LibVirtualHidRootDeviceInstanceId -TargetHardwareId $TargetHardwareId
+  )
+  if ($targetDeviceIds.Count -eq 0) {
+    throw "DISM could not enumerate the driver store and no bound device is available for CIM fallback: $dismFailure"
+  }
+
+  $cimPublishedNames = @(
+    Get-CimInstance -ClassName Win32_PnPSignedDriver -ErrorAction Stop |
+      Where-Object {
+        $_.DeviceID -in $targetDeviceIds -and
+        $_.InfName -match "^oem\d+\.inf$"
+      } |
+      Select-Object -ExpandProperty InfName -Unique
+  )
+  if ($cimPublishedNames.Count -eq 0) {
+    throw "DISM could not enumerate the driver store and CIM did not identify the bound package: $dismFailure"
+  }
+  return $cimPublishedNames
+}
+
+function Assert-PublishedName {
+  param([string] $Name)
+
+  if ($Name -notmatch "^oem\d+\.inf$") {
+    throw "The published driver package name is invalid: $Name"
+  }
+}
+
+function Assert-LibVirtualHidRemoved {
+  param(
+    [string] $TargetOriginalName,
+    [string] $TargetHardwareId,
+    [string] $ServiceName
+  )
+
+  if (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue) {
+    throw "The $ServiceName service remains installed."
+  }
+
+  $remainingDevices = @(
+    Get-LibVirtualHidRootDeviceInstanceId -TargetHardwareId $TargetHardwareId
+  )
+  if ($remainingDevices.Count -gt 0) {
+    throw "libvirtualhid device instances remain installed: $($remainingDevices -join ', ')"
+  }
+
+  $remainingPackages = @(
+    Find-PublishedName `
+      -TargetOriginalName $TargetOriginalName `
+      -TargetHardwareId $TargetHardwareId
+  )
+  if ($remainingPackages.Count -gt 0) {
+    throw "libvirtualhid driver packages remain staged: $($remainingPackages -join ', ')"
+  }
 }
 
 function Remove-DriverCertificate {
@@ -125,47 +173,56 @@ function Remove-DriverCertificate {
   }
 }
 
-Remove-LibVirtualHidBrokerService -Name $BrokerServiceName
-
-$devcon = Find-Devcon
-if ($devcon -and $PSCmdlet.ShouldProcess($HardwareId, "Remove libvirtualhid development device")) {
-  Invoke-CheckedCommand -FilePath $devcon -Arguments @("remove", $HardwareId) -IgnoreFailure
-}
-
-foreach ($instanceId in (Get-LibVirtualHidRootDeviceInstanceId -TargetHardwareId $HardwareId)) {
-  if ($PSCmdlet.ShouldProcess($instanceId, "Remove libvirtualhid development device with pnputil")) {
-    Invoke-CheckedCommand -FilePath "pnputil.exe" -Arguments @("/remove-device", $instanceId) -IgnoreFailure
-  }
-}
-
-foreach ($instanceId in (Get-LibVirtualHidRegistryRootDevice -TargetHardwareId $HardwareId | Select-Object -ExpandProperty InstanceId -Unique)) {
-  if ($PSCmdlet.ShouldProcess($instanceId, "Remove libvirtualhid registry-discovered development device with pnputil")) {
-    Invoke-CheckedCommand -FilePath "pnputil.exe" -Arguments @("/remove-device", $instanceId) -IgnoreFailure
-  }
-}
-
 $publishedNames = @()
 if ($PublishedName) {
+  Assert-PublishedName -Name $PublishedName
   $publishedNames += $PublishedName
 } else {
-  $publishedNames = @(Find-PublishedName -TargetOriginalName $OriginalName)
+  try {
+    $publishedNames = @(
+      Find-PublishedName `
+        -TargetOriginalName $OriginalName `
+        -TargetHardwareId $HardwareId
+    )
+  } catch {
+    throw "Unable to discover the staged libvirtualhid driver package through Windows APIs: $($_.Exception.Message)"
+  }
+}
+
+Remove-LibVirtualHidBrokerService -Name $BrokerServiceName
+
+$deviceInstanceIds = @(
+  Get-LibVirtualHidRootDeviceInstanceId -TargetHardwareId $HardwareId
+  Get-LibVirtualHidRegistryRootDevice -TargetHardwareId $HardwareId |
+    Select-Object -ExpandProperty InstanceId
+) | Select-Object -Unique
+
+foreach ($instanceId in $deviceInstanceIds) {
+  if ($PSCmdlet.ShouldProcess($instanceId, "Remove libvirtualhid development device with pnputil")) {
+    Invoke-CheckedCommand -FilePath "pnputil.exe" -Arguments @("/remove-device", $instanceId)
+  }
 }
 
 if ($publishedNames.Count -eq 0) {
   Write-Warning "No staged libvirtualhid driver package matching $OriginalName was found."
-  Remove-DriverCertificate -Subject $RemoveCertificateSubject
-  return
+} else {
+  foreach ($driverPackage in $publishedNames) {
+    Assert-PublishedName -Name $driverPackage
+    $deleteArgs = @("/delete-driver", $driverPackage, "/uninstall")
+    if ($Force) {
+      $deleteArgs += "/force"
+    }
+
+    if ($PSCmdlet.ShouldProcess($driverPackage, "Delete libvirtualhid driver package")) {
+      Invoke-CheckedCommand -FilePath "pnputil.exe" -Arguments $deleteArgs
+    }
+  }
 }
 
-foreach ($driverPackage in $publishedNames) {
-  $deleteArgs = @("/delete-driver", $driverPackage, "/uninstall")
-  if ($Force) {
-    $deleteArgs += "/force"
-  }
-
-  if ($PSCmdlet.ShouldProcess($driverPackage, "Delete libvirtualhid driver package")) {
-    Invoke-CheckedCommand -FilePath "pnputil.exe" -Arguments $deleteArgs
-  }
+if (-not $WhatIfPreference) {
+  Assert-LibVirtualHidRemoved `
+    -TargetOriginalName $OriginalName `
+    -TargetHardwareId $HardwareId `
+    -ServiceName $BrokerServiceName
 }
-
 Remove-DriverCertificate -Subject $RemoveCertificateSubject

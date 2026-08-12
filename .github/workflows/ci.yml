@@ -363,10 +363,12 @@ jobs:
             throw "OpenCppCoverage.exe was not found."
           }
 
+          # The broker test hook compiles a private copy only for failure injection.
           & $openCppCoverage `
             --sources "$env:GITHUB_WORKSPACE\examples" `
             --sources "$env:GITHUB_WORKSPACE\src" `
             --sources "$env:GITHUB_WORKSPACE\tools" `
+            --excluded_sources "$env:GITHUB_WORKSPACE\src\platform\windows\broker" `
             "--export_type=cobertura:$env:GITHUB_WORKSPACE\cmake-build-ci\reports\coverage.xml" `
             --working_dir "$env:GITHUB_WORKSPACE\cmake-build-ci\tests" `
             -- `
@@ -413,11 +415,13 @@ jobs:
           GCOV_EXECUTABLE: ${{ matrix.gcov_executable }}
           MSYS2_PATH_TYPE: inherit
         run: |
+          # The broker test hook compiles a private copy only for failure injection.
           uv run --project ../third-party/lizardbyte-common --locked --no-sync gcovr . -r .. \
             --filter ../examples/ \
             --filter ../src/ \
             --filter ../tools/ \
             --gcov-executable "${GCOV_EXECUTABLE}" \
+            --exclude ../src/platform/windows/broker/ \
             --exclude ../tests/ \
             --exclude ../third-party/ \
             --exclude-noncode-lines \
@@ -590,7 +594,8 @@ jobs:
           New-Item -ItemType Directory -Force -Path artifacts | Out-Null
           Copy-Item `
             -LiteralPath .\cmake-build-driver\cpack_artifacts\libvirtualhid.msi `
-            -Destination .\artifacts\libvirtualhid-Windows-Driver-installer.msi
+            -Destination `
+              ".\artifacts\libvirtualhid-Windows-AMD64-driver-installer.msi"
 
       - name: Export Azure driver signing certificate
         if: >-
@@ -634,6 +639,39 @@ jobs:
           files-folder-filter: msi
           files-folder-recurse: false
           signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+
+      - name: Validate release signing identities
+        if: >-
+          github.event_name == 'push' &&
+          needs.setup_release.outputs.publish_release == 'true' &&
+          vars.AZURE_SIGNING_ACCOUNT != ''
+        shell: pwsh
+        run: |
+          $catalogPath = Join-Path `
+            $env:GITHUB_WORKSPACE `
+            "cmake-build-driver\src\platform\windows\driver\package\$env:DRIVER_BUILD_CONFIG\libvirtualhid.cat"
+          $installerPath = Get-ChildItem -LiteralPath .\artifacts -Filter *.msi |
+            Select-Object -ExpandProperty FullName -First 1
+          if (!$installerPath) {
+            throw "The signed Windows driver installer was not found."
+          }
+
+          $catalogSignature = Get-AuthenticodeSignature -FilePath $catalogPath
+          $installerSignature = Get-AuthenticodeSignature -FilePath $installerPath
+          foreach ($signature in @($catalogSignature, $installerSignature)) {
+            if ($signature.Status -ne "Valid" -or !$signature.SignerCertificate) {
+              throw "A release signature is invalid: $($signature.StatusMessage)"
+            }
+          }
+          if ($catalogSignature.SignerCertificate.Subject -cne `
+              $installerSignature.SignerCertificate.Subject) {
+            throw "The catalog and MSI were signed with different identities."
+          }
+          Write-Host (
+            "Validated release signer " +
+            "$($installerSignature.SignerCertificate.Subject) " +
+            "[$($installerSignature.SignerCertificate.Thumbprint)]."
+          )
 
       - name: Debug wix
         if: always()
@@ -771,11 +809,32 @@ jobs:
         run: |
           mkdir -p artifacts
           for name in Linux-GCC Linux-Clang macOS Windows-MinGW-UCRT64 Windows-MSVC; do
+            release_name="${name}"
+            case "${name}" in
+              Windows-MinGW-UCRT64) release_name="Windows-AMD64-MinGW-UCRT64" ;;
+              Windows-MSVC) release_name="Windows-AMD64-MSVC" ;;
+            esac
             zip -r \
-              "artifacts/libvirtualhid-${{ needs.setup_release.outputs.release_tag }}-${name}.zip" \
+              "artifacts/libvirtualhid-${release_name}.zip" \
               "install-${name}"
           done
           cp windows-driver-installer/*.msi artifacts/
+
+      - name: Validate release metadata
+        env:
+          RELEASE_COMMIT: ${{ needs.setup_release.outputs.release_commit }}
+          RELEASE_TAG: ${{ needs.setup_release.outputs.release_tag }}
+          RELEASE_VERSION: ${{ needs.setup_release.outputs.release_version }}
+        run: |
+          test -n "${RELEASE_TAG}"
+          test -n "${RELEASE_VERSION}"
+          test "${RELEASE_COMMIT}" = "${GITHUB_SHA}"
+          test -s "artifacts/libvirtualhid-Linux-GCC.zip"
+          test -s "artifacts/libvirtualhid-Linux-Clang.zip"
+          test -s "artifacts/libvirtualhid-macOS.zip"
+          test -s "artifacts/libvirtualhid-Windows-AMD64-driver-installer.msi"
+          test -s "artifacts/libvirtualhid-Windows-AMD64-MinGW-UCRT64.zip"
+          test -s "artifacts/libvirtualhid-Windows-AMD64-MSVC.zip"
 
       - name: Create/Update GitHub Release
         if: needs.setup_release.outputs.publish_release == 'true'

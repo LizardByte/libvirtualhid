@@ -58,7 +58,7 @@
 #include <utility>
 #include <vector>
 
-namespace {
+namespace lvh::detail::windows_broker_service {
 
   using UniqueHandle = std::unique_ptr<void, decltype(&::CloseHandle)>;
   using UniqueLocalMemory = std::unique_ptr<void, decltype(&::LocalFree)>;
@@ -1707,11 +1707,28 @@ namespace {
     const Response &response,
     HANDLE requested_stop_event
   ) {
-    return write_pipe_message(
+    if (!write_pipe_message(
+          pipe,
+          std::as_bytes(std::span<const Response> {&response, 1}),
+          requested_stop_event
+        )) {
+      return false;
+    }
+
+    // DisconnectNamedPipe discards responses that the client has not read yet.
+    // A well-behaved one-request client closes its handle after reading the
+    // response, so wait for that close before disconnecting the server end. The
+    // overlapped read retains the normal I/O timeout and stop-event handling,
+    // preventing an uncooperative client from blocking the service indefinitely.
+    std::array<std::byte, 1> extra_request {};
+    DWORD bytes_read = 0;
+    static_cast<void>(read_pipe_message(
       pipe,
-      std::as_bytes(std::span<const Response> {&response, 1}),
-      requested_stop_event
-    );
+      extra_request,
+      requested_stop_event,
+      bytes_read
+    ));
+    return true;
   }
 
   template<typename Request, std::size_t Size>
@@ -1967,20 +1984,25 @@ namespace {
     return static_cast<int>(result);
   }
 
-}  // namespace
+}  // namespace lvh::detail::windows_broker_service
 
 int main(int argc, char **argv) {
   if (argc > 1 && std::string_view {argv[1]} == "--console") {
-    return run_console();
+    return lvh::detail::windows_broker_service::run_console();
   }
   if (argc > 1 && std::string_view {argv[1]} == "--service-name") {
-    (void) broker_instance_name;
+    (void) lvh::detail::windows_broker_service::broker_instance_name;
     return 0;
   }
 
-  std::wstring mutable_service_name {service_name};
+  std::wstring mutable_service_name {
+    lvh::detail::windows_broker_service::service_name,
+  };
   if (std::array<SERVICE_TABLE_ENTRYW, 2> dispatch_table {{
-        {mutable_service_name.data(), service_main},
+        {
+          mutable_service_name.data(),
+          lvh::detail::windows_broker_service::service_main,
+        },
         {nullptr, nullptr},
       }};
       StartServiceCtrlDispatcherW(dispatch_table.data()) != FALSE) {
@@ -1989,7 +2011,7 @@ int main(int argc, char **argv) {
 
   const auto error = GetLastError();
   if (error == ERROR_FAILED_SERVICE_CONTROLLER_CONNECT) {
-    return run_console();
+    return lvh::detail::windows_broker_service::run_console();
   }
 
   return static_cast<int>(error);
