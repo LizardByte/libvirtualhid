@@ -157,6 +157,10 @@ endif()
 # Package config
 #
 if(LIBVIRTUALHID_INSTALL)
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE"
+      DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/libvirtualhid"
+      COMPONENT library)
+
     configure_package_config_file(
       "${CMAKE_CURRENT_SOURCE_DIR}/cmake/libvirtualhid-config.cmake.in"
       "${CMAKE_CURRENT_BINARY_DIR}/libvirtualhid-config.cmake"

@@ -173,7 +173,7 @@ test app path and does not currently advertise an ARM64 build.
 ## 📄 License
 
 The cross-platform `libvirtualhid` library is licensed under the MIT License.
-The Windows UMDF driver source and generated Windows
-driver package artifacts, including the driver MSI, are licensed under the
-LizardByte Source-Available License 1.0 (LB-SAL 1.0). See the
+The Windows UMDF driver, broker, proprietary entitlement/evaluation sources,
+and generated Windows driver package artifacts, including the driver MSI, are
+licensed under the LizardByte Source-Available License 1.0 (LB-SAL 1.0). See the
 [license map](LICENSES/README.md) for the full repository split.

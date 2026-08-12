@@ -30,6 +30,7 @@ set(LIBVIRTUALHID_TEST_SOURCES
   "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_profiles.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_report.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_runtime.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_windows_broker_validation.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_windows_protocol.cpp")
 
 if(TARGET virtualhid_control_model)
@@ -54,8 +55,10 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
 elseif(WIN32)
     list(APPEND LIBVIRTUALHID_TEST_SOURCES
          "${PROJECT_SOURCE_DIR}/src/platform/windows/driver/rotating_trace_log.cpp"
+         "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/windows_broker_client_test_hooks.cpp"
          "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/windows_backend_test_hooks.cpp"
          "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_windows_backend.cpp"
+         "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_windows_broker_client.cpp"
          "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_windows_consumers.cpp"
          "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_windows_driver_protocol.cpp"
          "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_windows_rotating_trace_log.cpp")
@@ -71,6 +74,7 @@ add_executable(${TEST_BINARY}
 target_include_directories(${TEST_BINARY}
   PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/include"
+  "${PROJECT_SOURCE_DIR}/src/platform/windows/broker"
   "${PROJECT_SOURCE_DIR}/src/platform/windows/shared"
   "${PROJECT_SOURCE_DIR}/src")
 

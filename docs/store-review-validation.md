@@ -29,7 +29,7 @@ C:\Program Files\libvirtualhid\services\windows\libvirtualhid_broker.exe
 
 Required validation:
 $installRoot = Join-Path $env:ProgramFiles "libvirtualhid"
-& "$installRoot\tools\windows\virtualhid_control.exe"
+Start-Process "$installRoot\tools\windows\virtualhid_control.exe"
 
 In the libvirtualhid control window, paste the supplied review key into the License key field and click Activate license. Confirm the status changes to Licensed. Then leave the default Xbox Series profile selected and click Create. Use the button and axis controls in the UI to submit input to the virtual controller.
 

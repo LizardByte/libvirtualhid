@@ -43,6 +43,21 @@ normal desktop application to use the broker without running as administrator
 while keeping broker ownership and privileged device operations in the Windows
 service.
 
+Status, current-license validation, activation, replacement, deactivation,
+gamepad creation, and owned-device destruction are available to authenticated
+local users without elevation. Before sending any request, clients compare the
+named-pipe server PID to the SCM-registered, currently running
+`libvirtualhid_broker` service. This prevents another local process from
+impersonating an unavailable broker and collecting a license key. The service
+also requests first ownership of the pipe name and rejects remote clients.
+
+All broker messages are fixed-size and fully validated before use, including
+protocol versions, exact byte counts, request types, reserved fields, enums,
+array bounds, string terminators, and unused payload bytes. Connection, request,
+and response operations use cancellable overlapped I/O with explicit completion
+and byte-count checks, so a stopped service or disconnected client cannot leave
+an operation using expired stack state.
+
 The backend sends fixed-size C protocol structures to the broker. A create
 request identifies the backend's existing control handle; the broker duplicates
 that handle from the named-pipe client process and issues `DeviceIoControl` on
@@ -101,7 +116,7 @@ cpack -G WIX -C Release --config .\cmake-build-windows-driver\CPackConfig.cmake
 
 The package defaults to UMDF 2.15, matching the inbox VHF UMDF source driver
 while still exposing the framework APIs used by libvirtualhid. The driver links
-the MSVC runtime statically so the UMDF host process does not need VC runtime
+the MSVC runtime statically, so the UMDF host process does not need VC runtime
 DLLs beside the driver.
 
 ## Developer Install and Validation
@@ -180,7 +195,8 @@ diagnostics.
 
 On Windows, the UI also shows broker license status. It can activate a license
 key, refresh validation, deactivate the current machine, and open
-compiled purchase or account-management URLs.
+compiled purchase or account-management URLs. License management and normal
+virtual-gamepad use do not require elevation.
 
 ## Installation Notes
 
@@ -230,8 +246,12 @@ The broker stores machine-scoped license state in:
 C:\ProgramData\libvirtualhid\license.dat
 ```
 
-The file is protected with Windows DPAPI local-machine scope. GitHub Actions
-evaluation timing is stored separately with the same protection in
+The file is protected with Windows DPAPI local-machine scope. The state
+directory and both state files are owned by LocalSystem and use protected DACLs
+that grant full access only to `NT SERVICE\libvirtualhid_broker`, LocalSystem,
+and built-in administrators; reparse-point state paths are rejected. GitHub
+Actions evaluation timing is
+stored separately with the same DPAPI and ACL protection in
 `C:\ProgramData\libvirtualhid\github-actions-evaluation.dat`. Broker entitlement
 configuration is compiled into the Windows broker and diagnostic UI. Update
 `src/platform/windows/shared/lvh_windows_broker_config.hpp` when the Polar
@@ -314,9 +334,9 @@ and must not ship the local pull-request test certificate.
 
 ## License
 
-The Windows UMDF driver source and generated Windows driver package artifacts,
-including the driver MSI, are licensed under the LizardByte Source-Available
-License 1.0 (LB-SAL 1.0). See the [license map](../LICENSES/README.md) for the
-full repository license split. The MSI may also include MIT-licensed helper
-components from this repository, so packaged installs include both license
-texts.
+The Windows UMDF driver, broker, proprietary entitlement/evaluation sources,
+and generated Windows driver package artifacts, including the driver MSI, are
+licensed under the LizardByte Source-Available License 1.0 (LB-SAL 1.0). See
+the [license map](../LICENSES/README.md) for the full repository license split.
+The MSI may also include MIT-licensed helper components from this repository,
+so packaged installs include both license texts.
