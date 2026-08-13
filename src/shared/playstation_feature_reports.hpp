@@ -5,6 +5,7 @@
 #pragma once
 
 // standard includes
+#include <array>
 #include <cstdint>
 
 namespace lvh::detail::playstation_feature_reports {
@@ -18,7 +19,7 @@ namespace lvh::detail::playstation_feature_reports {
   inline constexpr std::uint8_t dualsense_pairing_report = 0x09;
   inline constexpr std::uint8_t dualsense_firmware_report = 0x20;
 
-  inline constexpr std::uint8_t dualshock4_usb_calibration_info[] {
+  inline constexpr std::array<std::uint8_t, 37> dualshock4_usb_calibration_info {
     0x02,
     0x00,
     0x00,
@@ -58,7 +59,7 @@ namespace lvh::detail::playstation_feature_reports {
     0x00,
   };
 
-  inline constexpr std::uint8_t dualshock4_bluetooth_calibration_info[] {
+  inline constexpr std::array<std::uint8_t, 41> dualshock4_bluetooth_calibration_info {
     0x05,
     0x00,
     0x00,
@@ -102,7 +103,7 @@ namespace lvh::detail::playstation_feature_reports {
     0x00,
   };
 
-  inline constexpr std::uint8_t dualshock4_firmware_info[] {
+  inline constexpr std::array<std::uint8_t, 49> dualshock4_firmware_info {
     0xA3,
     0x41,
     0x75,
@@ -154,7 +155,7 @@ namespace lvh::detail::playstation_feature_reports {
     0x00,
   };
 
-  inline constexpr std::uint8_t dualshock4_pairing_info[] {
+  inline constexpr std::array<std::uint8_t, 16> dualshock4_pairing_info {
     0x12,
     0x00,
     0x00,
@@ -173,7 +174,7 @@ namespace lvh::detail::playstation_feature_reports {
     0x00,
   };
 
-  inline constexpr std::uint8_t dualsense_calibration_info[] {
+  inline constexpr std::array<std::uint8_t, 41> dualsense_calibration_info {
     0x05,
     0x00,
     0x00,
@@ -217,7 +218,7 @@ namespace lvh::detail::playstation_feature_reports {
     0x00,
   };
 
-  inline constexpr std::uint8_t dualsense_firmware_info[] {
+  inline constexpr std::array<std::uint8_t, 64> dualsense_firmware_info {
     0x20,
     0x4A,
     0x75,
@@ -284,7 +285,7 @@ namespace lvh::detail::playstation_feature_reports {
     0x00,
   };
 
-  inline constexpr std::uint8_t dualsense_pairing_info[] {
+  inline constexpr std::array<std::uint8_t, 20> dualsense_pairing_info {
     0x09,
     0x74,
     0xE7,
