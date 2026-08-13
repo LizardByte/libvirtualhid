@@ -1079,7 +1079,7 @@ namespace lvh::detail {
         return status;
       }
 
-      std::vector<int> buttons {BTN_TOUCH, BTN_STYLUS, BTN_STYLUS2, BTN_TOOL_PEN, BTN_TOOL_RUBBER, BTN_TOOL_BRUSH, BTN_TOOL_PENCIL, BTN_TOOL_AIRBRUSH};
+      std::vector buttons {BTN_TOUCH, BTN_STYLUS, BTN_STYLUS2, BTN_TOOL_PEN, BTN_TOOL_RUBBER, BTN_TOOL_BRUSH, BTN_TOOL_PENCIL, BTN_TOOL_AIRBRUSH};
 #if defined(BTN_STYLUS3)
       buttons.push_back(BTN_STYLUS3);
 #endif
