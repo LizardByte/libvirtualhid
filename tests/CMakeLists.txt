@@ -122,6 +122,7 @@ elseif(WIN32)
       PRIVATE
       nlohmann_json::nlohmann_json
       advapi32
+      bcrypt
       crypt32
       dinput8
       dxguid

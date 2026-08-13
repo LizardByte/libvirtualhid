@@ -22,7 +22,7 @@ if(LIBVIRTUALHID_USES_THREADS)
         pkg_check_modules(LIBEVDEV REQUIRED IMPORTED_TARGET libevdev)
     endif()
     if(LIBVIRTUALHID_ENABLE_XTEST)
-        find_package(X11 QUIET)
+        find_package(X11 QUIET COMPONENTS Xtst)
     endif()
 
     target_sources(${PROJECT_NAME}
@@ -34,26 +34,25 @@ if(LIBVIRTUALHID_USES_THREADS)
       PRIVATE
       PkgConfig::LIBEVDEV)
     if(LIBVIRTUALHID_ENABLE_XTEST AND X11_FOUND AND X11_XTest_FOUND)
+        set(LIBVIRTUALHID_USES_XTEST ON PARENT_SCOPE)
         target_compile_definitions(${PROJECT_NAME}
           PRIVATE
           LIBVIRTUALHID_HAVE_XTEST=1)
-        target_include_directories(${PROJECT_NAME}
-          PRIVATE
-          ${X11_INCLUDE_DIR}
-          ${X11_XTest_INCLUDE_PATH})
         target_link_libraries(${PROJECT_NAME}
           PRIVATE
-          ${X11_LIBRARIES}
-          ${X11_XTest_LIB})
+          X11::X11
+          X11::Xtst)
     endif()
 elseif(WIN32)
     target_sources(${PROJECT_NAME}
       PRIVATE
+      "${PROJECT_SOURCE_DIR}/third-party/lizardbyte-common/src/common/env.cpp"
       "${CMAKE_CURRENT_SOURCE_DIR}/platform/windows/windows_backend.cpp"
       "${CMAKE_CURRENT_SOURCE_DIR}/platform/windows/windows_broker_client.cpp"
       "${CMAKE_CURRENT_SOURCE_DIR}/platform/windows/windows_license.cpp")
     target_include_directories(${PROJECT_NAME}
       PRIVATE
+      "${PROJECT_SOURCE_DIR}/third-party/lizardbyte-common/src/include"
       "${CMAKE_CURRENT_SOURCE_DIR}/platform/windows/shared")
     target_compile_definitions(${PROJECT_NAME}
       PRIVATE
@@ -63,8 +62,7 @@ elseif(WIN32)
     target_link_libraries(${PROJECT_NAME}
       PRIVATE
       advapi32
-      setupapi
-      lizardbyte::common)
+      setupapi)
 elseif(APPLE)
     target_sources(${PROJECT_NAME}
       PRIVATE

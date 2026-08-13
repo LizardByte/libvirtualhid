@@ -23,6 +23,7 @@ target_link_libraries(libvirtualhid_broker
   lizardbyte::common
   nlohmann_json::nlohmann_json
   advapi32
+  bcrypt
   crypt32
   winhttp)
 

@@ -59,6 +59,12 @@ inline constexpr uint32_t LVH_WINDOWS_IOCTL_READ_OUTPUT_REPORT = lvh_windows_ctl
   LVH_WINDOWS_METHOD_BUFFERED,
   LVH_WINDOWS_FILE_READ_ACCESS
 );
+inline constexpr uint32_t LVH_WINDOWS_IOCTL_RESET_DEVICES = lvh_windows_ctl_code(
+  LVH_WINDOWS_FILE_DEVICE_LIBVIRTUALHID,
+  0x804u,
+  LVH_WINDOWS_METHOD_BUFFERED,
+  LVH_WINDOWS_FILE_READ_ACCESS | LVH_WINDOWS_FILE_WRITE_ACCESS
+);
 
 inline constexpr uint32_t LVH_WINDOWS_GAMEPAD_FLAG_SUPPORTS_RUMBLE = 0x00000001u;
 inline constexpr uint32_t LVH_WINDOWS_GAMEPAD_FLAG_SUPPORTS_MOTION = 0x00000002u;
@@ -170,6 +176,7 @@ static const uint32_t LVH_WINDOWS_IOCTL_CREATE_GAMEPAD = 0x8000E000u;
 static const uint32_t LVH_WINDOWS_IOCTL_DESTROY_DEVICE = 0x8000E004u;
 static const uint32_t LVH_WINDOWS_IOCTL_SUBMIT_INPUT_REPORT = 0x8000E008u;
 static const uint32_t LVH_WINDOWS_IOCTL_READ_OUTPUT_REPORT = 0x8000600Cu;
+static const uint32_t LVH_WINDOWS_IOCTL_RESET_DEVICES = 0x8000E010u;
 
 enum LvhWindowsProtocolStatus {
   LVH_WINDOWS_STATUS_SUCCESS = 0,
@@ -254,6 +261,11 @@ extern "C" {
     uint32_t size;
     uint64_t driver_device_id;
     LvhWindowsSessionToken session_token;
+  };
+
+  struct LvhWindowsResetDevicesRequest {
+    uint32_t version;
+    uint32_t size;
   };
 
   struct LvhWindowsSubmitInputReportRequest {

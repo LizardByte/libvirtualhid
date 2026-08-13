@@ -17,6 +17,7 @@
 // clang-format off
 #include <AclAPI.h>
 #include <Windows.h>
+#include <bcrypt.h>
 #include <dpapi.h>
 #include <sddl.h>
 #include <winhttp.h>
@@ -38,6 +39,8 @@
 #include <bit>
 #include <charconv>
 #include <chrono>
+#include <condition_variable>
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -55,6 +58,8 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <thread>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -62,6 +67,7 @@ namespace lvh::detail::windows_broker_service {
 
   using UniqueHandle = std::unique_ptr<void, decltype(&::CloseHandle)>;
   using UniqueLocalMemory = std::unique_ptr<void, decltype(&::LocalFree)>;
+  using UniqueRegistryKey = std::unique_ptr<std::remove_pointer_t<HKEY>, decltype(&::RegCloseKey)>;
   using UniqueWinHttpHandle = std::unique_ptr<void, decltype(&::WinHttpCloseHandle)>;
 
   constexpr auto service_name = L"libvirtualhid_broker";
@@ -70,6 +76,17 @@ namespace lvh::detail::windows_broker_service {
   constexpr auto pipe_buffer_size = 8192U;
   constexpr auto pipe_connect_timeout = 1000U;
   constexpr auto pipe_io_timeout = 5000U;
+  constexpr int polar_resolve_timeout = 5000;
+  constexpr int polar_connect_timeout = 5000;
+  constexpr int polar_send_timeout = 5000;
+  constexpr int polar_receive_timeout = 10000;
+  constexpr auto license_validation_interval = std::chrono::days {1};
+  constexpr auto license_validation_retry_interval = std::chrono::seconds {60};
+  constexpr auto license_outage_device_retention = std::chrono::hours {1};
+  constexpr std::size_t unvalidated_active_gamepad_limit = 1U;
+  constexpr auto boot_session_registry_path =
+    L"SYSTEM\\CurrentControlSet\\Services\\libvirtualhid_broker\\Runtime";
+  constexpr auto boot_session_registry_value = L"BootMarker";
   // Message-mode clients need the complete GENERIC_READ mapping plus individual write rights.
   constexpr auto pipe_client_granted_access = FILE_GENERIC_READ | FILE_WRITE_DATA | FILE_WRITE_ATTRIBUTES;
   constexpr auto pipe_security_descriptor = L"D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;0x0012018B;;;AU)";
@@ -109,8 +126,259 @@ namespace lvh::detail::windows_broker_service {
     return {handle, &::CloseHandle};
   }
 
+  UniqueRegistryKey make_unique_registry_key(HKEY key) {
+    return {key, &::RegCloseKey};
+  }
+
   UniqueWinHttpHandle make_unique_winhttp_handle(HINTERNET handle) {
     return {handle, &::WinHttpCloseHandle};
+  }
+
+  using LicenseValidationClock = std::chrono::steady_clock;
+  // Calendar time is anchored only by Polar's HTTPS Date header. Windows
+  // uptime advances that anchor within one boot session, including across
+  // broker restarts, without consulting the user-adjustable calendar clock.
+  using LicenseCalendarClock = std::chrono::system_clock;
+
+  using BootMarker = std::array<std::byte, 16>;
+
+  std::optional<BootMarker> generate_boot_marker() {
+    BootMarker marker {};
+    if (::BCryptGenRandom(nullptr, std::bit_cast<PUCHAR>(marker.data()), static_cast<ULONG>(marker.size()), BCRYPT_USE_SYSTEM_PREFERRED_RNG) != 0) {
+      return std::nullopt;
+    }
+    return marker;
+  }
+
+  std::string encode_boot_marker(const BootMarker &marker) {
+    constexpr std::string_view hex = "0123456789abcdef";
+    std::string encoded(marker.size() * 2U, '0');
+    for (std::size_t index = 0; index < marker.size(); ++index) {
+      const auto value = std::to_integer<unsigned>(marker[index]);
+      encoded[index * 2U] = hex[value >> 4U];
+      encoded[index * 2U + 1U] = hex[value & 0x0FU];
+    }
+    return encoded;
+  }
+
+  std::string load_or_create_boot_session_marker() {
+    const auto generated = generate_boot_marker();
+    if (!generated) {
+      return {};
+    }
+
+    HKEY raw_key = nullptr;
+    DWORD disposition = 0;
+    if (::RegCreateKeyExW(HKEY_LOCAL_MACHINE, boot_session_registry_path, 0, nullptr, REG_OPTION_VOLATILE, KEY_QUERY_VALUE | KEY_SET_VALUE, nullptr, &raw_key, &disposition) != ERROR_SUCCESS) {
+      // This process can still use the marker. A later process receives a new
+      // marker and therefore fails yearly expiration checks closed.
+      return encode_boot_marker(*generated);
+    }
+    auto key = make_unique_registry_key(raw_key);
+
+    BootMarker stored {};
+    DWORD type = 0;
+    if (auto size = static_cast<DWORD>(stored.size()); disposition == REG_OPENED_EXISTING_KEY && ::RegQueryValueExW(key.get(), boot_session_registry_value, nullptr, &type, std::bit_cast<LPBYTE>(stored.data()), &size) == ERROR_SUCCESS && type == REG_BINARY && size == stored.size()) {
+      return encode_boot_marker(stored);
+    }
+
+    static_cast<void>(::RegSetValueExW(key.get(), boot_session_registry_value, 0, REG_BINARY, std::bit_cast<const BYTE *>(generated->data()), static_cast<DWORD>(generated->size())));
+    return encode_boot_marker(*generated);
+  }
+
+  bool valid_rfc3339_date_time_parts(
+    const std::optional<unsigned> &year,
+    const std::optional<unsigned> &month,
+    const std::optional<unsigned> &day,
+    const std::optional<unsigned> &hour,
+    const std::optional<unsigned> &minute,
+    const std::optional<unsigned> &second
+  ) {
+    return year.has_value() && month.has_value() && day.has_value() &&
+           hour.has_value() && minute.has_value() && second.has_value() &&
+           *hour <= 23U && *minute <= 59U && *second <= 60U;
+  }
+
+  std::optional<unsigned> parse_rfc3339_part(
+    std::string_view value,
+    std::size_t offset,
+    std::size_t size
+  ) {
+    if (offset > value.size() || size > value.size() - offset) {
+      return std::nullopt;
+    }
+
+    unsigned parsed = 0;
+    const auto *begin = value.data() + offset;
+    const auto *end = begin + size;
+    const auto result = std::from_chars(begin, end, parsed);
+    return result.ec == std::errc {} && result.ptr == end ?
+             std::optional<unsigned> {parsed} :
+             std::nullopt;
+  }
+
+  std::optional<std::chrono::minutes> parse_rfc3339_utc_offset(
+    std::string_view value
+  ) {
+    std::size_t timezone_offset = 19U;
+    if (timezone_offset < value.size() && value[timezone_offset] == '.') {
+      ++timezone_offset;
+      const auto fraction_start = timezone_offset;
+      while (timezone_offset < value.size() && value[timezone_offset] >= '0' && value[timezone_offset] <= '9') {
+        ++timezone_offset;
+      }
+      if (timezone_offset == fraction_start) {
+        return std::nullopt;
+      }
+    }
+
+    if (timezone_offset >= value.size()) {
+      return std::nullopt;
+    }
+    if (value[timezone_offset] == 'Z' || value[timezone_offset] == 'z') {
+      return timezone_offset + 1U == value.size() ?
+               std::optional {std::chrono::minutes::zero()} :
+               std::nullopt;
+    }
+    if (timezone_offset + 6U != value.size() || (value[timezone_offset] != '+' && value[timezone_offset] != '-') || value[timezone_offset + 3U] != ':') {
+      return std::nullopt;
+    }
+
+    const auto offset_hours = parse_rfc3339_part(value, timezone_offset + 1U, 2U);
+    const auto offset_minutes = parse_rfc3339_part(value, timezone_offset + 4U, 2U);
+    if (!offset_hours.has_value() || !offset_minutes.has_value() || *offset_hours > 23U || *offset_minutes > 59U) {
+      return std::nullopt;
+    }
+
+    auto utc_offset = std::chrono::hours {*offset_hours} + std::chrono::minutes {*offset_minutes};
+    return value[timezone_offset] == '-' ? -utc_offset : utc_offset;
+  }
+
+  std::optional<LicenseCalendarClock::time_point> parse_rfc3339_timestamp(
+    std::string_view value
+  ) {
+    if (value.size() < 20U || value[4] != '-' || value[7] != '-' || (value[10] != 'T' && value[10] != 't') || value[13] != ':' || value[16] != ':') {
+      return std::nullopt;
+    }
+
+    const auto year_value = parse_rfc3339_part(value, 0U, 4U);
+    const auto month_value = parse_rfc3339_part(value, 5U, 2U);
+    const auto day_value = parse_rfc3339_part(value, 8U, 2U);
+    const auto hour_value = parse_rfc3339_part(value, 11U, 2U);
+    const auto minute_value = parse_rfc3339_part(value, 14U, 2U);
+    const auto second_value = parse_rfc3339_part(value, 17U, 2U);
+    if (!valid_rfc3339_date_time_parts(year_value, month_value, day_value, hour_value, minute_value, second_value)) {
+      return std::nullopt;
+    }
+
+    const auto utc_offset = parse_rfc3339_utc_offset(value);
+    if (!utc_offset.has_value()) {
+      return std::nullopt;
+    }
+
+    const auto date = std::chrono::year_month_day {
+      std::chrono::year {static_cast<int>(*year_value)},
+      std::chrono::month {*month_value},
+      std::chrono::day {*day_value},
+    };
+    if (!date.ok()) {
+      return std::nullopt;
+    }
+
+    return std::chrono::sys_days {date} +
+           std::chrono::hours {*hour_value} +
+           std::chrono::minutes {*minute_value} +
+           std::chrono::seconds {std::min(*second_value, 59U)} -
+           *utc_offset;
+  }
+
+  std::optional<LicenseCalendarClock::time_point> license_server_time(
+    const SYSTEMTIME &system_time
+  ) {
+    FILETIME file_time {};
+    if (::SystemTimeToFileTime(&system_time, &file_time) == FALSE) {
+      return std::nullopt;
+    }
+    const auto ticks = std::bit_cast<std::uint64_t>(file_time);
+    constexpr std::uint64_t windows_to_unix_epoch_ticks = 116444736000000000ULL;
+    constexpr std::uint64_t ticks_per_second = 10000000ULL;
+    if (ticks < windows_to_unix_epoch_ticks) {
+      return std::nullopt;
+    }
+    return LicenseCalendarClock::time_point {
+      std::chrono::seconds {
+        static_cast<std::int64_t>(
+          (ticks - windows_to_unix_epoch_ticks) / ticks_per_second
+        )
+      }
+    };
+  }
+
+  std::uint64_t license_calendar_timestamp(LicenseCalendarClock::time_point time) {
+    const auto seconds = std::chrono::duration_cast<std::chrono::seconds>(
+                           time.time_since_epoch()
+    )
+                           .count();
+    return seconds > 0 ? static_cast<std::uint64_t>(seconds) : 0U;
+  }
+
+  std::optional<std::uint64_t> license_monotonic_calendar_timestamp(
+    std::uint64_t calendar_anchor,
+    std::uint64_t uptime_anchor,
+    std::uint64_t current_uptime,
+    bool same_boot_session
+  ) {
+    if (!same_boot_session || calendar_anchor == 0U || current_uptime < uptime_anchor) {
+      return std::nullopt;
+    }
+    const auto elapsed_unsigned = (current_uptime - uptime_anchor) / 1000U;
+    return calendar_anchor > std::numeric_limits<std::uint64_t>::max() - elapsed_unsigned ?
+             std::optional<std::uint64_t> {std::numeric_limits<std::uint64_t>::max()} :
+             std::optional<std::uint64_t> {calendar_anchor + elapsed_unsigned};
+  }
+
+  bool license_expiration_is_current(
+    std::string_view expires_at,
+    bool expiration_required,
+    std::uint64_t effective_timestamp
+  ) {
+    if (!expiration_required) {
+      return true;
+    }
+    const auto expiration = parse_rfc3339_timestamp(expires_at);
+    return expiration &&
+           effective_timestamp < license_calendar_timestamp(*expiration);
+  }
+
+  bool unvalidated_gamepad_creation_allowed(
+    std::size_t active_licensed_gamepads
+  ) {
+    return active_licensed_gamepads < unvalidated_active_gamepad_limit;
+  }
+
+  bool license_outage_retention_elapsed(
+    LicenseValidationClock::duration elapsed
+  ) {
+    return elapsed >= license_outage_device_retention;
+  }
+
+  bool license_outage_gamepad_should_be_revoked(
+    bool github_actions_evaluation,
+    bool limit_licensed_devices,
+    std::size_t licensed_devices_kept
+  ) {
+    return limit_licensed_devices &&
+           !github_actions_evaluation &&
+           licensed_devices_kept >= unvalidated_active_gamepad_limit;
+  }
+
+  bool broker_device_should_be_revoked(
+    bool github_actions_evaluation,
+    bool evaluation_expired,
+    bool revoke_licensed_devices
+  ) {
+    return (evaluation_expired && github_actions_evaluation) ||
+           (revoke_licensed_devices && !github_actions_evaluation);
   }
 
   bool complete_pending_pipe_io(
@@ -473,6 +741,12 @@ namespace lvh::detail::windows_broker_service {
     std::string customer_email;
     std::string expires_at;
     std::uint32_t activation_limit = 0;
+    // Audit timestamp supplied by Polar, not the local machine clock.
+    std::uint64_t validated_at = 0;
+    // The boot-session marker and uptime at validation let the broker advance
+    // Polar time across service restarts without using the Windows wall clock.
+    std::string boot_marker;
+    std::uint64_t validated_uptime_ms = 0;
   };
 
   std::string serialize_license_state(const PolarLicenseState &state) {
@@ -487,6 +761,9 @@ namespace lvh::detail::windows_broker_service {
     serialized << "customer_email=" << state.customer_email << "\n";
     serialized << "expires_at=" << state.expires_at << "\n";
     serialized << "activation_limit=" << state.activation_limit << "\n";
+    serialized << "validated_at=" << state.validated_at << "\n";
+    serialized << "boot_marker=" << state.boot_marker << "\n";
+    serialized << "validated_uptime_ms=" << state.validated_uptime_ms << "\n";
     return serialized.str();
   }
 
@@ -625,6 +902,12 @@ namespace lvh::detail::windows_broker_service {
           state.expires_at = value;
         } else if (key == "activation_limit") {
           state.activation_limit = static_cast<std::uint32_t>(parse_uint64(value).value_or(0));
+        } else if (key == "validated_at") {
+          state.validated_at = parse_uint64(value).value_or(0);
+        } else if (key == "boot_marker") {
+          state.boot_marker = value;
+        } else if (key == "validated_uptime_ms") {
+          state.validated_uptime_ms = parse_uint64(value).value_or(0);
         }
       }
       if (line_end == std::string_view::npos) {
@@ -736,6 +1019,7 @@ namespace lvh::detail::windows_broker_service {
   struct PolarApiResult {
     bool transport_ok = false;
     DWORD http_status = 0;
+    std::optional<LicenseCalendarClock::time_point> server_time;
     std::string body;
     std::string error;
   };
@@ -748,6 +1032,10 @@ namespace lvh::detail::windows_broker_service {
     const auto session = make_unique_winhttp_handle(::WinHttpOpen(L"libvirtualhid-broker/1.0", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
     if (!session) {
       result.error = "WinHttpOpen failed: " + windows_error_message(::GetLastError());
+      return result;
+    }
+    if (::WinHttpSetTimeouts(session.get(), polar_resolve_timeout, polar_connect_timeout, polar_send_timeout, polar_receive_timeout) == FALSE) {
+      result.error = "WinHttpSetTimeouts failed: " + windows_error_message(::GetLastError());
       return result;
     }
 
@@ -783,6 +1071,11 @@ namespace lvh::detail::windows_broker_service {
       &status_size,
       WINHTTP_NO_HEADER_INDEX
     ));
+
+    SYSTEMTIME server_time {};
+    if (DWORD server_time_size = sizeof(server_time); ::WinHttpQueryHeaders(request.get(), WINHTTP_QUERY_DATE | WINHTTP_QUERY_FLAG_SYSTEMTIME, WINHTTP_HEADER_NAME_BY_INDEX, &server_time, &server_time_size, WINHTTP_NO_HEADER_INDEX) != FALSE) {
+      result.server_time = license_server_time(server_time);
+    }
 
     for (;;) {
       DWORD available = 0;
@@ -873,7 +1166,9 @@ namespace lvh::detail::windows_broker_service {
     return state;
   }
 
-  std::string_view plan_name_for_benefit(std::string_view benefit_id) {
+  const lvh::windows::broker_config::PolarBenefit *polar_benefit(
+    std::string_view benefit_id
+  ) {
     const auto benefit = std::ranges::find_if(
       lvh::windows::broker_config::allowed_benefits,
       [benefit_id](const auto &candidate) {
@@ -881,8 +1176,13 @@ namespace lvh::detail::windows_broker_service {
       }
     );
     return benefit == lvh::windows::broker_config::allowed_benefits.end() ?
-             std::string_view {} :
-             benefit->plan_name;
+             nullptr :
+             std::to_address(benefit);
+  }
+
+  std::string_view plan_name_for_benefit(std::string_view benefit_id) {
+    const auto *benefit = polar_benefit(benefit_id);
+    return benefit == nullptr ? std::string_view {} : benefit->plan_name;
   }
 
   bool session_token_matches(
@@ -902,6 +1202,19 @@ namespace lvh::detail::windows_broker_service {
     request.driver_device_id = driver_device_id;
     request.session_token = session_token;
     return request;
+  }
+
+  template<typename DestroyDevice, typename ForgetDevice>
+  void destroy_cleanup_candidates(
+    std::span<const LvhWindowsDestroyDeviceRequest> requests,
+    DestroyDevice &&destroy_device,
+    ForgetDevice &&forget_device
+  ) {
+    for (const auto &request : requests) {
+      if (destroy_device(request)) {
+        forget_device(request);
+      }
+    }
   }
 
   DWORD pipe_client_process_id(HANDLE pipe) {
@@ -1076,6 +1389,32 @@ namespace lvh::detail::windows_broker_service {
       return true;
     }
 
+    bool reset_devices(
+      LvhWindowsBrokerStatusCode &status,
+      std::string &message
+    ) {
+      using enum LvhWindowsBrokerStatusCode;
+
+      if (!open()) {
+        status = backend_unavailable;
+        message = "Windows UMDF control device is unavailable: " + windows_error_message(last_error_);
+        return false;
+      }
+
+      LvhWindowsResetDevicesRequest request {};
+      request.version = LVH_WINDOWS_CONTROL_PROTOCOL_VERSION;
+      request.size = sizeof(request);
+      if (DWORD bytes_returned = 0; ::DeviceIoControl(handle_.get(), LVH_WINDOWS_IOCTL_RESET_DEVICES, &request, sizeof(request), nullptr, 0, &bytes_returned, nullptr) == FALSE) {
+        status = backend_failure;
+        message = "reset Windows virtual HID devices: " + windows_error_message(::GetLastError());
+        return false;
+      }
+
+      status = success;
+      message.clear();
+      return true;
+    }
+
   private:
     UniqueHandle handle_ {nullptr, &::CloseHandle};
     std::string path_;
@@ -1091,7 +1430,28 @@ namespace lvh::detail::windows_broker_service {
       bool github_actions_evaluation = false;
     };
 
-    BrokerState() = default;
+    BrokerState() {
+      auto ignored_status = LvhWindowsBrokerStatusCode::success;
+      std::string ignored_message;
+      static_cast<void>(reconcile_driver_state(ignored_status, ignored_message));
+      if (license_state_) {
+        std::lock_guard lock {mutex_};
+        schedule_license_validation_locked(LicenseValidationClock::now(), true);
+      }
+      license_validation_thread_ = std::jthread {
+        [this](std::stop_token stop_token) {
+          license_validation_loop(stop_token);
+        }
+      };
+    }
+
+    ~BrokerState() {
+      license_validation_thread_.request_stop();
+      license_validation_wakeup_.notify_all();
+      if (license_validation_thread_.joinable()) {
+        license_validation_thread_.join();
+      }
+    }
 
     void fill_license_status(LvhWindowsBrokerLicenseStatus &license) const {
       std::lock_guard lock {mutex_};
@@ -1121,6 +1481,14 @@ namespace lvh::detail::windows_broker_service {
       if (!lvh::windows::broker_validation::valid_request(request)) {
         response.status = std::to_underlying(LvhWindowsBrokerStatusCode::invalid_argument);
         copy_c_string(response.message, "Invalid broker create request.");
+        fill_license_status(response.license);
+        return response;
+      }
+
+      auto reconciliation_status = LvhWindowsBrokerStatusCode::success;
+      if (std::string reconciliation_message; !reconcile_driver_state(reconciliation_status, reconciliation_message)) {
+        response.status = std::to_underlying(reconciliation_status);
+        copy_c_string(response.message, reconciliation_message);
         fill_license_status(response.license);
         return response;
       }
@@ -1236,7 +1604,12 @@ namespace lvh::detail::windows_broker_service {
     }
 
     void cleanup_devices() {
-      std::vector<LvhWindowsDestroyDeviceRequest> stale_devices;
+      auto reconciliation_status = LvhWindowsBrokerStatusCode::success;
+      if (std::string reconciliation_message; !reconcile_driver_state(reconciliation_status, reconciliation_message)) {
+        return;
+      }
+
+      std::vector<LvhWindowsDestroyDeviceRequest> cleanup_requests;
       {
         std::lock_guard lock {mutex_};
         const auto now = lvh::windows::github_actions_evaluation::Clock::now();
@@ -1247,19 +1620,56 @@ namespace lvh::detail::windows_broker_service {
                                           github_actions_evaluation_state_->started_at,
                                           now
                                         );
-        std::erase_if(devices_, [&stale_devices, evaluation_expired](const auto &entry) {
-          if (const auto wait_result = ::WaitForSingleObject(entry.second.owner_process.get(), 0); wait_result == WAIT_OBJECT_0 || wait_result == WAIT_FAILED || (evaluation_expired && entry.second.github_actions_evaluation)) {
-            stale_devices.push_back(make_destroy_device_request(entry.first, entry.second.session_token));
-            return true;
+        const auto license_now = LicenseValidationClock::now();
+        if (license_expiration_has_elapsed_locked()) {
+          revoke_licensed_devices_ = true;
+        }
+        const auto revoke_licensed_devices = revoke_licensed_devices_;
+        const auto limit_licensed_devices =
+          license_validation_unavailable_since_ &&
+          license_outage_retention_elapsed(
+            license_now - *license_validation_unavailable_since_
+          );
+        std::size_t licensed_devices_kept = 0;
+        for (const auto &[driver_device_id, device] : devices_) {
+          const auto wait_result = ::WaitForSingleObject(device.owner_process.get(), 0);
+          const auto owner_gone = wait_result == WAIT_OBJECT_0 || wait_result == WAIT_FAILED;
+          const auto revoke_for_license = broker_device_should_be_revoked(
+            device.github_actions_evaluation,
+            evaluation_expired,
+            revoke_licensed_devices
+          );
+          if (const auto over_outage_limit = license_outage_gamepad_should_be_revoked(device.github_actions_evaluation, limit_licensed_devices, licensed_devices_kept); owner_gone || revoke_for_license || over_outage_limit) {
+            cleanup_requests.push_back(make_destroy_device_request(driver_device_id, device.session_token));
+            continue;
           }
-          return false;
-        });
+          if (!device.github_actions_evaluation) {
+            ++licensed_devices_kept;
+          }
+        }
       }
 
-      for (const auto &request : stale_devices) {
-        auto status = LvhWindowsBrokerStatusCode::success;
-        std::string message;
-        static_cast<void>(driver_.destroy_device(request, status, message));
+      destroy_cleanup_candidates(
+        cleanup_requests,
+        [this](const auto &request) {
+          auto status = LvhWindowsBrokerStatusCode::success;
+          std::string message;
+          return driver_.destroy_device(request, status, message);
+        },
+        [this](const auto &request) {
+          std::lock_guard lock {mutex_};
+          const auto iter = devices_.find(request.driver_device_id);
+          if (iter != devices_.end() && session_token_matches(iter->second.session_token, request.session_token)) {
+            devices_.erase(iter);
+          }
+        }
+      );
+
+      {
+        std::lock_guard lock {mutex_};
+        if (revoke_licensed_devices_ && active_licensed_gamepad_count_locked() == 0U) {
+          revoke_licensed_devices_ = false;
+        }
       }
     }
 
@@ -1288,6 +1698,8 @@ namespace lvh::detail::windows_broker_service {
         fill_license_status(response.license);
         return response;
       }
+
+      std::lock_guard operation_lock {license_operation_mutex_};
 
       auto api_result = post_polar_license_request(
         L"/v1/customer-portal/license-keys/activate",
@@ -1346,6 +1758,18 @@ namespace lvh::detail::windows_broker_service {
         return response;
       }
 
+      std::string authorization_error;
+      if (const auto authorization_result = accept_trusted_license_time(new_state, api_result.server_time, authorization_error); authorization_result != TrustedLicenseTimeResult::success) {
+        response.status = std::to_underlying(
+          authorization_result == TrustedLicenseTimeResult::license_invalid ?
+            LvhWindowsBrokerStatusCode::license_invalid :
+            LvhWindowsBrokerStatusCode::backend_failure
+        );
+        copy_c_string(response.message, authorization_error);
+        fill_license_status(response.license);
+        return response;
+      }
+
       if (std::string save_error; !save_license_state(new_state, save_error)) {
         response.status = std::to_underlying(LvhWindowsBrokerStatusCode::backend_failure);
         copy_c_string(response.message, save_error);
@@ -1356,6 +1780,9 @@ namespace lvh::detail::windows_broker_service {
       {
         std::lock_guard lock {mutex_};
         license_state_ = std::move(new_state);
+        license_online_confirmed_ = true;
+        license_validation_unavailable_since_.reset();
+        schedule_license_validation_locked(LicenseValidationClock::now(), false);
         fill_license_status_locked(response.license);
       }
       response.status = std::to_underlying(LvhWindowsBrokerStatusCode::success);
@@ -1381,6 +1808,7 @@ namespace lvh::detail::windows_broker_service {
       }
 
       const auto [status, message] = validate_saved_license();
+      schedule_after_license_validation(status);
       response.status = std::to_underlying(status);
       fill_license_status(response.license);
       copy_c_string(response.message, message);
@@ -1403,6 +1831,8 @@ namespace lvh::detail::windows_broker_service {
         fill_license_status(response.license);
         return response;
       }
+
+      std::lock_guard operation_lock {license_operation_mutex_};
 
       PolarLicenseState state;
       {
@@ -1432,10 +1862,15 @@ namespace lvh::detail::windows_broker_service {
       }
 
       if (api_result.http_status != 204U) {
+        if (api_result.http_status == 404U) {
+          invalidate_license();
+          response.status = std::to_underlying(LvhWindowsBrokerStatusCode::success);
+          fill_license_status(response.license);
+          copy_c_string(response.message, "The machine activation was already absent; local license state was removed.");
+          return response;
+        }
         response.status = std::to_underlying(
-          api_result.http_status == 404U ?
-            LvhWindowsBrokerStatusCode::license_invalid :
-            LvhWindowsBrokerStatusCode::backend_failure
+          LvhWindowsBrokerStatusCode::backend_failure
         );
         copy_c_string(
           response.message,
@@ -1449,6 +1884,11 @@ namespace lvh::detail::windows_broker_service {
       {
         std::lock_guard lock {mutex_};
         license_state_.reset();
+        next_license_validation_attempt_.reset();
+        license_online_confirmed_ = false;
+        license_validation_unavailable_since_.reset();
+        revoke_licensed_devices_ = true;
+        license_validation_wakeup_.notify_all();
         fill_license_status_locked(response.license);
       }
       response.status = std::to_underlying(LvhWindowsBrokerStatusCode::success);
@@ -1457,19 +1897,231 @@ namespace lvh::detail::windows_broker_service {
     }
 
   private:
+    enum class TrustedLicenseTimeResult {
+      success,
+      license_invalid,
+      backend_failure,
+    };
+
+    bool reconcile_driver_state(
+      LvhWindowsBrokerStatusCode &status,
+      std::string &message
+    ) {
+      {
+        std::lock_guard lock {mutex_};
+        if (driver_state_reconciled_) {
+          status = LvhWindowsBrokerStatusCode::success;
+          message.clear();
+          return true;
+        }
+      }
+
+      if (!driver_.reset_devices(status, message)) {
+        return false;
+      }
+
+      std::lock_guard lock {mutex_};
+      devices_.clear();
+      driver_state_reconciled_ = true;
+      return true;
+    }
+
+    void schedule_license_validation_locked(
+      LicenseValidationClock::time_point now,
+      bool immediately
+    ) {
+      if (!license_state_) {
+        next_license_validation_attempt_.reset();
+      } else if (immediately) {
+        next_license_validation_attempt_ = now;
+      } else {
+        next_license_validation_attempt_ = now + license_validation_interval;
+      }
+      license_validation_wakeup_.notify_all();
+    }
+
+    void schedule_after_license_validation(
+      LvhWindowsBrokerStatusCode status
+    ) {
+      std::lock_guard lock {mutex_};
+      if (!license_state_) {
+        next_license_validation_attempt_.reset();
+      } else {
+        next_license_validation_attempt_ = LicenseValidationClock::now() +
+                                           (status == LvhWindowsBrokerStatusCode::success ?
+                                              license_validation_interval :
+                                              license_validation_retry_interval);
+      }
+      license_validation_wakeup_.notify_all();
+    }
+
+    void license_validation_loop(std::stop_token stop_token) {
+      while (!stop_token.stop_requested()) {
+        bool validation_due = false;
+        {
+          std::unique_lock lock {mutex_};
+          static_cast<void>(license_validation_wakeup_.wait_for(
+            lock,
+            std::chrono::minutes {1},
+            [this, stop_token] {
+              return stop_token.stop_requested() ||
+                     (license_state_ && next_license_validation_attempt_ &&
+                      LicenseValidationClock::now() >= *next_license_validation_attempt_);
+            }
+          ));
+          if (stop_token.stop_requested()) {
+            return;
+          }
+          const auto now = LicenseValidationClock::now();
+          validation_due = license_state_ &&
+                           next_license_validation_attempt_ &&
+                           now >= *next_license_validation_attempt_;
+          if (validation_due) {
+            next_license_validation_attempt_ = now + license_validation_retry_interval;
+          }
+        }
+
+        if (!validation_due) {
+          continue;
+        }
+        const auto [status, ignored_message] = validate_saved_license();
+        static_cast<void>(ignored_message);
+        schedule_after_license_validation(status);
+      }
+    }
+
     bool license_allowed(const PolarLicenseState &state) const {
       return !lvh::windows::broker_config::polar_organization_id.empty() &&
              state.organization_id == lvh::windows::broker_config::polar_organization_id &&
              !plan_name_for_benefit(state.benefit_id).empty();
     }
 
+    TrustedLicenseTimeResult accept_trusted_license_time(
+      PolarLicenseState &state,
+      const std::optional<LicenseCalendarClock::time_point> &server_time,
+      std::string &message
+    ) const {
+      using enum TrustedLicenseTimeResult;
+
+      if (!server_time) {
+        message = "The license service response did not include trusted server time.";
+        return backend_failure;
+      }
+      const auto *benefit = polar_benefit(state.benefit_id);
+      if (benefit == nullptr) {
+        message = "License organization or benefit is not allowed for this driver.";
+        return license_invalid;
+      }
+      const auto server_timestamp = license_calendar_timestamp(*server_time);
+      if (benefit->expiration_required) {
+        const auto expiration = parse_rfc3339_timestamp(state.expires_at);
+        if (!expiration) {
+          message = "The yearly license has an invalid expiration.";
+          return backend_failure;
+        }
+        if (server_timestamp >= license_calendar_timestamp(*expiration)) {
+          message = "The yearly license has expired.";
+          return license_invalid;
+        }
+      }
+      state.validated_at = server_timestamp;
+      state.boot_marker = boot_session_marker_;
+      state.validated_uptime_ms = ::GetTickCount64();
+      if (state.boot_marker.empty()) {
+        message = "Unable to establish a trusted Windows boot-session clock.";
+        return backend_failure;
+      }
+      message.clear();
+      return success;
+    }
+
+    std::optional<std::uint64_t> license_effective_timestamp_locked() const {
+      if (!license_state_) {
+        return std::nullopt;
+      }
+      return license_monotonic_calendar_timestamp(
+        license_state_->validated_at,
+        license_state_->validated_uptime_ms,
+        ::GetTickCount64(),
+        !boot_session_marker_.empty() &&
+          license_state_->boot_marker == boot_session_marker_
+      );
+    }
+
+    bool license_time_is_current_locked() const {
+      if (!license_state_ || license_state_->license_status != "granted") {
+        return false;
+      }
+      const auto *benefit = polar_benefit(license_state_->benefit_id);
+      if (benefit == nullptr) {
+        return false;
+      }
+      if (!benefit->expiration_required) {
+        return true;
+      }
+      const auto effective_timestamp = license_effective_timestamp_locked();
+      return effective_timestamp && license_expiration_is_current(
+                                      license_state_->expires_at,
+                                      true,
+                                      *effective_timestamp
+                                    );
+    }
+
+    bool license_expiration_has_elapsed_locked() const {
+      if (!license_state_) {
+        return false;
+      }
+      const auto *benefit = polar_benefit(license_state_->benefit_id);
+      const auto effective_timestamp = license_effective_timestamp_locked();
+      return benefit != nullptr && benefit->expiration_required &&
+             effective_timestamp &&
+             !license_expiration_is_current(
+               license_state_->expires_at,
+               true,
+               *effective_timestamp
+             );
+    }
+
+    void mark_license_validation_unavailable() {
+      std::lock_guard lock {mutex_};
+      if (license_state_) {
+        license_online_confirmed_ = false;
+        if (!license_validation_unavailable_since_) {
+          license_validation_unavailable_since_ = LicenseValidationClock::now();
+        }
+      }
+    }
+
+    std::size_t active_licensed_gamepad_count_locked() const {
+      return static_cast<std::size_t>(std::ranges::count_if(
+        devices_,
+        [](const auto &entry) {
+          return !entry.second.github_actions_evaluation;
+        }
+      ));
+    }
+
     bool license_is_active_locked() const {
       return license_state_ &&
-             license_state_->license_status == "granted" &&
-             license_allowed(*license_state_);
+             license_allowed(*license_state_) &&
+             license_time_is_current_locked();
+    }
+
+    void invalidate_license() {
+      {
+        std::lock_guard lock {mutex_};
+        license_state_.reset();
+        next_license_validation_attempt_.reset();
+        license_online_confirmed_ = false;
+        license_validation_unavailable_since_.reset();
+        revoke_licensed_devices_ = true;
+        license_validation_wakeup_.notify_all();
+      }
+      delete_license_state();
     }
 
     std::pair<LvhWindowsBrokerStatusCode, std::string> validate_saved_license() {
+      std::lock_guard operation_lock {license_operation_mutex_};
       PolarLicenseState state;
       {
         std::lock_guard lock {mutex_};
@@ -1491,6 +2143,7 @@ namespace lvh::detail::windows_broker_service {
         }
       );
       if (!api_result.transport_ok) {
+        mark_license_validation_unavailable();
         return {
           LvhWindowsBrokerStatusCode::network_unavailable,
           api_result.error,
@@ -1499,9 +2152,9 @@ namespace lvh::detail::windows_broker_service {
 
       if (api_result.http_status != 200U) {
         if (api_result.http_status == 404U) {
-          std::lock_guard lock {mutex_};
-          license_state_.reset();
-          delete_license_state();
+          invalidate_license();
+        } else {
+          mark_license_validation_unavailable();
         }
         return {
           api_result.http_status == 404U ?
@@ -1513,6 +2166,7 @@ namespace lvh::detail::windows_broker_service {
 
       const auto parsed = parse_json(api_result.body);
       if (!parsed) {
+        mark_license_validation_unavailable();
         return {
           LvhWindowsBrokerStatusCode::backend_failure,
           "The license validation response was not valid JSON.",
@@ -1521,9 +2175,7 @@ namespace lvh::detail::windows_broker_service {
 
       auto new_state = license_state_from_json(*parsed, state.license_key, {});
       if (new_state.activation_id != state.activation_id) {
-        std::lock_guard lock {mutex_};
-        license_state_.reset();
-        delete_license_state();
+        invalidate_license();
         return {
           LvhWindowsBrokerStatusCode::license_invalid,
           "The license service did not validate this machine activation.",
@@ -1533,9 +2185,7 @@ namespace lvh::detail::windows_broker_service {
         const auto error = new_state.license_status == "disabled" ?
                              "License disabled." :
                              "License revoked.";
-        std::lock_guard lock {mutex_};
-        license_state_.reset();
-        delete_license_state();
+        invalidate_license();
         return {
           LvhWindowsBrokerStatusCode::license_invalid,
           error,
@@ -1543,16 +2193,30 @@ namespace lvh::detail::windows_broker_service {
       }
 
       if (!license_allowed(new_state)) {
-        std::lock_guard lock {mutex_};
-        license_state_.reset();
-        delete_license_state();
+        invalidate_license();
         return {
           LvhWindowsBrokerStatusCode::license_invalid,
           "License organization or benefit is not allowed for this driver.",
         };
       }
 
+      std::string authorization_error;
+      if (const auto authorization_result = accept_trusted_license_time(new_state, api_result.server_time, authorization_error); authorization_result != TrustedLicenseTimeResult::success) {
+        if (authorization_result == TrustedLicenseTimeResult::license_invalid) {
+          invalidate_license();
+        } else {
+          mark_license_validation_unavailable();
+        }
+        return {
+          authorization_result == TrustedLicenseTimeResult::license_invalid ?
+            LvhWindowsBrokerStatusCode::license_invalid :
+            LvhWindowsBrokerStatusCode::backend_failure,
+          authorization_error,
+        };
+      }
+
       if (std::string save_error; !save_license_state(new_state, save_error)) {
+        mark_license_validation_unavailable();
         return {
           LvhWindowsBrokerStatusCode::backend_failure,
           save_error,
@@ -1562,6 +2226,8 @@ namespace lvh::detail::windows_broker_service {
       {
         std::lock_guard lock {mutex_};
         license_state_ = std::move(new_state);
+        license_online_confirmed_ = true;
+        license_validation_unavailable_since_.reset();
       }
       return {
         LvhWindowsBrokerStatusCode::success,
@@ -1612,12 +2278,29 @@ namespace lvh::detail::windows_broker_service {
           );
           return {LvhWindowsBrokerStatusCode::success, true};
         }
-      }
 
-      const auto [status, message_text] = validate_saved_license();
-      fill_license_status(license);
-      copy_c_string(message, message_text);
-      return {status, false};
+        if (!license_allowed(*license_state_) || !license_time_is_current_locked()) {
+          fill_license_status_locked(license);
+          copy_c_string(message, license.message);
+          return {LvhWindowsBrokerStatusCode::license_invalid, false};
+        }
+
+        if (license_online_confirmed_) {
+          fill_license_status_locked(license);
+          copy_c_string(message, "License validated online.");
+          return {LvhWindowsBrokerStatusCode::success, false};
+        }
+
+        if (unvalidated_gamepad_creation_allowed(active_licensed_gamepad_count_locked())) {
+          fill_license_status_locked(license);
+          copy_c_string(message, "Polar validation is unavailable; one active gamepad is permitted.");
+          return {LvhWindowsBrokerStatusCode::success, false};
+        }
+
+        fill_license_status_locked(license);
+        copy_c_string(message, "Polar validation is unavailable; the one-gamepad fallback is already in use.");
+        return {LvhWindowsBrokerStatusCode::network_unavailable, false};
+      }
     }
 
     void fill_license_status_locked(LvhWindowsBrokerLicenseStatus &license) const {
@@ -1671,15 +2354,27 @@ namespace lvh::detail::windows_broker_service {
       if (!license_allowed(*license_state_)) {
         license.state = std::to_underlying(LvhWindowsBrokerLicenseState::invalid);
         copy_c_string(license.message, "License organization or benefit is not allowed for this driver.");
-      } else if (license_state_->license_status == "granted") {
-        license.state = std::to_underlying(LvhWindowsBrokerLicenseState::licensed);
-        copy_c_string(license.message, "Licensed.");
       } else if (license_state_->license_status == "disabled") {
         license.state = std::to_underlying(LvhWindowsBrokerLicenseState::disabled);
         copy_c_string(license.message, "License disabled.");
       } else if (license_state_->license_status == "revoked") {
         license.state = std::to_underlying(LvhWindowsBrokerLicenseState::invalid);
         copy_c_string(license.message, "License revoked.");
+      } else if (!license_time_is_current_locked()) {
+        license.state = std::to_underlying(LvhWindowsBrokerLicenseState::invalid);
+        if (!license_effective_timestamp_locked().has_value()) {
+          copy_c_string(license.message, "Reconnect to Polar after Windows restarts to verify the yearly expiration.");
+        } else {
+          copy_c_string(license.message, "The yearly license has expired.");
+        }
+      } else if (license_state_->license_status == "granted") {
+        license.state = std::to_underlying(LvhWindowsBrokerLicenseState::licensed);
+        copy_c_string(
+          license.message,
+          license_online_confirmed_ ?
+            "Licensed." :
+            "Polar validation unavailable; existing gamepads are retained for one hour and new creation is limited to one active gamepad."
+        );
       } else {
         license.state = std::to_underlying(LvhWindowsBrokerLicenseState::invalid);
         copy_c_string(license.message, "License is not granted.");
@@ -1687,13 +2382,22 @@ namespace lvh::detail::windows_broker_service {
     }
 
     mutable std::mutex mutex_;
+    std::mutex license_operation_mutex_;
+    std::condition_variable license_validation_wakeup_;
     const bool github_actions_ = lizardbyte::common::is_github_actions();
+    const std::string boot_session_marker_ {load_or_create_boot_session_marker()};
     std::map<std::uint64_t, DeviceRecord> devices_;
     DriverChannel driver_;
     std::optional<PolarLicenseState> license_state_ {load_license_state()};
+    std::optional<LicenseValidationClock::time_point> next_license_validation_attempt_;
+    std::optional<LicenseValidationClock::time_point> license_validation_unavailable_since_;
     std::optional<GitHubActionsEvaluationState> github_actions_evaluation_state_ {
       github_actions_ ? load_github_actions_evaluation_state() : std::nullopt
     };
+    bool license_online_confirmed_ = false;
+    bool revoke_licensed_devices_ = false;
+    bool driver_state_reconciled_ = false;
+    std::jthread license_validation_thread_;
   };
 
   BrokerState &broker_state() {

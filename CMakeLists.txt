@@ -60,6 +60,7 @@ set(LIBVIRTUALHID_USES_THREADS OFF)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set(LIBVIRTUALHID_USES_THREADS ON)
 endif()
+set(LIBVIRTUALHID_USES_XTEST OFF)
 
 #
 # Additional setup for coverage
@@ -71,7 +72,7 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME AND BUILD_TESTS AND NOT CMAKE_CXX_CO
 endif()
 
 set(LIBVIRTUALHID_USES_LIZARDBYTE_COMMON OFF)
-if(WIN32)
+if(WIN32 AND LIBVIRTUALHID_BUILD_WINDOWS_BROKER)
     set(LIBVIRTUALHID_USES_LIZARDBYTE_COMMON ON)
 endif()
 
@@ -80,7 +81,7 @@ if(LIBVIRTUALHID_USES_LIZARDBYTE_COMMON OR BUILD_TESTS)
         ${BUILD_TESTS}
         CACHE BOOL "Build lizardbyte-common GoogleTest support helpers" FORCE)
     set(LIZARDBYTE_COMMON_INSTALL
-        ${LIBVIRTUALHID_INSTALL}
+        OFF
         CACHE BOOL "Install lizardbyte-common targets and package configuration" FORCE)
     if(NOT TARGET lizardbyte::common)
         add_subdirectory(third-party/lizardbyte-common)
@@ -157,6 +158,18 @@ endif()
 # Package config
 #
 if(LIBVIRTUALHID_INSTALL)
+    set(LIBVIRTUALHID_CONFIG_DEPENDENCIES "")
+    if(LIBVIRTUALHID_USES_THREADS)
+        string(APPEND LIBVIRTUALHID_CONFIG_DEPENDENCIES
+          "find_dependency(Threads)\n"
+          "find_dependency(PkgConfig)\n"
+          "pkg_check_modules(LIBEVDEV REQUIRED IMPORTED_TARGET libevdev)\n")
+    endif()
+    if(LIBVIRTUALHID_USES_XTEST)
+        string(APPEND LIBVIRTUALHID_CONFIG_DEPENDENCIES
+          "find_dependency(X11 COMPONENTS Xtst)\n")
+    endif()
+
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE"
       DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/libvirtualhid"
       COMPONENT library)

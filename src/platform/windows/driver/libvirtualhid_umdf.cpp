@@ -479,6 +479,10 @@ namespace {
     return valid_header(request.version, request.size, sizeof(request));
   }
 
+  bool valid_reset_devices_request(const LvhWindowsResetDevicesRequest &request) {
+    return valid_header(request.version, request.size, sizeof(request));
+  }
+
   bool session_token_matches(const DeviceRecord &record, const LvhWindowsSessionToken &session_token) {
     return std::memcmp(record.session_token.bytes, session_token.bytes, sizeof(record.session_token.bytes)) == 0;
   }
@@ -920,6 +924,28 @@ namespace {
     complete_request(request, STATUS_SUCCESS);
   }
 
+  void handle_reset_devices_request(WDFDEVICE device, WDFREQUEST request) {
+    if (!request_is_authorized_broker_service(request)) {
+      complete_request(request, STATUS_ACCESS_DENIED);
+      return;
+    }
+
+    auto *reset_request = static_cast<LvhWindowsResetDevicesRequest *>(nullptr);
+    const auto status = retrieve_input_buffer(request, reset_request);
+    if (!NT_SUCCESS(status)) {
+      complete_request(request, status);
+      return;
+    }
+
+    if (!valid_reset_devices_request(*reset_request)) {
+      complete_request(request, STATUS_INVALID_PARAMETER);
+      return;
+    }
+
+    delete_vhf_devices_for_device(device);
+    complete_request(request, STATUS_SUCCESS);
+  }
+
   void handle_submit_input_report_request(WDFREQUEST request) {
     auto *submit_request = static_cast<LvhWindowsSubmitInputReportRequest *>(nullptr);
     const auto status = retrieve_input_buffer(request, submit_request);
@@ -1200,6 +1226,10 @@ void LvhEvtIoDeviceControl(
 
     case LVH_WINDOWS_IOCTL_READ_OUTPUT_REPORT:
       handle_read_output_report_request(request);
+      return;
+
+    case LVH_WINDOWS_IOCTL_RESET_DEVICES:
+      handle_reset_devices_request(WdfIoQueueGetDevice(queue), request);
       return;
 
     default:

@@ -6,6 +6,9 @@
 // local includes
 #include "fixtures/windows_backend_test_hooks.hpp"
 
+// lib includes
+#include <lizardbyte/common/env.h>
+
 #define create_platform_backend create_platform_backend_for_windows_backend_test_hooks
 #include "../../src/platform/windows/windows_backend.cpp"
 #undef create_platform_backend

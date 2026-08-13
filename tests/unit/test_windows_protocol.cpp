@@ -65,6 +65,7 @@ TEST(WindowsProtocolTest, ExposesStableProtocolConstants) {
   EXPECT_EQ(LVH_WINDOWS_IOCTL_DESTROY_DEVICE, 0x8000E004U);
   EXPECT_EQ(LVH_WINDOWS_IOCTL_SUBMIT_INPUT_REPORT, 0x8000E008U);
   EXPECT_EQ(LVH_WINDOWS_IOCTL_READ_OUTPUT_REPORT, 0x8000600CU);
+  EXPECT_EQ(LVH_WINDOWS_IOCTL_RESET_DEVICES, 0x8000E010U);
 
   EXPECT_EQ(sizeof(LvhWindowsGamepadHardwareIds), 14U);
   EXPECT_EQ(sizeof(LvhWindowsGamepadReportSizes), 24U);
@@ -72,6 +73,7 @@ TEST(WindowsProtocolTest, ExposesStableProtocolConstants) {
   EXPECT_EQ(sizeof(LvhWindowsSessionToken), 32U);
   EXPECT_EQ(sizeof(LvhWindowsCreateGamepadResponse), 316U);
   EXPECT_EQ(sizeof(LvhWindowsDestroyDeviceRequest), 48U);
+  EXPECT_EQ(sizeof(LvhWindowsResetDevicesRequest), 8U);
   EXPECT_EQ(sizeof(LvhWindowsSubmitInputReportRequest), 312U);
   EXPECT_EQ(sizeof(LvhWindowsOutputReportEvent), 280U);
 }
@@ -574,6 +576,10 @@ TEST(WindowsProtocolTest, PacksSubmitAndDestroyRequests) {
   EXPECT_EQ(destroy.driver_device_id, 17U);
   EXPECT_EQ(destroy.session_token.bytes[0], session_token.bytes[0]);
   EXPECT_EQ(destroy.session_token.bytes[LVH_WINDOWS_SESSION_TOKEN_SIZE - 1U], session_token.bytes[LVH_WINDOWS_SESSION_TOKEN_SIZE - 1U]);
+
+  const auto reset = lvh::detail::windows::make_reset_devices_request();
+  EXPECT_EQ(reset.version, LVH_WINDOWS_CONTROL_PROTOCOL_VERSION);
+  EXPECT_EQ(reset.size, sizeof(reset));
 }
 
 TEST(WindowsProtocolTest, CompatibilityRequestHelpersUseEmptySessionToken) {

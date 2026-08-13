@@ -187,6 +187,13 @@ namespace lvh::detail::windows {
     return make_destroy_device_request(driver_device_id, empty_session_token);
   }
 
+  inline LvhWindowsResetDevicesRequest make_reset_devices_request() {
+    LvhWindowsResetDevicesRequest request {};
+    request.version = LVH_WINDOWS_CONTROL_PROTOCOL_VERSION;
+    request.size = sizeof(request);
+    return request;
+  }
+
   inline LvhWindowsSubmitInputReportRequest make_submit_input_report_request(
     std::uint64_t driver_device_id,
     const LvhWindowsSessionToken &session_token,

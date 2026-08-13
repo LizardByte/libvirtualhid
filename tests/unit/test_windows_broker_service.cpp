@@ -362,6 +362,7 @@ TEST(WindowsBrokerImplementationTest, ReportsDpapiAndPolarFailures) {
   using enum lvh::detail::test::BrokerPolarScenario;
   for (const auto scenario : {
          open_failure,
+         timeout_configuration_failure,
          connect_failure,
          request_failure,
          send_failure,
@@ -387,7 +388,44 @@ TEST(WindowsBrokerImplementationTest, ReportsDpapiAndPolarFailures) {
   const auto succeeded = lvh::detail::test::broker_polar_scenario(success);
   EXPECT_TRUE(succeeded.transport_ok);
   EXPECT_EQ(succeeded.http_status, 200U);
+  EXPECT_TRUE(succeeded.server_time_available);
   EXPECT_TRUE(succeeded.error.empty());
+  EXPECT_TRUE(succeeded.timeouts_configured);
+  EXPECT_EQ(succeeded.resolve_timeout, 5000);
+  EXPECT_EQ(succeeded.connect_timeout, 5000);
+  EXPECT_EQ(succeeded.send_timeout, 5000);
+  EXPECT_EQ(succeeded.receive_timeout, 10000);
+}
+
+TEST(WindowsBrokerImplementationTest, EnforcesLimitedUnvalidatedFallback) {
+  const auto policy = lvh::detail::test::broker_license_fallback_policy();
+  EXPECT_TRUE(policy.before_boundary_is_current);
+  EXPECT_FALSE(policy.boundary_is_current);
+  EXPECT_TRUE(policy.lifetime_is_current);
+  EXPECT_TRUE(policy.same_boot_anchor_is_accepted);
+  EXPECT_TRUE(policy.changed_boot_anchor_is_rejected);
+  EXPECT_TRUE(policy.uptime_rollback_is_rejected);
+  EXPECT_TRUE(policy.first_unvalidated_gamepad_is_allowed);
+  EXPECT_TRUE(policy.second_unvalidated_gamepad_is_rejected);
+  EXPECT_TRUE(policy.existing_gamepads_are_retained_before_one_hour);
+  EXPECT_TRUE(policy.outage_limit_applies_at_one_hour);
+  EXPECT_TRUE(policy.first_gamepad_is_retained_after_one_hour);
+  EXPECT_TRUE(policy.excess_gamepad_is_revoked_after_one_hour);
+  EXPECT_TRUE(policy.evaluation_gamepad_is_not_outage_limited);
+  EXPECT_TRUE(policy.licensed_device_is_revoked);
+  EXPECT_TRUE(policy.evaluation_device_is_preserved);
+  EXPECT_TRUE(policy.monotonic_clock);
+  EXPECT_TRUE(policy.persisted_boot_anchor_round_trips);
+  EXPECT_EQ(policy.retry_interval_seconds, 60U);
+  EXPECT_EQ(policy.monotonic_timestamp, 1060U);
+}
+
+TEST(WindowsBrokerImplementationTest, RetainsFailedCleanupForRetry) {
+  const auto policy = lvh::detail::test::broker_cleanup_retry_policy();
+  EXPECT_TRUE(policy.failed_destruction_is_retained);
+  EXPECT_TRUE(policy.failed_destruction_is_retried);
+  EXPECT_TRUE(policy.successful_destruction_is_forgotten);
+  EXPECT_EQ(policy.destruction_attempts, 3U);
 }
 
 TEST(WindowsBrokerImplementationTest, ReportsFilePersistenceFailures) {
