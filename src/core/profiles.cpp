@@ -6,6 +6,7 @@
 // standard includes
 #include <cstddef>
 #include <cstdint>
+#include <initializer_list>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -88,6 +89,16 @@ namespace lvh::profiles {
         descriptor.push_back(std::to_integer<std::uint8_t>(byte));
       }
       return descriptor;
+    }
+
+    void append_descriptor_bytes(
+      std::vector<std::uint8_t> &descriptor,
+      std::initializer_list<std::uint8_t> bytes
+    ) {
+      descriptor.reserve(descriptor.size() + bytes.size());
+      for (const auto byte : bytes) {
+        descriptor.push_back(byte);
+      }
     }
 
     void append_common_gamepad_buttons(std::vector<std::uint8_t> &descriptor, bool include_misc_button) {
@@ -270,8 +281,8 @@ namespace lvh::profiles {
         report_id,  // Report ID
       };
       append_common_gamepad_buttons(descriptor, false);
-      descriptor.insert(
-        descriptor.end(),
+      append_descriptor_bytes(
+        descriptor,
         {
           0x05,
           0x01,  // Usage Page (Generic Desktop)
@@ -325,8 +336,8 @@ namespace lvh::profiles {
       );
 
       if (supports_rumble) {
-        descriptor.insert(
-          descriptor.end(),
+        append_descriptor_bytes(
+          descriptor,
           {
             0x06,
             0x00,
