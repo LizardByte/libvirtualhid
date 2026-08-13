@@ -501,16 +501,16 @@ jobs:
 
       # This intentionally uses a separate BUILD_TESTS=OFF configuration. Test
       # builds add lizardbyte-common for test support and therefore cannot prove
-      # that a normal installed package is independently consumable. Debug keeps
-      # this packaging regression isolated from the open optimized-GCC P2; switch
-      # this job to Release when that warning is resolved.
+      # that a normal installed package is independently consumable. Release also
+      # keeps an optimized GCC library build under warnings-as-errors without
+      # changing or publishing the ordinary library artifacts.
       - name: Configure tests-disabled package
         run: |
           cmake \
             -DBUILD_DOCS=OFF \
             -DBUILD_EXAMPLES=OFF \
             -DBUILD_TESTS=OFF \
-            -DCMAKE_BUILD_TYPE:STRING=Debug \
+            -DCMAKE_BUILD_TYPE:STRING=Release \
             -DCMAKE_INSTALL_PREFIX="${GITHUB_WORKSPACE}/cmake-build-package/install" \
             -DLIBVIRTUALHID_BUILD_TOOLS=OFF \
             -DLIBVIRTUALHID_ENABLE_PACKAGING=OFF \
