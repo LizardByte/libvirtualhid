@@ -17,6 +17,7 @@ namespace lvh::windows::broker_config {
   struct PolarBenefit {
     std::string_view id;
     std::string_view plan_name;
+    bool expiration_required;
   };
 
   // Polar's public license API identifies the organization and license-key benefit,
@@ -28,10 +29,12 @@ namespace lvh::windows::broker_config {
     PolarBenefit {
       .id = "eb316dac-bf6a-4359-95a2-86c299d48ecc",
       .plan_name = "Yearly",
+      .expiration_required = true,
     },
     PolarBenefit {
       .id = "157374cb-f526-4154-81ba-9f2c92a053ca",
       .plan_name = "Lifetime",
+      .expiration_required = false,
     },
   };
 

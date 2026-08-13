@@ -462,13 +462,6 @@ jobs:
       - name: Install
         run: cmake --install cmake-build-ci --config ${{ env.CMAKE_BUILD_CONFIG }} --prefix cmake-build-ci/install
 
-      - name: Upload install artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
-        with:
-          name: install-${{ matrix.name }}
-          path: cmake-build-ci/install
-          if-no-files-found: error
-
       - name: Upload report artifact
         if: >-
           always() &&
@@ -482,6 +475,67 @@ jobs:
           name: reports-${{ matrix.name }}
           path: cmake-build-ci/reports
           if-no-files-found: error
+
+  package_consumer:
+    name: Installed Package Consumer (Linux)
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          submodules: recursive
+
+      - name: Install package dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            libevdev-dev \
+            libx11-dev \
+            libxtst-dev \
+            ninja-build \
+            pkg-config
+
+      # This intentionally uses a separate BUILD_TESTS=OFF configuration. Test
+      # builds add lizardbyte-common for test support and therefore cannot prove
+      # that a normal installed package is independently consumable. Debug keeps
+      # this packaging regression isolated from the open optimized-GCC P2; switch
+      # this job to Release when that warning is resolved.
+      - name: Configure tests-disabled package
+        run: |
+          cmake \
+            -DBUILD_DOCS=OFF \
+            -DBUILD_EXAMPLES=OFF \
+            -DBUILD_TESTS=OFF \
+            -DCMAKE_BUILD_TYPE:STRING=Debug \
+            -DCMAKE_INSTALL_PREFIX="${GITHUB_WORKSPACE}/cmake-build-package/install" \
+            -DLIBVIRTUALHID_BUILD_TOOLS=OFF \
+            -DLIBVIRTUALHID_ENABLE_PACKAGING=OFF \
+            -B cmake-build-package \
+            -G Ninja \
+            -S .
+
+      - name: Build and install package
+        run: |
+          cmake --build cmake-build-package --parallel 2
+          cmake --install cmake-build-package
+          test ! -d cmake-build-package/install/lib/cmake/lizardbyte-common
+
+      # A separate CMake project and real symbol reference force find_package,
+      # imported-target generation, compilation, and the final static-library link.
+      - name: Configure, compile, and link downstream consumer
+        run: |
+          cmake \
+            -DCMAKE_FIND_USE_PACKAGE_REGISTRY=OFF \
+            -DCMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY=OFF \
+            -DCMAKE_PREFIX_PATH="${GITHUB_WORKSPACE}/cmake-build-package/install" \
+            -B cmake-build-package-consumer \
+            -G Ninja \
+            -S tests/package-consumer
+          cmake --build cmake-build-package-consumer --parallel 2
 
   windows_driver:
     name: Windows Driver Installer
@@ -759,65 +813,27 @@ jobs:
       always() &&
       needs.setup_release.outputs.publish_release == 'true' &&
       needs.build.result == 'success' &&
+      needs.package_consumer.result == 'success' &&
       needs.windows_driver.result == 'success' &&
       startsWith(github.repository, 'LizardByte/')
     needs:
       - build
+      - package_consumer
       - windows_driver
       - setup_release
     permissions:
       contents: read
     runs-on: ubuntu-latest
     steps:
-      - name: Download install artifact (Linux-GCC)
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
-        with:
-          name: install-Linux-GCC
-          path: install-Linux-GCC
-
-      - name: Download install artifact (Linux-Clang)
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
-        with:
-          name: install-Linux-Clang
-          path: install-Linux-Clang
-
-      - name: Download install artifact (macOS)
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
-        with:
-          name: install-macOS
-          path: install-macOS
-
-      - name: Download install artifact (Windows-MinGW-UCRT64)
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
-        with:
-          name: install-Windows-MinGW-UCRT64
-          path: install-Windows-MinGW-UCRT64
-
-      - name: Download install artifact (Windows-MSVC)
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
-        with:
-          name: install-Windows-MSVC
-          path: install-Windows-MSVC
-
       - name: Download Windows driver installer artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with:
           name: windows-driver-installer
           path: windows-driver-installer
 
-      - name: Package install artifacts
+      - name: Prepare release artifact
         run: |
           mkdir -p artifacts
-          for name in Linux-GCC Linux-Clang macOS Windows-MinGW-UCRT64 Windows-MSVC; do
-            release_name="${name}"
-            case "${name}" in
-              Windows-MinGW-UCRT64) release_name="Windows-AMD64-MinGW-UCRT64" ;;
-              Windows-MSVC) release_name="Windows-AMD64-MSVC" ;;
-            esac
-            zip -r \
-              "artifacts/libvirtualhid-${release_name}.zip" \
-              "install-${name}"
-          done
           cp windows-driver-installer/*.msi artifacts/
 
       - name: Validate release metadata
@@ -829,12 +845,7 @@ jobs:
           test -n "${RELEASE_TAG}"
           test -n "${RELEASE_VERSION}"
           test "${RELEASE_COMMIT}" = "${GITHUB_SHA}"
-          test -s "artifacts/libvirtualhid-Linux-GCC.zip"
-          test -s "artifacts/libvirtualhid-Linux-Clang.zip"
-          test -s "artifacts/libvirtualhid-macOS.zip"
           test -s "artifacts/libvirtualhid-Windows-AMD64-driver-installer.msi"
-          test -s "artifacts/libvirtualhid-Windows-AMD64-MinGW-UCRT64.zip"
-          test -s "artifacts/libvirtualhid-Windows-AMD64-MSVC.zip"
 
       - name: Create/Update GitHub Release
         if: needs.setup_release.outputs.publish_release == 'true'

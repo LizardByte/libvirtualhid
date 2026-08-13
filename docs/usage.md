@@ -106,10 +106,23 @@ normalized gamepad output such as rumble, RGB LED, adaptive trigger, trigger
 rumble, and raw report events delivered through the normal callback path. Button
 controls are momentary by default, so they behave like physical gamepad buttons;
 on Windows, the UI also displays broker license status and can activate,
-refresh, or deactivate a machine license without elevation. Every Windows UMDF
-gamepad creation requires a current successful license validation response and
-there is no offline grace period. Purchase and account-management buttons use
-the compiled URLs in
+refresh, or deactivate a machine license without elevation. Windows UMDF
+gamepad creation requires a current machine authorization, but does not perform
+an online request per controller. The broker validates in the background at
+startup and once per day. If Polar cannot be reached, it retries every 60
+seconds. Existing gamepads are retained for one hour, but a new gamepad can be
+created only when no licensed gamepad is active. When the outage reaches one
+hour, the broker removes excess licensed gamepads and retains at most one.
+If the broker service restarts, it removes gamepads left by the previous broker
+instance before accepting new creation requests. Failed removals are retried.
+Yearly licenses stop at their exact `expires_at`; this outage behavior never
+extends expiration. Lifetime licenses have no expiration. Polar server time,
+Windows uptime, and a per-boot marker track time without relying on the
+user-adjustable Windows date. After Windows restarts, a yearly license must
+reconnect to Polar before gamepad creation; lifetime licenses can use the
+one-gamepad outage fallback. A confirmed missing, revoked, disabled, expired, or
+mismatched entitlement invalidates the license and removes all licensed gamepads. Purchase and
+account-management buttons use the compiled URLs in
 `src/platform/windows/shared/lvh_windows_broker_config.hpp`.
 Enable `Lock buttons` to click-to-toggle behavior for held inputs.
 The resizable window supports a compact width. Its device and control panels

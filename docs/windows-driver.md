@@ -68,14 +68,15 @@ submit/destroy requests include that token so stale or unrelated clients cannot
 control devices they did not create. Input reports are submitted through VHF,
 and HID output writes are normalized back to the C++ output callback path.
 
-The driver rejects gamepad create and destroy IOCTLs unless the requestor token
-contains the `NT SERVICE\libvirtualhid_broker` service SID. On the first boot
-after installation, before Windows applies a newly configured service SID to
-the process token, the driver instead requires the requestor PID to match the
-SCM-registered, currently running broker service. Administrators still control
-installation, repair, replacement, and service diagnostics through the normal
-Windows service and driver-management tools, but they are not a separate runtime
-bypass for creating or destroying virtual devices.
+The driver rejects gamepad create, destroy, and broker-instance reset IOCTLs
+unless the requestor token contains the `NT SERVICE\libvirtualhid_broker`
+service SID. On the first boot after installation, before Windows applies a
+newly configured service SID to the process token, the driver instead requires
+the requestor PID to match the SCM-registered, currently running broker service.
+Administrators still control installation, repair, replacement, and service
+diagnostics through the normal Windows service and driver-management tools, but
+they are not a separate runtime bypass for creating or destroying virtual
+devices.
 
 The library and installed driver must use the same control-protocol version.
 Protocol version 2 expands the report-descriptor capacity to 2048 bytes for the
@@ -94,7 +95,10 @@ parents that target to the control-file handle that created it. If the creating
 process exits or crashes, Windows cleans up gamepads that were not explicitly
 destroyed. In brokered driver packages, the broker owns that control-file handle.
 The broker tracks the requesting client process for each created device and
-destroys broker-owned devices when that client process exits unexpectedly.
+destroys broker-owned devices when that client process exits unexpectedly. A new
+broker process first asks the driver to remove every gamepad left by the previous
+broker instance and refuses new creation until that reset succeeds. Clients must
+recreate their gamepads after the broker service restarts.
 
 The backend reports `requires_installed_driver = true` and only advertises
 gamepad/output-report support when the broker is reachable and the control
@@ -276,8 +280,29 @@ opens the shared persistent Polar Checkout Link. Account management opens the
 [LizardByte LLC Polar customer portal](https://polar.sh/lizardbyte-llc/portal),
 where customers can manage their five allowed machine activations.
 
-Normal Windows UMDF gamepad creation requires a current successful license
-validation response before the broker calls the driver. The sole exception is
+Normal Windows UMDF gamepad creation requires a current machine authorization,
+but controller creation itself does not contact Polar. The broker validates the
+saved activation immediately after service startup and then once per day in the
+background. If validation cannot complete because of a temporary network or
+provider failure, the broker retries every 60 seconds. Controllers that already
+exist are retained for one hour unless the broker service restarts, but no
+additional controller can be created while at least one licensed controller
+remains active. When the outage reaches one hour, the broker removes excess
+licensed controllers and retains at most one until online validation succeeds.
+Failed driver destruction requests remain tracked and are retried instead of
+being treated as successful revocations.
+
+Polar's HTTPS `Date` response header supplies trusted time when a new
+authorization is issued. A yearly license ends exactly at its reported
+`expires_at`; the one-hour outage retention does not extend that expiration. A
+lifetime license has no calendar expiration. The broker advances Polar's trusted
+timestamp using Windows uptime and stores a random marker in a volatile registry
+key for the current boot session. This works across broker service restarts and
+includes sleep or hibernation, but never consults the user-adjustable Windows
+date. After Windows restarts, the marker changes, so a yearly license must
+reconnect to Polar before gamepad creation; lifetime licenses can use the
+one-gamepad outage fallback. Explicit validation requests always contact the
+provider. The sole exception to normal licensing is
 for CI runners where the broker service itself has the `GITHUB_ACTIONS`
 environment marker. That environment receives one machine-scoped five-minute
 evaluation window beginning with its first unlicensed creation attempt. The
@@ -290,7 +315,13 @@ Polar's `limit_activations` value is the machine limit and is configured as `5`
 on both license-key benefits. The broker gives yearly and lifetime licenses the
 same full local access when the provider reports the key status as `granted`. Polar
 revokes a subscription benefit when its entitlement ends. Licensed access has
-no local active-device cap, and there is no production offline grace period.
+no local active-device cap after successful validation. A definitive missing
+activation, revoked or disabled key, activation mismatch, disallowed benefit,
+explicit deactivation, or exact yearly expiration prevents new gamepads and
+causes the broker to destroy existing licensed gamepads. A timeout or other
+transient provider failure starts the one-hour retention period and one-gamepad
+creation limit instead of immediately revoking existing controllers. WinHTTP resolve, connect, send, and receive
+operations have explicit timeouts of 5, 5, 5, and 10 seconds respectively.
 
 ## Profile Compatibility
 
@@ -338,8 +369,10 @@ label because VHF does not provide a product/manufacturer string callback.
 - The published Windows driver installer is AMD64-only. Windows ARM64 release
   packages require a Microsoft dashboard signing path that is not part of the
   current Azure Trusted Signing workflow.
-- Every production gamepad creation requires a successful online license
-  validation response. There is no offline grace period.
+- A temporary Polar outage limits a previously activated machine to one active
+  licensed gamepad until validation succeeds. Yearly licenses receive no
+  post-expiration grace. Definitive invalidation or exact expiration prevents
+  new gamepads and removes active licensed gamepads.
 
 ## Signing
 

@@ -43,6 +43,11 @@ namespace {
     HANDLE persistence_file = INVALID_HANDLE_VALUE;
     BrokerPolarScenario polar_scenario = BrokerPolarScenario::success;
     std::size_t polar_body_offset = 0;
+    bool timeouts_configured = false;
+    int resolve_timeout = 0;
+    int connect_timeout = 0;
+    int send_timeout = 0;
+    int receive_timeout = 0;
   };
 
   BrokerServiceTestState &broker_service_test_state() {
@@ -241,6 +246,26 @@ namespace {
     return &connection;
   }
 
+  BOOL WINAPI broker_test_win_http_set_timeouts(
+    HINTERNET,
+    int resolve_timeout,
+    int connect_timeout,
+    int send_timeout,
+    int receive_timeout
+  ) {
+    auto &state = broker_service_test_state();
+    state.timeouts_configured = true;
+    state.resolve_timeout = resolve_timeout;
+    state.connect_timeout = connect_timeout;
+    state.send_timeout = send_timeout;
+    state.receive_timeout = receive_timeout;
+    if (state.polar_scenario == BrokerPolarScenario::timeout_configuration_failure) {
+      ::SetLastError(ERROR_INVALID_PARAMETER);
+      return FALSE;
+    }
+    return TRUE;
+  }
+
   HINTERNET WINAPI broker_test_win_http_open_request(
     HINTERNET,
     LPCWSTR,
@@ -284,12 +309,26 @@ namespace {
 
   BOOL WINAPI broker_test_win_http_query_headers(
     HINTERNET,
-    DWORD,
+    DWORD info_level,
     LPCWSTR,
     std::byte *buffer,
     LPDWORD buffer_length,
     LPDWORD
   ) {
+    if ((info_level & 0xFFFFU) == WINHTTP_QUERY_DATE) {
+      if (buffer == nullptr || buffer_length == nullptr || *buffer_length < sizeof(SYSTEMTIME)) {
+        ::SetLastError(ERROR_INSUFFICIENT_BUFFER);
+        return FALSE;
+      }
+      const SYSTEMTIME server_time {
+        .wYear = 2026,
+        .wMonth = 1,
+        .wDay = 1,
+      };
+      std::memcpy(buffer, &server_time, sizeof(server_time));
+      *buffer_length = sizeof(server_time);
+      return TRUE;
+    }
     if (buffer == nullptr || buffer_length == nullptr || *buffer_length < sizeof(DWORD)) {
       ::SetLastError(ERROR_INSUFFICIENT_BUFFER);
       return FALSE;
@@ -360,6 +399,7 @@ namespace {
   broker_test_win_http_receive_response(request, static_cast<std::byte *>(static_cast<void *>(reserved)))
 #define WinHttpSendRequest(request, headers, headers_length, optional, optional_length, total_length, context) \
   broker_test_win_http_send_request(request, headers, headers_length, static_cast<std::byte *>(static_cast<void *>(optional)), optional_length, total_length, context)
+#define WinHttpSetTimeouts broker_test_win_http_set_timeouts
 #define WriteFile(file, buffer, bytes_to_write, bytes_written, overlapped) \
   broker_test_write_file(file, static_cast<const std::byte *>(static_cast<const void *>(buffer)), bytes_to_write, bytes_written, overlapped)
 #define main libvirtualhid_broker_test_main
@@ -380,6 +420,7 @@ namespace {
 #undef WinHttpReadData
 #undef WinHttpReceiveResponse
 #undef WinHttpSendRequest
+#undef WinHttpSetTimeouts
 #undef WriteFile
 #undef main
 
@@ -417,8 +458,14 @@ namespace lvh::detail::test {
   }
 
   BrokerPolarResult broker_polar_scenario(BrokerPolarScenario scenario) {
-    broker_service_test_state().polar_scenario = scenario;
-    broker_service_test_state().polar_body_offset = 0;
+    auto &state = broker_service_test_state();
+    state.polar_scenario = scenario;
+    state.polar_body_offset = 0;
+    state.timeouts_configured = false;
+    state.resolve_timeout = 0;
+    state.connect_timeout = 0;
+    state.send_timeout = 0;
+    state.receive_timeout = 0;
     const auto result =
       lvh::detail::windows_broker_service::post_polar_license_request(
         L"/test",
@@ -427,8 +474,137 @@ namespace lvh::detail::test {
     return {
       .transport_ok = result.transport_ok,
       .http_status = result.http_status,
+      .server_time_available = result.server_time.has_value(),
+      .timeouts_configured = state.timeouts_configured,
+      .resolve_timeout = state.resolve_timeout,
+      .connect_timeout = state.connect_timeout,
+      .send_timeout = state.send_timeout,
+      .receive_timeout = state.receive_timeout,
       .body = result.body,
       .error = result.error,
+    };
+  }
+
+  BrokerLicenseFallbackResult broker_license_fallback_policy() {
+    using namespace lvh::detail::windows_broker_service;
+    const auto expiration = parse_rfc3339_timestamp("2026-01-03T00:00:00Z");
+    const auto expiration_timestamp = license_calendar_timestamp(*expiration);
+    PolarLicenseState persisted_state {
+      .provider = "polar",
+      .validated_at = 12345U,
+      .boot_marker = "test-boot-marker",
+      .validated_uptime_ms = 6789U,
+    };
+    const auto restored_state = deserialize_license_state(
+      serialize_license_state(persisted_state)
+    );
+    const auto monotonic_timestamp = license_monotonic_calendar_timestamp(
+      1000U,
+      5000U,
+      65000U,
+      true
+    );
+    const auto changed_boot_timestamp = license_monotonic_calendar_timestamp(
+      1000U,
+      5000U,
+      65000U,
+      false
+    );
+    const auto uptime_rollback_timestamp = license_monotonic_calendar_timestamp(
+      1000U,
+      65000U,
+      5000U,
+      true
+    );
+    return {
+      .before_boundary_is_current = license_expiration_is_current(
+        "2026-01-03T00:00:00Z",
+        true,
+        expiration_timestamp - 1U
+      ),
+      .boundary_is_current = license_expiration_is_current(
+        "2026-01-03T00:00:00Z",
+        true,
+        expiration_timestamp
+      ),
+      .lifetime_is_current = license_expiration_is_current({}, false, 0U),
+      .same_boot_anchor_is_accepted = monotonic_timestamp.has_value(),
+      .changed_boot_anchor_is_rejected = !changed_boot_timestamp.has_value(),
+      .uptime_rollback_is_rejected = !uptime_rollback_timestamp.has_value(),
+      .first_unvalidated_gamepad_is_allowed = unvalidated_gamepad_creation_allowed(0U),
+      .second_unvalidated_gamepad_is_rejected = !unvalidated_gamepad_creation_allowed(1U),
+      .existing_gamepads_are_retained_before_one_hour =
+        !license_outage_retention_elapsed(
+          license_outage_device_retention - std::chrono::milliseconds {1}
+        ),
+      .outage_limit_applies_at_one_hour = license_outage_retention_elapsed(
+        license_outage_device_retention
+      ),
+      .first_gamepad_is_retained_after_one_hour =
+        !license_outage_gamepad_should_be_revoked(false, true, 0U),
+      .excess_gamepad_is_revoked_after_one_hour =
+        license_outage_gamepad_should_be_revoked(false, true, 1U),
+      .evaluation_gamepad_is_not_outage_limited =
+        !license_outage_gamepad_should_be_revoked(true, true, 1U),
+      .licensed_device_is_revoked = broker_device_should_be_revoked(
+        false,
+        false,
+        true
+      ),
+      .evaluation_device_is_preserved = !broker_device_should_be_revoked(
+        true,
+        false,
+        true
+      ),
+      .monotonic_clock = LicenseValidationClock::is_steady,
+      .persisted_boot_anchor_round_trips =
+        restored_state.validated_at == persisted_state.validated_at &&
+        restored_state.boot_marker == persisted_state.boot_marker &&
+        restored_state.validated_uptime_ms == persisted_state.validated_uptime_ms,
+      .retry_interval_seconds = static_cast<std::uint64_t>(
+        license_validation_retry_interval.count()
+      ),
+      .monotonic_timestamp = monotonic_timestamp.value_or(0U),
+    };
+  }
+
+  BrokerCleanupRetryResult broker_cleanup_retry_policy() {
+    using namespace lvh::detail::windows_broker_service;
+    std::vector<std::uint64_t> tracked_devices {1U, 2U};
+    std::array<LvhWindowsDestroyDeviceRequest, 2> requests {
+      make_destroy_device_request(1U, {}),
+      make_destroy_device_request(2U, {}),
+    };
+    auto attempts = std::uint32_t {};
+
+    destroy_cleanup_candidates(
+      requests,
+      [&attempts](const auto &request) {
+        ++attempts;
+        return request.driver_device_id == 2U;
+      },
+      [&tracked_devices](const auto &request) {
+        std::erase(tracked_devices, request.driver_device_id);
+      }
+    );
+
+    const auto failed_destruction_is_retained = std::ranges::contains(tracked_devices, 1U);
+    destroy_cleanup_candidates(
+      std::span {requests}.first(1U),
+      [&attempts](const auto &) {
+        ++attempts;
+        return true;
+      },
+      [&tracked_devices](const auto &request) {
+        std::erase(tracked_devices, request.driver_device_id);
+      }
+    );
+
+    return {
+      .failed_destruction_is_retained = failed_destruction_is_retained,
+      .failed_destruction_is_retried = !std::ranges::contains(tracked_devices, 1U),
+      .successful_destruction_is_forgotten = !std::ranges::contains(tracked_devices, 2U),
+      .destruction_attempts = attempts,
     };
   }
 
