@@ -29,6 +29,9 @@ namespace {
     DWORD last_error = ERROR_ACCESS_DENIED;
     std::uint32_t closed_pipe_handles = 0;
     std::uint32_t closed_service_handles = 0;
+    std::uint32_t create_attempts = 0;
+    std::uint32_t sleep_attempts = 0;
+    std::uint32_t wait_attempts = 0;
     bool transacted = false;
   };
 
@@ -75,11 +78,48 @@ namespace {
     DWORD,
     HANDLE
   ) {
+    using enum lvh::detail::test::BrokerServiceScenario;
+
+    ++fake_state().create_attempts;
+    const auto scenario = fake_state().scenario;
+    if ((scenario == pipe_unavailable_once && fake_state().create_attempts == 1U) || scenario == pipe_never_available) {
+      fake_state().last_error = ERROR_FILE_NOT_FOUND;
+      return INVALID_HANDLE_VALUE;
+    }
+    if (scenario == pipe_access_denied) {
+      fake_state().last_error = ERROR_ACCESS_DENIED;
+      return INVALID_HANDLE_VALUE;
+    }
+    if (fake_state().create_attempts == 1U && (scenario == pipe_busy_once || scenario == pipe_busy_timeout_once || scenario == pipe_busy_disappears_once || scenario == pipe_busy_failure)) {
+      fake_state().last_error = ERROR_PIPE_BUSY;
+      return INVALID_HANDLE_VALUE;
+    }
     return fake_pipe_handle();
   }
 
+  void WINAPI fake_sleep(DWORD) {
+    ++fake_state().sleep_attempts;
+    // The deterministic retry test must not wait in real time.
+  }
+
   BOOL WINAPI fake_wait_named_pipe_a(LPCSTR, DWORD) {
-    return FALSE;
+    using enum lvh::detail::test::BrokerServiceScenario;
+
+    ++fake_state().wait_attempts;
+    switch (fake_state().scenario) {
+      case pipe_busy_once:
+        return TRUE;
+      case pipe_busy_timeout_once:
+        fake_state().last_error = ERROR_SEM_TIMEOUT;
+        return FALSE;
+      case pipe_busy_disappears_once:
+        fake_state().last_error = ERROR_FILE_NOT_FOUND;
+        return FALSE;
+      case pipe_busy_failure:
+      default:
+        fake_state().last_error = ERROR_ACCESS_DENIED;
+        return FALSE;
+    }
   }
 
   BOOL WINAPI fake_get_named_pipe_server_process_id(HANDLE, PULONG process_id) {
@@ -158,6 +198,7 @@ namespace {
 #define OpenServiceW fake_open_service
 #define QueryServiceStatusEx fake_query_service_status
 #define SetNamedPipeHandleState fake_set_named_pipe_handle_state
+#define Sleep fake_sleep
 #define TransactNamedPipe fake_transact_named_pipe
 #define WaitNamedPipeA fake_wait_named_pipe_a
 #define call_bytes call_bytes_for_windows_broker_client_test_hooks
@@ -173,6 +214,7 @@ namespace {
 #undef OpenServiceW
 #undef QueryServiceStatusEx
 #undef SetNamedPipeHandleState
+#undef Sleep
 #undef TransactNamedPipe
 #undef WaitNamedPipeA
 #undef call_bytes
@@ -200,6 +242,9 @@ namespace lvh::detail::test {
       .status = std::move(status),
       .closed_pipe_handles = fake_state().closed_pipe_handles,
       .closed_service_handles = fake_state().closed_service_handles,
+      .create_attempts = fake_state().create_attempts,
+      .sleep_attempts = fake_state().sleep_attempts,
+      .wait_attempts = fake_state().wait_attempts,
       .transacted = fake_state().transacted,
     };
   }

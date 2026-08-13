@@ -159,8 +159,13 @@ with a service SID. The service `ImagePath` is stored as a literal quoted path,
 and installation fails if the registry value is not safely quoted. This avoids
 CWE-428 unquoted-service-path escalation when the install root contains spaces.
 The install helper also clears any legacy broker service `Environment` value so
-licensing configuration cannot be overridden on the user's machine. The uninstall
-helper stops and deletes that service before removing the driver package.
+licensing configuration cannot be overridden on the user's machine. The
+uninstall helper stops and deletes that service before removing the driver
+package. It discovers staged OEM INF names through language-neutral DISM and
+CIM objects instead of parsing localized `pnputil` labels. Uninstall fails if a
+command fails or if the broker service, root device, or staged driver package
+is still present after cleanup, so the MSI cannot silently report a complete
+removal while driver state remains.
 
 The installed-driver test fails if the root device is not started, if
 `\\.\LibVirtualHid` cannot be opened, or if a held `gamepad_adapter` instance
@@ -321,6 +326,20 @@ do not alter the public platform-neutral profile API.
 
 Consumers that display raw HID strings may still show the Windows VHF product
 label because VHF does not provide a product/manufacturer string callback.
+
+### Current Release Limits
+
+- Steam does not expose the Xbox Series Share button from the VHF child through
+  the same Xbox HIDAPI path used by physical controllers. Supporting that path
+  requires a non-VHF Xbox HIDAPI/GIP transport.
+- PlayStation and Nintendo rumble parsing is covered by protocol and installed
+  driver tests, but has not yet completed broad validation with real client
+  applications.
+- The published Windows driver installer is AMD64-only. Windows ARM64 release
+  packages require a Microsoft dashboard signing path that is not part of the
+  current Azure Trusted Signing workflow.
+- Every production gamepad creation requires a successful online license
+  validation response. There is no offline grace period.
 
 ## Signing
 

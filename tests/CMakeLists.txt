@@ -53,12 +53,20 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         find_package(X11 QUIET)
     endif()
 elseif(WIN32)
+    if(NOT TARGET nlohmann_json::nlohmann_json)
+        include("${PROJECT_SOURCE_DIR}/cmake/cpm/CPM.cmake")
+        CPMUsePackageLock("${PROJECT_SOURCE_DIR}/package-lock.cmake")
+        CPMGetPackage(nlohmann_json)
+    endif()
+
     list(APPEND LIBVIRTUALHID_TEST_SOURCES
          "${PROJECT_SOURCE_DIR}/src/platform/windows/driver/rotating_trace_log.cpp"
          "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/windows_broker_client_test_hooks.cpp"
+         "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/windows_broker_service_test_hooks.cpp"
          "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/windows_backend_test_hooks.cpp"
          "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_windows_backend.cpp"
          "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_windows_broker_client.cpp"
+         "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_windows_broker_service.cpp"
          "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_windows_consumers.cpp"
          "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_windows_driver_protocol.cpp"
          "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_windows_rotating_trace_log.cpp")
@@ -107,12 +115,19 @@ elseif(WIN32)
     target_compile_definitions(${TEST_BINARY}
       PRIVATE
       LIBVIRTUALHID_TEST_BINARY_DIR="${CMAKE_CURRENT_BINARY_DIR}")
+    if(MSVC)
+        target_compile_options(${TEST_BINARY} PRIVATE /EHsc)
+    endif()
     target_link_libraries(${TEST_BINARY}
       PRIVATE
+      nlohmann_json::nlohmann_json
+      advapi32
+      crypt32
       dinput8
       dxguid
       hid
-      setupapi)
+      setupapi
+      winhttp)
 endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND LIBVIRTUALHID_ENABLE_XTEST AND X11_FOUND AND X11_XTest_FOUND)

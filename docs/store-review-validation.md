@@ -60,7 +60,7 @@ Expected result:
 ## Manual Review Steps
 
 1. Install the released, production-signed
-   `libvirtualhid-Windows-Driver-installer.msi`.
+   `libvirtualhid-Windows-AMD64-driver-installer.msi`.
 2. Reboot only if Windows reports that a reboot is required.
 3. Open PowerShell.
 4. Run the required validation tool from the submission notes.

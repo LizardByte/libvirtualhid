@@ -118,6 +118,17 @@ The library is designed around gamepad use first because remote streaming hosts
 are the first consumer class. Non-gamepad device types are available through the
 same API where the backend exposes them.
 
+## ⚠️ Known Windows Limitations
+
+- Steam does not expose the Xbox Series Share button from the VHF child through
+  the same Xbox HIDAPI path used by physical controllers. That path requires a
+  non-VHF Xbox HIDAPI/GIP transport.
+- PlayStation and Nintendo rumble parsing is covered by protocol and installed
+  driver tests but has not yet completed broad validation with real client
+  applications.
+- The published Windows driver installer is AMD64-only. Windows ARM64 release
+  packages require a different Microsoft driver-signing path.
+
 ## 🔁 Alternatives
 
 Alternatives exist if `libvirtualhid` does not meet your needs.

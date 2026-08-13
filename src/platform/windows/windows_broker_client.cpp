@@ -40,6 +40,7 @@ namespace lvh::detail::windows_broker {
     constexpr auto broker_service_name = L"libvirtualhid_broker";
     constexpr auto pipe_client_access = GENERIC_READ | FILE_WRITE_DATA | FILE_WRITE_ATTRIBUTES;
     constexpr auto pipe_client_granted_access = FILE_GENERIC_READ | FILE_WRITE_DATA | FILE_WRITE_ATTRIBUTES;
+    constexpr auto pipe_retry_interval = 10U;
     constexpr auto pipe_wait_timeout = 5000U;
 
     static_assert(pipe_client_access == 0x80000102U);
@@ -51,6 +52,52 @@ namespace lvh::detail::windows_broker {
         handle = nullptr;
       }
       return {handle, &::CloseHandle};
+    }
+
+    static HANDLE open_broker_pipe() {
+      return ::CreateFileA(
+        LVH_WINDOWS_BROKER_PIPE_PATH,
+        pipe_client_access,
+        0,
+        nullptr,
+        OPEN_EXISTING,
+        0,
+        nullptr
+      );
+    }
+
+    static bool wait_to_retry_broker_pipe(DWORD &last_error) {
+      if (last_error == ERROR_FILE_NOT_FOUND) {
+        ::Sleep(pipe_retry_interval);
+        return true;
+      }
+      if (last_error != ERROR_PIPE_BUSY) {
+        return false;
+      }
+      if (::WaitNamedPipeA(LVH_WINDOWS_BROKER_PIPE_PATH, pipe_retry_interval) != FALSE) {
+        return true;
+      }
+
+      last_error = ::GetLastError();
+      return last_error == ERROR_SEM_TIMEOUT || last_error == ERROR_FILE_NOT_FOUND;
+    }
+
+    static UniqueHandle connect_to_broker_pipe() {
+      DWORD last_error = ERROR_FILE_NOT_FOUND;
+      for (auto attempt = 0U; attempt < pipe_wait_timeout / pipe_retry_interval; ++attempt) {
+        if (HANDLE pipe = open_broker_pipe(); pipe != INVALID_HANDLE_VALUE) {
+          return make_unique_handle(pipe);
+        }
+
+        last_error = ::GetLastError();
+        if (!wait_to_retry_broker_pipe(last_error)) {
+          ::SetLastError(last_error);
+          return make_unique_handle(INVALID_HANDLE_VALUE);
+        }
+      }
+
+      ::SetLastError(last_error);
+      return make_unique_handle(INVALID_HANDLE_VALUE);
     }
 
     static UniqueServiceHandle make_unique_service_handle(SC_HANDLE handle) {
@@ -176,30 +223,7 @@ namespace lvh::detail::windows_broker {
     std::span<std::byte> response,
     std::string_view operation
   ) {
-    auto pipe = windows_broker_client_implementation::make_unique_handle(
-      ::CreateFileA(
-        LVH_WINDOWS_BROKER_PIPE_PATH,
-        windows_broker_client_implementation::pipe_client_access,
-        0,
-        nullptr,
-        OPEN_EXISTING,
-        0,
-        nullptr
-      )
-    );
-    if (!pipe && ::GetLastError() == ERROR_PIPE_BUSY && ::WaitNamedPipeA(LVH_WINDOWS_BROKER_PIPE_PATH, windows_broker_client_implementation::pipe_wait_timeout) != FALSE) {
-      pipe = windows_broker_client_implementation::make_unique_handle(
-        ::CreateFileA(
-          LVH_WINDOWS_BROKER_PIPE_PATH,
-          windows_broker_client_implementation::pipe_client_access,
-          0,
-          nullptr,
-          OPEN_EXISTING,
-          0,
-          nullptr
-        )
-      );
-    }
+    auto pipe = windows_broker_client_implementation::connect_to_broker_pipe();
     if (!pipe) {
       return OperationStatus::failure(
         ErrorCode::backend_unavailable,
