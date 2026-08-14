@@ -6,6 +6,7 @@
 
 // standard includes
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -94,24 +95,24 @@ namespace lvh::detail::windows {
   }
 
   template<std::size_t Size>
-  std::uint32_t copy_string(char (&target)[Size], std::string_view source) {
+  std::uint32_t copy_string(std::array<char, Size> &target, std::string_view source) {
     std::ranges::fill(target, '\0');
 
     const auto copied = std::min(source.size(), Size - 1U);
     if (copied > 0U) {
-      std::memcpy(target, source.data(), copied);
+      std::memcpy(target.data(), source.data(), copied);
     }
 
     return static_cast<std::uint32_t>(copied);
   }
 
   template<std::size_t Size>
-  std::uint32_t copy_bytes(std::uint8_t (&target)[Size], const std::vector<std::uint8_t> &source) {
+  std::uint32_t copy_bytes(std::array<std::uint8_t, Size> &target, const std::vector<std::uint8_t> &source) {
     std::ranges::fill(target, std::uint8_t {});
 
     const auto copied = std::min(source.size(), Size);
     if (copied > 0U) {
-      std::memcpy(target, source.data(), copied);
+      std::memcpy(target.data(), source.data(), copied);
     }
 
     return static_cast<std::uint32_t>(copied);

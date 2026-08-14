@@ -1,12 +1,12 @@
 /**
  * @file src/platform/windows/shared/lvh_windows_protocol.h
  * @brief Stable control protocol shared by the Windows client backend and UMDF driver.
+ * @note This internal protocol header is C++-only.
  */
 #pragma once
 
+#include <array>
 #include <stdint.h>
-
-#ifdef __cplusplus
 
 inline constexpr uint32_t LVH_WINDOWS_CONTROL_PROTOCOL_VERSION = 2u;
 inline constexpr char LVH_WINDOWS_CONTROL_DEVICE_PATH[] = R"(\\.\LibVirtualHid)";
@@ -145,150 +145,83 @@ inline constexpr uint32_t LVH_WINDOWS_GAMEPAD_SWITCH_PRO = lvh_windows_protocol_
 inline constexpr uint32_t LVH_WINDOWS_GAMEPAD_DUALSHOCK4 =
   lvh_windows_protocol_detail::gamepad_dualshock4;
 
-#else
-
-enum {
-  LVH_WINDOWS_CONTROL_PROTOCOL_VERSION = 2u,
-  LVH_WINDOWS_MAX_REPORT_DESCRIPTOR_SIZE = 2048u,
-  LVH_WINDOWS_MAX_INPUT_REPORT_SIZE = 256u,
-  LVH_WINDOWS_MAX_OUTPUT_REPORT_SIZE = 256u,
-  LVH_WINDOWS_MAX_DEVICE_PATH_SIZE = 260u,
-  LVH_WINDOWS_MAX_DEVICE_NAME_SIZE = 128u,
-  LVH_WINDOWS_MAX_MANUFACTURER_SIZE = 128u,
-  LVH_WINDOWS_MAX_STABLE_ID_SIZE = 128u,
-  LVH_WINDOWS_SESSION_TOKEN_SIZE = 32u,
-  LVH_WINDOWS_FILE_DEVICE_LIBVIRTUALHID = 0x8000u,
-  LVH_WINDOWS_METHOD_BUFFERED = 0u,
-  LVH_WINDOWS_FILE_READ_ACCESS = 1u,
-  LVH_WINDOWS_FILE_WRITE_ACCESS = 2u,
-  LVH_WINDOWS_GAMEPAD_FLAG_SUPPORTS_RUMBLE = 0x00000001u,
-  LVH_WINDOWS_GAMEPAD_FLAG_SUPPORTS_MOTION = 0x00000002u,
-  LVH_WINDOWS_GAMEPAD_FLAG_SUPPORTS_TOUCHPAD = 0x00000004u,
-  LVH_WINDOWS_GAMEPAD_FLAG_SUPPORTS_RGB_LED = 0x00000008u,
-  LVH_WINDOWS_GAMEPAD_FLAG_SUPPORTS_BATTERY = 0x00000010u,
-  LVH_WINDOWS_GAMEPAD_FLAG_SUPPORTS_ADAPTIVE_TRIGGERS = 0x00000020u,
-};
-
-static const char LVH_WINDOWS_CONTROL_DEVICE_PATH[] = "\\\\.\\LibVirtualHid";
-static const char LVH_WINDOWS_GLOBAL_CONTROL_DEVICE_PATH[] = "\\\\.\\Global\\LibVirtualHid";
-
-static const uint32_t LVH_WINDOWS_IOCTL_CREATE_GAMEPAD = 0x8000E000u;
-static const uint32_t LVH_WINDOWS_IOCTL_DESTROY_DEVICE = 0x8000E004u;
-static const uint32_t LVH_WINDOWS_IOCTL_SUBMIT_INPUT_REPORT = 0x8000E008u;
-static const uint32_t LVH_WINDOWS_IOCTL_READ_OUTPUT_REPORT = 0x8000600Cu;
-static const uint32_t LVH_WINDOWS_IOCTL_RESET_DEVICES = 0x8000E010u;
-
-enum LvhWindowsProtocolStatus {
-  LVH_WINDOWS_STATUS_SUCCESS = 0,
-  LVH_WINDOWS_STATUS_INVALID_ARGUMENT = 1,
-  LVH_WINDOWS_STATUS_UNSUPPORTED_PROFILE = 2,
-  LVH_WINDOWS_STATUS_DEVICE_NOT_FOUND = 3,
-  LVH_WINDOWS_STATUS_BACKEND_FAILURE = 4,
-};
-
-enum LvhWindowsBusType {
-  LVH_WINDOWS_BUS_UNKNOWN = 0,
-  LVH_WINDOWS_BUS_USB = 1,
-  LVH_WINDOWS_BUS_BLUETOOTH = 2,
-};
-
-enum LvhWindowsGamepadProfileKind {
-  LVH_WINDOWS_GAMEPAD_GENERIC = 0,
-  LVH_WINDOWS_GAMEPAD_XBOX_360 = 1,
-  LVH_WINDOWS_GAMEPAD_XBOX_ONE = 2,
-  LVH_WINDOWS_GAMEPAD_XBOX_SERIES = 3,
-  LVH_WINDOWS_GAMEPAD_DUALSENSE = 4,
-  LVH_WINDOWS_GAMEPAD_SWITCH_PRO = 5,
-  LVH_WINDOWS_GAMEPAD_DUALSHOCK4 = 6,
-};
-
-#endif
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #pragma pack(push, 1)
 
-  struct LvhWindowsGamepadHardwareIds {
-    uint16_t vendor_id;
-    uint16_t product_id;
-    uint16_t device_version;
-    uint8_t report_id;
-    uint8_t reserved0[7];
-  };
+struct LvhWindowsGamepadHardwareIds {
+  uint16_t vendor_id;
+  uint16_t product_id;
+  uint16_t device_version;
+  uint8_t report_id;
+  std::array<uint8_t, 7> reserved0;
+};
 
-  struct LvhWindowsGamepadReportSizes {
-    uint32_t input_report_size;
-    uint32_t output_report_size;
-    uint32_t report_descriptor_size;
-    uint32_t name_size;
-    uint32_t manufacturer_size;
-    uint32_t stable_id_size;
-  };
+struct LvhWindowsGamepadReportSizes {
+  uint32_t input_report_size;
+  uint32_t output_report_size;
+  uint32_t report_descriptor_size;
+  uint32_t name_size;
+  uint32_t manufacturer_size;
+  uint32_t stable_id_size;
+};
 
-  struct LvhWindowsSessionToken {
-    uint8_t bytes[LVH_WINDOWS_SESSION_TOKEN_SIZE];
-  };
+struct LvhWindowsSessionToken {
+  std::array<uint8_t, LVH_WINDOWS_SESSION_TOKEN_SIZE> bytes;
+};
 
-  struct LvhWindowsCreateGamepadRequest {
-    uint32_t version;
-    uint32_t size;
-    uint64_t client_device_id;
-    uint32_t bus_type;
-    uint32_t gamepad_kind;
-    uint32_t flags;
-    LvhWindowsGamepadHardwareIds hardware_ids;
-    LvhWindowsGamepadReportSizes report_sizes;
-    uint8_t report_descriptor[LVH_WINDOWS_MAX_REPORT_DESCRIPTOR_SIZE];
-    char name[LVH_WINDOWS_MAX_DEVICE_NAME_SIZE];
-    char manufacturer[LVH_WINDOWS_MAX_MANUFACTURER_SIZE];
-    char stable_id[LVH_WINDOWS_MAX_STABLE_ID_SIZE];
-  };
+struct LvhWindowsCreateGamepadRequest {
+  uint32_t version;
+  uint32_t size;
+  uint64_t client_device_id;
+  uint32_t bus_type;
+  uint32_t gamepad_kind;
+  uint32_t flags;
+  LvhWindowsGamepadHardwareIds hardware_ids;
+  LvhWindowsGamepadReportSizes report_sizes;
+  std::array<uint8_t, LVH_WINDOWS_MAX_REPORT_DESCRIPTOR_SIZE> report_descriptor;
+  std::array<char, LVH_WINDOWS_MAX_DEVICE_NAME_SIZE> name;
+  std::array<char, LVH_WINDOWS_MAX_MANUFACTURER_SIZE> manufacturer;
+  std::array<char, LVH_WINDOWS_MAX_STABLE_ID_SIZE> stable_id;
+};
 
-  struct LvhWindowsCreateGamepadResponse {
-    uint32_t version;
-    uint32_t size;
-    uint32_t status;
-    uint32_t reserved0;
-    uint64_t driver_device_id;
-    LvhWindowsSessionToken session_token;
-    char device_path[LVH_WINDOWS_MAX_DEVICE_PATH_SIZE];
-  };
+struct LvhWindowsCreateGamepadResponse {
+  uint32_t version;
+  uint32_t size;
+  uint32_t status;
+  uint32_t reserved0;
+  uint64_t driver_device_id;
+  LvhWindowsSessionToken session_token;
+  std::array<char, LVH_WINDOWS_MAX_DEVICE_PATH_SIZE> device_path;
+};
 
-  struct LvhWindowsDestroyDeviceRequest {
-    uint32_t version;
-    uint32_t size;
-    uint64_t driver_device_id;
-    LvhWindowsSessionToken session_token;
-  };
+struct LvhWindowsDestroyDeviceRequest {
+  uint32_t version;
+  uint32_t size;
+  uint64_t driver_device_id;
+  LvhWindowsSessionToken session_token;
+};
 
-  struct LvhWindowsResetDevicesRequest {
-    uint32_t version;
-    uint32_t size;
-  };
+struct LvhWindowsResetDevicesRequest {
+  uint32_t version;
+  uint32_t size;
+};
 
-  struct LvhWindowsSubmitInputReportRequest {
-    uint32_t version;
-    uint32_t size;
-    uint64_t driver_device_id;
-    LvhWindowsSessionToken session_token;
-    uint32_t report_size;
-    uint32_t reserved0;
-    uint8_t report[LVH_WINDOWS_MAX_INPUT_REPORT_SIZE];
-  };
+struct LvhWindowsSubmitInputReportRequest {
+  uint32_t version;
+  uint32_t size;
+  uint64_t driver_device_id;
+  LvhWindowsSessionToken session_token;
+  uint32_t report_size;
+  uint32_t reserved0;
+  std::array<uint8_t, LVH_WINDOWS_MAX_INPUT_REPORT_SIZE> report;
+};
 
-  struct LvhWindowsOutputReportEvent {
-    uint32_t version;
-    uint32_t size;
-    uint64_t driver_device_id;
-    uint32_t report_size;
-    uint32_t reserved0;
-    uint8_t report[LVH_WINDOWS_MAX_OUTPUT_REPORT_SIZE];
-  };
+struct LvhWindowsOutputReportEvent {
+  uint32_t version;
+  uint32_t size;
+  uint64_t driver_device_id;
+  uint32_t report_size;
+  uint32_t reserved0;
+  std::array<uint8_t, LVH_WINDOWS_MAX_OUTPUT_REPORT_SIZE> report;
+};
 
 #pragma pack(pop)
-
-#ifdef __cplusplus
-}
-#endif

@@ -12,6 +12,7 @@
 
 // standard includes
 #include <algorithm>
+#include <array>
 #include <cstring>
 #include <iterator>
 #include <string_view>
@@ -43,10 +44,10 @@ namespace lvh {
         .active_devices = status.active_devices,
         .activation_limit = status.activation_limit,
         .activation_usage = status.activation_usage,
-        .plan_name = status.plan_name,
-        .customer_email = status.customer_email,
-        .expires_at = status.expires_at,
-        .message = status.message,
+        .plan_name = status.plan_name.data(),
+        .customer_email = status.customer_email.data(),
+        .expires_at = status.expires_at.data(),
+        .message = status.message.data(),
         .purchase_url = std::string {windows::broker_config::buy_url},
         .manage_account_url = std::string {windows::broker_config::manage_account_url},
       };
@@ -62,9 +63,22 @@ namespace lvh {
     }
 
     template<std::size_t Size>
-    void copy_c_string(char (&target)[Size], std::string_view value) {
+    void copy_c_string(std::array<char, Size> &target, std::string_view value) {
       std::ranges::fill(target, '\0');
-      std::memcpy(target, value.data(), value.size());
+      std::memcpy(target.data(), value.data(), value.size());
+    }
+
+    template<typename Response>
+    LicenseResult license_result_from(const OperationStatus &status, const Response &response) {
+      if (response.version != LVH_WINDOWS_BROKER_PROTOCOL_VERSION || response.size != sizeof(response)) {
+        return {status, unavailable_license_status(status.message())};
+      }
+
+      auto license = license_status_from(response.license);
+      if (!std::string_view {response.message.data()}.empty()) {
+        license.message = response.message.data();
+      }
+      return {status, std::move(license)};
     }
 
     template<LvhWindowsBrokerRequestType RequestType>
@@ -85,15 +99,7 @@ namespace lvh {
 
       LvhWindowsBrokerLicenseResponse response {};
       const auto status = detail::windows_broker::call(request, response, "Call the Windows license service");
-      if (response.version != LVH_WINDOWS_BROKER_PROTOCOL_VERSION || response.size != sizeof(response)) {
-        return {status, unavailable_license_status(status.message())};
-      }
-
-      auto license = license_status_from(response.license);
-      if (!std::string_view {response.message}.empty()) {
-        license.message = response.message;
-      }
-      return {status, std::move(license)};
+      return license_result_from(status, response);
     }
 
   }  // namespace
@@ -104,15 +110,7 @@ namespace lvh {
 
     LvhWindowsBrokerStatusResponse response {};
     const auto status = detail::windows_broker::call(request, response, "Query the Windows license service");
-    if (response.version != LVH_WINDOWS_BROKER_PROTOCOL_VERSION || response.size != sizeof(response)) {
-      return {status, unavailable_license_status(status.message())};
-    }
-
-    auto license = license_status_from(response.license);
-    if (!std::string_view {response.message}.empty()) {
-      license.message = response.message;
-    }
-    return {status, std::move(license)};
+    return license_result_from(status, response);
   }
 
   LicenseResult activate_license(std::string_view license_key, std::string_view instance_name) {

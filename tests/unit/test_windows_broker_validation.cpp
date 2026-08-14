@@ -73,8 +73,8 @@ namespace {
     LvhWindowsBrokerLicenseRequest request {};
     request.header = request_header(type, sizeof(request));
     if (type == LvhWindowsBrokerRequestType::activate_license) {
-      std::memcpy(request.license_key, "test-key", sizeof("test-key"));
-      std::memcpy(request.instance_name, "test-machine", sizeof("test-machine"));
+      std::memcpy(request.license_key.data(), "test-key", sizeof("test-key"));
+      std::memcpy(request.instance_name.data(), "test-machine", sizeof("test-machine"));
     }
     return request;
   }
@@ -183,7 +183,7 @@ TEST(WindowsBrokerValidationTest, RejectsMalformedCreateFields) {
   EXPECT_FALSE(lvh::windows::broker_validation::valid_request(request));
 
   request = valid;
-  std::memcpy(request.gamepad.stable_id, "stable", sizeof("stable"));
+  std::memcpy(request.gamepad.stable_id.data(), "stable", sizeof("stable"));
   request.gamepad.report_sizes.stable_id_size = sizeof("stable") - 1U;
   request.gamepad.stable_id[1] = '\0';
   EXPECT_FALSE(lvh::windows::broker_validation::valid_request(request));

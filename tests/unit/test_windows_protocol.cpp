@@ -151,7 +151,7 @@ TEST(WindowsProtocolTest, CopyHelpersTruncateAndZeroFill) {
     LVH_WINDOWS_MAX_DEVICE_NAME_SIZE - 1U
   );
   EXPECT_EQ(
-    std::string_view {create_request.name},
+    std::string_view {create_request.name.data()},
     std::string_view {oversized_name}.substr(0U, LVH_WINDOWS_MAX_DEVICE_NAME_SIZE - 1U)
   );
   EXPECT_EQ(create_request.name[LVH_WINDOWS_MAX_DEVICE_NAME_SIZE - 1U], '\0');
@@ -191,9 +191,9 @@ TEST(WindowsProtocolTest, PacksGamepadCreateRequest) {
   EXPECT_EQ(request.report_sizes.output_report_size, options.profile.output_report_size);
   EXPECT_EQ(request.report_sizes.report_descriptor_size, options.profile.report_descriptor.size());
   EXPECT_EQ(request.report_descriptor[0], options.profile.report_descriptor[0]);
-  EXPECT_STREQ(request.name, options.profile.name.c_str());
-  EXPECT_STREQ(request.manufacturer, options.profile.manufacturer.c_str());
-  EXPECT_STREQ(request.stable_id, options.metadata.stable_id.c_str());
+  EXPECT_STREQ(request.name.data(), options.profile.name.c_str());
+  EXPECT_STREQ(request.manufacturer.data(), options.profile.manufacturer.c_str());
+  EXPECT_STREQ(request.stable_id.data(), options.metadata.stable_id.c_str());
   EXPECT_NE(request.flags & LVH_WINDOWS_GAMEPAD_FLAG_SUPPORTS_RUMBLE, 0U);
   EXPECT_NE(request.flags & LVH_WINDOWS_GAMEPAD_FLAG_SUPPORTS_MOTION, 0U);
   EXPECT_NE(request.flags & LVH_WINDOWS_GAMEPAD_FLAG_SUPPORTS_TOUCHPAD, 0U);
@@ -223,8 +223,8 @@ TEST(WindowsProtocolTest, PresentsXboxSeriesNativeWindowsIdentityAndReportShape)
 
   const auto request = lvh::detail::windows::make_create_gamepad_request(8, options);
   const std::vector<std::uint8_t> descriptor(
-    request.report_descriptor,
-    request.report_descriptor + request.report_sizes.report_descriptor_size
+    request.report_descriptor.data(),
+    request.report_descriptor.data() + request.report_sizes.report_descriptor_size
   );
 
   EXPECT_EQ(request.bus_type, LVH_WINDOWS_BUS_USB);
@@ -281,8 +281,8 @@ TEST(WindowsProtocolTest, PresentsBuiltInGenericControllerAsDirectInputPidJoysti
 
   const auto request = lvh::detail::windows::make_create_gamepad_request(8, options);
   const std::vector<std::uint8_t> descriptor(
-    request.report_descriptor,
-    request.report_descriptor + request.report_sizes.report_descriptor_size
+    request.report_descriptor.data(),
+    request.report_descriptor.data() + request.report_sizes.report_descriptor_size
   );
 
   ASSERT_GE(descriptor.size(), 6U);

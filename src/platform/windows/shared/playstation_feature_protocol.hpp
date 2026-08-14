@@ -80,7 +80,7 @@ namespace lvh::detail::windows {
 
     inline std::array<std::uint8_t, 6> request_mac_address(const LvhWindowsCreateGamepadRequest &request) {
       const auto size = std::min<std::size_t>(request.report_sizes.stable_id_size, sizeof(request.stable_id));
-      const auto stable_id = std::string_view {request.stable_id, size};
+      const auto stable_id = std::string_view {request.stable_id.data(), size};
       return parse_mac_address(stable_id).value_or(generated_mac_address(request.client_device_id));
     }
 
