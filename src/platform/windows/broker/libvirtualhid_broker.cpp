@@ -470,10 +470,10 @@ namespace lvh::detail::windows_broker_service {
   }
 
   template<std::size_t Size>
-  void copy_c_string(char (&target)[Size], std::string_view value) {
+  void copy_c_string(std::array<char, Size> &target, std::string_view value) {
     std::ranges::fill(target, '\0');
     const auto count = std::min(value.size(), Size - 1U);
-    std::memcpy(target, value.data(), count);
+    std::memcpy(target.data(), value.data(), count);
   }
 
   std::string windows_error_message(DWORD error_code) {
@@ -1189,7 +1189,7 @@ namespace lvh::detail::windows_broker_service {
     const LvhWindowsSessionToken &lhs,
     const LvhWindowsSessionToken &rhs
   ) {
-    return std::memcmp(lhs.bytes, rhs.bytes, sizeof(lhs.bytes)) == 0;
+    return std::ranges::equal(lhs.bytes, rhs.bytes);
   }
 
   LvhWindowsDestroyDeviceRequest make_destroy_device_request(
@@ -1690,8 +1690,8 @@ namespace lvh::detail::windows_broker_service {
         return response;
       }
 
-      const std::string license_key {request.license_key};
-      const auto instance_name = request.instance_name[0] == '\0' ? default_instance_name() : std::string {request.instance_name};
+      const std::string license_key {request.license_key.data()};
+      const auto instance_name = request.instance_name[0] == '\0' ? default_instance_name() : std::string {request.instance_name.data()};
       if (license_key.empty()) {
         response.status = std::to_underlying(LvhWindowsBrokerStatusCode::invalid_argument);
         copy_c_string(response.message, "License key is required.");
@@ -2237,7 +2237,7 @@ namespace lvh::detail::windows_broker_service {
 
     std::pair<LvhWindowsBrokerStatusCode, bool> authorize_gamepad_create(
       LvhWindowsBrokerLicenseStatus &license,
-      char (&message)[LVH_WINDOWS_BROKER_MAX_MESSAGE_SIZE]
+      std::array<char, LVH_WINDOWS_BROKER_MAX_MESSAGE_SIZE> &message
     ) {
       {
         std::lock_guard lock {mutex_};
@@ -2281,7 +2281,7 @@ namespace lvh::detail::windows_broker_service {
 
         if (!license_allowed(*license_state_) || !license_time_is_current_locked()) {
           fill_license_status_locked(license);
-          copy_c_string(message, license.message);
+          copy_c_string(message, license.message.data());
           return {LvhWindowsBrokerStatusCode::license_invalid, false};
         }
 

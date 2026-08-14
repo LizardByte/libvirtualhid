@@ -540,7 +540,7 @@ namespace lvh::detail {
         event.size = sizeof(event);
         event.driver_device_id = driver_id;
         event.report_size = static_cast<std::uint32_t>(report.size());
-        std::ranges::copy(report, event.report);
+        std::ranges::copy(report, event.report.begin());
         event_state->enqueue_output_event(event);
       };
 

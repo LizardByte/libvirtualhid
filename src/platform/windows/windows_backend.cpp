@@ -938,7 +938,7 @@ namespace lvh::detail {
           response.driver_device_id,
           response.session_token,
           options.profile,
-          response.device_path[0] == '\0' ? command_channel_->path() : std::string {response.device_path}
+          response.device_path[0] == '\0' ? command_channel_->path() : std::string {response.device_path.data()}
         );
 
         {
@@ -1080,8 +1080,8 @@ namespace lvh::detail {
 
         std::unique_lock dispatch_lock {state->output_dispatch_mutex_};
         std::vector<std::uint8_t> report(
-          event.report,
-          event.report + std::min(event.report_size, static_cast<std::uint32_t>(LVH_WINDOWS_MAX_OUTPUT_REPORT_SIZE))
+          event.report.data(),
+          event.report.data() + std::min(event.report_size, static_cast<std::uint32_t>(LVH_WINDOWS_MAX_OUTPUT_REPORT_SIZE))
         );
 
         DeviceProfile profile;

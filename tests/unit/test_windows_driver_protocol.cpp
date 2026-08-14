@@ -52,7 +52,7 @@ namespace {
     request.gamepad_kind = gamepad_kind;
     request.bus_type = bus_type;
     request.report_sizes.stable_id_size = static_cast<std::uint32_t>(stable_id.size());
-    std::ranges::copy(stable_id, request.stable_id);
+    std::ranges::copy(stable_id, request.stable_id.begin());
     return request;
   }
 

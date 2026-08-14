@@ -420,8 +420,8 @@ namespace {
 
     const auto descriptor_size = record->request.report_sizes.report_descriptor_size;
     record->report_descriptor.assign(
-      record->request.report_descriptor,
-      record->request.report_descriptor + descriptor_size
+      record->request.report_descriptor.data(),
+      record->request.report_descriptor.data() + descriptor_size
     );
     record->hardware_ids = lvh::detail::windows::make_hardware_ids(record->request);
 
@@ -484,14 +484,14 @@ namespace {
   }
 
   bool session_token_matches(const DeviceRecord &record, const LvhWindowsSessionToken &session_token) {
-    return std::memcmp(record.session_token.bytes, session_token.bytes, sizeof(record.session_token.bytes)) == 0;
+    return std::ranges::equal(record.session_token.bytes, session_token.bytes);
   }
 
   NTSTATUS generate_session_token(LvhWindowsSessionToken &session_token) {
     const auto status = BCryptGenRandom(
       nullptr,
-      session_token.bytes,
-      static_cast<ULONG>(sizeof(session_token.bytes)),
+      session_token.bytes.data(),
+      static_cast<ULONG>(session_token.bytes.size()),
       BCRYPT_USE_SYSTEM_PREFERRED_RNG
     );
     if (!NT_SUCCESS(status)) {
@@ -674,8 +674,8 @@ namespace {
     const LvhWindowsSubmitInputReportRequest &request
   ) {
     const auto report_id = record.request.hardware_ids.report_id;
-    const auto report_begin = request.report;
-    const auto report_end = request.report + request.report_size;
+    const auto report_begin = request.report.data();
+    const auto report_end = request.report.data() + request.report_size;
     if (report_id == 0U) {
       return {report_begin, report_end};
     }
@@ -703,7 +703,7 @@ namespace {
     }
 
     if (payload_size > 0U) {
-      std::memcpy(event.report + report_id_size, packet.reportBuffer, payload_size);
+      std::memcpy(event.report.data() + report_id_size, packet.reportBuffer, payload_size);
     }
 
     event.report_size = static_cast<std::uint32_t>(report_id_size + payload_size);
@@ -714,7 +714,7 @@ namespace {
       return;
     }
 
-    auto reply = lvh::detail::windows::make_switch_pro_reply({event.report, event.report_size});
+    auto reply = lvh::detail::windows::make_switch_pro_reply({event.report.data(), event.report_size});
     if (!reply.has_value()) {
       return;
     }
@@ -778,7 +778,7 @@ namespace {
       std::lock_guard lock {record.mutex};
       return record.generic_pid_feature_state.handle_set_feature(
         static_cast<std::uint8_t>(report_id),
-        {event.report, event.report_size}
+        {event.report.data(), event.report_size}
       );
     }
     return lvh::detail::windows::is_playstation_gamepad(record.request.gamepad_kind);
@@ -792,21 +792,24 @@ namespace {
     std::lock_guard lock {record.mutex};
     static_cast<void>(record.generic_pid_feature_state.handle_output_report(
       static_cast<std::uint8_t>(event.report[0]),
-      {event.report, event.report_size}
+      {event.report.data(), event.report_size}
     ));
   }
 
-  void set_device_path(std::uint64_t driver_device_id, char (&device_path)[LVH_WINDOWS_MAX_DEVICE_PATH_SIZE]) {
+  void set_device_path(
+    std::uint64_t driver_device_id,
+    std::array<char, LVH_WINDOWS_MAX_DEVICE_PATH_SIZE> &device_path
+  ) {
     constexpr auto path_prefix_size = sizeof(LVH_WINDOWS_CONTROL_DEVICE_PATH) - 1U;
     constexpr auto separator_size = 1U;
     static_assert(path_prefix_size + separator_size < LVH_WINDOWS_MAX_DEVICE_PATH_SIZE);
 
-    std::memcpy(device_path, LVH_WINDOWS_CONTROL_DEVICE_PATH, path_prefix_size);
+    std::memcpy(device_path.data(), LVH_WINDOWS_CONTROL_DEVICE_PATH, path_prefix_size);
     device_path[path_prefix_size] = '#';
 
     const auto output = std::to_chars(
-      device_path + path_prefix_size + separator_size,
-      device_path + sizeof(device_path) - 1U,
+      device_path.data() + path_prefix_size + separator_size,
+      device_path.data() + device_path.size() - 1U,
       driver_device_id
     );
     if (output.ec == std::errc {}) {

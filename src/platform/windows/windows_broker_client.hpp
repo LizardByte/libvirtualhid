@@ -71,7 +71,7 @@ namespace lvh::detail::windows_broker {
       return OperationStatus::failure(ErrorCode::backend_failure, "Windows broker returned a truncated or invalid response");
     }
 
-    return response_status(response.status, response.message);
+    return response_status(response.status, response.message.data());
   }
 
 }  // namespace lvh::detail::windows_broker

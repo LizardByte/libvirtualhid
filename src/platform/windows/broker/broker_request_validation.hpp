@@ -9,6 +9,7 @@
 
 // standard includes
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
@@ -29,14 +30,14 @@ namespace lvh::windows::broker_validation {
     LVH_WINDOWS_GAMEPAD_FLAG_SUPPORTS_ADAPTIVE_TRIGGERS;
 
   template<typename Value, std::size_t Size>
-  bool all_zero(const Value (&values)[Size]) {
+  bool all_zero(const std::array<Value, Size> &values) {
     return std::ranges::all_of(values, [](const auto value) {
       return value == Value {};
     });
   }
 
   template<std::size_t Size>
-  bool valid_c_string(const char (&value)[Size], bool allow_empty = true) {
+  bool valid_c_string(const std::array<char, Size> &value, bool allow_empty = true) {
     const auto terminator = std::ranges::find(value, '\0');
     if (terminator == std::end(value) || (!allow_empty && terminator == std::begin(value))) {
       return false;
@@ -48,7 +49,7 @@ namespace lvh::windows::broker_validation {
   }
 
   template<std::size_t Size>
-  bool valid_sized_c_string(const char (&value)[Size], std::uint32_t size) {
+  bool valid_sized_c_string(const std::array<char, Size> &value, std::uint32_t size) {
     if (size >= Size || value[size] != '\0') {
       return false;
     }
