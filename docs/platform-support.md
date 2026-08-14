@@ -272,6 +272,7 @@ Unsupported macOS capabilities currently return `unsupported_profile`:
 - Touchscreen, trackpad, and pen tablet devices.
 - Keyboard text input through `KeyboardTextEvent`.
 
-Future native virtual HID support may use `IOHIDUserDevice`,
-DriverKit/HIDDriverKit, or a combination that preserves the same public API
-while documenting any signing, entitlement, and installer requirements.
+Native macOS virtual-HID gamepad support is planned. A future backend may use
+`IOHIDUserDevice`, DriverKit/HIDDriverKit, or a combination that preserves the
+same public API while documenting any signing, entitlement, and installer
+requirements.

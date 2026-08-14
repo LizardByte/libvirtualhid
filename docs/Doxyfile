@@ -43,7 +43,6 @@ INPUT = ../README.md \
         todo.md \
         streaming-host-integration.md \
         development.md \
-        store-review-validation.md \
         ../LICENSES/README.md \
         ../examples \
         ../third-party/doxyconfig/docs/source_code.md \

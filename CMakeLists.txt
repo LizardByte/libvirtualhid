@@ -170,8 +170,9 @@ if(LIBVIRTUALHID_INSTALL)
           "find_dependency(X11 COMPONENTS Xtst)\n")
     endif()
 
-    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE"
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/LICENSES/MIT.md"
       DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/libvirtualhid"
+      RENAME LICENSE
       COMPONENT library)
 
     configure_package_config_file(
