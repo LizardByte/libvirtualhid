@@ -66,7 +66,7 @@ Expected result:
 4. Run the required validation tool from the submission notes.
 5. Activate the review key supplied through Partner Center.
 6. Create the default gamepad and exercise its controls.
-7. Optionally run the browser validation steps.
+7. Optionally, run the browser validation steps.
 
 If the default install location was changed during MSI installation, replace
 `$env:ProgramFiles\libvirtualhid` with the selected install directory.

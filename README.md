@@ -85,20 +85,14 @@ More complete examples live in `examples/`, including the streaming-host-oriente
 
 ## 📚 Documentation
 
-- [Usage and API](docs/usage.md): CMake consumption, build options, public API
-  overview, profiles, and examples.
-- [Platform support](docs/platform-support.md): backend capability model,
-  Windows, Linux, macOS, and Linux permission setup.
-- [Windows driver package](docs/windows-driver.md): UMDF/VHF package build,
-  installation, validation, diagnostics, and signing notes.
-- [TODO](docs/todo.md): known larger compatibility gaps and proposed solution
-  paths.
-- [Streaming-host integration](docs/streaming-host-integration.md): integration
-  contract and remaining replacement-readiness work for streaming hosts.
-- [Development](docs/development.md): local build/test commands, repository
-  layout, docs generation, and roadmap.
-- [Microsoft Store validation](docs/store-review-validation.md): review notes
-  and manual validation for Store submissions.
+- [Usage and API](docs/usage.md): CMake consumption, build options, public API overview, profiles, and examples.
+- [Platform support](docs/platform-support.md): backend capability model, Windows, Linux, macOS,
+  and Linux permission setup.
+- [Windows driver package](docs/windows-driver.md): UMDF/VHF package build, installation, validation, diagnostics,
+  and signing notes.
+- [Streaming-host integration](docs/streaming-host-integration.md): integration contract.
+- [Development](docs/development.md): local build/test commands, repository layout, docs generation, and roadmap.
+- [TODO](docs/todo.md): known larger compatibility gaps and proposed solution paths.
 
 ## 🎯 Scope
 
@@ -109,10 +103,12 @@ devices from the OS, or ship a Windows kernel-mode driver.
 
 ## 📌 Status
 
-Linux and Windows are the active backends. Linux uses standard user-space kernel
-interfaces. Windows remains user-mode: the C++ library talks to a UMDF2 control
-driver, and the driver publishes HID gamepads through VHF. macOS support is not
-implemented yet.
+Linux and Windows provide virtual-device backends. Linux uses standard
+user-space kernel interfaces. Windows remains user-mode: the C++ library talks
+to a UMDF2 control driver, and the driver publishes HID gamepads through VHF.
+macOS currently provides a limited CoreGraphics synthetic-input backend for
+keyboard and mouse only. It is not a virtual-HID backend and does not yet
+support gamepads; native macOS virtual-HID gamepad support is planned.
 
 The library is designed around gamepad use first because remote streaming hosts
 are the first consumer class. Non-gamepad device types are available through the
@@ -183,8 +179,14 @@ test app path and does not currently advertise an ARM64 build.
 
 ## 📄 License
 
-The cross-platform `libvirtualhid` library is licensed under the MIT License.
+The cross-platform `libvirtualhid` library is licensed under the
+[MIT License](https://github.com/LizardByte/libvirtualhid/blob/master/LICENSES/MIT.md).
 The Windows UMDF driver, broker, proprietary entitlement/evaluation sources,
 and generated Windows driver package artifacts, including the driver MSI, are
-licensed under the LizardByte Source-Available License 1.0 (LB-SAL 1.0). See the
-[license map](LICENSES/README.md) for the full repository split.
+licensed under the
+[LizardByte Source-Available License 1.0](https://github.com/LizardByte/libvirtualhid/blob/master/LICENSES/LicenseRef-LizardByte-SAL-1.0.md)
+(LB-SAL 1.0). The root
+[license notice](https://github.com/LizardByte/libvirtualhid/blob/master/LICENSE.md)
+points to both complete license texts; see the
+[license map](https://github.com/LizardByte/libvirtualhid/blob/master/LICENSES/README.md)
+for the authoritative repository path and artifact assignments.

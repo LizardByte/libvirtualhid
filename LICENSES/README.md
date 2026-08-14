@@ -6,7 +6,7 @@ Windows driver package.
 - LB-SAL 1.0 SPDX custom identifier: `LicenseRef-LizardByte-SAL-1.0`.
 - Cross-platform library source, public headers, non-driver backends, examples,
   tests, build scripts, and documentation unless listed below:
-  [MIT](https://github.com/LizardByte/libvirtualhid/blob/master/LICENSE).
+  [MIT](https://github.com/LizardByte/libvirtualhid/blob/master/LICENSES/MIT.md).
 - Windows UMDF driver source under `src/platform/windows/driver/`, the broker
   service under `src/platform/windows/broker/`, and the broker entitlement and
   evaluation sources

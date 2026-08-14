@@ -88,12 +88,11 @@ code and tests provide a better source of truth.
 
 ## Roadmap
 
-- Finish Windows streaming-host replacement validation, especially application
-  compatibility for the UMDF/VHF HID backend and any XInput-only fallback story.
-- Replace consumer-specific ViGEmBus installer/status/diagnostic flows with
-  libvirtualhid driver-package checks.
-- Validate Linux host-adapter behavior across the selected controller profiles.
-- Define and implement the FreeBSD-supported backend subset.
-- Extend macOS support beyond CoreGraphics keyboard and mouse injection to
-  native virtual HID devices, including signing, entitlement, and installer
-  constraints.
+- Add native macOS virtual-HID gamepad support beyond the current CoreGraphics
+  keyboard and mouse injection backend, including signing, entitlement, and
+  installer constraints.
+- Add bindings for other languages, such as Python, Rust, and C#. Bindings will
+  be considered for any requested language.
+- Evaluate an optional FreeBSD CUSE-backed `uhid(4)`-compatible device for
+  direct HID consumers. This would supplement uinput; it is not equivalent to
+  registering a virtual device with FreeBSD's kernel HID bus.

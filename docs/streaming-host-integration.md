@@ -58,19 +58,3 @@ The core API and adapter shape cover the major streaming-host requirements:
 - FreeBSD uinput gamepads and pointer devices, with basic PlayStation input and
   rumble but without Linux UHID-only PlayStation features.
 - Windows UMDF/VHF gamepad creation through an installed driver package.
-
-Remaining replacement work is validation and packaging, not broad API shape:
-
-- Validate Windows UMDF/VHF gamepads against the same application classes that
-  previously relied on ViGEmBus, including XInput-only compatibility decisions.
-- Validate DualShock 4 and Xbox behavior through the intended Windows streaming
-  host path.
-- Replace any consumer-specific ViGEmBus installer, status, and diagnostics with
-  libvirtualhid driver-package checks.
-- Add and validate the Linux host adapter for the selected controller profile
-  names used by the consuming application.
-- Evaluate an optional FreeBSD CUSE-backed `uhid(4)`-compatible device for
-  direct HID consumers. This would supplement uinput; it is not equivalent to
-  registering a virtual device with FreeBSD's kernel HID bus.
-- Validate macOS CoreGraphics keyboard and mouse support in a streaming host, and
-  keep native macOS virtual HID device work scoped separately.
