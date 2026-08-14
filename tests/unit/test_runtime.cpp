@@ -42,6 +42,14 @@ TEST(RuntimeTest, PlatformDefaultReportsCurrentPlatformCapabilities) {
 #if defined(__linux__)
   EXPECT_EQ(runtime->capabilities().backend_name, "linux-uhid-uinput");
   EXPECT_FALSE(runtime->capabilities().requires_installed_driver);
+#elif defined(__FreeBSD__)
+  EXPECT_EQ(runtime->capabilities().backend_name, "freebsd-uinput");
+  EXPECT_FALSE(runtime->capabilities().requires_installed_driver);
+  EXPECT_TRUE(runtime->capabilities().supports_gamepad);
+
+  auto created = runtime->create_gamepad(lvh::profiles::xbox_360());
+  ASSERT_TRUE(created) << created.status.message();
+  EXPECT_TRUE(created.gamepad->close().ok());
 #elif defined(_WIN32)
   EXPECT_EQ(runtime->capabilities().backend_name, "windows-umdf");
   EXPECT_TRUE(runtime->capabilities().requires_installed_driver);

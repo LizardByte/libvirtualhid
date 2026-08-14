@@ -19,7 +19,7 @@ Use capability queries for behavior such as:
 - Whether gamepad output reports are supported.
 - Whether keyboard, mouse, touchscreen, trackpad, or pen tablet creation is
   available.
-- Whether the Linux XTest fallback is active.
+- Whether the X11/XTest keyboard and mouse fallback is active.
 - Whether a Windows driver package must be installed.
 
 ## Windows
@@ -209,6 +209,39 @@ the `input` group, then log out and back in:
 ```bash
 sudo usermod -aG input $USER
 ```
+
+## FreeBSD
+
+The FreeBSD backend uses the native evdev compatibility stack through
+`libevdev` and uinput. It accepts both `/dev/input/uinput`, which is the native
+FreeBSD path, and `/dev/uinput` for environments that provide the Linux-style
+alias. It supports the same uinput device categories as the Linux backend:
+
+- Generic, Xbox 360, Xbox One, Xbox Series, DualShock 4, DualSense, and Switch
+  Pro gamepads.
+- Keyboard and mouse devices, with X11/XTest available as a fallback.
+- Touchscreen, trackpad, and pen tablet devices.
+
+FreeBSD's [uhid(4)](https://man.freebsd.org/cgi/man.cgi?query=uhid&sektion=4)
+is not the Linux UHID transport. It exposes an existing physical USB HID
+interface through `/dev/uhid?`; it does not let a process register a new device
+with the kernel HID bus. FreeBSD CUSE applications such as
+[uhidd(8)](https://man.freebsd.org/cgi/man.cgi?query=uhidd&sektion=8) can emulate
+a `uhid(4)`-compatible character device for direct consumers, but that is a
+different integration surface and is not used by the current backend.
+
+Generic, Xbox-family, Switch Pro, DualShock 4, and DualSense behavior therefore
+uses uinput. Ordinary buttons, sticks, analog triggers, and rumble are available,
+but raw HID reports and descriptor-driven features are not.
+
+For each created gamepad, `Gamepad::profile()` reports the effective FreeBSD
+uinput capability subset. Motion, touchpad contacts and click, battery state,
+RGB LED output, adaptive-trigger output, and raw HID output reports are disabled.
+This includes Switch Pro motion and battery state as well as the
+PlayStation-specific features. Streaming-host adapters can reject those
+operations instead of silently accepting state that uinput cannot expose.
+
+The `uinput` kernel module and a writable uinput device node are required.
 
 ## macOS
 

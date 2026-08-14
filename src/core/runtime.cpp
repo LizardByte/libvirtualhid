@@ -1074,7 +1074,16 @@ namespace lvh {
       return {std::move(backend_result.status), nullptr};
     }
 
-    auto device = std::make_shared<detail::GamepadDevice>(id, options, std::move(backend_result.gamepad));
+    auto effective_options = options;
+    if (backend_result.effective_profile.has_value()) {
+      effective_options.profile = std::move(*backend_result.effective_profile);
+    }
+
+    auto device = std::make_shared<detail::GamepadDevice>(
+      id,
+      std::move(effective_options),
+      std::move(backend_result.gamepad)
+    );
     state_->with_lock([this, &device]() {
       state_->gamepads.emplace_back(device);
     });

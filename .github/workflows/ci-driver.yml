@@ -1,0 +1,242 @@
+---
+name: CI-Driver
+permissions: {}
+
+on:
+  workflow_call:
+    inputs:
+      azure_signing_account:
+        required: false
+        type: string
+        default: ''
+      azure_signing_cert_profile:
+        required: false
+        type: string
+        default: ''
+      azure_signing_endpoint:
+        required: false
+        type: string
+        default: ''
+      publish_release:
+        required: true
+        type: string
+      release_commit:
+        required: true
+        type: string
+      release_version:
+        required: true
+        type: string
+    secrets:
+      AZURE_CLIENT_ID:
+        required: false
+      AZURE_CLIENT_SECRET:
+        required: false
+      AZURE_TENANT_ID:
+        required: false
+
+env:
+  DRIVER_BUILD_CONFIG: Release
+
+jobs:
+  windows_driver:
+    name: Windows Driver Installer
+    permissions:
+      contents: read
+    runs-on: windows-2022
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          submodules: recursive
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68  # v6.0.0
+        with:
+          dotnet-version: '10.x'
+
+      - name: Configure Windows driver package
+        shell: pwsh
+        env:
+          BRANCH: ${{ github.head_ref || github.ref_name }}
+          BUILD_VERSION: ${{ inputs.release_version }}
+          COMMIT: ${{ inputs.release_commit }}
+        run: |
+          $certificatePath = Join-Path $env:GITHUB_WORKSPACE "cmake-build-driver\certificates\libvirtualhid-ci-test.cer"
+          cmake `
+            -DBUILD_DOCS=OFF `
+            -DBUILD_EXAMPLES=ON `
+            -DBUILD_TESTS=OFF `
+            -DLIBVIRTUALHID_BUILD_WINDOWS_DRIVER=ON `
+            -DLIBVIRTUALHID_ENABLE_PACKAGING=ON `
+            "-DLIBVIRTUALHID_DRIVER_TEST_CERTIFICATE=$certificatePath" `
+            -A x64 `
+            -B cmake-build-driver `
+            -G "Visual Studio 17 2022" `
+            -S .
+
+      - name: Build Windows driver package
+        shell: pwsh
+        run: >-
+          cmake --build cmake-build-driver
+          --config ${{ env.DRIVER_BUILD_CONFIG }}
+          --target libvirtualhid_windows_catalog libvirtualhid_broker gamepad_adapter virtualhid_control
+          --parallel 2
+
+      - name: Validate Azure signing configuration
+        if: >-
+          github.event_name == 'push' &&
+          inputs.publish_release == 'true' &&
+          inputs.azure_signing_account == ''
+        shell: pwsh
+        run: throw "Release builds must use Azure Trusted Signing for the Windows driver package."
+
+      - name: Sign Windows driver package with local test certificate
+        if: >-
+          github.event_name == 'pull_request' ||
+          inputs.publish_release != 'true'
+        shell: pwsh
+        run: |
+          $packagePath = Join-Path `
+            $env:GITHUB_WORKSPACE `
+            "cmake-build-driver\src\platform\windows\driver\package\$env:DRIVER_BUILD_CONFIG"
+          $certificatePath = Join-Path `
+            $env:GITHUB_WORKSPACE `
+            "cmake-build-driver\certificates\libvirtualhid-ci-test.cer"
+          .\scripts\windows\sign-driver-package.ps1 `
+            -PackagePath $packagePath `
+            -CertificatePath $certificatePath
+
+      - name: Locate Windows driver catalog
+        id: driver_catalog
+        if: >-
+          github.event_name == 'push' &&
+          inputs.publish_release == 'true' &&
+          inputs.azure_signing_account != ''
+        shell: pwsh
+        run: |
+          $catalogPath = Join-Path `
+            $env:GITHUB_WORKSPACE `
+            "cmake-build-driver\src\platform\windows\driver\package\$env:DRIVER_BUILD_CONFIG\libvirtualhid.cat"
+          "path=$catalogPath" >> $env:GITHUB_OUTPUT
+
+      - name: Sign Windows driver package with Azure Trusted Signing
+        if: >-
+          github.event_name == 'push' &&
+          inputs.publish_release == 'true' &&
+          inputs.azure_signing_account != ''
+        uses: azure/trusted-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82  # v2.0.0
+        with:
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          certificate-profile-name: ${{ inputs.azure_signing_cert_profile }}
+          endpoint: ${{ inputs.azure_signing_endpoint }}
+          files: |
+            ${{ steps.driver_catalog.outputs.path }}
+          signing-account-name: ${{ inputs.azure_signing_account }}
+
+      - name: Package Windows driver installer
+        shell: pwsh
+        run: |
+          Push-Location .\cmake-build-driver
+          cpack -G WIX -C $env:DRIVER_BUILD_CONFIG
+          $packageExitCode = $LASTEXITCODE
+          Pop-Location
+          if ($packageExitCode -ne 0) {
+            exit $packageExitCode
+          }
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          Copy-Item `
+            -LiteralPath .\cmake-build-driver\cpack_artifacts\libvirtualhid.msi `
+            -Destination `
+              ".\artifacts\libvirtualhid-Windows-AMD64-driver-installer.msi"
+
+      - name: Export Azure driver signing certificate
+        if: >-
+          github.event_name == 'push' &&
+          inputs.publish_release == 'true' &&
+          inputs.azure_signing_account != ''
+        shell: pwsh
+        run: |
+          $catalogPath = Join-Path `
+            $env:GITHUB_WORKSPACE `
+            "cmake-build-driver\src\platform\windows\driver\package\$env:DRIVER_BUILD_CONFIG\libvirtualhid.cat"
+          $signature = Get-AuthenticodeSignature -FilePath $catalogPath
+          if ($signature.Status -ne "Valid") {
+            throw "Azure signed driver catalog is not valid: $($signature.StatusMessage)"
+          }
+          if (!$signature.SignerCertificate) {
+            throw "Azure signed driver catalog did not expose a signer certificate."
+          }
+
+          $certificatePath = Join-Path $env:GITHUB_WORKSPACE "artifacts\libvirtualhid-driver-signing.cer"
+          New-Item -ItemType Directory -Force -Path (Split-Path -Parent $certificatePath) | Out-Null
+          Export-Certificate -Cert $signature.SignerCertificate -FilePath $certificatePath -Force | Out-Null
+          Write-Host (
+            "Exported Azure driver signing certificate " +
+            "$($signature.SignerCertificate.Subject) [$($signature.SignerCertificate.Thumbprint)]."
+          )
+
+      - name: Sign Windows driver installer with Azure Trusted Signing
+        if: >-
+          github.event_name == 'push' &&
+          inputs.publish_release == 'true' &&
+          inputs.azure_signing_account != ''
+        uses: azure/trusted-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82  # v2.0.0
+        with:
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          certificate-profile-name: ${{ inputs.azure_signing_cert_profile }}
+          endpoint: ${{ inputs.azure_signing_endpoint }}
+          files-folder: artifacts
+          files-folder-filter: msi
+          files-folder-recurse: false
+          signing-account-name: ${{ inputs.azure_signing_account }}
+
+      - name: Validate release signing identities
+        if: >-
+          github.event_name == 'push' &&
+          inputs.publish_release == 'true' &&
+          inputs.azure_signing_account != ''
+        shell: pwsh
+        run: |
+          $catalogPath = Join-Path `
+            $env:GITHUB_WORKSPACE `
+            "cmake-build-driver\src\platform\windows\driver\package\$env:DRIVER_BUILD_CONFIG\libvirtualhid.cat"
+          $installerPath = Get-ChildItem -LiteralPath .\artifacts -Filter *.msi |
+            Select-Object -ExpandProperty FullName -First 1
+          if (!$installerPath) {
+            throw "The signed Windows driver installer was not found."
+          }
+
+          $catalogSignature = Get-AuthenticodeSignature -FilePath $catalogPath
+          $installerSignature = Get-AuthenticodeSignature -FilePath $installerPath
+          foreach ($signature in @($catalogSignature, $installerSignature)) {
+            if ($signature.Status -ne "Valid" -or !$signature.SignerCertificate) {
+              throw "A release signature is invalid: $($signature.StatusMessage)"
+            }
+          }
+          if ($catalogSignature.SignerCertificate.Subject -cne `
+              $installerSignature.SignerCertificate.Subject) {
+            throw "The catalog and MSI were signed with different identities."
+          }
+          Write-Host (
+            "Validated release signer " +
+            "$($installerSignature.SignerCertificate.Subject) " +
+            "[$($installerSignature.SignerCertificate.Thumbprint)]."
+          )
+
+      - name: Debug wix
+        if: always()
+        shell: pwsh
+        run: |
+          Get-Content .\cmake-build-driver\cpack_artifacts\_CPack_Packages\win64\WIX\wix.log `
+            -ErrorAction SilentlyContinue
+
+      - name: Upload Windows driver installer artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: windows-driver-installer
+          path: artifacts
+          if-no-files-found: error

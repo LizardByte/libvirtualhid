@@ -98,6 +98,13 @@ target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_23)
 set_target_properties(${PROJECT_NAME} PROPERTIES
   EXPORT_NAME libvirtualhid
   OUTPUT_NAME virtualhid)
+if(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD" AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    # FreeBSD's libc++ keeps std::jthread behind its experimental-library
+    # switch on the LLVM toolchain used by CI. The static library's consumers
+    # also need the matching link option for the thread support symbols.
+    target_compile_options(${PROJECT_NAME} PRIVATE -fexperimental-library)
+    target_link_options(${PROJECT_NAME} PUBLIC -fexperimental-library)
+endif()
 if(MSVC AND LIBVIRTUALHID_BUILD_WINDOWS_DRIVER)
     set_property(TARGET ${PROJECT_NAME} PROPERTY
       MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")

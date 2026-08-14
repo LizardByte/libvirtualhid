@@ -1,0 +1,645 @@
+---
+name: CI-Build
+permissions: {}
+
+on:
+  workflow_call:
+    inputs:
+      python_version:
+        required: true
+        type: string
+      release_commit:
+        required: true
+        type: string
+      release_version:
+        required: true
+        type: string
+
+env:
+  BRANCH: ${{ github.head_ref || github.ref_name }}
+  BUILD_VERSION: ${{ inputs.release_version }}
+  CMAKE_BUILD_CONFIG: Debug
+  COMMIT: ${{ inputs.release_commit }}
+  FREEBSD_CLANG_VERSION: 19
+  FREEBSD_VERSION: '15.1'
+  OPENCPPCOVERAGE_VERSION: '0.9.9.0'
+  PYTHON_VERSION: ${{ inputs.python_version }}
+
+jobs:
+  build:
+    name: Build (${{ matrix.name }})
+    permissions:
+      contents: read
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux-GCC
+            os: ubuntu-latest
+            shell: bash
+            kind: unix
+            build_tools: 'ON'
+            cc: gcc
+            cxx: g++
+            gcov_executable: gcov
+          - name: Linux-Clang
+            os: ubuntu-latest
+            shell: bash
+            kind: unix
+            build_tools: 'ON'
+            cc: clang
+            cxx: clang++
+            # Clang writes LLVM coverage notes, so gcovr needs llvm-cov's gcov compatibility mode.
+            gcov_executable: llvm-cov gcov
+          - name: macOS
+            os: macos-latest
+            shell: bash
+            kind: unix
+            build_tools: 'ON'
+            cc: clang
+            cxx: clang++
+            gcov_executable: gcov
+          - name: FreeBSD
+            os: ubuntu-latest
+            shell: freebsd {0}
+            kind: freebsd
+            build_tools: 'OFF'
+            cc: clang19
+            cxx: clang++19
+            gcov_executable: llvm-cov19 gcov
+          - name: Windows-MinGW-UCRT64
+            os: windows-latest
+            shell: msys2 {0}
+            kind: msys2
+            build_tools: 'ON'
+            cc: gcc
+            cxx: g++
+            msystem: ucrt64
+            toolchain: ucrt-x86_64
+            gcov_executable: gcov
+          - name: Windows-MSVC
+            os: windows-2022
+            shell: pwsh
+            kind: msvc
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          submodules: recursive
+
+      - name: Get Processor Count
+        id: processor_count
+        if: matrix.kind == 'freebsd'
+        shell: bash
+        run: |
+          PROCESSOR_COUNT=$(nproc)
+          echo "PROCESSOR_COUNT=${PROCESSOR_COUNT}" >> "${GITHUB_OUTPUT}"
+          echo "PROCESSOR_COUNT: ${PROCESSOR_COUNT}"
+
+      - name: Setup FreeBSD
+        if: matrix.kind == 'freebsd'
+        uses: vmactions/freebsd-vm@83b151f58c6047089f4c80eb5ba2039d158ce093  # v1.5.3
+        with:
+          arch: x86_64
+          cpu: ${{ steps.processor_count.outputs.PROCESSOR_COUNT }}
+          envs: 'BRANCH BUILD_VERSION CMAKE_BUILD_CONFIG COMMIT PYTHON_VERSION'
+          prepare: |
+            set -e
+
+            python_package_version="$(printf '%s' "${PYTHON_VERSION}" | tr -d '.')"
+            pkg update
+            pkg upgrade -y
+            pkg install -y \
+              devel/cmake-core \
+              devel/evdev-proto \
+              devel/git \
+              devel/libevdev \
+              devel/llvm${{ env.FREEBSD_CLANG_VERSION }} \
+              devel/ninja \
+              devel/pkgconf \
+              devel/uv \
+              "lang/python${python_package_version}" \
+              textproc/libxml2 \
+              textproc/libxslt \
+              x11/libX11 \
+              x11/libXtst
+
+            if ! kldstat -q -m uinput; then
+              kldload uinput
+            fi
+
+            uinput_node=''
+            for candidate in /dev/input/uinput /dev/uinput; do
+              if [ -e "${candidate}" ]; then
+                uinput_node="${candidate}"
+                break
+              fi
+            done
+            if [ -z "${uinput_node}" ]; then
+              echo 'FreeBSD uinput did not expose a supported device node.' >&2
+              exit 1
+            fi
+            chmod a+rw "${uinput_node}"
+
+            ln -sf "/usr/local/bin/python${PYTHON_VERSION}" /usr/local/bin/python
+          release: ${{ env.FREEBSD_VERSION }}
+          run: |
+            set -e
+
+            uv sync --project third-party/lizardbyte-common --locked --only-group test-c \
+              --python /usr/local/bin/python \
+              --no-python-downloads \
+              --no-install-project
+
+            git config --global --add safe.directory '*'
+          sync: nfs
+
+      - name: Setup Dependencies Linux
+        if: runner.os == 'Linux' && matrix.kind == 'unix'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            clang \
+            cmake \
+            libevdev-dev \
+            libinput-dev \
+            libsdl2-dev \
+            libx11-dev \
+            libxtst-dev \
+            llvm \
+            ninja-build \
+            pkg-config
+          kernel_modules_package="linux-modules-extra-$(uname -r)"
+          if apt-cache show "${kernel_modules_package}" >/dev/null 2>&1; then
+            sudo apt-get install -y "${kernel_modules_package}"
+          else
+            echo "::warning::${kernel_modules_package} is unavailable; relying on the runner image kernel modules."
+          fi
+          sudo tee /etc/udev/rules.d/99-libvirtualhid-ci.rules >/dev/null <<'EOF'
+          SUBSYSTEM=="hidraw", KERNEL=="hidraw*", ENV{HID_PHYS}=="libvirtualhid/uhid/*", MODE="0666", TAG+="uaccess"
+          SUBSYSTEM=="hidraw", KERNEL=="hidraw*", ATTRS{name}=="(libvirtualhid)*", MODE="0666", TAG+="uaccess"
+          SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="(libvirtualhid)*", MODE="0666", TAG+="uaccess"
+          SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="libvirtualhid*", MODE="0666", TAG+="uaccess"
+          EOF
+          sudo udevadm control --reload-rules
+          for module in uhid uinput; do
+            if ! sudo modprobe "${module}"; then
+              message="Unable to load ${module}; tests requiring /dev/${module}"
+              message="${message} will fail unless the device already exists."
+              echo "::warning::${message}"
+            fi
+          done
+          if ! sudo modprobe hid_playstation; then
+            echo "::warning::Unable to load hid_playstation; SDL HIDAPI will exercise the native hidraw output path."
+          fi
+          for node in /dev/uhid /dev/uinput; do
+            if [[ -e "${node}" ]]; then
+              sudo chmod a+rw "${node}"
+            else
+              echo "::error::${node} does not exist after module setup."
+              exit 1
+            fi
+          done
+
+      - name: Setup Dependencies macOS
+        if: runner.os == 'macOS'
+        run: |
+          brew install \
+            cmake \
+            ninja
+
+      - name: Setup Dependencies Windows MinGW
+        if: matrix.kind == 'msys2'
+        uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884  # v2.32.0
+        with:
+          msystem: ${{ matrix.msystem }}
+          update: true
+          install: >-
+            mingw-w64-${{ matrix.toolchain }}-cmake
+            mingw-w64-${{ matrix.toolchain }}-ninja
+            mingw-w64-${{ matrix.toolchain }}-toolchain
+
+      - name: Setup Dependencies Windows MSVC
+        if: matrix.kind == 'msvc'
+        run: |
+          choco install opencppcoverage --version=${{ env.OPENCPPCOVERAGE_VERSION }} --yes --no-progress
+
+          $openCppCoverageDir = "${env:ProgramFiles}\OpenCppCoverage"
+          if (!(Test-Path (Join-Path $openCppCoverageDir "OpenCppCoverage.exe"))) {
+            $openCppCoverageDir = "${env:ProgramFiles(x86)}\OpenCppCoverage"
+          }
+          if (!(Test-Path (Join-Path $openCppCoverageDir "OpenCppCoverage.exe"))) {
+            throw "OpenCppCoverage.exe was not found after Chocolatey install."
+          }
+
+          $openCppCoverageDir | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Setup python
+        id: setup-python
+        if: matrix.kind != 'msvc' && matrix.kind != 'freebsd'
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Setup uv
+        if: matrix.kind != 'msvc' && matrix.kind != 'freebsd'
+        uses: astral-sh/setup-uv@ae62891fec2bb8e7d6c99fc78c9fec3a63790f8d  # v10.0.0
+        with:
+          enable-cache: true
+
+      - name: Sync Python tools
+        if: matrix.kind != 'msvc' && matrix.kind != 'freebsd'
+        env:
+          MSYS2_PATH_TYPE: inherit
+          UV_PYTHON: ${{ steps.setup-python.outputs.python-path }}
+        run: |
+          uv sync --project third-party/lizardbyte-common --locked --only-group test-c \
+            --no-python-downloads \
+            --no-install-project
+
+      - name: Configure
+        if: matrix.kind != 'msvc'
+        env:
+          BRANCH: ${{ github.head_ref || github.ref_name }}
+          BUILD_VERSION: ${{ inputs.release_version }}
+          CC: ${{ matrix.cc }}
+          COMMIT: ${{ inputs.release_commit }}
+          CXX: ${{ matrix.cxx }}
+        run: |
+          if [ "${{ matrix.kind }}" = 'freebsd' ]; then
+            export CC="$(command -v '${{ matrix.cc }}')"
+            export CXX="$(command -v '${{ matrix.cxx }}')"
+          fi
+
+          cmake \
+            -DBUILD_DOCS=OFF \
+            -DBUILD_EXAMPLES=ON \
+            -DBUILD_TESTS=ON \
+            -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_CONFIG} \
+            -DLIBVIRTUALHID_BUILD_TOOLS=${{ matrix.build_tools || 'ON' }} \
+            -B cmake-build-ci \
+            -G Ninja \
+            -S .
+
+      - name: Configure MSVC
+        if: matrix.kind == 'msvc'
+        env:
+          BRANCH: ${{ github.head_ref || github.ref_name }}
+          BUILD_VERSION: ${{ inputs.release_version }}
+          COMMIT: ${{ inputs.release_commit }}
+        run: |
+          cmake `
+            -DBUILD_DOCS=OFF `
+            -DBUILD_EXAMPLES=ON `
+            -DBUILD_TESTS=ON `
+            -DLIBVIRTUALHID_BUILD_TOOLS=${{ matrix.build_tools || 'ON' }} `
+            -A x64 `
+            -B cmake-build-ci `
+            -G "Visual Studio 17 2022" `
+            -S .
+
+      - name: Build
+        run: cmake --build cmake-build-ci --config ${{ env.CMAKE_BUILD_CONFIG }} --parallel 2
+
+      - name: Download Windows driver installer artifact
+        if: runner.os == 'Windows'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: windows-driver-installer
+          path: windows-driver-installer
+
+      - name: Trust Windows driver catalog signer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $certificate = Get-ChildItem `
+            -LiteralPath .\windows-driver-installer `
+            -Filter *.cer `
+            -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+          if (!$certificate) {
+            Write-Host "No separate driver signing certificate artifact was provided."
+            return
+          }
+
+          $imported = Import-Certificate `
+            -FilePath $certificate.FullName `
+            -CertStoreLocation "Cert:\LocalMachine\TrustedPublisher"
+          foreach ($cert in $imported) {
+            Write-Host "Trusted driver publisher certificate $($cert.Subject) [$($cert.Thumbprint)]."
+          }
+
+      - name: Install Windows driver installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        timeout-minutes: 10
+        run: |
+          $installer = Get-ChildItem -LiteralPath .\windows-driver-installer -Filter *.msi | Select-Object -First 1
+          if (!$installer) {
+            throw "Windows driver installer artifact did not contain an MSI."
+          }
+          $logPath = Join-Path $env:RUNNER_TEMP "libvirtualhid-driver-install.log"
+          $driverLogPath = Join-Path $env:ProgramData "libvirtualhid\install-driver.log"
+          $setupApiLogPath = Join-Path $env:windir "inf\setupapi.dev.log"
+          $process = Start-Process `
+            -FilePath msiexec.exe `
+            -ArgumentList @("/i", $installer.FullName, "/qn", "/norestart", "/L*v", $logPath) `
+            -PassThru `
+            -NoNewWindow
+          if (!$process.WaitForExit([int] [TimeSpan]::FromMinutes(5).TotalMilliseconds)) {
+            Get-Content -LiteralPath $logPath -Tail 200 -ErrorAction SilentlyContinue
+            Get-Content -LiteralPath $driverLogPath -Tail 200 -ErrorAction SilentlyContinue
+            Get-Content -LiteralPath $setupApiLogPath -Tail 300 -ErrorAction SilentlyContinue
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+            throw "Windows driver installer timed out after 5 minutes."
+          }
+          if ($process.ExitCode -notin @(0, 3010)) {
+            Get-Content -LiteralPath $logPath -ErrorAction SilentlyContinue
+            Get-Content -LiteralPath $driverLogPath -ErrorAction SilentlyContinue
+            Get-Content -LiteralPath $setupApiLogPath -Tail 300 -ErrorAction SilentlyContinue
+            throw "Windows driver installer exited with code $($process.ExitCode)."
+          }
+
+      - name: Enable GitHub Actions evaluation window
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $serviceName = "libvirtualhid_broker"
+          $serviceRegistryPath = "HKLM:\SYSTEM\CurrentControlSet\Services\$serviceName"
+          New-ItemProperty `
+            -LiteralPath $serviceRegistryPath `
+            -Name Environment `
+            -PropertyType MultiString `
+            -Value @("GITHUB_ACTIONS=true") `
+            -Force | Out-Null
+          Restart-Service -Name $serviceName -Force
+          (Get-Service -Name $serviceName).WaitForStatus("Running", [TimeSpan]::FromSeconds(15))
+
+      - name: Verify Windows test driver package
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if ("${{ matrix.kind }}" -eq "msys2") {
+            $env:PATH = "C:\msys64\${{ matrix.msystem }}\bin;C:\msys64\usr\bin;$env:PATH"
+            $gamepadAdapterPath = "$env:GITHUB_WORKSPACE\cmake-build-ci\examples\gamepad_adapter.exe"
+          } else {
+            $gamepadAdapterPath = Join-Path `
+              "$env:GITHUB_WORKSPACE\cmake-build-ci\examples\$env:CMAKE_BUILD_CONFIG" `
+              "gamepad_adapter.exe"
+          }
+          $profiles = @("generic", "xone", "xseries", "ds4", "ds5", "switch")
+          foreach ($profile in $profiles) {
+            .\scripts\windows\test-installed-driver.ps1 `
+              -GamepadAdapterPath $gamepadAdapterPath `
+              -Profile $profile `
+              -Verbose
+          }
+
+      - name: Run gamepad adapter example
+        run: cmake --build cmake-build-ci --config ${{ env.CMAKE_BUILD_CONFIG }} --target run_gamepad_adapter_example
+
+      - name: Prepare report directory
+        run: cmake -E make_directory cmake-build-ci/reports
+
+      - name: Run tests
+        id: test
+        if: matrix.kind != 'msvc'
+        run: |
+          cd cmake-build-ci/tests
+          ./test_libvirtualhid --gtest_color=yes --gtest_output=xml:../reports/junit.xml
+
+      - name: Run tests MSVC
+        id: test_msvc
+        if: matrix.kind == 'msvc'
+        run: |
+          $openCppCoverage = (Get-Command OpenCppCoverage.exe -ErrorAction SilentlyContinue).Source
+          if (!$openCppCoverage) {
+            $candidates = @(
+              "${env:ProgramFiles}\OpenCppCoverage\OpenCppCoverage.exe",
+              "${env:ProgramFiles(x86)}\OpenCppCoverage\OpenCppCoverage.exe"
+            )
+            $openCppCoverage = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          }
+          if (!$openCppCoverage) {
+            throw "OpenCppCoverage.exe was not found."
+          }
+
+          # The broker test hook compiles a private copy only for failure injection.
+          & $openCppCoverage `
+            --sources "$env:GITHUB_WORKSPACE\examples" `
+            --sources "$env:GITHUB_WORKSPACE\src" `
+            --sources "$env:GITHUB_WORKSPACE\tools" `
+            --excluded_sources "$env:GITHUB_WORKSPACE\src\platform\windows\broker" `
+            "--export_type=cobertura:$env:GITHUB_WORKSPACE\cmake-build-ci\reports\coverage.xml" `
+            --working_dir "$env:GITHUB_WORKSPACE\cmake-build-ci\tests" `
+            -- `
+            "$env:GITHUB_WORKSPACE\cmake-build-ci\tests\$env:CMAKE_BUILD_CONFIG\test_libvirtualhid.exe" `
+            --gtest_color=yes `
+            "--gtest_output=xml:$env:GITHUB_WORKSPACE\cmake-build-ci\reports\junit.xml"
+
+      - name: Normalize MSVC coverage paths
+        if: >-
+          always() &&
+          matrix.kind == 'msvc' &&
+          (steps.test_msvc.outcome == 'success' || steps.test_msvc.outcome == 'failure')
+        run: |
+          $coveragePath = Join-Path $env:GITHUB_WORKSPACE "cmake-build-ci\reports\coverage.xml"
+          if (!(Test-Path $coveragePath)) {
+            return
+          }
+
+          [xml] $coverage = Get-Content $coveragePath
+          $workspace = $env:GITHUB_WORKSPACE.Replace('\', '/')
+          foreach ($node in $coverage.SelectNodes('//*[@filename]')) {
+            $filename = $node.GetAttribute('filename').Replace('\', '/')
+            if ($filename.StartsWith("${workspace}/")) {
+              $filename = $filename.Substring($workspace.Length + 1)
+            }
+
+            $node.SetAttribute('filename', $filename)
+          }
+
+          foreach ($source in $coverage.SelectNodes('//source')) {
+            $source.InnerText = '.'
+          }
+
+          $coverage.Save($coveragePath)
+
+      - name: Generate gcov report
+        id: test_report
+        if: >-
+          always() &&
+          matrix.kind != 'msvc' &&
+          (steps.test.outcome == 'success' || steps.test.outcome == 'failure')
+        env:
+          MSYS2_PATH_TYPE: inherit
+        run: |
+          cd cmake-build-ci
+          # The broker test hook compiles a private copy only for failure injection.
+          uv run --project ../third-party/lizardbyte-common --locked --no-sync gcovr . -r .. \
+            --filter ../examples/ \
+            --filter ../src/ \
+            --filter ../tools/ \
+            --gcov-executable "${{ matrix.gcov_executable }}" \
+            --exclude ../src/platform/windows/broker/ \
+            --exclude ../tests/ \
+            --exclude ../third-party/ \
+            --exclude-noncode-lines \
+            --exclude-throw-branches \
+            --exclude-unreachable-branches \
+            --verbose \
+            --xml-pretty \
+            -o reports/coverage.xml
+
+      - name: Uninstall Windows driver installer
+        if: >-
+          always() &&
+          runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem -LiteralPath .\windows-driver-installer `
+            -Filter *.msi `
+            -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+          if ($installer) {
+            $logPath = Join-Path $env:RUNNER_TEMP "libvirtualhid-driver-uninstall.log"
+            $process = Start-Process `
+              -FilePath msiexec.exe `
+              -ArgumentList @("/x", $installer.FullName, "/qn", "/norestart", "/L*v", $logPath) `
+              -PassThru `
+              -NoNewWindow
+            if (!$process.WaitForExit([int] [TimeSpan]::FromMinutes(5).TotalMilliseconds)) {
+              Get-Content -LiteralPath $logPath -Tail 200 -ErrorAction SilentlyContinue
+              Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+              throw "Windows driver installer uninstall timed out after 5 minutes."
+            }
+            if ($process.ExitCode -notin @(0, 3010)) {
+              Get-Content -LiteralPath $logPath -ErrorAction SilentlyContinue
+              throw "Windows driver installer uninstall exited with code $($process.ExitCode)."
+            }
+          }
+
+      - name: Install
+        run: cmake --install cmake-build-ci --config ${{ env.CMAKE_BUILD_CONFIG }} --prefix cmake-build-ci/install
+
+      - name: Configure tests-disabled FreeBSD package
+        if: matrix.kind == 'freebsd'
+        run: |
+          set -e
+          export CC="$(command -v '${{ matrix.cc }}')"
+          export CXX="$(command -v '${{ matrix.cxx }}')"
+
+          cmake \
+            -DBUILD_DOCS=OFF \
+            -DBUILD_EXAMPLES=OFF \
+            -DBUILD_TESTS=OFF \
+            -DCMAKE_BUILD_TYPE:STRING=Release \
+            -DCMAKE_INSTALL_PREFIX="${GITHUB_WORKSPACE}/cmake-build-package/install" \
+            -DLIBVIRTUALHID_BUILD_TOOLS=OFF \
+            -DLIBVIRTUALHID_ENABLE_PACKAGING=OFF \
+            -B cmake-build-package \
+            -G Ninja \
+            -S .
+
+      - name: Build and install FreeBSD package
+        if: matrix.kind == 'freebsd'
+        run: |
+          cmake --build cmake-build-package --parallel 2
+          cmake --install cmake-build-package
+          test ! -d cmake-build-package/install/lib/cmake/lizardbyte-common
+
+      - name: Configure, compile, and link FreeBSD downstream consumer
+        if: matrix.kind == 'freebsd'
+        run: |
+          set -e
+          export CC="$(command -v '${{ matrix.cc }}')"
+          export CXX="$(command -v '${{ matrix.cxx }}')"
+
+          cmake \
+            -DCMAKE_FIND_USE_PACKAGE_REGISTRY=OFF \
+            -DCMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY=OFF \
+            -DCMAKE_PREFIX_PATH="${GITHUB_WORKSPACE}/cmake-build-package/install" \
+            -B cmake-build-package-consumer \
+            -G Ninja \
+            -S tests/package-consumer
+          cmake --build cmake-build-package-consumer --parallel 2
+
+      - name: Upload report artifact
+        if: >-
+          always() &&
+          (
+            steps.test_report.outcome == 'success' ||
+            steps.test_msvc.outcome == 'success' ||
+            steps.test_msvc.outcome == 'failure'
+          )
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: reports-${{ matrix.name }}
+          path: cmake-build-ci/reports
+          if-no-files-found: error
+
+  package_consumer:
+    name: Installed Package Consumer (Linux)
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          submodules: recursive
+
+      - name: Install package dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            libevdev-dev \
+            libx11-dev \
+            libxtst-dev \
+            ninja-build \
+            pkg-config
+
+      # This intentionally uses a separate BUILD_TESTS=OFF configuration. Test
+      # builds add lizardbyte-common for test support and therefore cannot prove
+      # that a normal installed package is independently consumable. Release also
+      # keeps an optimized GCC library build under warnings-as-errors without
+      # changing or publishing the ordinary library artifacts.
+      - name: Configure tests-disabled package
+        run: |
+          cmake \
+            -DBUILD_DOCS=OFF \
+            -DBUILD_EXAMPLES=OFF \
+            -DBUILD_TESTS=OFF \
+            -DCMAKE_BUILD_TYPE:STRING=Release \
+            -DCMAKE_INSTALL_PREFIX="${GITHUB_WORKSPACE}/cmake-build-package/install" \
+            -DLIBVIRTUALHID_BUILD_TOOLS=OFF \
+            -DLIBVIRTUALHID_ENABLE_PACKAGING=OFF \
+            -B cmake-build-package \
+            -G Ninja \
+            -S .
+
+      - name: Build and install package
+        run: |
+          cmake --build cmake-build-package --parallel 2
+          cmake --install cmake-build-package
+          test ! -d cmake-build-package/install/lib/cmake/lizardbyte-common
+
+      # A separate CMake project and real symbol reference force find_package,
+      # imported-target generation, compilation, and the final static-library link.
+      - name: Configure, compile, and link downstream consumer
+        run: |
+          cmake \
+            -DCMAKE_FIND_USE_PACKAGE_REGISTRY=OFF \
+            -DCMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY=OFF \
+            -DCMAKE_PREFIX_PATH="${GITHUB_WORKSPACE}/cmake-build-package/install" \
+            -B cmake-build-package-consumer \
+            -G Ninja \
+            -S tests/package-consumer
+          cmake --build cmake-build-package-consumer --parallel 2
