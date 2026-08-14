@@ -55,6 +55,8 @@ The core API and adapter shape cover the major streaming-host requirements:
   through `uinput`, and `uinput` keyboard/pointer devices.
 - Linux DualSense and DualShock 4 USB/Bluetooth report handling.
 - Linux touchscreen, trackpad, and pen tablet device types.
+- FreeBSD uinput gamepads and pointer devices, with basic PlayStation input and
+  rumble but without Linux UHID-only PlayStation features.
 - Windows UMDF/VHF gamepad creation through an installed driver package.
 
 Remaining replacement work is validation and packaging, not broad API shape:
@@ -67,7 +69,8 @@ Remaining replacement work is validation and packaging, not broad API shape:
   libvirtualhid driver-package checks.
 - Add and validate the Linux host adapter for the selected controller profile
   names used by the consuming application.
-- Define the FreeBSD backend subset explicitly instead of assuming Linux
-  `uhid` behavior applies.
+- Evaluate an optional FreeBSD CUSE-backed `uhid(4)`-compatible device for
+  direct HID consumers. This would supplement uinput; it is not equivalent to
+  registering a virtual device with FreeBSD's kernel HID bus.
 - Validate macOS CoreGraphics keyboard and mouse support in a streaming host, and
   keep native macOS virtual HID device work scoped separately.

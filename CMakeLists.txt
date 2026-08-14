@@ -40,7 +40,7 @@ option(LIBVIRTUALHID_BUILD_TOOLS "Build libvirtualhid diagnostic tools" ${LIBVIR
 option(LIBVIRTUALHID_TOOLS_STATIC_RUNTIME "Link libvirtualhid tools to static compiler runtimes where supported" ON)
 option(LIBVIRTUALHID_TOOLS_FULLY_STATIC "Attempt to link libvirtualhid tools as fully static binaries" OFF)
 option(LIBVIRTUALHID_TOOLS_STATIC_SDL3 "Prefer a static SDL3 diagnostic UI dependency when available" ON)
-option(LIBVIRTUALHID_ENABLE_XTEST "Enable X11/XTest keyboard and mouse fallback on Linux" ON)
+option(LIBVIRTUALHID_ENABLE_XTEST "Enable X11/XTest keyboard and mouse fallback on evdev platforms" ON)
 option(LIBVIRTUALHID_BUILD_WINDOWS_DRIVER "Build the Windows UMDF2 driver package with the WDK/MSVC toolchain" OFF)
 option(LIBVIRTUALHID_BUILD_WINDOWS_BROKER
        "Build the Windows broker service used by the monetized UMDF driver package"
@@ -57,7 +57,7 @@ include(CMakePackageConfigHelpers)
 include(GNUInstallDirs)
 
 set(LIBVIRTUALHID_USES_THREADS OFF)
-if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
     set(LIBVIRTUALHID_USES_THREADS ON)
 endif()
 set(LIBVIRTUALHID_USES_XTEST OFF)

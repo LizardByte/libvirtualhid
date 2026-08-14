@@ -7,6 +7,7 @@
 // standard includes
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <vector>
 
 // local includes
@@ -339,6 +340,12 @@ namespace lvh::detail {
      * @brief Backend device when creation succeeds.
      */
     std::unique_ptr<BackendGamepad> gamepad;
+
+    /**
+     * @brief Backend-adjusted profile when the native transport exposes a
+     *        strict subset of the requested profile.
+     */
+    std::optional<DeviceProfile> effective_profile = std::nullopt;
 
     /**
      * @brief Check whether creation succeeded.

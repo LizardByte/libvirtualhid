@@ -1,0 +1,75 @@
+---
+name: CI-Results
+permissions: {}
+
+on:
+  workflow_call:
+    secrets:
+      CODECOV_TOKEN:
+        required: false
+
+jobs:
+  codecov:
+    name: Codecov-${{ matrix.flag }}
+    if: startsWith(github.repository, 'LizardByte/')
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - build_name: FreeBSD
+            flag: FreeBSD
+            has_coverage: true
+          - build_name: Linux-GCC
+            flag: Linux-GCC
+            has_coverage: true
+          - build_name: Linux-Clang
+            flag: Linux-Clang
+            has_coverage: true
+          - build_name: macOS
+            flag: macOS
+            has_coverage: true
+          - build_name: Windows-MinGW-UCRT64
+            flag: Windows-MinGW-UCRT64
+            has_coverage: true
+          - build_name: Windows-MSVC
+            flag: Windows-MSVC
+            has_coverage: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Download report artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: reports-${{ matrix.build_name }}
+          path: _reports
+
+      - name: Debug coverage file
+        if: matrix.has_coverage
+        run: cat _reports/coverage.xml
+
+      - name: Upload test coverage
+        if: matrix.has_coverage
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f  # v7.0.0
+        with:
+          disable_search: true
+          fail_ci_if_error: true
+          files: ./_reports/coverage.xml
+          report_type: coverage
+          flags: ${{ matrix.flag }}
+          token: ${{ secrets.CODECOV_TOKEN }}
+          verbose: true
+
+      - name: Upload test results
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f  # v7.0.0
+        with:
+          disable_search: true
+          fail_ci_if_error: true
+          files: ./_reports/junit.xml
+          report_type: test_results
+          flags: ${{ matrix.flag }}
+          token: ${{ secrets.CODECOV_TOKEN }}
+          verbose: true

@@ -40,8 +40,10 @@
   #define __user
 #endif
 #include <linux/input.h>
-#include <linux/uhid.h>
 #include <linux/uinput.h>
+#if defined(__linux__)
+  #include <linux/uhid.h>
+#endif
 #include <poll.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
@@ -60,7 +62,9 @@
 
 // local includes
 #include "core/backend.hpp"
-#include "shared/playstation_feature_reports.hpp"
+#if defined(__linux__)
+  #include "shared/playstation_feature_reports.hpp"
+#endif
 
 #include <libvirtualhid/profiles.hpp>
 #include <libvirtualhid/report.hpp>
@@ -68,8 +72,14 @@
 namespace lvh::detail {
   namespace {  // NOSONAR(cpp:S1000): Linux backend internals need internal linkage; tests include this file with syscall overrides.
 
+#if defined(__linux__)
     constexpr auto uhid_path = "/dev/uhid";
-    constexpr auto uinput_path = "/dev/uinput";
+#endif
+#if defined(__FreeBSD__)
+    constexpr std::array uinput_paths {"/dev/input/uinput", "/dev/uinput"};
+#else
+    constexpr std::array uinput_paths {"/dev/uinput"};
+#endif
     constexpr auto absolute_axis_max = 65535;
     constexpr auto touch_axis_max_x = 19200;
     constexpr auto touch_axis_max_y = 10800;
@@ -86,8 +96,10 @@ namespace lvh::detail {
     constexpr auto xbox_sparse_uinput_bus = BUS_BLUETOOTH;
     constexpr std::uint16_t xbox_wireless_uinput_product_id = 0x0B20;
     constexpr std::uint16_t xbox_series_uinput_product_id = 0x0B13;
+#if defined(__linux__)
     namespace ps = playstation_feature_reports;
     constexpr auto playstation_periodic_report_ms = 10;
+#endif
 
     int system_access(const char *path, int mode) {
       return ::access(path, mode);
@@ -126,13 +138,30 @@ namespace lvh::detail {
     }
 
     bool can_access_uhid() {
+#if defined(__linux__)
       return system_access(uhid_path, R_OK | W_OK) == 0;
+#else
+      return false;
+#endif
     }
 
     bool can_access_uinput() {
-      return system_access(uinput_path, R_OK | W_OK) == 0;
+      return std::ranges::any_of(uinput_paths, [](const char *path) {
+        return system_access(path, R_OK | W_OK) == 0;
+      });
     }
 
+    int open_uinput(int flags) {
+      for (const auto *path : uinput_paths) {
+        const auto fd = system_open(path, flags);
+        if (fd >= 0) {
+          return fd;
+        }
+      }
+      return -1;
+    }
+
+#if defined(__linux__)
     std::array<std::uint8_t, 6> generated_mac_address(DeviceId id) {
       return {
         0x02,
@@ -200,9 +229,13 @@ namespace lvh::detail {
       buffer[3] = static_cast<std::uint8_t>((value >> 24U) & 0xFFU);
     }
 
+#endif
+
+#if defined(__linux__)
     bool is_playstation_profile(GamepadProfileKind kind) {
       return kind == GamepadProfileKind::dualshock4 || kind == GamepadProfileKind::dualsense;
     }
+#endif
 
     bool uses_uinput_gamepad_profile(GamepadProfileKind kind) {
       switch (kind) {
@@ -216,7 +249,11 @@ namespace lvh::detail {
           return true;
         case dualshock4:
         case dualsense:
+#if defined(__FreeBSD__)
+          return true;
+#else
           return false;
+#endif
       }
 
       return false;
@@ -228,13 +265,18 @@ namespace lvh::detail {
 
         case generic:
         case xbox_series:
+#if defined(__FreeBSD__)
+        case dualsense:
+#endif
           return KEY_RECORD;
         case switch_pro:
           return BTN_Z;
         case xbox_360:
         case xbox_one:
         case dualshock4:
+#if !defined(__FreeBSD__)
         case dualsense:
+#endif
           return std::nullopt;
       }
 
@@ -254,17 +296,20 @@ namespace lvh::detail {
       return BUS_USB;
     }
 
+#if defined(__linux__)
     std::uint16_t to_uhid_bus(const DeviceProfile &profile) {
       if (profile.gamepad_kind == GamepadProfileKind::switch_pro) {
         return BUS_VIRTUAL;
       }
       return to_uhid_bus(profile.bus_type);
     }
+#endif
 
     std::uint16_t to_uinput_bus(BusType bus_type) {
       return to_uhid_bus(bus_type);
     }
 
+#if defined(__linux__)
     template<std::size_t Size>
     void copy_string(__u8 (&destination)[Size], std::string_view source) {
       const auto length = std::min(source.size(), Size - 1);
@@ -285,6 +330,7 @@ namespace lvh::detail {
       std::memcpy(destination.data(), source.data(), length);
       destination[length] = 0;
     }
+#endif
 
     std::optional<std::string> read_first_line(const std::filesystem::path &path) {
       std::ifstream file {path};
@@ -301,6 +347,7 @@ namespace lvh::detail {
       nodes.push_back({.kind = kind, .path = path.string()});
     }
 
+#if defined(__linux__)
     void append_node_if_missing(std::vector<DeviceNode> &nodes, DeviceNodeKind kind, const std::filesystem::path &path) {
       const auto path_string = path.string();
       const auto existing = std::ranges::find_if(nodes, [kind, &path_string](const DeviceNode &node) {
@@ -310,6 +357,7 @@ namespace lvh::detail {
         nodes.push_back({.kind = kind, .path = path_string});
       }
     }
+#endif
 
     bool hidraw_name_matches(const std::filesystem::path &uevent_path, std::string_view name) {
       std::ifstream file {uevent_path};
@@ -328,6 +376,7 @@ namespace lvh::detail {
       return false;
     }
 
+#if defined(__linux__)
     bool hidraw_metadata_matches(
       const std::filesystem::path &uevent_path,
       std::string_view name,
@@ -401,6 +450,7 @@ namespace lvh::detail {
 
       return nodes;
     }
+#endif
 
     std::vector<DeviceNode> discover_input_nodes_by_name(
       const std::string &name,
@@ -805,6 +855,8 @@ namespace lvh::detail {
 
     protected:
       OperationStatus create_uinput_device(const DeviceProfile &profile, DeviceId id);
+
+      std::vector<DeviceNode> uinput_device_nodes(const std::string &device_name) const;
 
       OperationStatus emit_event(std::uint16_t type, std::uint16_t code, std::int32_t value) {
         std::lock_guard lock {write_mutex_};
@@ -1316,6 +1368,17 @@ namespace lvh::detail {
       return OperationStatus::success();
     }
 
+    std::vector<DeviceNode> UinputDevice::uinput_device_nodes(const std::string &device_name) const {
+#if defined(__FreeBSD__)
+      if (uinput_device_ != nullptr) {
+        if (const auto *devnode = libevdev_uinput_get_devnode(uinput_device_); devnode != nullptr) {
+          return {{.kind = DeviceNodeKind::input_event, .path = devnode}};
+        }
+      }
+#endif
+      return discover_input_nodes_by_name(device_name);
+    }
+
     /**
      * @brief Backend keyboard backed by one Linux uinput file descriptor.
      */
@@ -1361,7 +1424,7 @@ namespace lvh::detail {
       }
 
       std::vector<DeviceNode> device_nodes() const override {
-        return discover_input_nodes_by_name(device_name_);
+        return uinput_device_nodes(device_name_);
       }
 
     private:
@@ -1470,7 +1533,7 @@ namespace lvh::detail {
       }
 
       std::vector<DeviceNode> device_nodes() const override {
-        return discover_input_nodes_by_name(device_name_);
+        return uinput_device_nodes(device_name_);
       }
 
     private:
@@ -1554,7 +1617,7 @@ namespace lvh::detail {
       }
 
       std::vector<DeviceNode> touch_device_nodes() const {
-        return discover_input_nodes_by_name(device_name_);
+        return uinput_device_nodes(device_name_);
       }
 
     protected:
@@ -1884,7 +1947,7 @@ namespace lvh::detail {
       }
 
       std::vector<DeviceNode> device_nodes() const override {
-        return discover_input_nodes_by_name(device_name_);
+        return uinput_device_nodes(device_name_);
       }
 
     private:
@@ -2292,7 +2355,7 @@ namespace lvh::detail {
       }
 
       std::vector<DeviceNode> device_nodes() const override {
-        return discover_input_nodes_by_name(device_name_);
+        return uinput_device_nodes(device_name_);
       }
 
       OperationStatus close() override {
@@ -2690,6 +2753,7 @@ namespace lvh::detail {
       std::jthread reader_;
     };
 
+#if defined(__linux__)
     /**
      * @brief Backend gamepad backed by one Linux UHID file descriptor.
      */
@@ -3054,9 +3118,26 @@ namespace lvh::detail {
       std::mutex callback_mutex_;
       OutputCallback output_callback_;
     };
+#endif
+
+    std::optional<DeviceProfile> effective_uinput_profile(const DeviceProfile &requested_profile) {
+#if defined(__FreeBSD__)
+      auto effective_profile = requested_profile;
+      effective_profile.output_report_size = 0;
+      effective_profile.capabilities.supports_motion = false;
+      effective_profile.capabilities.supports_touchpad = false;
+      effective_profile.capabilities.supports_rgb_led = false;
+      effective_profile.capabilities.supports_battery = false;
+      effective_profile.capabilities.supports_adaptive_triggers = false;
+      return effective_profile;
+#else
+      static_cast<void>(requested_profile);
+      return std::nullopt;
+#endif
+    }
 
     /**
-     * @brief Linux platform backend backed by UHID.
+     * @brief Linux/FreeBSD platform backend backed by UHID and/or uinput.
      */
     class LinuxUhidBackend final: public Backend {
     public:
@@ -3064,7 +3145,11 @@ namespace lvh::detail {
         const auto uhid_accessible = can_access_uhid();
         const auto uinput_accessible = can_access_uinput();
         const auto xtest_accessible = can_use_xtest();
+#if defined(__FreeBSD__)
+        capabilities_.backend_name = "freebsd-uinput";
+#else
         capabilities_.backend_name = "linux-uhid-uinput";
+#endif
         capabilities_.supports_virtual_hid = uhid_accessible || uinput_accessible;
         capabilities_.supports_gamepad = uhid_accessible || uinput_accessible;
         capabilities_.supports_keyboard = uinput_accessible || xtest_accessible;
@@ -3082,9 +3167,9 @@ namespace lvh::detail {
 
       BackendGamepadCreationResult create_gamepad(DeviceId id, const CreateGamepadOptions &options) override {
         if (uses_uinput_gamepad_profile(options.profile.gamepad_kind)) {
-          const auto fd = system_open(uinput_path, O_RDWR | O_CLOEXEC | O_NONBLOCK);
+          const auto fd = open_uinput(O_RDWR | O_CLOEXEC | O_NONBLOCK);
           if (fd < 0) {
-            return {system_error_status(ErrorCode::backend_unavailable, "failed to open /dev/uinput", errno), nullptr};
+            return {system_error_status(ErrorCode::backend_unavailable, "failed to open uinput device", errno), nullptr};
           }
 
           auto gamepad = std::make_unique<UinputGamepad>(fd, options.profile.gamepad_kind);
@@ -3092,9 +3177,14 @@ namespace lvh::detail {
             static_cast<void>(gamepad->close());
             return {status, nullptr};
           }
-          return {OperationStatus::success(), std::move(gamepad)};
+          return {
+            OperationStatus::success(),
+            std::move(gamepad),
+            effective_uinput_profile(options.profile),
+          };
         }
 
+#if defined(__linux__)
         const auto fd = system_open(uhid_path, O_RDWR | O_CLOEXEC);
         if (fd < 0) {
           return {system_error_status(ErrorCode::backend_unavailable, "failed to open /dev/uhid", errno), nullptr};
@@ -3107,10 +3197,16 @@ namespace lvh::detail {
         }
 
         return {OperationStatus::success(), std::move(gamepad)};
+#else
+        return {
+          OperationStatus::failure(ErrorCode::unsupported_profile, "gamepad profile requires Linux UHID"),
+          nullptr,
+        };
+#endif
       }
 
       BackendKeyboardCreationResult create_keyboard(DeviceId id, const CreateKeyboardOptions &options) override {
-        const auto fd = system_open(uinput_path, O_RDWR | O_CLOEXEC | O_NONBLOCK);
+        const auto fd = open_uinput(O_RDWR | O_CLOEXEC | O_NONBLOCK);
         if (fd < 0) {
           return create_xtest_keyboard();
         }
@@ -3129,7 +3225,7 @@ namespace lvh::detail {
       }
 
       BackendMouseCreationResult create_mouse(DeviceId id, const CreateMouseOptions &options) override {
-        const auto fd = system_open(uinput_path, O_RDWR | O_CLOEXEC | O_NONBLOCK);
+        const auto fd = open_uinput(O_RDWR | O_CLOEXEC | O_NONBLOCK);
         if (fd < 0) {
           return create_xtest_mouse();
         }
@@ -3151,7 +3247,7 @@ namespace lvh::detail {
         DeviceId id,
         const CreateTouchscreenOptions &options
       ) override {
-        const auto fd = system_open(uinput_path, O_RDWR | O_CLOEXEC | O_NONBLOCK);
+        const auto fd = open_uinput(O_RDWR | O_CLOEXEC | O_NONBLOCK);
         if (fd < 0) {
           return {system_error_status(ErrorCode::backend_unavailable, "failed to open /dev/uinput", errno), nullptr};
         }
@@ -3166,7 +3262,7 @@ namespace lvh::detail {
       }
 
       BackendTrackpadCreationResult create_trackpad(DeviceId id, const CreateTrackpadOptions &options) override {
-        const auto fd = system_open(uinput_path, O_RDWR | O_CLOEXEC | O_NONBLOCK);
+        const auto fd = open_uinput(O_RDWR | O_CLOEXEC | O_NONBLOCK);
         if (fd < 0) {
           return {system_error_status(ErrorCode::backend_unavailable, "failed to open /dev/uinput", errno), nullptr};
         }
@@ -3181,7 +3277,7 @@ namespace lvh::detail {
       }
 
       BackendPenTabletCreationResult create_pen_tablet(DeviceId id, const CreatePenTabletOptions &options) override {
-        const auto fd = system_open(uinput_path, O_RDWR | O_CLOEXEC | O_NONBLOCK);
+        const auto fd = open_uinput(O_RDWR | O_CLOEXEC | O_NONBLOCK);
         if (fd < 0) {
           return {system_error_status(ErrorCode::backend_unavailable, "failed to open /dev/uinput", errno), nullptr};
         }
