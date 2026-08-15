@@ -513,6 +513,8 @@ jobs:
 
           public static class LibVirtualHidUninstallTest
           {
+              public const uint GenericReadWriteAccess = 0xC0000000;
+
               [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
               public static extern IntPtr CreateFile(
                   string fileName,
@@ -532,7 +534,7 @@ jobs:
             $invalidHandle = [IntPtr]::new(-1)
             $deviceHandle = [LibVirtualHidUninstallTest]::CreateFile(
               "\\.\LibVirtualHid",
-              0xC0000000,
+              [LibVirtualHidUninstallTest]::GenericReadWriteAccess,
               0x00000003,
               [IntPtr]::Zero,
               3,
