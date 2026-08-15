@@ -72,6 +72,16 @@ submit/destroy requests include that token so stale or unrelated clients cannot
 control devices they did not create. Input reports are submitted through VHF,
 and HID output writes are normalized back to the C++ output callback path.
 
+The driver owns the VHF input buffering policy instead of allowing VHF to build
+the default HID report backlog. VHF readiness notifications permit one report at
+a time; while a consumer is not ready, the driver replaces superseded axis,
+trigger, motion, battery, and touch-position states with the newest report.
+Button, D-pad, trigger-threshold, report-ID, and touch-contact lifecycle changes
+remain ordered in a bounded transition queue. This keeps continuously moving
+controls close to the latest submitted state while preserving ordinary button
+press and release transitions. Profile initialization replies are prioritized
+over pending controller states so the Switch Pro handshake remains responsive.
+
 The driver rejects gamepad create, destroy, and broker-instance reset IOCTLs
 unless the requestor token contains the `NT SERVICE\libvirtualhid_broker`
 service SID. On the first boot after installation, before Windows applies a

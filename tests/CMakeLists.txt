@@ -31,6 +31,7 @@ set(LIBVIRTUALHID_TEST_SOURCES
   "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_report.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_runtime.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_windows_broker_validation.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_windows_vhf_input_report_queue.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_windows_protocol.cpp")
 
 if(TARGET virtualhid_control_model)
