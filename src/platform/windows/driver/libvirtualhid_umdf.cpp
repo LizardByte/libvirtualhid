@@ -35,6 +35,7 @@
 #include <atomic>
 #include <bit>
 #include <charconv>
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -56,6 +57,7 @@
 #include "rotating_trace_log.hpp"
 #include "switch_pro_protocol.hpp"
 #include "unique_win32_handle.hpp"
+#include "vhf_input_report_queue.hpp"
 #include "windows_device_identity.hpp"
 
 using VhfContext = PVOID;  // NOSONAR(cpp:S5008): VHF callback ABI requires PVOID; client context narrows to DeviceRecord.
@@ -69,6 +71,7 @@ EVT_WDF_IO_QUEUE_IO_DEVICE_CONTROL LvhEvtIoDeviceControl;
 EVT_WDF_OBJECT_CONTEXT_CLEANUP LvhEvtDeviceCleanup;
 EVT_WDF_REQUEST_CANCEL LvhEvtOutputReadCanceled;
 EVT_VHF_ASYNC_OPERATION LvhEvtVhfGetFeature;
+EVT_VHF_READY_FOR_NEXT_READ_REPORT LvhEvtVhfReadyForNextReadReport;
 EVT_VHF_ASYNC_OPERATION LvhEvtVhfSetFeature;
 EVT_VHF_ASYNC_OPERATION LvhEvtVhfWriteReport;
 
@@ -85,7 +88,17 @@ namespace {
     decltype(&::CloseServiceHandle)>;
 
   struct DeviceRecord {
+    explicit DeviceRecord(const LvhWindowsCreateGamepadRequest &create_request):
+        request {create_request},
+        pending_input_reports {
+          create_request.gamepad_kind,
+          create_request.bus_type,
+          create_request.hardware_ids.report_id,
+        } {
+    }
+
     std::mutex mutex;
+    std::condition_variable submissions_drained;
     std::uint64_t driver_device_id {};
     WDFDEVICE owner_device {};
     WDFFILEOBJECT owner_file {};
@@ -96,6 +109,11 @@ namespace {
     std::vector<UCHAR> report_descriptor;
     std::wstring hardware_ids;
     lvh::detail::windows::GenericPidFeatureState generic_pid_feature_state;
+    lvh::detail::windows::VhfInputReportQueue pending_input_reports;
+    std::shared_ptr<std::vector<std::uint8_t>> in_flight_input_report;
+    std::size_t active_input_submissions {};
+    bool vhf_ready_for_input_report {};
+    bool shutting_down {};
   };
 
   struct PendingOutputRequest {
@@ -208,6 +226,81 @@ namespace {
     return iter->second;
   }
 
+  struct VhfInputSubmission {
+    VHFHANDLE vhf_handle {};
+    std::shared_ptr<std::vector<std::uint8_t>> report;
+    std::uint8_t report_id {};
+  };
+
+  std::optional<VhfInputSubmission> prepare_vhf_input_submission(DeviceRecord &record) {
+    std::lock_guard lock {record.mutex};
+    if (record.shutting_down || record.vhf_handle == nullptr || !record.vhf_ready_for_input_report) {
+      return std::nullopt;
+    }
+
+    auto pending = record.pending_input_reports.pop();
+    if (!pending.has_value()) {
+      return std::nullopt;
+    }
+
+    auto report = std::make_shared<std::vector<std::uint8_t>>(std::move(*pending));
+    const auto configured_report_id = record.request.hardware_ids.report_id;
+    const auto report_id = configured_report_id == 0U || report->empty() ? configured_report_id : report->front();
+
+    record.vhf_ready_for_input_report = false;
+    record.in_flight_input_report = report;
+    ++record.active_input_submissions;
+    return VhfInputSubmission {
+      .vhf_handle = record.vhf_handle,
+      .report = std::move(report),
+      .report_id = report_id,
+    };
+  }
+
+  std::optional<NTSTATUS> submit_next_vhf_input_report(DeviceRecord &record) {
+    auto submission = prepare_vhf_input_submission(record);
+    if (!submission.has_value()) {
+      return std::nullopt;
+    }
+
+    HID_XFER_PACKET packet {};
+    packet.reportBuffer = submission->report->data();
+    packet.reportBufferLen = static_cast<ULONG>(submission->report->size());
+    packet.reportId = submission->report_id;
+    const auto status = VhfReadReportSubmit(submission->vhf_handle, &packet);
+
+    {
+      std::lock_guard lock {record.mutex};
+      --record.active_input_submissions;
+      if (!NT_SUCCESS(status) && record.in_flight_input_report == submission->report) {
+        record.in_flight_input_report.reset();
+      }
+    }
+    record.submissions_drained.notify_all();
+
+    if (!NT_SUCCESS(status)) {
+      trace_status("submit_next_vhf_input_report VhfReadReportSubmit", status);
+    }
+    return status;
+  }
+
+  NTSTATUS queue_vhf_input_report(DeviceRecord &record, std::vector<std::uint8_t> report) {
+    {
+      std::lock_guard lock {record.mutex};
+      if (record.shutting_down || record.vhf_handle == nullptr) {
+        return STATUS_OBJECT_NAME_NOT_FOUND;
+      }
+      record.pending_input_reports.push(std::move(report));
+    }
+
+    if (const auto status = submit_next_vhf_input_report(record); status.has_value()) {
+      return *status;
+    }
+
+    std::lock_guard lock {record.mutex};
+    return record.shutting_down || record.vhf_handle == nullptr ? STATUS_OBJECT_NAME_NOT_FOUND : STATUS_SUCCESS;
+  }
+
   bool complete_output_request(
     WDFREQUEST request,
     const LvhWindowsOutputReportEvent &event,
@@ -305,9 +398,15 @@ namespace {
     VHFHANDLE vhf_handle = nullptr;
     WDFIOTARGET vhf_io_target = nullptr;
     {
-      std::lock_guard lock {record->mutex};
+      std::unique_lock lock {record->mutex};
+      record->shutting_down = true;
       vhf_handle = record->vhf_handle;
       record->vhf_handle = nullptr;
+      record->vhf_ready_for_input_report = false;
+      record->pending_input_reports.clear();
+      record->submissions_drained.wait(lock, [record] {
+        return record->active_input_submissions == 0U;
+      });
       vhf_io_target = record->vhf_io_target;
       record->vhf_io_target = nullptr;
     }
@@ -315,6 +414,11 @@ namespace {
     if (vhf_handle != nullptr) {
       trace_status("delete_vhf_device VhfDelete");
       VhfDelete(vhf_handle, TRUE);
+    }
+
+    {
+      std::lock_guard lock {record->mutex};
+      record->in_flight_input_report.reset();
     }
 
     if (vhf_io_target != nullptr) {
@@ -438,6 +542,7 @@ namespace {
     vhf_config.VersionNumber = record->request.hardware_ids.device_version;
     vhf_config.HardwareIDsLength = static_cast<USHORT>(record->hardware_ids.size() * sizeof(wchar_t));
     vhf_config.HardwareIDs = record->hardware_ids.data();
+    vhf_config.EvtVhfReadyForNextReadReport = LvhEvtVhfReadyForNextReadReport;
     vhf_config.EvtVhfAsyncOperationGetFeature = LvhEvtVhfGetFeature;
     vhf_config.EvtVhfAsyncOperationSetFeature = LvhEvtVhfSetFeature;
     vhf_config.EvtVhfAsyncOperationWriteReport = LvhEvtVhfWriteReport;
@@ -719,22 +824,7 @@ namespace {
       return;
     }
 
-    HID_XFER_PACKET packet {};
-    packet.reportBuffer = reply->data();
-    packet.reportBufferLen = static_cast<ULONG>(reply->size());
-    packet.reportId = reply->front();
-
-    // Keep teardown from deleting the VHF handle while the reply is being
-    // submitted. delete_vhf_device() clears the handle under the same mutex
-    // before calling VhfDelete, so no new submission can start afterward.
-    std::lock_guard lock {record.mutex};
-    if (record.vhf_handle == nullptr) {
-      return;
-    }
-    const auto submit_status = VhfReadReportSubmit(record.vhf_handle, &packet);
-    if (!NT_SUCCESS(submit_status)) {
-      trace_status("switch_pro_reply VhfReadReportSubmit", submit_status);
-    }
+    static_cast<void>(queue_vhf_input_report(record, {reply->begin(), reply->end()}));
   }
 
   LvhWindowsOutputReportEvent make_output_event(DeviceRecord &record, const HID_XFER_PACKET &packet) {
@@ -851,11 +941,10 @@ namespace {
 
     auto &state = driver_state();
     const auto driver_device_id = state.next_driver_device_id.fetch_add(1);
-    auto record = std::make_shared<DeviceRecord>();
+    auto record = std::make_shared<DeviceRecord>(*create_request);
     record->driver_device_id = driver_device_id;
     record->owner_device = device;
     record->owner_file = WdfRequestGetFileObject(request);
-    record->request = *create_request;
     status = generate_session_token(record->session_token);
     if (!NT_SUCCESS(status)) {
       trace_status("create_gamepad token failed", status);
@@ -975,13 +1064,6 @@ namespace {
       return;
     }
 
-    std::lock_guard lock {record->mutex};
-    if (record->vhf_handle == nullptr) {
-      trace_status("submit_input_report missing vhf");
-      complete_request(request, STATUS_OBJECT_NAME_NOT_FOUND);
-      return;
-    }
-
     auto report = make_vhf_input_payload(*record, *submit_request);
     if (report.empty()) {
       trace_status("submit_input_report invalid payload");
@@ -989,16 +1071,11 @@ namespace {
       return;
     }
 
-    HID_XFER_PACKET packet {};
-    packet.reportBuffer = report.data();
-    packet.reportBufferLen = static_cast<ULONG>(report.size());
-    packet.reportId = record->request.hardware_ids.report_id;
-
-    const auto submit_status = VhfReadReportSubmit(record->vhf_handle, &packet);
-    if (!NT_SUCCESS(submit_status)) {
-      trace_status("submit_input_report VhfReadReportSubmit", submit_status);
+    const auto queue_status = queue_vhf_input_report(*record, std::move(report));
+    if (!NT_SUCCESS(queue_status)) {
+      trace_status("submit_input_report queue failed", queue_status);
     }
-    complete_request(request, submit_status);
+    complete_request(request, queue_status);
   }
 
   void handle_read_output_report_request(WDFREQUEST request) {
@@ -1137,6 +1214,27 @@ void LvhEvtOutputReadCanceled(WDFREQUEST request) {
   if (remove_pending_output_request(request)) {
     complete_request(request, STATUS_CANCELLED);
   }
+}
+
+void LvhEvtVhfReadyForNextReadReport(VhfContext vhf_client_context) {
+  auto *record = static_cast<DeviceRecord *>(vhf_client_context);
+  if (record == nullptr) {
+    return;
+  }
+
+  {
+    std::lock_guard lock {record->mutex};
+    if (record->shutting_down || record->vhf_handle == nullptr) {
+      return;
+    }
+
+    // This callback confirms that VHF no longer references the previously
+    // submitted buffer and grants permission for exactly one more submission.
+    record->in_flight_input_report.reset();
+    record->vhf_ready_for_input_report = true;
+  }
+
+  static_cast<void>(submit_next_vhf_input_report(*record));
 }
 
 void LvhEvtVhfGetFeature(
