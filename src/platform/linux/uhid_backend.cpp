@@ -303,6 +303,28 @@ namespace lvh::detail {
       }
       return to_uhid_bus(profile.bus_type);
     }
+
+    std::optional<DeviceProfile> effective_uhid_gamepad_profile(const DeviceProfile &requested_profile) {
+      if (!is_playstation_profile(requested_profile.gamepad_kind) || requested_profile.bus_type == BusType::bluetooth) {
+        return std::nullopt;
+      }
+
+      // A UHID device has no physical USB ancestor, so the USB-only PlayStation
+      // hidraw rules shipped by steam-devices cannot grant the session access.
+      // The Bluetooth rules match the virtual HID ancestor instead. Mirror the
+      // working inputtino transport while preserving consumer-supplied identity
+      // and capability metadata.
+      const auto transport_profile = requested_profile.gamepad_kind == GamepadProfileKind::dualshock4 ?
+                                       profiles::dualshock4_bluetooth() :
+                                       profiles::dualsense_bluetooth();
+      auto effective_profile = requested_profile;
+      effective_profile.bus_type = transport_profile.bus_type;
+      effective_profile.report_id = transport_profile.report_id;
+      effective_profile.input_report_size = transport_profile.input_report_size;
+      effective_profile.output_report_size = transport_profile.output_report_size;
+      effective_profile.report_descriptor = transport_profile.report_descriptor;
+      return effective_profile;
+    }
 #endif
 
     std::uint16_t to_uinput_bus(BusType bus_type) {
@@ -3190,13 +3212,19 @@ namespace lvh::detail {
           return {system_error_status(ErrorCode::backend_unavailable, "failed to open /dev/uhid", errno), nullptr};
         }
 
+        auto effective_options = options;
+        auto effective_profile = effective_uhid_gamepad_profile(options.profile);
+        if (effective_profile.has_value()) {
+          effective_options.profile = *effective_profile;
+        }
+
         auto gamepad = std::make_unique<UhidGamepad>(fd);
-        if (const auto status = gamepad->create(id, options); !status.ok()) {
+        if (const auto status = gamepad->create(id, effective_options); !status.ok()) {
           static_cast<void>(gamepad->close());
           return {status, nullptr};
         }
 
-        return {OperationStatus::success(), std::move(gamepad)};
+        return {OperationStatus::success(), std::move(gamepad), std::move(effective_profile)};
 #else
         return {
           OperationStatus::failure(ErrorCode::unsupported_profile, "gamepad profile requires Linux UHID"),

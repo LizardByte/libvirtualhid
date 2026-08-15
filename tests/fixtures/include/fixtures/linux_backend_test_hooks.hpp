@@ -423,6 +423,14 @@ namespace lvh::detail::test {
   std::uint16_t linux_gamepad_uhid_bus(GamepadProfileKind kind);
 
   /**
+   * @brief Select the effective Linux UHID profile for a requested gamepad profile.
+   *
+   * @param profile Requested gamepad profile.
+   * @return Backend-adjusted gamepad profile.
+   */
+  DeviceProfile linux_effective_uhid_gamepad_profile(const DeviceProfile &profile);
+
+  /**
    * @brief Translate a bus type to a Linux uinput bus code.
    *
    * @param bus_type Bus type.

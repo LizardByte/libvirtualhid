@@ -878,6 +878,10 @@ namespace lvh::detail::test {
     return profile ? to_uhid_bus(*profile) : to_uhid_bus(BusType::unknown);
   }
 
+  DeviceProfile linux_effective_uhid_gamepad_profile(const DeviceProfile &profile) {
+    return effective_uhid_gamepad_profile(profile).value_or(profile);
+  }
+
   std::uint16_t linux_uinput_bus(BusType bus_type) {
     return to_uinput_bus(bus_type);
   }

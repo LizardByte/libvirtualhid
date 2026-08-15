@@ -125,6 +125,37 @@ TEST_F(LinuxBackendTest, TranslatesMouseButtonsAndBusTypes) {
   EXPECT_EQ(lvh::detail::test::linux_gamepad_uhid_bus(lvh::GamepadProfileKind::switch_pro), BUS_VIRTUAL);
   EXPECT_EQ(lvh::detail::test::linux_uinput_bus(lvh::BusType::bluetooth), BUS_BLUETOOTH);
 
+  auto dualshock4 = lvh::profiles::dualshock4_usb();
+  dualshock4.name = "Streaming host DS4";
+  const auto effective_dualshock4 = lvh::detail::test::linux_effective_uhid_gamepad_profile(dualshock4);
+  const auto dualshock4_bluetooth = lvh::profiles::dualshock4_bluetooth();
+  EXPECT_EQ(effective_dualshock4.bus_type, lvh::BusType::bluetooth);
+  EXPECT_EQ(effective_dualshock4.report_id, dualshock4_bluetooth.report_id);
+  EXPECT_EQ(effective_dualshock4.input_report_size, dualshock4_bluetooth.input_report_size);
+  EXPECT_EQ(effective_dualshock4.output_report_size, dualshock4_bluetooth.output_report_size);
+  EXPECT_EQ(effective_dualshock4.report_descriptor, dualshock4_bluetooth.report_descriptor);
+  EXPECT_EQ(effective_dualshock4.name, dualshock4.name);
+  EXPECT_EQ(effective_dualshock4.vendor_id, dualshock4.vendor_id);
+  EXPECT_EQ(effective_dualshock4.product_id, dualshock4.product_id);
+
+  auto dualsense = lvh::profiles::dualsense_usb();
+  dualsense.manufacturer = "Streaming host";
+  const auto effective_dualsense = lvh::detail::test::linux_effective_uhid_gamepad_profile(dualsense);
+  const auto dualsense_bluetooth = lvh::profiles::dualsense_bluetooth();
+  EXPECT_EQ(effective_dualsense.bus_type, lvh::BusType::bluetooth);
+  EXPECT_EQ(effective_dualsense.report_id, dualsense_bluetooth.report_id);
+  EXPECT_EQ(effective_dualsense.input_report_size, dualsense_bluetooth.input_report_size);
+  EXPECT_EQ(effective_dualsense.output_report_size, dualsense_bluetooth.output_report_size);
+  EXPECT_EQ(effective_dualsense.report_descriptor, dualsense_bluetooth.report_descriptor);
+  EXPECT_EQ(effective_dualsense.manufacturer, dualsense.manufacturer);
+  EXPECT_EQ(effective_dualsense.version, dualsense.version);
+
+  const auto requested_bluetooth = lvh::profiles::dualsense_bluetooth();
+  EXPECT_EQ(
+    lvh::detail::test::linux_effective_uhid_gamepad_profile(requested_bluetooth).report_descriptor,
+    requested_bluetooth.report_descriptor
+  );
+
   EXPECT_EQ(lvh::detail::test::linux_pen_tool(lvh::PenToolType::pen), BTN_TOOL_PEN);
   EXPECT_EQ(lvh::detail::test::linux_pen_tool(lvh::PenToolType::eraser), BTN_TOOL_RUBBER);
   EXPECT_EQ(lvh::detail::test::linux_pen_tool(lvh::PenToolType::brush), BTN_TOOL_BRUSH);
