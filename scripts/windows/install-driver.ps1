@@ -24,45 +24,6 @@ $script:LibVirtualHidBrokerServiceName = "libvirtualhid_broker"
 $script:LibVirtualHidBrokerServiceDisplayName = "libvirtualhid Broker"
 . (Join-Path $PSScriptRoot "libvirtualhid-driver-common.ps1")
 
-function Start-LibVirtualHidTranscript {
-  [CmdletBinding(SupportsShouldProcess)]
-  param([string] $Path)
-
-  if (-not $Path) {
-    return
-  }
-
-  try {
-    $logDirectory = Split-Path -Parent $Path
-    if ($logDirectory) {
-      New-Item -ItemType Directory -Path $logDirectory -Force | Out-Null
-    }
-    if ($PSCmdlet.ShouldProcess($Path, "Start libvirtualhid install transcript")) {
-      Start-Transcript -Path $Path -Append | Out-Null
-      $script:LibVirtualHidTranscriptStarted = $true
-    }
-  } catch {
-    Write-Warning "Unable to start libvirtualhid install transcript: $($_.Exception.Message)"
-  }
-}
-
-function Stop-LibVirtualHidTranscript {
-  [CmdletBinding(SupportsShouldProcess)]
-  param()
-
-  if (-not $script:LibVirtualHidTranscriptStarted) {
-    return
-  }
-
-  try {
-    if ($PSCmdlet.ShouldProcess("libvirtualhid install transcript", "Stop transcript")) {
-      Stop-Transcript | Out-Null
-    }
-  } catch {
-    Write-Warning "Unable to stop libvirtualhid install transcript: $($_.Exception.Message)"
-  }
-}
-
 function Invoke-CheckedCommand {
   param(
     [Parameter(Mandatory = $true)]

@@ -147,7 +147,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\windows\test-browser-gamepad.
   -GamepadAdapterPath .\cmake-build-windows-driver\examples\Release\gamepad_adapter.exe `
   -GamepadProfile xseries
 powershell -ExecutionPolicy Bypass -File .\scripts\windows\uninstall-driver.ps1 `
-  -Force -RemoveCertificateSubject "CN=libvirtualhid CI Test Driver Signing"
+  -Force -RemoveCertificateSubject "CN=libvirtualhid CI Test Driver Signing" `
+  -LogPath .\cmake-build-windows-driver\uninstall-driver.log
 ```
 
 The WiX installer also places validation files under the default install root,
@@ -174,10 +175,14 @@ The install helper also clears any legacy broker service `Environment` value so
 licensing configuration cannot be overridden on the user's machine. The
 uninstall helper stops and deletes that service before removing the driver
 package. It discovers staged OEM INF names through language-neutral DISM and
-CIM objects instead of parsing localized `pnputil` labels. Uninstall fails if a
-command fails or if the broker service, root device, or staged driver package
-is still present after cleanup, so the MSI cannot silently report a complete
-removal while driver state remains.
+CIM objects instead of parsing localized `pnputil` labels. If an application
+has an outstanding device handle, the helper records the initial device-removal
+failure and continues with the forced driver-package uninstall, which can finish
+or schedule the removal. Uninstall still fails if package removal fails or if
+the broker service, root device, or staged driver package remains after cleanup,
+so the MSI cannot silently report a complete removal while driver state remains.
+MSI uninstall diagnostics are appended to
+`C:\ProgramData\libvirtualhid\uninstall-driver.log`.
 
 The installed-driver test fails if the root device is not started, if
 `\\.\LibVirtualHid` cannot be opened, or if a held `gamepad_adapter` instance
