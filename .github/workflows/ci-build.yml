@@ -496,7 +496,7 @@ jobs:
             --xml-pretty \
             -o reports/coverage.xml
 
-      - name: Uninstall Windows driver installer
+      - name: Uninstall Windows driver installer with an open consumer handle
         if: >-
           always() &&
           runner.os == 'Windows'
@@ -507,20 +507,67 @@ jobs:
             -ErrorAction SilentlyContinue |
             Select-Object -First 1
           if ($installer) {
-            $logPath = Join-Path $env:RUNNER_TEMP "libvirtualhid-driver-uninstall.log"
-            $process = Start-Process `
-              -FilePath msiexec.exe `
-              -ArgumentList @("/x", $installer.FullName, "/qn", "/norestart", "/L*v", $logPath) `
-              -PassThru `
-              -NoNewWindow
-            if (!$process.WaitForExit([int] [TimeSpan]::FromMinutes(5).TotalMilliseconds)) {
-              Get-Content -LiteralPath $logPath -Tail 200 -ErrorAction SilentlyContinue
-              Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
-              throw "Windows driver installer uninstall timed out after 5 minutes."
+            $nativeMethods = @'
+          using System;
+          using System.Runtime.InteropServices;
+
+          public static class LibVirtualHidUninstallTest
+          {
+              [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+              public static extern IntPtr CreateFile(
+                  string fileName,
+                  uint desiredAccess,
+                  uint shareMode,
+                  IntPtr securityAttributes,
+                  uint creationDisposition,
+                  uint flagsAndAttributes,
+                  IntPtr templateFile);
+
+              [DllImport("kernel32.dll", SetLastError = true)]
+              [return: MarshalAs(UnmanagedType.Bool)]
+              public static extern bool CloseHandle(IntPtr handle);
+          }
+          '@
+            Add-Type -TypeDefinition $nativeMethods
+            $invalidHandle = [IntPtr]::new(-1)
+            $deviceHandle = [LibVirtualHidUninstallTest]::CreateFile(
+              "\\.\LibVirtualHid",
+              0xC0000000,
+              0x00000003,
+              [IntPtr]::Zero,
+              3,
+              0x40000080,
+              [IntPtr]::Zero
+            )
+            if ($deviceHandle -eq $invalidHandle) {
+              Write-Warning "Unable to hold the libvirtualhid control device; continuing cleanup."
+            } else {
+              Write-Host "Holding the libvirtualhid control device open during MSI uninstall."
             }
-            if ($process.ExitCode -notin @(0, 3010)) {
-              Get-Content -LiteralPath $logPath -ErrorAction SilentlyContinue
-              throw "Windows driver installer uninstall exited with code $($process.ExitCode)."
+
+            $logPath = Join-Path $env:RUNNER_TEMP "libvirtualhid-driver-uninstall.log"
+            $driverLogPath = Join-Path $env:ProgramData "libvirtualhid\uninstall-driver.log"
+            try {
+              $process = Start-Process `
+                -FilePath msiexec.exe `
+                -ArgumentList @("/x", $installer.FullName, "/qn", "/norestart", "/L*v", $logPath) `
+                -PassThru `
+                -NoNewWindow
+              if (!$process.WaitForExit([int] [TimeSpan]::FromMinutes(5).TotalMilliseconds)) {
+                Get-Content -LiteralPath $logPath -Tail 200 -ErrorAction SilentlyContinue
+                Get-Content -LiteralPath $driverLogPath -Tail 200 -ErrorAction SilentlyContinue
+                Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+                throw "Windows driver installer uninstall timed out after 5 minutes."
+              }
+              if ($process.ExitCode -notin @(0, 3010)) {
+                Get-Content -LiteralPath $logPath -ErrorAction SilentlyContinue
+                Get-Content -LiteralPath $driverLogPath -ErrorAction SilentlyContinue
+                throw "Windows driver installer uninstall exited with code $($process.ExitCode)."
+              }
+            } finally {
+              if ($deviceHandle -ne $invalidHandle) {
+                [void] [LibVirtualHidUninstallTest]::CloseHandle($deviceHandle)
+              }
             }
           }
 

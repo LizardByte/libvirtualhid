@@ -1,3 +1,42 @@
+function Start-LibVirtualHidTranscript {
+  [CmdletBinding(SupportsShouldProcess)]
+  param([string] $Path)
+
+  if (-not $Path) {
+    return
+  }
+
+  try {
+    $logDirectory = Split-Path -Parent $Path
+    if ($logDirectory) {
+      New-Item -ItemType Directory -Path $logDirectory -Force | Out-Null
+    }
+    if ($PSCmdlet.ShouldProcess($Path, "Start libvirtualhid driver transcript")) {
+      Start-Transcript -Path $Path -Append | Out-Null
+      $script:LibVirtualHidTranscriptStarted = $true
+    }
+  } catch {
+    Write-Warning "Unable to start libvirtualhid driver transcript: $($_.Exception.Message)"
+  }
+}
+
+function Stop-LibVirtualHidTranscript {
+  [CmdletBinding(SupportsShouldProcess)]
+  param()
+
+  if (-not $script:LibVirtualHidTranscriptStarted) {
+    return
+  }
+
+  try {
+    if ($PSCmdlet.ShouldProcess("libvirtualhid driver transcript", "Stop transcript")) {
+      Stop-Transcript | Out-Null
+    }
+  } catch {
+    Write-Warning "Unable to stop libvirtualhid driver transcript: $($_.Exception.Message)"
+  }
+}
+
 function Get-LibVirtualHidRootDeviceInstanceId {
   param([string] $TargetHardwareId)
 

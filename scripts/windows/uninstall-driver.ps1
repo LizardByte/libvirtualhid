@@ -14,10 +14,13 @@ param(
 
   [string] $RemoveCertificateSubject,
 
+  [string] $LogPath,
+
   [switch] $Force
 )
 
 $ErrorActionPreference = "Stop"
+$script:LibVirtualHidTranscriptStarted = $false
 . (Join-Path $PSScriptRoot "libvirtualhid-driver-common.ps1")
 
 function Invoke-CheckedCommand {
@@ -125,6 +128,31 @@ function Assert-PublishedName {
   }
 }
 
+function Remove-LibVirtualHidDeviceInstance {
+  [CmdletBinding(SupportsShouldProcess)]
+  param(
+    [Parameter(Mandatory = $true)]
+    [string] $InstanceId
+  )
+
+  if (-not $PSCmdlet.ShouldProcess($InstanceId, "Remove libvirtualhid development device with pnputil")) {
+    return
+  }
+
+  $output = @(& pnputil.exe /remove-device $InstanceId 2>&1)
+  $exitCode = $LASTEXITCODE
+  foreach ($line in $output) {
+    Write-Information ([string] $line) -InformationAction Continue
+  }
+
+  if ($exitCode -ne 0) {
+    Write-Warning (
+      "pnputil.exe /remove-device $InstanceId exited with code $exitCode. " +
+      "Continuing with forced driver-package removal; final state verification will still fail if cleanup is incomplete."
+    )
+  }
+}
+
 function Assert-LibVirtualHidRemoved {
   param(
     [string] $TargetOriginalName,
@@ -173,56 +201,60 @@ function Remove-DriverCertificate {
   }
 }
 
-$publishedNames = @()
-if ($PublishedName) {
-  Assert-PublishedName -Name $PublishedName
-  $publishedNames += $PublishedName
-} else {
-  try {
-    $publishedNames = @(
-      Find-PublishedName `
-        -TargetOriginalName $OriginalName `
-        -TargetHardwareId $HardwareId
-    )
-  } catch {
-    throw "Unable to discover the staged libvirtualhid driver package through Windows APIs: $($_.Exception.Message)"
-  }
-}
+Start-LibVirtualHidTranscript -Path $LogPath
 
-Remove-LibVirtualHidBrokerService -Name $BrokerServiceName
-
-$deviceInstanceIds = @(
-  Get-LibVirtualHidRootDeviceInstanceId -TargetHardwareId $HardwareId
-  Get-LibVirtualHidRegistryRootDevice -TargetHardwareId $HardwareId |
-    Select-Object -ExpandProperty InstanceId
-) | Select-Object -Unique
-
-foreach ($instanceId in $deviceInstanceIds) {
-  if ($PSCmdlet.ShouldProcess($instanceId, "Remove libvirtualhid development device with pnputil")) {
-    Invoke-CheckedCommand -FilePath "pnputil.exe" -Arguments @("/remove-device", $instanceId)
-  }
-}
-
-if ($publishedNames.Count -eq 0) {
-  Write-Warning "No staged libvirtualhid driver package matching $OriginalName was found."
-} else {
-  foreach ($driverPackage in $publishedNames) {
-    Assert-PublishedName -Name $driverPackage
-    $deleteArgs = @("/delete-driver", $driverPackage, "/uninstall")
-    if ($Force) {
-      $deleteArgs += "/force"
-    }
-
-    if ($PSCmdlet.ShouldProcess($driverPackage, "Delete libvirtualhid driver package")) {
-      Invoke-CheckedCommand -FilePath "pnputil.exe" -Arguments $deleteArgs
+try {
+  $publishedNames = @()
+  if ($PublishedName) {
+    Assert-PublishedName -Name $PublishedName
+    $publishedNames += $PublishedName
+  } else {
+    try {
+      $publishedNames = @(
+        Find-PublishedName `
+          -TargetOriginalName $OriginalName `
+          -TargetHardwareId $HardwareId
+      )
+    } catch {
+      throw "Unable to discover the staged libvirtualhid driver package through Windows APIs: $($_.Exception.Message)"
     }
   }
-}
 
-if (-not $WhatIfPreference) {
-  Assert-LibVirtualHidRemoved `
-    -TargetOriginalName $OriginalName `
-    -TargetHardwareId $HardwareId `
-    -ServiceName $BrokerServiceName
+  Remove-LibVirtualHidBrokerService -Name $BrokerServiceName
+
+  $deviceInstanceIds = @(
+    Get-LibVirtualHidRootDeviceInstanceId -TargetHardwareId $HardwareId
+    Get-LibVirtualHidRegistryRootDevice -TargetHardwareId $HardwareId |
+      Select-Object -ExpandProperty InstanceId
+  ) | Select-Object -Unique
+
+  foreach ($instanceId in $deviceInstanceIds) {
+    Remove-LibVirtualHidDeviceInstance -InstanceId $instanceId
+  }
+
+  if ($publishedNames.Count -eq 0) {
+    Write-Warning "No staged libvirtualhid driver package matching $OriginalName was found."
+  } else {
+    foreach ($driverPackage in $publishedNames) {
+      Assert-PublishedName -Name $driverPackage
+      $deleteArgs = @("/delete-driver", $driverPackage, "/uninstall")
+      if ($Force) {
+        $deleteArgs += "/force"
+      }
+
+      if ($PSCmdlet.ShouldProcess($driverPackage, "Delete libvirtualhid driver package")) {
+        Invoke-CheckedCommand -FilePath "pnputil.exe" -Arguments $deleteArgs
+      }
+    }
+  }
+
+  if (-not $WhatIfPreference) {
+    Assert-LibVirtualHidRemoved `
+      -TargetOriginalName $OriginalName `
+      -TargetHardwareId $HardwareId `
+      -ServiceName $BrokerServiceName
+  }
+  Remove-DriverCertificate -Subject $RemoveCertificateSubject
+} finally {
+  Stop-LibVirtualHidTranscript
 }
-Remove-DriverCertificate -Subject $RemoveCertificateSubject
