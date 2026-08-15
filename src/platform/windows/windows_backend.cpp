@@ -221,6 +221,58 @@ namespace lvh::detail {
       return OperationStatus::failure(code, message.str());
     }
 
+    UniqueHandle &overlapped_device_io_event() {
+      thread_local UniqueHandle operation_event {nullptr, &::CloseHandle};
+      if (!operation_event) {
+        operation_event = make_unique_handle(::CreateEventA(nullptr, TRUE, FALSE, nullptr));
+      }
+
+      return operation_event;
+    }
+
+    template<typename CancelOperation, typename FinishOperation>
+    void cancel_and_drain_overlapped_io(
+      OVERLAPPED &overlapped,
+      DWORD *bytes_returned,
+      CancelOperation &&cancel_operation,
+      FinishOperation &&finish_operation
+    ) {
+      static_cast<void>(std::forward<CancelOperation>(cancel_operation)(overlapped));
+      static_cast<void>(std::forward<FinishOperation>(finish_operation)(overlapped, bytes_returned, TRUE));
+    }
+
+    template<typename StartOperation, typename FinishOperation>
+    OperationStatus run_overlapped_device_io(
+      std::string_view operation,
+      DWORD *bytes_returned,
+      StartOperation &&start_operation,
+      FinishOperation &&finish_operation
+    ) {
+      const auto &operation_event = overlapped_device_io_event();
+      if (!operation_event) {
+        return windows_failure(ErrorCode::backend_failure, operation, ::GetLastError());
+      }
+      if (::ResetEvent(operation_event.get()) == FALSE) {
+        return windows_failure(ErrorCode::backend_failure, operation, ::GetLastError());
+      }
+
+      OVERLAPPED overlapped {};
+      overlapped.hEvent = operation_event.get();
+      if (std::forward<StartOperation>(start_operation)(overlapped, bytes_returned) != FALSE) {
+        return OperationStatus::success();
+      }
+
+      if (const auto start_error = ::GetLastError(); start_error != ERROR_IO_PENDING) {
+        return windows_failure(ErrorCode::backend_failure, operation, start_error);
+      }
+
+      if (std::forward<FinishOperation>(finish_operation)(overlapped, bytes_returned, TRUE) == FALSE) {
+        return windows_failure(ErrorCode::backend_failure, operation, ::GetLastError());
+      }
+
+      return OperationStatus::success();
+    }
+
     template<typename Submit>
     OperationStatus submit_with_desktop_retry(Submit submit, std::string_view operation) {
       using enum ErrorCode;
@@ -621,6 +673,18 @@ namespace lvh::detail {
         OVERLAPPED overlapped {};
         overlapped.hEvent = operation_event.get();
         DWORD bytes_returned = 0;
+        const auto cancel_and_drain = [this, &overlapped, &bytes_returned] {
+          cancel_and_drain_overlapped_io(
+            overlapped,
+            &bytes_returned,
+            [this](OVERLAPPED &pending) {
+              return ::CancelIoEx(handle_->value.get(), &pending);
+            },
+            [this](OVERLAPPED &pending, DWORD *result_size, BOOL wait) {
+              return ::GetOverlappedResult(handle_->value.get(), &pending, result_size, wait);
+            }
+          );
+        };
 
         if (const auto started = ::DeviceIoControl(handle_->value.get(), LVH_WINDOWS_IOCTL_READ_OUTPUT_REPORT, nullptr, 0, &event, sizeof(event), &bytes_returned, &overlapped); started == FALSE) {
           if (const auto error_code = ::GetLastError(); error_code != ERROR_IO_PENDING) {
@@ -638,11 +702,11 @@ namespace lvh::detail {
             INFINITE
           );
           if (wait_result == WAIT_OBJECT_0 + 1U) {
-            static_cast<void>(::CancelIoEx(handle_->value.get(), &overlapped));
+            cancel_and_drain();
             return std::nullopt;
           }
           if (wait_result != WAIT_OBJECT_0) {
-            static_cast<void>(::CancelIoEx(handle_->value.get(), &overlapped));
+            cancel_and_drain();
             return std::nullopt;
           }
         }
@@ -672,13 +736,25 @@ namespace lvh::detail {
         DWORD *bytes_returned,
         std::string_view operation
       ) const {
-        using enum ErrorCode;
-
-        if (::DeviceIoControl(handle_->value.get(), control_code, &input, sizeof(input), &output, sizeof(output), bytes_returned, nullptr) == FALSE) {
-          return windows_failure(backend_failure, operation, ::GetLastError());
-        }
-
-        return OperationStatus::success();
+        return run_overlapped_device_io(
+          operation,
+          bytes_returned,
+          [this, control_code, &input, &output](OVERLAPPED &overlapped, DWORD *result_size) {
+            return ::DeviceIoControl(
+              handle_->value.get(),
+              control_code,
+              &input,
+              sizeof(input),
+              &output,
+              sizeof(output),
+              result_size,
+              &overlapped
+            );
+          },
+          [this](OVERLAPPED &overlapped, DWORD *result_size, BOOL wait) {
+            return ::GetOverlappedResult(handle_->value.get(), &overlapped, result_size, wait);
+          }
+        );
       }
 
       template<typename Input>
@@ -688,13 +764,25 @@ namespace lvh::detail {
         DWORD *bytes_returned,
         std::string_view operation
       ) const {
-        using enum ErrorCode;
-
-        if (::DeviceIoControl(handle_->value.get(), control_code, &input, sizeof(input), nullptr, 0, bytes_returned, nullptr) == FALSE) {
-          return windows_failure(backend_failure, operation, ::GetLastError());
-        }
-
-        return OperationStatus::success();
+        return run_overlapped_device_io(
+          operation,
+          bytes_returned,
+          [this, control_code, &input](OVERLAPPED &overlapped, DWORD *result_size) {
+            return ::DeviceIoControl(
+              handle_->value.get(),
+              control_code,
+              &input,
+              sizeof(input),
+              nullptr,
+              0,
+              result_size,
+              &overlapped
+            );
+          },
+          [this](OVERLAPPED &overlapped, DWORD *result_size, BOOL wait) {
+            return ::GetOverlappedResult(handle_->value.get(), &overlapped, result_size, wait);
+          }
+        );
       }
 
       std::string path_;

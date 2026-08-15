@@ -35,6 +35,10 @@ backend asks the broker service to create and destroy gamepads through a local
 named pipe, while input reports stay on the direct driver path after creation.
 This keeps license and active-device checks outside the input hot path.
 
+The UMDF service runs in a dedicated high-priority host process, as recommended
+for response-sensitive input drivers. This isolates its VHF input work from
+normal-priority UMDF device pools while keeping the driver entirely user-mode.
+
 The broker pipe explicitly grants local authenticated users generic read access
 plus the individual data-write and attribute-write rights needed to exchange
 request and response messages in message mode. It does not grant clients the
@@ -88,7 +92,11 @@ output read. Broker protocol version 2 preserves that association by duplicating
 the handle only for the authorized create IOCTL. The driver associates output
 events with that file object, so feedback from a virtual gamepad is delivered
 only to the runtime that created it instead of being consumed by another
-libvirtualhid client.
+libvirtualhid client. Because the shared handle is opened for overlapped I/O,
+command IOCTLs also supply a valid `OVERLAPPED` event and explicitly wait for
+pending completion instead of mixing synchronous calls with an asynchronous
+handle. Each caller thread reuses its event to avoid creating a kernel handle
+for every input report.
 
 The driver opens a separate VHF source target for each virtual gamepad and
 parents that target to the control-file handle that created it. If the creating
