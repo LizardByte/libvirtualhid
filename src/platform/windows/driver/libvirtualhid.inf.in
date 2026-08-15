@@ -62,6 +62,7 @@ UmdfServiceOrder=libvirtualhid_umdf
 [libvirtualhid_umdf_Install]
 UmdfLibraryVersion=@LIBVIRTUALHID_UMDF_LIBRARY_VERSION@
 UmdfHostProcessSharing=ProcessSharingDisabled
+UmdfHostPriority=PriorityHigh
 ServiceBinary=%13%\libvirtualhid_umdf.dll
 
 [Strings]

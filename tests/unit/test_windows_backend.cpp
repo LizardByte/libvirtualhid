@@ -147,6 +147,27 @@ TEST_F(WindowsBackendTest, UtilityHookCoversEnvironmentErrorAndThreadBranches) {
   EXPECT_FALSE(result.timeout_result);
 }
 
+TEST_F(WindowsBackendTest, OverlappedDeviceIoUsesAnEventAndWaitsForPendingCompletion) {
+  const auto result = lvh::detail::test::windows_backend_overlapped_device_io();
+
+  expect_ok(result.immediate_status);
+  EXPECT_TRUE(result.immediate_saw_event);
+  EXPECT_FALSE(result.immediate_called_completion);
+  EXPECT_EQ(result.immediate_bytes_returned, 7U);
+
+  expect_ok(result.pending_status);
+  EXPECT_TRUE(result.pending_saw_event);
+  EXPECT_TRUE(result.pending_waited);
+  EXPECT_EQ(result.pending_bytes_returned, 11U);
+
+  EXPECT_TRUE(result.cancellation_called);
+  EXPECT_TRUE(result.cancellation_drained_after_cancel);
+  EXPECT_TRUE(result.cancellation_waited);
+
+  EXPECT_EQ(result.start_failure_status.code(), lvh::ErrorCode::backend_failure);
+  EXPECT_EQ(result.completion_failure_status.code(), lvh::ErrorCode::backend_failure);
+}
+
 TEST_F(WindowsBackendTest, SendInputDevicesTranslateKeyboardMouseFailuresAndUnsupportedProfiles) {
   const auto result = lvh::detail::test::windows_backend_send_input_devices();
 

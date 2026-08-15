@@ -732,6 +732,86 @@ namespace lvh::detail {
       return result;
     }
 
+    WindowsOverlappedIoResult windows_backend_overlapped_device_io() {
+      WindowsOverlappedIoResult result;
+
+      DWORD bytes_returned = 0;
+      result.immediate_status = run_overlapped_device_io(
+        "complete immediate test operation",
+        &bytes_returned,
+        [&result](const OVERLAPPED &overlapped, DWORD *result_size) {
+          result.immediate_saw_event = overlapped.hEvent != nullptr;
+          *result_size = 7U;
+          return TRUE;
+        },
+        [&result](OVERLAPPED &, DWORD *, BOOL) {
+          result.immediate_called_completion = true;
+          return TRUE;
+        }
+      );
+      result.immediate_bytes_returned = bytes_returned;
+
+      bytes_returned = 0;
+      result.pending_status = run_overlapped_device_io(
+        "complete pending test operation",
+        &bytes_returned,
+        [&result](const OVERLAPPED &overlapped, DWORD *) {
+          result.pending_saw_event = overlapped.hEvent != nullptr;
+          ::SetLastError(ERROR_IO_PENDING);
+          return FALSE;
+        },
+        [&result](OVERLAPPED &, DWORD *result_size, BOOL wait) {
+          result.pending_waited = wait != FALSE;
+          *result_size = 11U;
+          return TRUE;
+        }
+      );
+      result.pending_bytes_returned = bytes_returned;
+
+      OVERLAPPED canceled {};
+      cancel_and_drain_overlapped_io(
+        canceled,
+        &bytes_returned,
+        [&result](OVERLAPPED &) {
+          result.cancellation_called = true;
+          return TRUE;
+        },
+        [&result](OVERLAPPED &, DWORD *, BOOL wait) {
+          result.cancellation_drained_after_cancel = result.cancellation_called;
+          result.cancellation_waited = wait != FALSE;
+          ::SetLastError(ERROR_OPERATION_ABORTED);
+          return FALSE;
+        }
+      );
+
+      result.start_failure_status = run_overlapped_device_io(
+        "fail test operation start",
+        &bytes_returned,
+        [](OVERLAPPED &, DWORD *) {
+          ::SetLastError(ERROR_ACCESS_DENIED);
+          return FALSE;
+        },
+        [](OVERLAPPED &, DWORD *, BOOL) {
+          return TRUE;
+        }
+      );
+
+      result.completion_failure_status = run_overlapped_device_io(
+        "fail pending test operation",
+        &bytes_returned,
+        [](OVERLAPPED &, DWORD *) {
+          ::SetLastError(ERROR_IO_PENDING);
+          return FALSE;
+        },
+        [](OVERLAPPED &, DWORD *, BOOL) {
+          ::SetLastError(ERROR_OPERATION_ABORTED);
+          return FALSE;
+        }
+      );
+
+      return result;
+    }
+
     WindowsBackendSendInputResult windows_backend_send_input_devices() {
       using enum MouseEventKind;
 

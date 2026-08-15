@@ -65,6 +65,22 @@ namespace lvh::detail::test {
     bool timeout_result = true;
   };
 
+  struct WindowsOverlappedIoResult {
+    OperationStatus immediate_status;
+    OperationStatus pending_status;
+    OperationStatus start_failure_status;
+    OperationStatus completion_failure_status;
+    bool immediate_saw_event = false;
+    bool immediate_called_completion = false;
+    bool pending_saw_event = false;
+    bool pending_waited = false;
+    bool cancellation_called = false;
+    bool cancellation_drained_after_cancel = false;
+    bool cancellation_waited = false;
+    std::uint32_t immediate_bytes_returned = 0;
+    std::uint32_t pending_bytes_returned = 0;
+  };
+
   struct WindowsSendInputRecord {
     std::uint32_t type = 0;
     std::uint16_t virtual_key = 0;
@@ -151,6 +167,7 @@ namespace lvh::detail::test {
   WindowsGenericPidOrderingResult windows_backend_generic_pid_callback_ordering();
   WindowsBackendFailureResult windows_backend_fake_channel_failures();
   WindowsBackendUtilityResult windows_backend_fake_channel_utilities();
+  WindowsOverlappedIoResult windows_backend_overlapped_device_io();
   WindowsBackendSendInputResult windows_backend_send_input_devices();
 
 }  // namespace lvh::detail::test
