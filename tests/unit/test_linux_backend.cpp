@@ -125,37 +125,6 @@ TEST_F(LinuxBackendTest, TranslatesMouseButtonsAndBusTypes) {
   EXPECT_EQ(lvh::detail::test::linux_gamepad_uhid_bus(lvh::GamepadProfileKind::switch_pro), BUS_VIRTUAL);
   EXPECT_EQ(lvh::detail::test::linux_uinput_bus(lvh::BusType::bluetooth), BUS_BLUETOOTH);
 
-  auto dualshock4 = lvh::profiles::dualshock4_usb();
-  dualshock4.name = "Streaming host DS4";
-  const auto effective_dualshock4 = lvh::detail::test::linux_effective_uhid_gamepad_profile(dualshock4);
-  const auto dualshock4_bluetooth = lvh::profiles::dualshock4_bluetooth();
-  EXPECT_EQ(effective_dualshock4.bus_type, lvh::BusType::bluetooth);
-  EXPECT_EQ(effective_dualshock4.report_id, dualshock4_bluetooth.report_id);
-  EXPECT_EQ(effective_dualshock4.input_report_size, dualshock4_bluetooth.input_report_size);
-  EXPECT_EQ(effective_dualshock4.output_report_size, dualshock4_bluetooth.output_report_size);
-  EXPECT_EQ(effective_dualshock4.report_descriptor, dualshock4_bluetooth.report_descriptor);
-  EXPECT_EQ(effective_dualshock4.name, dualshock4.name);
-  EXPECT_EQ(effective_dualshock4.vendor_id, dualshock4.vendor_id);
-  EXPECT_EQ(effective_dualshock4.product_id, dualshock4.product_id);
-
-  auto dualsense = lvh::profiles::dualsense_usb();
-  dualsense.manufacturer = "Streaming host";
-  const auto effective_dualsense = lvh::detail::test::linux_effective_uhid_gamepad_profile(dualsense);
-  const auto dualsense_bluetooth = lvh::profiles::dualsense_bluetooth();
-  EXPECT_EQ(effective_dualsense.bus_type, lvh::BusType::bluetooth);
-  EXPECT_EQ(effective_dualsense.report_id, dualsense_bluetooth.report_id);
-  EXPECT_EQ(effective_dualsense.input_report_size, dualsense_bluetooth.input_report_size);
-  EXPECT_EQ(effective_dualsense.output_report_size, dualsense_bluetooth.output_report_size);
-  EXPECT_EQ(effective_dualsense.report_descriptor, dualsense_bluetooth.report_descriptor);
-  EXPECT_EQ(effective_dualsense.manufacturer, dualsense.manufacturer);
-  EXPECT_EQ(effective_dualsense.version, dualsense.version);
-
-  const auto requested_bluetooth = lvh::profiles::dualsense_bluetooth();
-  EXPECT_EQ(
-    lvh::detail::test::linux_effective_uhid_gamepad_profile(requested_bluetooth).report_descriptor,
-    requested_bluetooth.report_descriptor
-  );
-
   EXPECT_EQ(lvh::detail::test::linux_pen_tool(lvh::PenToolType::pen), BTN_TOOL_PEN);
   EXPECT_EQ(lvh::detail::test::linux_pen_tool(lvh::PenToolType::eraser), BTN_TOOL_RUBBER);
   EXPECT_EQ(lvh::detail::test::linux_pen_tool(lvh::PenToolType::brush), BTN_TOOL_BRUSH);
@@ -795,6 +764,7 @@ TEST_F(LinuxBackendTest, SocketpairBackedUhidGamepadRoundTripsEvents) {
   EXPECT_TRUE(result.submit_status.ok()) << result.submit_status.message();
   EXPECT_TRUE(result.close_status.ok()) << result.close_status.message();
   EXPECT_TRUE(result.saw_create);
+  EXPECT_EQ(result.created_name, lvh::profiles::xbox_360().name);
   EXPECT_TRUE(result.saw_input);
   EXPECT_TRUE(result.saw_get_report_reply);
   EXPECT_TRUE(result.saw_set_report_reply);
@@ -810,6 +780,7 @@ TEST_F(LinuxBackendTest, SocketpairBackedDualSenseRepliesToFeatureReports) {
   EXPECT_TRUE(result.create_status.ok()) << result.create_status.message();
   EXPECT_TRUE(result.close_status.ok()) << result.close_status.message();
   EXPECT_TRUE(result.saw_create);
+  EXPECT_EQ(result.created_name, "Wireless Controller");
   EXPECT_TRUE(result.saw_dualsense_calibration);
   EXPECT_TRUE(result.saw_dualsense_pairing);
   EXPECT_TRUE(result.saw_dualsense_firmware);
@@ -825,6 +796,7 @@ TEST_F(LinuxBackendTest, SocketpairBackedDualSenseBluetoothFramesReports) {
   EXPECT_TRUE(result.create_status.ok()) << result.create_status.message();
   EXPECT_TRUE(result.close_status.ok()) << result.close_status.message();
   EXPECT_TRUE(result.saw_create);
+  EXPECT_EQ(result.created_name, "Wireless Controller");
   EXPECT_TRUE(result.saw_dualsense_bluetooth_input);
   EXPECT_TRUE(result.saw_dualsense_pairing);
   EXPECT_TRUE(result.saw_dualsense_feature_crc);
@@ -835,6 +807,7 @@ TEST_F(LinuxBackendTest, SocketpairBackedDualShock4RepliesToFeatureReports) {
   EXPECT_TRUE(result.create_status.ok()) << result.create_status.message();
   EXPECT_TRUE(result.close_status.ok()) << result.close_status.message();
   EXPECT_TRUE(result.saw_create);
+  EXPECT_EQ(result.created_name, "Wireless Controller");
   EXPECT_TRUE(result.saw_dualshock4_calibration);
   EXPECT_TRUE(result.saw_dualshock4_pairing);
   EXPECT_TRUE(result.saw_dualshock4_firmware);
@@ -850,6 +823,7 @@ TEST_F(LinuxBackendTest, SocketpairBackedDualShock4BluetoothFramesReports) {
   EXPECT_TRUE(result.create_status.ok()) << result.create_status.message();
   EXPECT_TRUE(result.close_status.ok()) << result.close_status.message();
   EXPECT_TRUE(result.saw_create);
+  EXPECT_EQ(result.created_name, "Wireless Controller");
   EXPECT_TRUE(result.saw_dualshock4_bluetooth_input);
   EXPECT_TRUE(result.saw_dualshock4_calibration);
   EXPECT_TRUE(result.saw_dualshock4_pairing);

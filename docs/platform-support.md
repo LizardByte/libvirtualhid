@@ -138,14 +138,12 @@ and control channels. Numbered control-channel output is normalized before
 parsing, whether the kernel includes the report number in the payload or
 provides it separately on the UHID event.
 
-On Linux, PlayStation profiles requested with the default USB transport are
-instantiated as their Bluetooth UHID variants. Virtual UHID devices do not have
-a physical USB ancestor, so the USB PlayStation rules shipped by
-`steam-devices` cannot grant access to their `hidraw` nodes. The Bluetooth rules
-match the virtual HID ancestor by bus, vendor, and product instead, allowing
-Steam to open the controller. `Gamepad::profile()` reports this effective
-Bluetooth transport and matching report framing. This adjustment is confined to
-the Linux backend; Windows profile transport and VHF behavior are unchanged.
+On Linux, the UHID transport emits Sony's native `Wireless Controller` product
+name for DualShock 4 and DualSense devices. This keeps Steam's PlayStation HID
+detection compatible even when a streaming host customizes the public profile
+name. The requested USB or Bluetooth descriptor and report framing are left
+unchanged. This identity adjustment is confined to the Linux backend; Windows
+profile names and VHF behavior are unchanged.
 
 Switch Pro keeps its Nintendo identity on the Linux uinput path. This follows
 the evdev layout used by Linux-native virtual-controller implementations and

@@ -127,6 +127,11 @@ namespace lvh::detail::test {
     bool saw_create = false;
 
     /**
+     * @brief Product name carried by the observed create event.
+     */
+    std::string created_name;
+
+    /**
      * @brief Whether the peer observed an input report event.
      */
     bool saw_input = false;
@@ -421,14 +426,6 @@ namespace lvh::detail::test {
    * @return Linux UHID bus code.
    */
   std::uint16_t linux_gamepad_uhid_bus(GamepadProfileKind kind);
-
-  /**
-   * @brief Select the effective Linux UHID profile for a requested gamepad profile.
-   *
-   * @param profile Requested gamepad profile.
-   * @return Backend-adjusted gamepad profile.
-   */
-  DeviceProfile linux_effective_uhid_gamepad_profile(const DeviceProfile &profile);
 
   /**
    * @brief Translate a bus type to a Linux uinput bus code.

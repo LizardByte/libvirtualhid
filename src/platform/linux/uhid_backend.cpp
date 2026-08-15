@@ -304,26 +304,14 @@ namespace lvh::detail {
       return to_uhid_bus(profile.bus_type);
     }
 
-    std::optional<DeviceProfile> effective_uhid_gamepad_profile(const DeviceProfile &requested_profile) {
-      if (!is_playstation_profile(requested_profile.gamepad_kind) || requested_profile.bus_type == BusType::bluetooth) {
-        return std::nullopt;
+    std::string_view uhid_gamepad_name(const DeviceProfile &profile) {
+      // Steam's PlayStation HID path expects Sony's native product name. Keep
+      // consumer branding out of the Linux transport identity while preserving
+      // custom names for every other profile and on every other backend.
+      if (is_playstation_profile(profile.gamepad_kind)) {
+        return "Wireless Controller";
       }
-
-      // A UHID device has no physical USB ancestor, so the USB-only PlayStation
-      // hidraw rules shipped by steam-devices cannot grant the session access.
-      // The Bluetooth rules match the virtual HID ancestor instead. Mirror the
-      // working inputtino transport while preserving consumer-supplied identity
-      // and capability metadata.
-      const auto transport_profile = requested_profile.gamepad_kind == GamepadProfileKind::dualshock4 ?
-                                       profiles::dualshock4_bluetooth() :
-                                       profiles::dualsense_bluetooth();
-      auto effective_profile = requested_profile;
-      effective_profile.bus_type = transport_profile.bus_type;
-      effective_profile.report_id = transport_profile.report_id;
-      effective_profile.input_report_size = transport_profile.input_report_size;
-      effective_profile.output_report_size = transport_profile.output_report_size;
-      effective_profile.report_descriptor = transport_profile.report_descriptor;
-      return effective_profile;
+      return profile.name;
     }
 #endif
 
@@ -2809,7 +2797,8 @@ namespace lvh::detail {
         }
         physical_id_ = std::format("libvirtualhid/uhid/{}", id);
 
-        copy_string(request.name, options.profile.name);
+        device_name_ = uhid_gamepad_name(options.profile);
+        copy_string(request.name, device_name_);
         copy_string(request.phys, physical_id_);
         copy_string(request.uniq, unique_id_);
         request.rd_size = static_cast<std::uint16_t>(options.profile.report_descriptor.size());
@@ -2819,7 +2808,6 @@ namespace lvh::detail {
         request.version = options.profile.version;
         std::memcpy(request.rd_data, options.profile.report_descriptor.data(), options.profile.report_descriptor.size());
         profile_ = options.profile;
-        device_name_ = options.profile.name;
         {
           std::lock_guard lock {report_mutex_};
           last_report_ = reports::pack_input_report(profile_, {});
@@ -3212,19 +3200,13 @@ namespace lvh::detail {
           return {system_error_status(ErrorCode::backend_unavailable, "failed to open /dev/uhid", errno), nullptr};
         }
 
-        auto effective_options = options;
-        auto effective_profile = effective_uhid_gamepad_profile(options.profile);
-        if (effective_profile.has_value()) {
-          effective_options.profile = *effective_profile;
-        }
-
         auto gamepad = std::make_unique<UhidGamepad>(fd);
-        if (const auto status = gamepad->create(id, effective_options); !status.ok()) {
+        if (const auto status = gamepad->create(id, options); !status.ok()) {
           static_cast<void>(gamepad->close());
           return {status, nullptr};
         }
 
-        return {OperationStatus::success(), std::move(gamepad), std::move(effective_profile)};
+        return {OperationStatus::success(), std::move(gamepad)};
 #else
         return {
           OperationStatus::failure(ErrorCode::unsupported_profile, "gamepad profile requires Linux UHID"),

@@ -878,10 +878,6 @@ namespace lvh::detail::test {
     return profile ? to_uhid_bus(*profile) : to_uhid_bus(BusType::unknown);
   }
 
-  DeviceProfile linux_effective_uhid_gamepad_profile(const DeviceProfile &profile) {
-    return effective_uhid_gamepad_profile(profile).value_or(profile);
-  }
-
   std::uint16_t linux_uinput_bus(BusType bus_type) {
     return to_uinput_bus(bus_type);
   }
@@ -1420,6 +1416,7 @@ namespace lvh::detail::test {
     if (read_uhid_event(descriptors[1], event)) {
       result.saw_create =
         event.type == UHID_CREATE2 && event.u.create2.vendor == profile.vendor_id && event.u.create2.product == profile.product_id;
+      result.created_name = reinterpret_cast<const char *>(event.u.create2.name);
     }
 
     gamepad.set_output_callback([&result](const GamepadOutput &output) {
@@ -1494,6 +1491,7 @@ namespace lvh::detail::test {
 
     CreateGamepadOptions options;
     options.profile = profiles::dualsense_usb();
+    options.profile.name = "Sunshine (libvirtualhid) PS5 Controller";
     options.metadata.stable_id = "02:03:04:05:06:07";
 
     UhidGamepad gamepad {descriptors[0]};
@@ -1503,6 +1501,7 @@ namespace lvh::detail::test {
     if (read_uhid_event_type(descriptors[1], UHID_CREATE2, event)) {
       result.saw_create = event.u.create2.vendor == options.profile.vendor_id &&
                           event.u.create2.product == options.profile.product_id;
+      result.created_name = reinterpret_cast<const char *>(event.u.create2.name);
     }
 
     gamepad.set_output_callback([&result](const GamepadOutput &output) {
@@ -1593,6 +1592,7 @@ namespace lvh::detail::test {
 
     CreateGamepadOptions options;
     options.profile = profiles::dualsense_bluetooth();
+    options.profile.name = "Sunshine (libvirtualhid) PS5 Controller";
     options.metadata.stable_id = "02:03:04:05:06:07";
 
     UhidGamepad gamepad {descriptors[0]};
@@ -1603,6 +1603,7 @@ namespace lvh::detail::test {
       result.saw_create = event.u.create2.vendor == options.profile.vendor_id &&
                           event.u.create2.product == options.profile.product_id &&
                           event.u.create2.bus == BUS_BLUETOOTH;
+      result.created_name = reinterpret_cast<const char *>(event.u.create2.name);
     }
 
     if (read_uhid_event_type(descriptors[1], UHID_INPUT2, event)) {
@@ -1655,6 +1656,7 @@ namespace lvh::detail::test {
 
     CreateGamepadOptions options;
     options.profile = profiles::dualshock4_usb();
+    options.profile.name = "Sunshine (libvirtualhid) PS4 Controller";
     options.metadata.stable_id = "02:03:04:05:06:07";
 
     UhidGamepad gamepad {descriptors[0]};
@@ -1664,6 +1666,7 @@ namespace lvh::detail::test {
     if (read_uhid_event_type(descriptors[1], UHID_CREATE2, event)) {
       result.saw_create = event.u.create2.vendor == options.profile.vendor_id &&
                           event.u.create2.product == options.profile.product_id;
+      result.created_name = reinterpret_cast<const char *>(event.u.create2.name);
     }
 
     gamepad.set_output_callback([&result](const GamepadOutput &output) {
@@ -1737,6 +1740,7 @@ namespace lvh::detail::test {
 
     CreateGamepadOptions options;
     options.profile = profiles::dualshock4_bluetooth();
+    options.profile.name = "Sunshine (libvirtualhid) PS4 Controller";
     options.metadata.stable_id = "02:03:04:05:06:07";
 
     UhidGamepad gamepad {descriptors[0]};
@@ -1747,6 +1751,7 @@ namespace lvh::detail::test {
       result.saw_create = event.u.create2.vendor == options.profile.vendor_id &&
                           event.u.create2.product == options.profile.product_id &&
                           event.u.create2.bus == BUS_BLUETOOTH;
+      result.created_name = reinterpret_cast<const char *>(event.u.create2.name);
     }
 
     if (read_uhid_event_type(descriptors[1], UHID_INPUT2, event)) {
