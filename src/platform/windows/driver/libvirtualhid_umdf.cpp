@@ -404,7 +404,7 @@ namespace {
       record->vhf_handle = nullptr;
       record->vhf_ready_for_input_report = false;
       record->pending_input_reports.clear();
-      record->submissions_drained.wait(lock, [&] {
+      record->submissions_drained.wait(lock, [record] {
         return record->active_input_submissions == 0U;
       });
       vhf_io_target = record->vhf_io_target;
