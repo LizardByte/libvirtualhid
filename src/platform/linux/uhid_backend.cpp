@@ -305,10 +305,10 @@ namespace lvh::detail {
     }
 
     std::string_view uhid_gamepad_name(const DeviceProfile &profile) {
-      // Steam's PlayStation HID path expects Sony's native product name. Keep
-      // consumer branding out of the Linux transport identity while preserving
-      // custom names for every other profile and on every other backend.
-      if (is_playstation_profile(profile.gamepad_kind)) {
+      // DualSense uses Sony's native product name for Steam HID discovery.
+      // DualShock 4 intentionally keeps the requested name: that is the identity
+      // used by the previously validated Sunshine/libvirtualhid USB path.
+      if (profile.gamepad_kind == GamepadProfileKind::dualsense) {
         return "Wireless Controller";
       }
       return profile.name;

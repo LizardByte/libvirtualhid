@@ -192,6 +192,11 @@ namespace lvh::detail::test {
     bool saw_dualshock4_bluetooth_input = false;
 
     /**
+     * @brief Whether the peer observed a USB-framed DualShock 4 input report.
+     */
+    bool saw_dualshock4_usb_input = false;
+
+    /**
      * @brief Whether the peer observed a set-report reply.
      */
     bool saw_set_report_reply = false;

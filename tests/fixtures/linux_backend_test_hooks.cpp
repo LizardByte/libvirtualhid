@@ -1665,8 +1665,15 @@ namespace lvh::detail::test {
     uhid_event event {};
     if (read_uhid_event_type(descriptors[1], UHID_CREATE2, event)) {
       result.saw_create = event.u.create2.vendor == options.profile.vendor_id &&
-                          event.u.create2.product == options.profile.product_id;
+                          event.u.create2.product == options.profile.product_id &&
+                          event.u.create2.bus == BUS_USB &&
+                          event.u.create2.rd_size == options.profile.report_descriptor.size();
       result.created_name = reinterpret_cast<const char *>(event.u.create2.name);
+    }
+
+    if (read_uhid_event_type(descriptors[1], UHID_INPUT2, event)) {
+      result.saw_dualshock4_usb_input =
+        event.u.input2.size == options.profile.input_report_size && event.u.input2.data[0] == options.profile.report_id;
     }
 
     gamepad.set_output_callback([&result](const GamepadOutput &output) {

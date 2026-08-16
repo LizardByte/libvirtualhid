@@ -138,12 +138,13 @@ and control channels. Numbered control-channel output is normalized before
 parsing, whether the kernel includes the report number in the payload or
 provides it separately on the UHID event.
 
-On Linux, the UHID transport emits Sony's native `Wireless Controller` product
-name for DualShock 4 and DualSense devices. This keeps Steam's PlayStation HID
-detection compatible even when a streaming host customizes the public profile
-name. The requested USB or Bluetooth descriptor and report framing are left
-unchanged. This identity adjustment is confined to the Linux backend; Windows
-profile names and VHF behavior are unchanged.
+On Linux, DualShock 4 keeps the caller-requested name, bus, descriptor, and
+report framing. In particular, the default profile remains the USB variant;
+silently presenting it as Bluetooth changes the report contract used by native
+HID consumers. DualSense emits Sony's native `Wireless Controller` product name
+for Steam HID discovery while keeping its requested USB or Bluetooth framing.
+These identity rules are confined to the Linux backend; Windows profile names
+and VHF behavior are unchanged.
 
 Switch Pro keeps its Nintendo identity on the Linux uinput path. This follows
 the evdev layout used by Linux-native virtual-controller implementations and
