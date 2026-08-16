@@ -759,6 +759,31 @@ TEST_F(LinuxBackendTest, PipeBackedUinputTouchDevicesCoverStateTransitions) {
   EXPECT_EQ(lvh::detail::test::linux_uinput_pen_tablet_closed_status().code(), lvh::ErrorCode::device_closed);
 }
 
+TEST_F(LinuxBackendTest, PipeBackedUinputTouchDevicesReuseSlotsWithNewTrackingIds) {
+  for (const auto device_type : {lvh::DeviceType::touchscreen, lvh::DeviceType::trackpad}) {
+    const auto result = lvh::detail::test::linux_uinput_touch_contact_reuse_pipe(device_type);
+    ASSERT_TRUE(result.status.ok()) << result.status.message();
+
+    std::vector<std::int32_t> selected_slots;
+    std::vector<std::int32_t> tracking_ids;
+    for (const auto &event : result.events) {
+      if (event.type == EV_ABS && event.code == ABS_MT_SLOT) {
+        selected_slots.push_back(event.value);
+      } else if (event.type == EV_ABS && event.code == ABS_MT_TRACKING_ID) {
+        tracking_ids.push_back(event.value);
+      }
+    }
+
+    EXPECT_EQ(selected_slots, (std::vector<std::int32_t> {0, 1, 0, 1}));
+    EXPECT_EQ(tracking_ids, (std::vector<std::int32_t> {0, 1, -1, 2}));
+  }
+
+  EXPECT_EQ(
+    lvh::detail::test::linux_uinput_touch_contact_reuse_pipe(lvh::DeviceType::mouse).status.code(),
+    lvh::ErrorCode::invalid_argument
+  );
+}
+
 TEST_F(LinuxBackendTest, SocketpairBackedUhidGamepadRoundTripsEvents) {
   const auto result = lvh::detail::test::linux_uhid_socketpair_roundtrip();
   EXPECT_TRUE(result.create_status.ok()) << result.create_status.message();

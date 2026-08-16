@@ -157,6 +157,11 @@ the evdev layout used by Linux-native virtual-controller implementations and
 allows standard `FF_RUMBLE` effects without emulating the physical controller's
 proprietary initialization handshake.
 
+Linux touchscreen and trackpad contacts use the lowest available multitouch
+slot while they are active. A newly placed contact receives a new tracking ID,
+including when it reuses a slot released by another contact, so replacing one
+finger cannot overwrite another active finger in standard evdev consumers.
+
 On descriptor-driven backends, native Switch Pro output reports `0x01` and
 `0x10` are decoded into the normalized low- and high-frequency rumble callback.
 The original native report remains available in `GamepadOutput::raw_report`.

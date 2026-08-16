@@ -789,6 +789,14 @@ namespace lvh::detail::test {
   LinuxInputSubmissionResult linux_uinput_trackpad_multi_contact_pipe();
 
   /**
+   * @brief Release and replace one of two contacts through a pipe-backed uinput touch device.
+   *
+   * @param device_type Touchscreen or trackpad device type.
+   * @return Submission status and captured input events.
+   */
+  LinuxInputSubmissionResult linux_uinput_touch_contact_reuse_pipe(DeviceType device_type);
+
+  /**
    * @brief Submit invalid touchscreen contacts through pipe-backed devices.
    *
    * @return Final invalid-contact status.
