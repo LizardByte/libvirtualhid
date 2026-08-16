@@ -846,6 +846,13 @@ namespace lvh::detail::test {
   OperationStatus linux_backend_gamepad_fake_open_failure();
 
   /**
+   * @brief Capture the flags used to open UHID for a descriptor-driven gamepad.
+   *
+   * @return Flags passed to `open()` for `/dev/uhid`.
+   */
+  int linux_backend_gamepad_open_flags();
+
+  /**
    * @brief Try creating a Linux backend gamepad while fake UHID creation fails.
    *
    * @return Creation status.

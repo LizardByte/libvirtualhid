@@ -3245,7 +3245,7 @@ namespace lvh::detail {
         }
 
 #if defined(__linux__)
-        const auto fd = system_open(uhid_path, O_RDWR | O_CLOEXEC);
+        const auto fd = system_open(uhid_path, O_RDWR | O_CLOEXEC | O_NONBLOCK);
         if (fd < 0) {
           return {system_error_status(ErrorCode::backend_unavailable, "failed to open /dev/uhid", errno), nullptr};
         }

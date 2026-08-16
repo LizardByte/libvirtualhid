@@ -138,11 +138,12 @@ and control channels. Numbered control-channel output is normalized before
 parsing, whether the kernel includes the report number in the payload or
 provides it separately on the UHID event.
 
-The UHID event reader is active before device registration begins, and gamepad
-creation does not report success until the kernel returns `UHID_START`. This
-keeps control-channel initialization available throughout registration and
-prevents streaming hosts from publishing a controller before its kernel HID
-device has started.
+The backend opens `/dev/uhid` in nonblocking mode, matching the original
+asynchronous gamepad registration path. Its event reader is active before
+device registration begins, and creation does not report success until the
+kernel returns `UHID_START`. This keeps control-channel initialization
+available throughout registration and prevents streaming hosts from publishing
+a controller before its kernel HID device has started.
 
 On Linux, DualShock 4 and DualSense emit Sony's native `Wireless Controller`
 product name for Steam HID discovery. The requested USB or Bluetooth bus,

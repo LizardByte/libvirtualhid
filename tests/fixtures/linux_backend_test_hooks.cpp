@@ -120,6 +120,7 @@ namespace lvh::detail::test {
       int access_result = 0;
       bool override_open = false;
       int open_result = 100000;
+      int last_open_flags = 0;
       bool override_write = false;
       std::atomic_int write_call_count = 0;
       int fail_write_call = -1;
@@ -207,6 +208,9 @@ int lvh_linux_test_access(const char *path, int mode) {
 }
 
 int lvh_linux_test_open(const char *path, int flags) {
+  if (lvh::detail::test::active_test_syscalls() != nullptr) {
+    lvh::detail::test::active_test_syscalls()->last_open_flags = flags;
+  }
   if (lvh::detail::test::active_test_syscalls() != nullptr && lvh::detail::test::active_test_syscalls()->override_open) {
     if (lvh::detail::test::active_test_syscalls()->open_result < 0) {
       errno = ENOENT;
@@ -1973,6 +1977,21 @@ namespace lvh::detail::test {
     CreateGamepadOptions options;
     options.profile = profiles::xbox_360();
     return backend.create_gamepad(1, options).status;
+  }
+
+  int linux_backend_gamepad_open_flags() {
+    LinuxTestSyscalls syscalls;
+    syscalls.override_access = true;
+    syscalls.override_open = true;
+    syscalls.open_result = -1;
+    ScopedLinuxTestSyscalls scoped_syscalls {syscalls};
+
+    LinuxUhidBackend backend;
+
+    CreateGamepadOptions options;
+    options.profile = profiles::dualshock4_usb();
+    static_cast<void>(backend.create_gamepad(1, options));
+    return syscalls.last_open_flags;
   }
 
   OperationStatus linux_backend_gamepad_fake_create_failure() {

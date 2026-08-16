@@ -15,6 +15,7 @@
 #include <vector>
 
 // platform includes
+#include <fcntl.h>
 #include <linux/input.h>
 #if defined(LIBVIRTUALHID_HAVE_XTEST)
   #include <X11/keysym.h>
@@ -906,6 +907,13 @@ TEST_F(LinuxBackendTest, FakeLinuxBackendCreatesAllDeviceTypes) {
   EXPECT_TRUE(result.trackpad_close_status.ok()) << result.trackpad_close_status.message();
   EXPECT_TRUE(result.pen_tablet_status.ok()) << result.pen_tablet_status.message();
   EXPECT_TRUE(result.pen_tablet_close_status.ok()) << result.pen_tablet_close_status.message();
+}
+
+TEST_F(LinuxBackendTest, OpensUhidGamepadsNonblocking) {
+  const auto flags = lvh::detail::test::linux_backend_gamepad_open_flags();
+  EXPECT_EQ(flags & O_ACCMODE, O_RDWR);
+  EXPECT_NE(flags & O_CLOEXEC, 0);
+  EXPECT_NE(flags & O_NONBLOCK, 0);
 }
 
 TEST_F(LinuxBackendTest, FakeUhidSyscallsCoverFailureBranches) {
