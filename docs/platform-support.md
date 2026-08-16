@@ -138,6 +138,12 @@ and control channels. Numbered control-channel output is normalized before
 parsing, whether the kernel includes the report number in the payload or
 provides it separately on the UHID event.
 
+The UHID event reader is active before device registration begins, and gamepad
+creation does not report success until the kernel returns `UHID_START`. This
+keeps control-channel initialization available throughout registration and
+prevents streaming hosts from publishing a controller before its kernel HID
+device has started.
+
 On Linux, DualShock 4 keeps the caller-requested name, bus, descriptor, and
 report framing. In particular, the default profile remains the USB variant;
 silently presenting it as Bluetooth changes the report contract used by native

@@ -10,6 +10,7 @@
 #include <cerrno>
 #include <chrono>
 #include <cmath>
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -99,6 +100,7 @@ namespace lvh::detail {
 #if defined(__linux__)
     namespace ps = playstation_feature_reports;
     constexpr auto playstation_periodic_report_ms = 10;
+    constexpr auto uhid_start_timeout = std::chrono::seconds {5};
 #endif
 
     int system_access(const char *path, int mode) {
@@ -2813,14 +2815,37 @@ namespace lvh::detail {
           last_report_ = reports::pack_input_report(profile_, {});
         }
 
-        if (const auto status = write_event(event); !status.ok()) {
-          return status;
+        {
+          std::lock_guard lock {lifecycle_mutex_};
+          started_ = false;
+          reader_exited_ = false;
         }
-
         running_ = true;
         reader_ = std::jthread {[this](std::stop_token stop_token) {
           read_loop(stop_token);
         }};
+
+        if (const auto status = write_event(event); !status.ok()) {
+          stop_reader();
+          return status;
+        }
+
+        {
+          std::unique_lock lock {lifecycle_mutex_};
+          if (!lifecycle_condition_.wait_for(lock, uhid_start_timeout, [this]() {
+                return started_ || reader_exited_;
+              })) {
+            lock.unlock();
+            stop_reader();
+            return OperationStatus::failure(ErrorCode::backend_failure, "timed out waiting for UHID_START");
+          }
+          if (!started_) {
+            lock.unlock();
+            stop_reader();
+            return OperationStatus::failure(ErrorCode::backend_failure, "UHID reader stopped before UHID_START");
+          }
+        }
+
         if (is_playstation_profile(profile_.gamepad_kind)) {
           periodic_reporter_ = std::jthread {[this](std::stop_token stop_token) {
             periodic_report_loop(stop_token);
@@ -2935,13 +2960,13 @@ namespace lvh::detail {
             if (errno == EINTR) {
               continue;
             }
-            return;
+            break;
           }
           if (result == 0) {
             continue;
           }
           if ((descriptor.revents & (POLLERR | POLLHUP | POLLNVAL)) != 0) {
-            return;
+            break;
           }
           if ((descriptor.revents & POLLIN) == 0) {
             continue;
@@ -2953,18 +2978,31 @@ namespace lvh::detail {
             if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
               continue;
             }
-            return;
+            break;
           }
           if (read_result == 0) {
-            return;
+            break;
           }
 
           handle_event(event);
         }
+
+        {
+          std::lock_guard lock {lifecycle_mutex_};
+          reader_exited_ = true;
+        }
+        lifecycle_condition_.notify_all();
       }
 
       void handle_event(const uhid_event &event) {
         switch (event.type) {
+          case UHID_START:
+            {
+              std::lock_guard lock {lifecycle_mutex_};
+              started_ = true;
+            }
+            lifecycle_condition_.notify_all();
+            break;
           case UHID_OUTPUT:
             dispatch_output_report(event.u.output.data, event.u.output.size);
             break;
@@ -2977,6 +3015,14 @@ namespace lvh::detail {
             break;
           default:
             break;
+        }
+      }
+
+      void stop_reader() {
+        running_ = false;
+        if (reader_.joinable()) {
+          reader_.request_stop();
+          reader_.join();
         }
       }
 
@@ -3123,6 +3169,10 @@ namespace lvh::detail {
       std::atomic_bool running_ = false;
       std::jthread reader_;
       std::jthread periodic_reporter_;
+      std::mutex lifecycle_mutex_;
+      std::condition_variable lifecycle_condition_;
+      bool started_ = false;
+      bool reader_exited_ = false;
       std::mutex write_mutex_;
       std::mutex report_mutex_;
       std::mutex callback_mutex_;

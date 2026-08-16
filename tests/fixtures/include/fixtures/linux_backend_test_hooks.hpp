@@ -127,6 +127,11 @@ namespace lvh::detail::test {
     bool saw_create = false;
 
     /**
+     * @brief Whether create remained pending until the peer sent UHID_START.
+     */
+    bool create_waited_for_start = false;
+
+    /**
      * @brief Product name carried by the observed create event.
      */
     std::string created_name;

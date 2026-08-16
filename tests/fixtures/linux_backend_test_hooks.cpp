@@ -138,6 +138,7 @@ namespace lvh::detail::test {
       std::vector<std::ptrdiff_t> read_results;
       std::vector<int> read_errors;
       uhid_event read_event {};
+      std::vector<uhid_event> read_events;
       std::vector<input_event> read_input_events;
       ff_effect uploaded_ff_effect {};
       std::vector<ff_effect> uploaded_ff_effects;
@@ -305,7 +306,11 @@ std::ptrdiff_t lvh_linux_test_read(int fd, std::byte *buffer, std::size_t size) 
       }
 
       const auto bytes = std::min<std::size_t>(static_cast<std::size_t>(result), std::min(size, sizeof(uhid_event)));
-      std::memcpy(buffer, &lvh::detail::test::active_test_syscalls()->read_event, bytes);
+      const auto &read_events = lvh::detail::test::active_test_syscalls()->read_events;
+      const auto &event = call_index < read_events.size() ?
+                            read_events[call_index] :
+                            lvh::detail::test::active_test_syscalls()->read_event;
+      std::memcpy(buffer, &event, bytes);
       return static_cast<std::ptrdiff_t>(bytes);
     }
 
@@ -679,6 +684,33 @@ namespace lvh::detail::test {
       return false;
     }
 
+    OperationStatus create_started_uhid_gamepad(
+      UhidGamepad &gamepad,
+      DeviceId id,
+      const CreateGamepadOptions &options,
+      int peer_fd,
+      uhid_event &create_event,
+      bool &saw_create,
+      bool &waited_for_start
+    ) {
+      auto create_status = OperationStatus::failure(ErrorCode::backend_failure, "UHID create thread did not run");
+      std::atomic_bool create_returned = false;
+      std::jthread create_thread {[&]() {
+        create_status = gamepad.create(id, options);
+        create_returned = true;
+      }};
+
+      saw_create = read_uhid_event_type(peer_fd, UHID_CREATE2, create_event);
+      std::this_thread::sleep_for(std::chrono::milliseconds {20});
+      waited_for_start = !create_returned;
+
+      uhid_event start_event {};
+      start_event.type = UHID_START;
+      static_cast<void>(write_uhid_event(peer_fd, start_event));
+      create_thread.join();
+      return create_status;
+    }
+
     std::uint32_t read_u32_le(const std::uint8_t *buffer) {
       return static_cast<std::uint32_t>(buffer[0]) |
              (static_cast<std::uint32_t>(buffer[1]) << 8U) |
@@ -708,6 +740,16 @@ namespace lvh::detail::test {
 
     OperationStatus run_fake_uhid_read_loop(LinuxTestSyscalls &syscalls, int expected_poll_calls) {
       syscalls.override_write = true;
+      syscalls.override_poll = true;
+      syscalls.override_read = true;
+      syscalls.poll_results.insert(syscalls.poll_results.begin(), 1);
+      syscalls.poll_revents.insert(syscalls.poll_revents.begin(), POLLIN);
+      syscalls.poll_errors.insert(syscalls.poll_errors.begin(), 0);
+      syscalls.read_results.insert(syscalls.read_results.begin(), static_cast<std::ptrdiff_t>(sizeof(uhid_event)));
+      syscalls.read_errors.insert(syscalls.read_errors.begin(), 0);
+      uhid_event start_event {};
+      start_event.type = UHID_START;
+      syscalls.read_events.insert(syscalls.read_events.begin(), start_event);
 
       ScopedLinuxTestSyscalls scoped_syscalls {syscalls};
 
@@ -724,7 +766,7 @@ namespace lvh::detail::test {
         return status;
       }
 
-      const auto saw_expected_polls = wait_for_poll_calls(syscalls, expected_poll_calls);
+      const auto saw_expected_polls = wait_for_poll_calls(syscalls, expected_poll_calls + 1);
       const auto close_status = gamepad.close();
       if (!saw_expected_polls) {
         return OperationStatus::failure(ErrorCode::backend_failure, "fake UHID read loop did not consume the scripted poll calls");
@@ -1410,12 +1452,18 @@ namespace lvh::detail::test {
     options.metadata.stable_id = "linux-uhid-roundtrip";
 
     UhidGamepad gamepad {descriptors[0]};
-    result.create_status = gamepad.create(7, options);
-
     uhid_event event {};
-    if (read_uhid_event(descriptors[1], event)) {
-      result.saw_create =
-        event.type == UHID_CREATE2 && event.u.create2.vendor == profile.vendor_id && event.u.create2.product == profile.product_id;
+    result.create_status = create_started_uhid_gamepad(
+      gamepad,
+      7,
+      options,
+      descriptors[1],
+      event,
+      result.saw_create,
+      result.create_waited_for_start
+    );
+    if (result.saw_create) {
+      result.saw_create = event.u.create2.vendor == profile.vendor_id && event.u.create2.product == profile.product_id;
       result.created_name = reinterpret_cast<const char *>(event.u.create2.name);
     }
 
@@ -1495,10 +1543,17 @@ namespace lvh::detail::test {
     options.metadata.stable_id = "02:03:04:05:06:07";
 
     UhidGamepad gamepad {descriptors[0]};
-    result.create_status = gamepad.create(8, options);
-
     uhid_event event {};
-    if (read_uhid_event_type(descriptors[1], UHID_CREATE2, event)) {
+    result.create_status = create_started_uhid_gamepad(
+      gamepad,
+      8,
+      options,
+      descriptors[1],
+      event,
+      result.saw_create,
+      result.create_waited_for_start
+    );
+    if (result.saw_create) {
       result.saw_create = event.u.create2.vendor == options.profile.vendor_id &&
                           event.u.create2.product == options.profile.product_id;
       result.created_name = reinterpret_cast<const char *>(event.u.create2.name);
@@ -1596,10 +1651,17 @@ namespace lvh::detail::test {
     options.metadata.stable_id = "02:03:04:05:06:07";
 
     UhidGamepad gamepad {descriptors[0]};
-    result.create_status = gamepad.create(9, options);
-
     uhid_event event {};
-    if (read_uhid_event_type(descriptors[1], UHID_CREATE2, event)) {
+    result.create_status = create_started_uhid_gamepad(
+      gamepad,
+      9,
+      options,
+      descriptors[1],
+      event,
+      result.saw_create,
+      result.create_waited_for_start
+    );
+    if (result.saw_create) {
       result.saw_create = event.u.create2.vendor == options.profile.vendor_id &&
                           event.u.create2.product == options.profile.product_id &&
                           event.u.create2.bus == BUS_BLUETOOTH;
@@ -1660,10 +1722,17 @@ namespace lvh::detail::test {
     options.metadata.stable_id = "02:03:04:05:06:07";
 
     UhidGamepad gamepad {descriptors[0]};
-    result.create_status = gamepad.create(10, options);
-
     uhid_event event {};
-    if (read_uhid_event_type(descriptors[1], UHID_CREATE2, event)) {
+    result.create_status = create_started_uhid_gamepad(
+      gamepad,
+      10,
+      options,
+      descriptors[1],
+      event,
+      result.saw_create,
+      result.create_waited_for_start
+    );
+    if (result.saw_create) {
       result.saw_create = event.u.create2.vendor == options.profile.vendor_id &&
                           event.u.create2.product == options.profile.product_id &&
                           event.u.create2.bus == BUS_USB &&
@@ -1751,10 +1820,17 @@ namespace lvh::detail::test {
     options.metadata.stable_id = "02:03:04:05:06:07";
 
     UhidGamepad gamepad {descriptors[0]};
-    result.create_status = gamepad.create(11, options);
-
     uhid_event event {};
-    if (read_uhid_event_type(descriptors[1], UHID_CREATE2, event)) {
+    result.create_status = create_started_uhid_gamepad(
+      gamepad,
+      11,
+      options,
+      descriptors[1],
+      event,
+      result.saw_create,
+      result.create_waited_for_start
+    );
+    if (result.saw_create) {
       result.saw_create = event.u.create2.vendor == options.profile.vendor_id &&
                           event.u.create2.product == options.profile.product_id &&
                           event.u.create2.bus == BUS_BLUETOOTH;

@@ -764,6 +764,7 @@ TEST_F(LinuxBackendTest, SocketpairBackedUhidGamepadRoundTripsEvents) {
   EXPECT_TRUE(result.submit_status.ok()) << result.submit_status.message();
   EXPECT_TRUE(result.close_status.ok()) << result.close_status.message();
   EXPECT_TRUE(result.saw_create);
+  EXPECT_TRUE(result.create_waited_for_start);
   EXPECT_EQ(result.created_name, lvh::profiles::xbox_360().name);
   EXPECT_TRUE(result.saw_input);
   EXPECT_TRUE(result.saw_get_report_reply);
@@ -780,6 +781,7 @@ TEST_F(LinuxBackendTest, SocketpairBackedDualSenseRepliesToFeatureReports) {
   EXPECT_TRUE(result.create_status.ok()) << result.create_status.message();
   EXPECT_TRUE(result.close_status.ok()) << result.close_status.message();
   EXPECT_TRUE(result.saw_create);
+  EXPECT_TRUE(result.create_waited_for_start);
   EXPECT_EQ(result.created_name, "Wireless Controller");
   EXPECT_TRUE(result.saw_dualsense_calibration);
   EXPECT_TRUE(result.saw_dualsense_pairing);
@@ -796,6 +798,7 @@ TEST_F(LinuxBackendTest, SocketpairBackedDualSenseBluetoothFramesReports) {
   EXPECT_TRUE(result.create_status.ok()) << result.create_status.message();
   EXPECT_TRUE(result.close_status.ok()) << result.close_status.message();
   EXPECT_TRUE(result.saw_create);
+  EXPECT_TRUE(result.create_waited_for_start);
   EXPECT_EQ(result.created_name, "Wireless Controller");
   EXPECT_TRUE(result.saw_dualsense_bluetooth_input);
   EXPECT_TRUE(result.saw_dualsense_pairing);
@@ -807,6 +810,7 @@ TEST_F(LinuxBackendTest, SocketpairBackedDualShock4RepliesToFeatureReports) {
   EXPECT_TRUE(result.create_status.ok()) << result.create_status.message();
   EXPECT_TRUE(result.close_status.ok()) << result.close_status.message();
   EXPECT_TRUE(result.saw_create);
+  EXPECT_TRUE(result.create_waited_for_start);
   EXPECT_EQ(result.created_name, "Sunshine (libvirtualhid) PS4 Controller");
   EXPECT_TRUE(result.saw_dualshock4_usb_input);
   EXPECT_TRUE(result.saw_dualshock4_calibration);
@@ -824,6 +828,7 @@ TEST_F(LinuxBackendTest, SocketpairBackedDualShock4BluetoothFramesReports) {
   EXPECT_TRUE(result.create_status.ok()) << result.create_status.message();
   EXPECT_TRUE(result.close_status.ok()) << result.close_status.message();
   EXPECT_TRUE(result.saw_create);
+  EXPECT_TRUE(result.create_waited_for_start);
   EXPECT_EQ(result.created_name, "Sunshine (libvirtualhid) PS4 Controller");
   EXPECT_TRUE(result.saw_dualshock4_bluetooth_input);
   EXPECT_TRUE(result.saw_dualshock4_calibration);
