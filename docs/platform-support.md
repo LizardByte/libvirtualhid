@@ -184,9 +184,19 @@ KERNEL=="uinput", SUBSYSTEM=="misc", OPTIONS+="static_node=uinput", GROUP="input
 KERNEL=="uhid", GROUP="input", MODE="0660", TAG+="uaccess"
 ```
 
-Consuming applications may also install name-matched rules for stable virtual
-device names when generated `hidraw` or `input` nodes must be accessible to the
-session user:
+UHID gamepads use a stable `libvirtualhid/uhid/*` physical path even when the
+library is compiled directly into a consuming application. Match that path for
+generated `hidraw` and input event nodes because native profiles such as
+DualShock 4 and DualSense intentionally do not retain the application's product
+name:
+
+```udev
+KERNEL=="hidraw*", ATTRS{phys}=="libvirtualhid/uhid/*", GROUP="input", MODE="0660", TAG+="uaccess"
+SUBSYSTEM=="input", KERNEL=="event*", ATTRS{phys}=="libvirtualhid/uhid/*", GROUP="input", MODE="0660", TAG+="uaccess"
+```
+
+Consuming applications may additionally install name-matched rules for stable
+virtual device names, including uinput-backed gamepads:
 
 ```udev
 KERNEL=="hidraw*", ATTRS{name}=="Your App Controller*", GROUP="input", MODE="0660", TAG+="uaccess"
