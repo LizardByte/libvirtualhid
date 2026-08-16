@@ -144,13 +144,12 @@ keeps control-channel initialization available throughout registration and
 prevents streaming hosts from publishing a controller before its kernel HID
 device has started.
 
-On Linux, DualShock 4 keeps the caller-requested name, bus, descriptor, and
-report framing. In particular, the default profile remains the USB variant;
-silently presenting it as Bluetooth changes the report contract used by native
-HID consumers. DualSense emits Sony's native `Wireless Controller` product name
-for Steam HID discovery while keeping its requested USB or Bluetooth framing.
-These identity rules are confined to the Linux backend; Windows profile names
-and VHF behavior are unchanged.
+On Linux, DualShock 4 and DualSense emit Sony's native `Wireless Controller`
+product name for Steam HID discovery. The requested USB or Bluetooth bus,
+descriptor, and report framing remain unchanged; in particular, the default
+DualShock 4 profile stays on its USB report contract. This transport-only name
+is confined to the Linux backend; public profile names, Windows names, and VHF
+behavior are unchanged.
 
 Switch Pro keeps its Nintendo identity on the Linux uinput path. This follows
 the evdev layout used by Linux-native virtual-controller implementations and

@@ -811,7 +811,7 @@ TEST_F(LinuxBackendTest, SocketpairBackedDualShock4RepliesToFeatureReports) {
   EXPECT_TRUE(result.close_status.ok()) << result.close_status.message();
   EXPECT_TRUE(result.saw_create);
   EXPECT_TRUE(result.create_waited_for_start);
-  EXPECT_EQ(result.created_name, "Sunshine (libvirtualhid) PS4 Controller");
+  EXPECT_EQ(result.created_name, "Wireless Controller");
   EXPECT_TRUE(result.saw_dualshock4_usb_input);
   EXPECT_TRUE(result.saw_dualshock4_calibration);
   EXPECT_TRUE(result.saw_dualshock4_pairing);
@@ -829,7 +829,7 @@ TEST_F(LinuxBackendTest, SocketpairBackedDualShock4BluetoothFramesReports) {
   EXPECT_TRUE(result.close_status.ok()) << result.close_status.message();
   EXPECT_TRUE(result.saw_create);
   EXPECT_TRUE(result.create_waited_for_start);
-  EXPECT_EQ(result.created_name, "Sunshine (libvirtualhid) PS4 Controller");
+  EXPECT_EQ(result.created_name, "Wireless Controller");
   EXPECT_TRUE(result.saw_dualshock4_bluetooth_input);
   EXPECT_TRUE(result.saw_dualshock4_calibration);
   EXPECT_TRUE(result.saw_dualshock4_pairing);
