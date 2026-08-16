@@ -85,6 +85,7 @@ namespace lvh::detail {
     constexpr auto touch_axis_max_x = 19200;
     constexpr auto touch_axis_max_y = 10800;
     constexpr auto touch_max_contacts = 16;
+    constexpr std::uint32_t touch_tracking_id_count = 65536U;
     constexpr auto touch_pressure_max = 253;
     constexpr auto tablet_pressure_max = 4096;
     constexpr auto tablet_distance_max = 1024;
@@ -1655,7 +1656,9 @@ namespace lvh::detail {
           return status;
         }
         if (new_slot_) {
-          if (const auto status = emit_event(EV_ABS, ABS_MT_TRACKING_ID, *slot); !status.ok()) {
+          const auto tracking_id = next_tracking_id_;
+          next_tracking_id_ = (next_tracking_id_ + 1U) % touch_tracking_id_count;
+          if (const auto status = emit_event(EV_ABS, ABS_MT_TRACKING_ID, static_cast<std::int32_t>(tracking_id)); !status.ok()) {
             return status;
           }
           new_slot_ = false;
@@ -1789,6 +1792,7 @@ namespace lvh::detail {
       std::string device_name_;
       std::map<std::int32_t, int> contacts_;
       int current_slot_ = -1;
+      std::uint32_t next_tracking_id_ = 0;
       bool new_slot_ = false;
     };
 

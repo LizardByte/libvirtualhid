@@ -926,6 +926,33 @@ namespace lvh::detail::test {
       return create_fake_libevdev_device(DeviceType::gamepad, keep_fake_libevdev_successful, kind);
     }
 
+    template<typename TouchDevice>
+    LinuxInputSubmissionResult touch_contact_reuse_pipe() {
+      std::array<int, 2> descriptors {-1, -1};
+      if (::pipe(descriptors.data()) != 0) {
+        return {system_error_status(ErrorCode::backend_failure, "failed to create pipe", errno), {}};
+      }
+
+      TouchDevice device {descriptors[1]};
+      auto status = device.place_contact({.id = 0, .x = 0.1F, .y = 0.1F, .pressure = 0.5F});
+      if (status.ok()) {
+        status = device.place_contact({.id = 1, .x = 0.2F, .y = 0.2F, .pressure = 0.5F});
+      }
+      if (status.ok()) {
+        status = device.release_contact(0, PointerTransition::release);
+      }
+      if (status.ok()) {
+        status = device.place_contact({.id = 0, .x = 0.3F, .y = 0.3F, .pressure = 0.5F});
+      }
+      if (status.ok()) {
+        status = device.place_contact({.id = 1, .x = 0.25F, .y = 0.25F, .pressure = 0.5F});
+      }
+      static_cast<void>(device.close());
+      auto records = read_input_events_until_eof(descriptors[0]);
+      static_cast<void>(::close(descriptors[0]));
+      return {std::move(status), std::move(records)};
+    }
+
   }  // namespace
 
   std::string linux_copy_string_char_buffer(const std::string &source) {
@@ -1382,6 +1409,20 @@ namespace lvh::detail::test {
     auto records = read_input_events_until_eof(descriptors[0]);
     static_cast<void>(::close(descriptors[0]));
     return {std::move(status), std::move(records)};
+  }
+
+  LinuxInputSubmissionResult linux_uinput_touch_contact_reuse_pipe(DeviceType device_type) {
+    switch (device_type) {
+      case DeviceType::touchscreen:
+        return touch_contact_reuse_pipe<UinputTouchscreen>();
+      case DeviceType::trackpad:
+        return touch_contact_reuse_pipe<UinputTrackpad>();
+      default:
+        return {
+          OperationStatus::failure(ErrorCode::invalid_argument, "device type must be touchscreen or trackpad"),
+          {},
+        };
+    }
   }
 
   OperationStatus linux_uinput_touchscreen_invalid_contacts() {
