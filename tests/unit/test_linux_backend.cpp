@@ -15,6 +15,7 @@
 #include <vector>
 
 // platform includes
+#include <fcntl.h>
 #include <linux/input.h>
 #if defined(LIBVIRTUALHID_HAVE_XTEST)
   #include <X11/keysym.h>
@@ -763,37 +764,43 @@ TEST_F(LinuxBackendTest, SocketpairBackedUhidGamepadRoundTripsEvents) {
   EXPECT_TRUE(result.create_status.ok()) << result.create_status.message();
   EXPECT_TRUE(result.submit_status.ok()) << result.submit_status.message();
   EXPECT_TRUE(result.close_status.ok()) << result.close_status.message();
-  EXPECT_TRUE(result.saw_create);
+  EXPECT_TRUE(result.creation.saw_create);
+  EXPECT_TRUE(result.creation.waited_for_start);
+  EXPECT_EQ(result.creation.name, lvh::profiles::xbox_360().name);
   EXPECT_TRUE(result.saw_input);
   EXPECT_TRUE(result.saw_get_report_reply);
   EXPECT_TRUE(result.saw_set_report_reply);
   EXPECT_TRUE(result.saw_destroy);
-  EXPECT_GE(result.output_callback_count, 2U);
-  EXPECT_EQ(result.last_output.kind, lvh::GamepadOutputKind::rumble);
-  EXPECT_EQ(result.last_output.low_frequency_rumble, 0x5678);
-  EXPECT_EQ(result.last_output.high_frequency_rumble, 0x1234);
+  EXPECT_GE(result.output.callback_count, 2U);
+  EXPECT_EQ(result.output.last.kind, lvh::GamepadOutputKind::rumble);
+  EXPECT_EQ(result.output.last.low_frequency_rumble, 0x5678);
+  EXPECT_EQ(result.output.last.high_frequency_rumble, 0x1234);
 }
 
 TEST_F(LinuxBackendTest, SocketpairBackedDualSenseRepliesToFeatureReports) {
   const auto result = lvh::detail::test::linux_dualsense_uhid_socketpair_reports();
   EXPECT_TRUE(result.create_status.ok()) << result.create_status.message();
   EXPECT_TRUE(result.close_status.ok()) << result.close_status.message();
-  EXPECT_TRUE(result.saw_create);
+  EXPECT_TRUE(result.creation.saw_create);
+  EXPECT_TRUE(result.creation.waited_for_start);
+  EXPECT_EQ(result.creation.name, "Wireless Controller");
   EXPECT_TRUE(result.saw_dualsense_calibration);
   EXPECT_TRUE(result.saw_dualsense_pairing);
   EXPECT_TRUE(result.saw_dualsense_firmware);
   EXPECT_TRUE(result.saw_set_report_reply);
-  ASSERT_GE(result.output_callback_count, 1U);
-  EXPECT_EQ(result.last_output.kind, lvh::GamepadOutputKind::rumble);
-  EXPECT_EQ(result.last_output.low_frequency_rumble, 0x5656);
-  EXPECT_EQ(result.last_output.high_frequency_rumble, 0x1212);
+  ASSERT_GE(result.output.callback_count, 1U);
+  EXPECT_EQ(result.output.last.kind, lvh::GamepadOutputKind::rumble);
+  EXPECT_EQ(result.output.last.low_frequency_rumble, 0x5656);
+  EXPECT_EQ(result.output.last.high_frequency_rumble, 0x1212);
 }
 
 TEST_F(LinuxBackendTest, SocketpairBackedDualSenseBluetoothFramesReports) {
   const auto result = lvh::detail::test::linux_dualsense_bluetooth_uhid_socketpair_reports();
   EXPECT_TRUE(result.create_status.ok()) << result.create_status.message();
   EXPECT_TRUE(result.close_status.ok()) << result.close_status.message();
-  EXPECT_TRUE(result.saw_create);
+  EXPECT_TRUE(result.creation.saw_create);
+  EXPECT_TRUE(result.creation.waited_for_start);
+  EXPECT_EQ(result.creation.name, "Wireless Controller");
   EXPECT_TRUE(result.saw_dualsense_bluetooth_input);
   EXPECT_TRUE(result.saw_dualsense_pairing);
   EXPECT_TRUE(result.saw_dualsense_feature_crc);
@@ -803,22 +810,27 @@ TEST_F(LinuxBackendTest, SocketpairBackedDualShock4RepliesToFeatureReports) {
   const auto result = lvh::detail::test::linux_dualshock4_uhid_socketpair_reports();
   EXPECT_TRUE(result.create_status.ok()) << result.create_status.message();
   EXPECT_TRUE(result.close_status.ok()) << result.close_status.message();
-  EXPECT_TRUE(result.saw_create);
+  EXPECT_TRUE(result.creation.saw_create);
+  EXPECT_TRUE(result.creation.waited_for_start);
+  EXPECT_EQ(result.creation.name, "Wireless Controller");
+  EXPECT_TRUE(result.saw_dualshock4_usb_input);
   EXPECT_TRUE(result.saw_dualshock4_calibration);
   EXPECT_TRUE(result.saw_dualshock4_pairing);
   EXPECT_TRUE(result.saw_dualshock4_firmware);
   EXPECT_TRUE(result.saw_set_report_reply);
-  ASSERT_GE(result.output_callback_count, 1U);
-  EXPECT_EQ(result.last_output.kind, lvh::GamepadOutputKind::rumble);
-  EXPECT_EQ(result.last_output.low_frequency_rumble, 0x5656);
-  EXPECT_EQ(result.last_output.high_frequency_rumble, 0x1212);
+  ASSERT_GE(result.output.callback_count, 1U);
+  EXPECT_EQ(result.output.last.kind, lvh::GamepadOutputKind::rumble);
+  EXPECT_EQ(result.output.last.low_frequency_rumble, 0x5656);
+  EXPECT_EQ(result.output.last.high_frequency_rumble, 0x1212);
 }
 
 TEST_F(LinuxBackendTest, SocketpairBackedDualShock4BluetoothFramesReports) {
   const auto result = lvh::detail::test::linux_dualshock4_bluetooth_uhid_socketpair_reports();
   EXPECT_TRUE(result.create_status.ok()) << result.create_status.message();
   EXPECT_TRUE(result.close_status.ok()) << result.close_status.message();
-  EXPECT_TRUE(result.saw_create);
+  EXPECT_TRUE(result.creation.saw_create);
+  EXPECT_TRUE(result.creation.waited_for_start);
+  EXPECT_EQ(result.creation.name, "Wireless Controller");
   EXPECT_TRUE(result.saw_dualshock4_bluetooth_input);
   EXPECT_TRUE(result.saw_dualshock4_calibration);
   EXPECT_TRUE(result.saw_dualshock4_pairing);
@@ -895,6 +907,13 @@ TEST_F(LinuxBackendTest, FakeLinuxBackendCreatesAllDeviceTypes) {
   EXPECT_TRUE(result.trackpad_close_status.ok()) << result.trackpad_close_status.message();
   EXPECT_TRUE(result.pen_tablet_status.ok()) << result.pen_tablet_status.message();
   EXPECT_TRUE(result.pen_tablet_close_status.ok()) << result.pen_tablet_close_status.message();
+}
+
+TEST_F(LinuxBackendTest, OpensUhidGamepadsNonblocking) {
+  const auto flags = lvh::detail::test::linux_backend_gamepad_open_flags();
+  EXPECT_EQ(flags & O_ACCMODE, O_RDWR);
+  EXPECT_NE(flags & O_CLOEXEC, 0);
+  EXPECT_NE(flags & O_NONBLOCK, 0);
 }
 
 TEST_F(LinuxBackendTest, FakeUhidSyscallsCoverFailureBranches) {

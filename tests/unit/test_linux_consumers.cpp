@@ -53,6 +53,7 @@ namespace {
   using LibinputContext = std::unique_ptr<libinput, void (*)(libinput *)>;
   using LibinputEvent = std::unique_ptr<libinput_event, void (*)(libinput_event *)>;
   using SdlGameController = std::unique_ptr<SDL_GameController, void (*)(SDL_GameController *)>;
+  constexpr std::string_view playstation_uhid_name = "Wireless Controller";
 
   /**
    * @brief SDL-visible gamepad case.
@@ -106,6 +107,10 @@ namespace {
 
   std::string unique_device_name(std::string_view suffix) {
     return std::format("libvirtualhid {} {}", suffix, ::getpid());
+  }
+
+  bool is_playstation_profile(lvh::GamepadProfileKind kind) {
+    return kind == lvh::GamepadProfileKind::dualshock4 || kind == lvh::GamepadProfileKind::dualsense;
   }
 
   std::optional<std::string> read_first_line(const std::filesystem::path &path) {
@@ -500,7 +505,9 @@ namespace {
 
     const auto expected_profile = [&test_case]() {
       auto profile = test_case.profile;
-      profile.name = unique_device_name(test_case.name_suffix);
+      profile.name = is_playstation_profile(profile.gamepad_kind) ?
+                       std::string {playstation_uhid_name} :
+                       unique_device_name(test_case.name_suffix);
       if (test_case.expected_vendor_id.has_value()) {
         profile.vendor_id = *test_case.expected_vendor_id;
       }

@@ -103,6 +103,41 @@ namespace lvh::detail::test {
   };
 
   /**
+   * @brief UHID device-creation observations captured by a socketpair peer.
+   */
+  struct LinuxUhidCreationObservation {
+    /**
+     * @brief Whether the peer observed a create event.
+     */
+    bool saw_create = false;
+
+    /**
+     * @brief Whether create remained pending until the peer sent UHID_START.
+     */
+    bool waited_for_start = false;
+
+    /**
+     * @brief Product name carried by the observed create event.
+     */
+    std::string name;
+  };
+
+  /**
+   * @brief UHID output callback observations captured during a round trip.
+   */
+  struct LinuxUhidOutputObservation {
+    /**
+     * @brief Number of output callbacks received.
+     */
+    std::size_t callback_count = 0;
+
+    /**
+     * @brief Last output callback payload.
+     */
+    GamepadOutput last;
+  };
+
+  /**
    * @brief Result from a socketpair-backed UHID lifecycle test.
    */
   struct LinuxUhidRoundTripResult {
@@ -122,9 +157,9 @@ namespace lvh::detail::test {
     OperationStatus close_status;
 
     /**
-     * @brief Whether the peer observed a create event.
+     * @brief Device-creation observations.
      */
-    bool saw_create = false;
+    LinuxUhidCreationObservation creation;
 
     /**
      * @brief Whether the peer observed an input report event.
@@ -187,6 +222,11 @@ namespace lvh::detail::test {
     bool saw_dualshock4_bluetooth_input = false;
 
     /**
+     * @brief Whether the peer observed a USB-framed DualShock 4 input report.
+     */
+    bool saw_dualshock4_usb_input = false;
+
+    /**
      * @brief Whether the peer observed a set-report reply.
      */
     bool saw_set_report_reply = false;
@@ -197,14 +237,9 @@ namespace lvh::detail::test {
     bool saw_destroy = false;
 
     /**
-     * @brief Number of output callbacks received.
+     * @brief Output callback observations.
      */
-    std::size_t output_callback_count = 0;
-
-    /**
-     * @brief Last output callback payload.
-     */
-    GamepadOutput last_output;
+    LinuxUhidOutputObservation output;
   };
 
   /**
@@ -829,6 +864,13 @@ namespace lvh::detail::test {
    * @return Creation status.
    */
   OperationStatus linux_backend_gamepad_fake_open_failure();
+
+  /**
+   * @brief Capture the flags used to open UHID for a descriptor-driven gamepad.
+   *
+   * @return Flags passed to `open()` for `/dev/uhid`.
+   */
+  int linux_backend_gamepad_open_flags();
 
   /**
    * @brief Try creating a Linux backend gamepad while fake UHID creation fails.

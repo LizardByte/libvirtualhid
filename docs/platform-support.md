@@ -138,6 +138,20 @@ and control channels. Numbered control-channel output is normalized before
 parsing, whether the kernel includes the report number in the payload or
 provides it separately on the UHID event.
 
+The backend opens `/dev/uhid` in nonblocking mode, matching the original
+asynchronous gamepad registration path. Its event reader is active before
+device registration begins, and creation does not report success until the
+kernel returns `UHID_START`. This keeps control-channel initialization
+available throughout registration and prevents streaming hosts from publishing
+a controller before its kernel HID device has started.
+
+On Linux, DualShock 4 and DualSense emit Sony's native `Wireless Controller`
+product name for Steam HID discovery. The requested USB or Bluetooth bus,
+descriptor, and report framing remain unchanged; in particular, the default
+DualShock 4 profile stays on its USB report contract. This transport-only name
+is confined to the Linux backend; public profile names, Windows names, and VHF
+behavior are unchanged.
+
 Switch Pro keeps its Nintendo identity on the Linux uinput path. This follows
 the evdev layout used by Linux-native virtual-controller implementations and
 allows standard `FF_RUMBLE` effects without emulating the physical controller's
@@ -170,9 +184,19 @@ KERNEL=="uinput", SUBSYSTEM=="misc", OPTIONS+="static_node=uinput", GROUP="input
 KERNEL=="uhid", GROUP="input", MODE="0660", TAG+="uaccess"
 ```
 
-Consuming applications may also install name-matched rules for stable virtual
-device names when generated `hidraw` or `input` nodes must be accessible to the
-session user:
+UHID gamepads use a stable `libvirtualhid/uhid/*` physical path even when the
+library is compiled directly into a consuming application. Match that path for
+generated `hidraw` and input event nodes because native profiles such as
+DualShock 4 and DualSense intentionally do not retain the application's product
+name:
+
+```udev
+KERNEL=="hidraw*", ATTRS{phys}=="libvirtualhid/uhid/*", GROUP="input", MODE="0660", TAG+="uaccess"
+SUBSYSTEM=="input", KERNEL=="event*", ATTRS{phys}=="libvirtualhid/uhid/*", GROUP="input", MODE="0660", TAG+="uaccess"
+```
+
+Consuming applications may additionally install name-matched rules for stable
+virtual device names, including uinput-backed gamepads:
 
 ```udev
 KERNEL=="hidraw*", ATTRS{name}=="Your App Controller*", GROUP="input", MODE="0660", TAG+="uaccess"
