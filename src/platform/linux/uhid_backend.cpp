@@ -2944,7 +2944,7 @@ namespace lvh::detail {
         stop,
       };
 
-      ReadEventResult read_event(uhid_event &event) {
+      ReadEventResult read_event(uhid_event &event) const {
         pollfd descriptor {};
         descriptor.fd = fd_;
         descriptor.events = POLLIN;
@@ -3021,13 +3021,11 @@ namespace lvh::detail {
       }
 
       OperationStatus wait_for_start() {
-        std::unique_lock lock {lifecycle_mutex_};
-        if (!lifecycle_condition_.wait_for(lock, uhid_start_timeout, [this]() {
+        if (std::unique_lock lock {lifecycle_mutex_}; !lifecycle_condition_.wait_for(lock, uhid_start_timeout, [this]() {
               return started_ || reader_exited_;
             })) {
           return OperationStatus::failure(ErrorCode::backend_failure, "timed out waiting for UHID_START");
-        }
-        if (!started_) {
+        } else if (!started_) {
           return OperationStatus::failure(ErrorCode::backend_failure, "UHID reader stopped before UHID_START");
         }
         return OperationStatus::success();
