@@ -472,13 +472,12 @@ namespace {
     return false;
   }
 
-  void configure_sdl_hidapi_hints(bool enable_playstation_hidapi) {
+  void configure_sdl_hidapi_hints() {
     SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
     SDL_SetHint("SDL_JOYSTICK_HIDAPI", "1");
-    const auto *playstation_hidapi = enable_playstation_hidapi ? "1" : "0";
-    SDL_SetHint("SDL_JOYSTICK_HIDAPI_PS4", playstation_hidapi);
+    SDL_SetHint("SDL_JOYSTICK_HIDAPI_PS4", "1");
     SDL_SetHint("SDL_JOYSTICK_HIDAPI_PS4_RUMBLE", "1");
-    SDL_SetHint("SDL_JOYSTICK_HIDAPI_PS5", playstation_hidapi);
+    SDL_SetHint("SDL_JOYSTICK_HIDAPI_PS5", "1");
     SDL_SetHint("SDL_JOYSTICK_HIDAPI_PS5_RUMBLE", "1");
   }
 
@@ -493,12 +492,7 @@ namespace {
 
   template<class TestBody>
   void run_sdl_gamepad_test(const SdlGamepadConsumerCase &test_case, Uint32 init_flags, TestBody test_body) {
-    const auto playstation_profile = is_playstation_profile(test_case.profile.gamepad_kind);
-    // GitHub's Linux runners expose UHID-created PlayStation input nodes through
-    // evdev but do not provide the hidraw hotplug path SDL's native driver needs.
-    // Keep this integration test on the same evdev route it covered before the
-    // backend began publishing Sony's native product name.
-    configure_sdl_hidapi_hints(!playstation_profile);
+    configure_sdl_hidapi_hints();
     ASSERT_EQ(SDL_Init(init_flags), 0) << SDL_GetError();
     ScopeExit sdl_quit {[]() {
       SDL_Quit();
