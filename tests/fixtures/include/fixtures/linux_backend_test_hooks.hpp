@@ -103,6 +103,41 @@ namespace lvh::detail::test {
   };
 
   /**
+   * @brief UHID device-creation observations captured by a socketpair peer.
+   */
+  struct LinuxUhidCreationObservation {
+    /**
+     * @brief Whether the peer observed a create event.
+     */
+    bool saw_create = false;
+
+    /**
+     * @brief Whether create remained pending until the peer sent UHID_START.
+     */
+    bool waited_for_start = false;
+
+    /**
+     * @brief Product name carried by the observed create event.
+     */
+    std::string name;
+  };
+
+  /**
+   * @brief UHID output callback observations captured during a round trip.
+   */
+  struct LinuxUhidOutputObservation {
+    /**
+     * @brief Number of output callbacks received.
+     */
+    std::size_t callback_count = 0;
+
+    /**
+     * @brief Last output callback payload.
+     */
+    GamepadOutput last;
+  };
+
+  /**
    * @brief Result from a socketpair-backed UHID lifecycle test.
    */
   struct LinuxUhidRoundTripResult {
@@ -122,19 +157,9 @@ namespace lvh::detail::test {
     OperationStatus close_status;
 
     /**
-     * @brief Whether the peer observed a create event.
+     * @brief Device-creation observations.
      */
-    bool saw_create = false;
-
-    /**
-     * @brief Whether create remained pending until the peer sent UHID_START.
-     */
-    bool create_waited_for_start = false;
-
-    /**
-     * @brief Product name carried by the observed create event.
-     */
-    std::string created_name;
+    LinuxUhidCreationObservation creation;
 
     /**
      * @brief Whether the peer observed an input report event.
@@ -212,14 +237,9 @@ namespace lvh::detail::test {
     bool saw_destroy = false;
 
     /**
-     * @brief Number of output callbacks received.
+     * @brief Output callback observations.
      */
-    std::size_t output_callback_count = 0;
-
-    /**
-     * @brief Last output callback payload.
-     */
-    GamepadOutput last_output;
+    LinuxUhidOutputObservation output;
   };
 
   /**

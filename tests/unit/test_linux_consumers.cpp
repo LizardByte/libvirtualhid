@@ -53,6 +53,7 @@ namespace {
   using LibinputContext = std::unique_ptr<libinput, void (*)(libinput *)>;
   using LibinputEvent = std::unique_ptr<libinput_event, void (*)(libinput_event *)>;
   using SdlGameController = std::unique_ptr<SDL_GameController, void (*)(SDL_GameController *)>;
+  constexpr std::string_view playstation_uhid_name = "Wireless Controller";
 
   /**
    * @brief SDL-visible gamepad case.
@@ -106,6 +107,10 @@ namespace {
 
   std::string unique_device_name(std::string_view suffix) {
     return std::format("libvirtualhid {} {}", suffix, ::getpid());
+  }
+
+  bool is_playstation_profile(lvh::GamepadProfileKind kind) {
+    return kind == lvh::GamepadProfileKind::dualshock4 || kind == lvh::GamepadProfileKind::dualsense;
   }
 
   std::optional<std::string> read_first_line(const std::filesystem::path &path) {
@@ -467,12 +472,13 @@ namespace {
     return false;
   }
 
-  void configure_sdl_hidapi_hints() {
+  void configure_sdl_hidapi_hints(bool enable_playstation_hidapi) {
     SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
     SDL_SetHint("SDL_JOYSTICK_HIDAPI", "1");
-    SDL_SetHint("SDL_JOYSTICK_HIDAPI_PS4", "1");
+    const auto *playstation_hidapi = enable_playstation_hidapi ? "1" : "0";
+    SDL_SetHint("SDL_JOYSTICK_HIDAPI_PS4", playstation_hidapi);
     SDL_SetHint("SDL_JOYSTICK_HIDAPI_PS4_RUMBLE", "1");
-    SDL_SetHint("SDL_JOYSTICK_HIDAPI_PS5", "1");
+    SDL_SetHint("SDL_JOYSTICK_HIDAPI_PS5", playstation_hidapi);
     SDL_SetHint("SDL_JOYSTICK_HIDAPI_PS5_RUMBLE", "1");
   }
 
@@ -487,7 +493,12 @@ namespace {
 
   template<class TestBody>
   void run_sdl_gamepad_test(const SdlGamepadConsumerCase &test_case, Uint32 init_flags, TestBody test_body) {
-    configure_sdl_hidapi_hints();
+    const auto playstation_profile = is_playstation_profile(test_case.profile.gamepad_kind);
+    // GitHub's Linux runners expose UHID-created PlayStation input nodes through
+    // evdev but do not provide the hidraw hotplug path SDL's native driver needs.
+    // Keep this integration test on the same evdev route it covered before the
+    // backend began publishing Sony's native product name.
+    configure_sdl_hidapi_hints(!playstation_profile);
     ASSERT_EQ(SDL_Init(init_flags), 0) << SDL_GetError();
     ScopeExit sdl_quit {[]() {
       SDL_Quit();
@@ -500,7 +511,9 @@ namespace {
 
     const auto expected_profile = [&test_case]() {
       auto profile = test_case.profile;
-      profile.name = unique_device_name(test_case.name_suffix);
+      profile.name = is_playstation_profile(profile.gamepad_kind) ?
+                       std::string {playstation_uhid_name} :
+                       unique_device_name(test_case.name_suffix);
       if (test_case.expected_vendor_id.has_value()) {
         profile.vendor_id = *test_case.expected_vendor_id;
       }

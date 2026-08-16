@@ -2830,20 +2830,9 @@ namespace lvh::detail {
           return status;
         }
 
-        {
-          std::unique_lock lock {lifecycle_mutex_};
-          if (!lifecycle_condition_.wait_for(lock, uhid_start_timeout, [this]() {
-                return started_ || reader_exited_;
-              })) {
-            lock.unlock();
-            stop_reader();
-            return OperationStatus::failure(ErrorCode::backend_failure, "timed out waiting for UHID_START");
-          }
-          if (!started_) {
-            lock.unlock();
-            stop_reader();
-            return OperationStatus::failure(ErrorCode::backend_failure, "UHID reader stopped before UHID_START");
-          }
+        if (const auto status = wait_for_start(); !status.ok()) {
+          stop_reader();
+          return status;
         }
 
         if (is_playstation_profile(profile_.gamepad_kind)) {
@@ -2949,42 +2938,47 @@ namespace lvh::detail {
         return OperationStatus::success();
       }
 
+      enum class ReadEventResult {
+        event,
+        retry,
+        stop,
+      };
+
+      ReadEventResult read_event(uhid_event &event) {
+        pollfd descriptor {};
+        descriptor.fd = fd_;
+        descriptor.events = POLLIN;
+
+        const auto result = system_poll(&descriptor, 1, poll_timeout_ms);
+        if (result < 0) {
+          return errno == EINTR ? ReadEventResult::retry : ReadEventResult::stop;
+        }
+        if ((descriptor.revents & (POLLERR | POLLHUP | POLLNVAL)) != 0) {
+          return ReadEventResult::stop;
+        }
+        if (result == 0 || (descriptor.revents & POLLIN) == 0) {
+          return ReadEventResult::retry;
+        }
+
+        const auto result_read = system_read(fd_, std::as_writable_bytes(std::span {&event, 1U}));
+        if (result_read < 0) {
+          return errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR ?
+                   ReadEventResult::retry :
+                   ReadEventResult::stop;
+        }
+        return result_read == 0 ? ReadEventResult::stop : ReadEventResult::event;
+      }
+
       void read_loop(std::stop_token stop_token) {
         while (!stop_token.stop_requested() && running_) {
-          pollfd descriptor {};
-          descriptor.fd = fd_;
-          descriptor.events = POLLIN;
-
-          const auto result = system_poll(&descriptor, 1, poll_timeout_ms);
-          if (result < 0) {
-            if (errno == EINTR) {
-              continue;
-            }
-            break;
-          }
-          if (result == 0) {
-            continue;
-          }
-          if ((descriptor.revents & (POLLERR | POLLHUP | POLLNVAL)) != 0) {
-            break;
-          }
-          if ((descriptor.revents & POLLIN) == 0) {
-            continue;
-          }
-
           uhid_event event {};
-          const auto read_result = system_read(fd_, std::as_writable_bytes(std::span {&event, 1U}));
-          if (read_result < 0) {
-            if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
-              continue;
-            }
+          const auto result = read_event(event);
+          if (result == ReadEventResult::stop) {
             break;
           }
-          if (read_result == 0) {
-            break;
+          if (result == ReadEventResult::event) {
+            handle_event(event);
           }
-
-          handle_event(event);
         }
 
         {
@@ -3024,6 +3018,19 @@ namespace lvh::detail {
           reader_.request_stop();
           reader_.join();
         }
+      }
+
+      OperationStatus wait_for_start() {
+        std::unique_lock lock {lifecycle_mutex_};
+        if (!lifecycle_condition_.wait_for(lock, uhid_start_timeout, [this]() {
+              return started_ || reader_exited_;
+            })) {
+          return OperationStatus::failure(ErrorCode::backend_failure, "timed out waiting for UHID_START");
+        }
+        if (!started_) {
+          return OperationStatus::failure(ErrorCode::backend_failure, "UHID reader stopped before UHID_START");
+        }
+        return OperationStatus::success();
       }
 
       void periodic_report_loop(std::stop_token stop_token) {

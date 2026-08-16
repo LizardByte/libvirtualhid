@@ -715,6 +715,33 @@ namespace lvh::detail::test {
       return create_status;
     }
 
+    uhid_event create_started_profile_uhid_gamepad(
+      UhidGamepad &gamepad,
+      DeviceId id,
+      const CreateGamepadOptions &options,
+      int peer_fd,
+      std::uint16_t expected_bus,
+      LinuxUhidRoundTripResult &result
+    ) {
+      uhid_event event {};
+      result.create_status = create_started_uhid_gamepad(
+        gamepad,
+        id,
+        options,
+        peer_fd,
+        event,
+        result.creation.saw_create,
+        result.creation.waited_for_start
+      );
+      if (result.creation.saw_create) {
+        result.creation.saw_create = event.u.create2.vendor == options.profile.vendor_id &&
+                                     event.u.create2.product == options.profile.product_id &&
+                                     event.u.create2.bus == expected_bus;
+        result.creation.name = reinterpret_cast<const char *>(event.u.create2.name);
+      }
+      return event;
+    }
+
     std::uint32_t read_u32_le(const std::uint8_t *buffer) {
       return static_cast<std::uint32_t>(buffer[0]) |
              (static_cast<std::uint32_t>(buffer[1]) << 8U) |
@@ -1456,24 +1483,11 @@ namespace lvh::detail::test {
     options.metadata.stable_id = "linux-uhid-roundtrip";
 
     UhidGamepad gamepad {descriptors[0]};
-    uhid_event event {};
-    result.create_status = create_started_uhid_gamepad(
-      gamepad,
-      7,
-      options,
-      descriptors[1],
-      event,
-      result.saw_create,
-      result.create_waited_for_start
-    );
-    if (result.saw_create) {
-      result.saw_create = event.u.create2.vendor == profile.vendor_id && event.u.create2.product == profile.product_id;
-      result.created_name = reinterpret_cast<const char *>(event.u.create2.name);
-    }
+    auto event = create_started_profile_uhid_gamepad(gamepad, 7, options, descriptors[1], BUS_USB, result);
 
     gamepad.set_output_callback([&result](const GamepadOutput &output) {
-      ++result.output_callback_count;
-      result.last_output = output;
+      ++result.output.callback_count;
+      result.output.last = output;
     });
 
     event = {};
@@ -1547,26 +1561,12 @@ namespace lvh::detail::test {
     options.metadata.stable_id = "02:03:04:05:06:07";
 
     UhidGamepad gamepad {descriptors[0]};
-    uhid_event event {};
-    result.create_status = create_started_uhid_gamepad(
-      gamepad,
-      8,
-      options,
-      descriptors[1],
-      event,
-      result.saw_create,
-      result.create_waited_for_start
-    );
-    if (result.saw_create) {
-      result.saw_create = event.u.create2.vendor == options.profile.vendor_id &&
-                          event.u.create2.product == options.profile.product_id;
-      result.created_name = reinterpret_cast<const char *>(event.u.create2.name);
-    }
+    auto event = create_started_profile_uhid_gamepad(gamepad, 8, options, descriptors[1], BUS_USB, result);
 
     gamepad.set_output_callback([&result](const GamepadOutput &output) {
       if (output.kind == GamepadOutputKind::rumble) {
-        ++result.output_callback_count;
-        result.last_output = output;
+        ++result.output.callback_count;
+        result.output.last = output;
       }
     });
 
@@ -1655,22 +1655,7 @@ namespace lvh::detail::test {
     options.metadata.stable_id = "02:03:04:05:06:07";
 
     UhidGamepad gamepad {descriptors[0]};
-    uhid_event event {};
-    result.create_status = create_started_uhid_gamepad(
-      gamepad,
-      9,
-      options,
-      descriptors[1],
-      event,
-      result.saw_create,
-      result.create_waited_for_start
-    );
-    if (result.saw_create) {
-      result.saw_create = event.u.create2.vendor == options.profile.vendor_id &&
-                          event.u.create2.product == options.profile.product_id &&
-                          event.u.create2.bus == BUS_BLUETOOTH;
-      result.created_name = reinterpret_cast<const char *>(event.u.create2.name);
-    }
+    auto event = create_started_profile_uhid_gamepad(gamepad, 9, options, descriptors[1], BUS_BLUETOOTH, result);
 
     if (read_uhid_event_type(descriptors[1], UHID_INPUT2, event)) {
       const auto report_size = static_cast<std::size_t>(event.u.input2.size);
@@ -1726,23 +1711,9 @@ namespace lvh::detail::test {
     options.metadata.stable_id = "02:03:04:05:06:07";
 
     UhidGamepad gamepad {descriptors[0]};
-    uhid_event event {};
-    result.create_status = create_started_uhid_gamepad(
-      gamepad,
-      10,
-      options,
-      descriptors[1],
-      event,
-      result.saw_create,
-      result.create_waited_for_start
-    );
-    if (result.saw_create) {
-      result.saw_create = event.u.create2.vendor == options.profile.vendor_id &&
-                          event.u.create2.product == options.profile.product_id &&
-                          event.u.create2.bus == BUS_USB &&
-                          event.u.create2.rd_size == options.profile.report_descriptor.size();
-      result.created_name = reinterpret_cast<const char *>(event.u.create2.name);
-    }
+    auto event = create_started_profile_uhid_gamepad(gamepad, 10, options, descriptors[1], BUS_USB, result);
+    result.creation.saw_create = result.creation.saw_create &&
+                                 event.u.create2.rd_size == options.profile.report_descriptor.size();
 
     if (read_uhid_event_type(descriptors[1], UHID_INPUT2, event)) {
       result.saw_dualshock4_usb_input =
@@ -1751,8 +1722,8 @@ namespace lvh::detail::test {
 
     gamepad.set_output_callback([&result](const GamepadOutput &output) {
       if (output.kind == GamepadOutputKind::rumble) {
-        ++result.output_callback_count;
-        result.last_output = output;
+        ++result.output.callback_count;
+        result.output.last = output;
       }
     });
 
@@ -1824,22 +1795,7 @@ namespace lvh::detail::test {
     options.metadata.stable_id = "02:03:04:05:06:07";
 
     UhidGamepad gamepad {descriptors[0]};
-    uhid_event event {};
-    result.create_status = create_started_uhid_gamepad(
-      gamepad,
-      11,
-      options,
-      descriptors[1],
-      event,
-      result.saw_create,
-      result.create_waited_for_start
-    );
-    if (result.saw_create) {
-      result.saw_create = event.u.create2.vendor == options.profile.vendor_id &&
-                          event.u.create2.product == options.profile.product_id &&
-                          event.u.create2.bus == BUS_BLUETOOTH;
-      result.created_name = reinterpret_cast<const char *>(event.u.create2.name);
-    }
+    auto event = create_started_profile_uhid_gamepad(gamepad, 11, options, descriptors[1], BUS_BLUETOOTH, result);
 
     if (read_uhid_event_type(descriptors[1], UHID_INPUT2, event)) {
       const auto report_size = static_cast<std::size_t>(event.u.input2.size);
