@@ -78,37 +78,5 @@ Proposed solution:
 
 ## PlayStation and Nintendo Rumble
 
-Status: unresolved or not fully validated for DualShock 4, DualSense, and
-Switch Pro-style virtual gamepads in consumer paths.
-
-The profiles expose the native descriptors and the Windows backend answers the
-initialization feature reports needed by HIDAPI-style clients. The remaining
-gap is output behavior after consumers open the virtual controllers: rumble is
-not reliably reaching the public `GamepadOutput` callback for PlayStation 4,
-PlayStation 5, and Nintendo-style gamepads in manual validation.
-
-Proposed solution:
-
-1. Capture physical-controller output traffic for DualShock 4, DualSense, and
-   Switch Pro over the relevant transports used by Steam, SDL, and browser HID
-   testers.
-2. Compare those output and feature reports against the virtual backend's
-   accepted reports, including report IDs, leading zero/report-ID conventions,
-   initialization order, and transport-specific payload variants.
-3. Extend the report parsers and backend output routing only where a captured
-   consumer report proves the missing behavior.
-4. Add regression tests for each accepted rumble payload shape before relying
-   on manual testing.
-5. Validate with at least one real consumer per platform path. For Steam, the
-   required proof is a received virtual-control output report or a normalized
-   rumble callback after triggering controller rumble in Steam's tester.
-
-Implementation notes:
-
-- DualShock 4 and DualSense output paths may differ between USB, Bluetooth, and
-  HIDAPI-initialized reports.
-- Switch Pro output may require the native initialization sequence to complete
-  before rumble packets are accepted.
-- Linux `uhid` and Windows VHF have different report-ID delivery behavior, so
-  both prefixed and unprefixed payloads need explicit coverage where consumers
-  actually send them.
+Status: native output-path validation and the remaining Steam and Chromium
+consumer gaps are tracked in [GitHub issue #80](https://github.com/LizardByte/libvirtualhid/issues/80).

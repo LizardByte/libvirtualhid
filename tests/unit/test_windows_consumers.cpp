@@ -21,6 +21,10 @@
 #include <hidsdi.h>
 #include <SetupAPI.h>
 
+#if defined(LIBVIRTUALHID_TEST_HAS_SDL3)
+  #include <SDL3/SDL.h>
+#endif
+
 // standard includes
 #include <algorithm>
 #include <array>
@@ -373,7 +377,126 @@ namespace {
     std::size_t next_output_ = 0;
   };
 
+#if defined(LIBVIRTUALHID_TEST_HAS_SDL3)
+  using SdlGamepad = std::unique_ptr<SDL_Gamepad, void (*)(SDL_Gamepad *)>;
+
+  class SdlGamepadSubsystem {
+  public:
+    SdlGamepadSubsystem() {
+      SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
+      SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI, "1");
+      SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_PS4, "1");
+      SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_PS5, "1");
+      SDL_SetHint(SDL_HINT_JOYSTICK_ENHANCED_REPORTS, "1");
+      initialized_ = SDL_Init(SDL_INIT_GAMEPAD | SDL_INIT_JOYSTICK | SDL_INIT_EVENTS);
+    }
+
+    SdlGamepadSubsystem(const SdlGamepadSubsystem &) = delete;
+    SdlGamepadSubsystem &operator=(const SdlGamepadSubsystem &) = delete;
+
+    ~SdlGamepadSubsystem() {
+      if (initialized_) {
+        SDL_Quit();
+      }
+    }
+
+    bool initialized() const {
+      return initialized_;
+    }
+
+  private:
+    bool initialized_ = false;
+  };
+
+  std::set<SDL_JoystickID> current_sdl_gamepads() {
+    auto count = 0;
+    auto *gamepads = SDL_GetGamepads(&count);
+    std::set<SDL_JoystickID> result;
+    if (gamepads != nullptr) {
+      result.insert(gamepads, gamepads + count);
+      SDL_free(gamepads);
+    }
+    return result;
+  }
+
+  SdlGamepad wait_for_new_sdl_gamepad(
+    const std::set<SDL_JoystickID> &previous_gamepads,
+    std::uint16_t vendor_id,
+    std::uint16_t product_id
+  ) {
+    const auto deadline = std::chrono::steady_clock::now() + 10s;
+    while (std::chrono::steady_clock::now() < deadline) {
+      SDL_UpdateGamepads();
+      auto count = 0;
+      auto *gamepads = SDL_GetGamepads(&count);
+      for (auto index = 0; index < count; ++index) {
+        const auto gamepad_id = gamepads[index];
+        if (
+          !previous_gamepads.contains(gamepad_id) && SDL_GetGamepadVendorForID(gamepad_id) == vendor_id &&
+          SDL_GetGamepadProductForID(gamepad_id) == product_id
+        ) {
+          auto *opened = SDL_OpenGamepad(gamepad_id);
+          SDL_free(gamepads);
+          return {opened, &SDL_CloseGamepad};
+        }
+      }
+      SDL_free(gamepads);
+      std::this_thread::sleep_for(100ms);
+    }
+    return {nullptr, &SDL_CloseGamepad};
+  }
+#endif
+
 }  // namespace
+
+#if defined(LIBVIRTUALHID_TEST_HAS_SDL3)
+TEST_F(WindowsConsumerTest, SdlHidapiRumbleReachesPlayStationAndSwitchCallbacks) {
+  SdlGamepadSubsystem sdl;
+  ASSERT_TRUE(sdl.initialized()) << SDL_GetError();
+
+  lvh::RuntimeOptions runtime_options;
+  runtime_options.backend = lvh::BackendKind::platform_default;
+  auto runtime = lvh::Runtime::create(runtime_options);
+  ASSERT_NE(runtime, nullptr);
+  ASSERT_TRUE(runtime->capabilities().supports_gamepad)
+    << "The installed libvirtualhid Windows driver is required for this integration test";
+
+  const std::array profiles {
+    lvh::profiles::dualshock4_usb(),
+    lvh::profiles::dualsense_usb(),
+    lvh::profiles::switch_pro(),
+  };
+  for (const auto &profile : profiles) {
+    SCOPED_TRACE(profile.name);
+    const auto previous_gamepads = current_sdl_gamepads();
+
+    lvh::CreateGamepadOptions options;
+    options.profile = profile;
+    options.metadata.stable_id = "02:11:22:33:44:55";
+    auto created = lvh::GamepadStateAdapter::create(*runtime, options);
+    ASSERT_TRUE(created) << created.status.message();
+    GamepadOutputCapture output_capture;
+    output_capture.attach(*created.adapter);
+
+    auto gamepad = wait_for_new_sdl_gamepad(previous_gamepads, profile.vendor_id, profile.product_id);
+    ASSERT_NE(gamepad.get(), nullptr) << SDL_GetError();
+    auto *joystick = SDL_GetGamepadJoystick(gamepad.get());
+    ASSERT_NE(joystick, nullptr) << SDL_GetError();
+    const auto properties = SDL_GetGamepadProperties(gamepad.get());
+    ASSERT_NE(properties, 0U) << SDL_GetError();
+    ASSERT_TRUE(SDL_GetBooleanProperty(properties, SDL_PROP_GAMEPAD_CAP_RUMBLE_BOOLEAN, false)) << SDL_GetError();
+    ASSERT_TRUE(SDL_RumbleGamepad(gamepad.get(), 0x5678U, 0x1234U, 1000U)) << SDL_GetError();
+
+    const auto rumble = output_capture.wait_for_rumble(true);
+    ASSERT_TRUE(rumble.has_value()) << "No normalized rumble callback followed SDL HIDAPI rumble";
+    EXPECT_GT(rumble->low_frequency_rumble, 0U);
+    EXPECT_GT(rumble->high_frequency_rumble, 0U);
+
+    gamepad.reset();
+    ASSERT_TRUE(created.adapter->close().ok());
+  }
+}
+#endif
 
 TEST_F(WindowsConsumerTest, NativePlayStationFeatureAndOutputReportsReachOwningRuntime) {
   struct NativePlayStationCase {

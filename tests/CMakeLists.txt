@@ -133,6 +133,14 @@ elseif(WIN32)
       hid
       setupapi
       winhttp)
+
+    if(TARGET SDL3::SDL3-static)
+        target_compile_definitions(${TEST_BINARY} PRIVATE LIBVIRTUALHID_TEST_HAS_SDL3=1)
+        target_link_libraries(${TEST_BINARY} PRIVATE SDL3::SDL3-static)
+    elseif(TARGET SDL3::SDL3)
+        target_compile_definitions(${TEST_BINARY} PRIVATE LIBVIRTUALHID_TEST_HAS_SDL3=1)
+        target_link_libraries(${TEST_BINARY} PRIVATE SDL3::SDL3)
+    endif()
 endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND LIBVIRTUALHID_ENABLE_XTEST AND X11_FOUND AND X11_XTest_FOUND)
