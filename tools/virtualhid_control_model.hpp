@@ -123,6 +123,15 @@ namespace lvh::tools::virtualhid_control {
   int trigger_to_slider(float value);
   float slider_to_float(long value);
   std::wstring yes_no(bool value);
+
+  /**
+   * @brief Trim surrounding whitespace from a pasted license key.
+   *
+   * @param license_key License-key text from the control UI input buffer.
+   * @return A normalized key, or an empty string when the input has no key.
+   */
+  std::string normalized_license_key(std::string_view license_key);
+
   bool supports_normalized_feedback(const DeviceProfile &profile);
   std::wstring profile_feature_summary(const DeviceProfile &profile);
   bool append_latest_output_summary(std::wostringstream &stream, const OutputState &state);

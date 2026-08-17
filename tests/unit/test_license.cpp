@@ -79,20 +79,20 @@ TEST(WindowsBrokerClientTest, BuildsVersionedRequestHeader) {
   EXPECT_EQ(header.size, sizeof(LvhWindowsBrokerLicenseRequest));
   EXPECT_EQ(header.type, static_cast<std::uint32_t>(LvhWindowsBrokerRequestType::validate_license));
   EXPECT_EQ(header.reserved0, 0U);
-  EXPECT_EQ(LVH_WINDOWS_BROKER_PROTOCOL_VERSION, 2U);
+  EXPECT_EQ(LVH_WINDOWS_BROKER_PROTOCOL_VERSION, 3U);
 }
 
 TEST(WindowsBrokerClientTest, PreservesFixedWireLayout) {
   EXPECT_EQ(sizeof(LvhWindowsBrokerRequestHeader), 16U);
-  EXPECT_EQ(sizeof(LvhWindowsBrokerLicenseStatus), 860U);
+  EXPECT_EQ(sizeof(LvhWindowsBrokerLicenseStatus), 796U);
   EXPECT_EQ(sizeof(LvhWindowsBrokerStatusRequest), 16U);
-  EXPECT_EQ(sizeof(LvhWindowsBrokerStatusResponse), 1388U);
+  EXPECT_EQ(sizeof(LvhWindowsBrokerStatusResponse), 1324U);
   EXPECT_EQ(sizeof(LvhWindowsBrokerCreateGamepadRequest), 2528U);
-  EXPECT_EQ(sizeof(LvhWindowsBrokerCreateGamepadResponse), 1704U);
+  EXPECT_EQ(sizeof(LvhWindowsBrokerCreateGamepadResponse), 1640U);
   EXPECT_EQ(sizeof(LvhWindowsBrokerDestroyDeviceRequest), 64U);
-  EXPECT_EQ(sizeof(LvhWindowsBrokerDestroyDeviceResponse), 1388U);
+  EXPECT_EQ(sizeof(LvhWindowsBrokerDestroyDeviceResponse), 1324U);
   EXPECT_EQ(sizeof(LvhWindowsBrokerLicenseRequest), 272U);
-  EXPECT_EQ(sizeof(LvhWindowsBrokerLicenseResponse), 1388U);
+  EXPECT_EQ(sizeof(LvhWindowsBrokerLicenseResponse), 1324U);
 }
 
 TEST(WindowsBrokerClientTest, MapsLicenseAndTransportStatuses) {

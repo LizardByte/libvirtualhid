@@ -37,7 +37,6 @@ namespace lvh {
     std::uint32_t activation_usage = 0;  ///< Machine activations currently used by the license.
     std::string plan_name;  ///< Human-readable plan name, when available.
     std::string customer_email;  ///< Customer email associated with the license, when available.
-    std::string expires_at;  ///< Provider-formatted expiration timestamp, when applicable.
     std::string message;  ///< Human-readable license service status.
     std::string purchase_url;  ///< Hosted page where a license can be purchased.
     std::string manage_account_url;  ///< Hosted page where the customer can manage activations.

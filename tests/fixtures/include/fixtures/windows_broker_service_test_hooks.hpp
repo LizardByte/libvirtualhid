@@ -54,10 +54,15 @@ namespace lvh::detail::test {
 
   BrokerPolarResult broker_polar_scenario(BrokerPolarScenario scenario);
 
+  struct BrokerSubscriptionValidationResult {
+    bool yearly_benefit_is_subscription_backed = false;
+    bool subscription_validation_before_deadline_is_current = false;
+    bool subscription_validation_at_deadline_is_stale = false;
+  };
+
+  BrokerSubscriptionValidationResult broker_subscription_validation_policy();
+
   struct BrokerLicenseFallbackResult {
-    bool before_boundary_is_current = false;
-    bool boundary_is_current = false;
-    bool lifetime_is_current = false;
     bool same_boot_anchor_is_accepted = false;
     bool changed_boot_anchor_is_rejected = false;
     bool uptime_rollback_is_rejected = false;

@@ -132,7 +132,7 @@ jobs:
         with:
           allowUpdates: false
           body: ${{ needs.setup_release.outputs.release_body }}
-          draft: true
+          draft: false
           generateReleaseNotes: ${{ needs.setup_release.outputs.release_generate_release_notes }}
           name: ${{ needs.setup_release.outputs.release_tag }}
           prerelease: true

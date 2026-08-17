@@ -10,13 +10,12 @@
 #include <array>
 #include <stdint.h>
 
-inline constexpr uint32_t LVH_WINDOWS_BROKER_PROTOCOL_VERSION = 2u;
+inline constexpr uint32_t LVH_WINDOWS_BROKER_PROTOCOL_VERSION = 3u;
 inline constexpr uint32_t LVH_WINDOWS_BROKER_MAX_MESSAGE_SIZE = 512u;
 inline constexpr uint32_t LVH_WINDOWS_BROKER_MAX_LICENSE_KEY_SIZE = 128u;
 inline constexpr uint32_t LVH_WINDOWS_BROKER_MAX_INSTANCE_NAME_SIZE = 128u;
 inline constexpr uint32_t LVH_WINDOWS_BROKER_MAX_PLAN_NAME_SIZE = 128u;
 inline constexpr uint32_t LVH_WINDOWS_BROKER_MAX_CUSTOMER_EMAIL_SIZE = 128u;
-inline constexpr uint32_t LVH_WINDOWS_BROKER_MAX_TIMESTAMP_SIZE = 64u;
 inline constexpr char LVH_WINDOWS_BROKER_PIPE_PATH[] = R"(\\.\pipe\libvirtualhid-broker)";
 
 enum class LvhWindowsBrokerRequestType : uint32_t {
@@ -66,7 +65,6 @@ struct LvhWindowsBrokerLicenseStatus {
   uint32_t activation_usage;
   std::array<char, LVH_WINDOWS_BROKER_MAX_PLAN_NAME_SIZE> plan_name;
   std::array<char, LVH_WINDOWS_BROKER_MAX_CUSTOMER_EMAIL_SIZE> customer_email;
-  std::array<char, LVH_WINDOWS_BROKER_MAX_TIMESTAMP_SIZE> expires_at;
   std::array<char, LVH_WINDOWS_BROKER_MAX_MESSAGE_SIZE> message;
 };
 
