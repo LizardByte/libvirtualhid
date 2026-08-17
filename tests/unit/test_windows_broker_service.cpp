@@ -397,11 +397,15 @@ TEST(WindowsBrokerImplementationTest, ReportsDpapiAndPolarFailures) {
   EXPECT_EQ(succeeded.receive_timeout, 10000);
 }
 
+TEST(WindowsBrokerImplementationTest, BoundsOfflineSubscriptionValidation) {
+  const auto policy = lvh::detail::test::broker_subscription_validation_policy();
+  EXPECT_TRUE(policy.yearly_benefit_is_subscription_backed);
+  EXPECT_TRUE(policy.subscription_validation_before_deadline_is_current);
+  EXPECT_TRUE(policy.subscription_validation_at_deadline_is_stale);
+}
+
 TEST(WindowsBrokerImplementationTest, EnforcesLimitedUnvalidatedFallback) {
   const auto policy = lvh::detail::test::broker_license_fallback_policy();
-  EXPECT_TRUE(policy.before_boundary_is_current);
-  EXPECT_FALSE(policy.boundary_is_current);
-  EXPECT_TRUE(policy.lifetime_is_current);
   EXPECT_TRUE(policy.same_boot_anchor_is_accepted);
   EXPECT_TRUE(policy.changed_boot_anchor_is_rejected);
   EXPECT_TRUE(policy.uptime_rollback_is_rejected);

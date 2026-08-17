@@ -311,21 +311,30 @@ provider failure, the broker retries every 60 seconds. Controllers that already
 exist are retained for one hour unless the broker service restarts, but no
 additional controller can be created while at least one licensed controller
 remains active. When the outage reaches one hour, the broker removes excess
-licensed controllers and retains at most one until online validation succeeds.
-Failed driver destruction requests remain tracked and are retried instead of
-being treated as successful revocations.
+licensed controllers and retains at most one. A yearly subscription authorization
+is current for at most the daily validation interval plus that one-hour outage
+allowance; after 25 hours without successful validation, the remaining licensed
+controller is also removed. A lifetime license can retain the one-controller
+fallback until online validation succeeds. Failed driver destruction requests
+remain tracked and are retried instead of being treated as successful revocations.
 
 Polar's HTTPS `Date` response header supplies trusted time when a new
-authorization is issued. A yearly license ends exactly at its reported
-`expires_at`; the one-hour outage retention does not extend that expiration. A
-lifetime license has no calendar expiration. The broker advances Polar's trusted
-timestamp using Windows uptime and stores a random marker in a volatile registry
-key for the current boot session. This works across broker service restarts and
-includes sleep or hibernation, but never consults the user-adjustable Windows
-date. After Windows restarts, the marker changes, so a yearly license must
-reconnect to Polar before gamepad creation; lifetime licenses can use the
-one-gamepad outage fallback. Explicit validation requests always contact the
-provider. The sole exception to normal licensing is
+authorization is issued. Both supported plans rely on Polar's entitlement status
+rather than a locally enforced calendar expiration. Subscription keys remain
+granted while their subscription is billable, and Polar revokes the benefit when
+the subscription entitlement ends. Polar's public license validation response
+does not include the subscription renewal date, so the broker does not fabricate
+one; customers can see the authoritative date in the linked Polar account portal.
+The one-hour outage retention does not extend the yearly subscription's 25-hour
+validation deadline.
+
+The broker advances Polar's trusted timestamp using Windows uptime and stores a
+random marker in a volatile registry key for the current boot session. This works
+across broker service restarts and includes sleep or hibernation, but never
+consults the user-adjustable Windows date. After Windows restarts, the marker
+changes, so a yearly subscription must reconnect to Polar before gamepad creation;
+a lifetime license can use the one-gamepad outage fallback. Explicit validation
+requests always contact the provider. The sole exception to normal licensing is
 for CI runners where the broker service itself has the `GITHUB_ACTIONS`
 environment marker. That environment receives one machine-scoped five-minute
 evaluation window beginning with its first unlicensed creation attempt. The
@@ -336,15 +345,17 @@ separately running service.
 
 Polar's `limit_activations` value is the machine limit and is configured as `5`
 on both license-key benefits. The broker gives yearly and lifetime licenses the
-same full local access when the provider reports the key status as `granted`. Polar
-revokes a subscription benefit when its entitlement ends. Licensed access has
-no local active-device cap after successful validation. A definitive missing
-activation, revoked or disabled key, activation mismatch, disallowed benefit,
-explicit deactivation, or exact yearly expiration prevents new gamepads and
-causes the broker to destroy existing licensed gamepads. A timeout or other
+same full local access when the provider reports the key status as `granted`.
+Polar revokes a subscription benefit when its entitlement ends. Licensed access
+has no local active-device cap after successful validation. A definitive missing
+activation, revoked or disabled key, activation mismatch, disallowed benefit, or
+explicit deactivation prevents new gamepads and causes the broker to destroy
+existing licensed gamepads. A timeout or other
 transient provider failure starts the one-hour retention period and one-gamepad
-creation limit instead of immediately revoking existing controllers. WinHTTP resolve, connect, send, and receive
-operations have explicit timeouts of 5, 5, 5, and 10 seconds respectively.
+creation limit instead of immediately revoking existing controllers. A yearly
+subscription that cannot validate for 25 hours is also denied until it reconnects.
+WinHTTP resolve, connect, send, and receive operations have explicit timeouts of
+5, 5, 5, and 10 seconds respectively.
 
 ## Profile Compatibility
 
@@ -393,9 +404,10 @@ label because VHF does not provide a product/manufacturer string callback.
   packages require a Microsoft dashboard signing path that is not part of the
   current Azure Trusted Signing workflow.
 - A temporary Polar outage limits a previously activated machine to one active
-  licensed gamepad until validation succeeds. Yearly licenses receive no
-  post-expiration grace. Definitive invalidation or exact expiration prevents
-  new gamepads and removes active licensed gamepads.
+  licensed gamepad. Yearly subscriptions must reconnect within 25 hours of their
+  last successful validation; lifetime licenses can retain one gamepad until
+  validation succeeds. Definitive invalidation prevents new gamepads and removes
+  active licensed gamepads.
 
 ## Signing
 

@@ -39,6 +39,7 @@ namespace {
   using lvh::tools::virtualhid_control::button_choices;
   using lvh::tools::virtualhid_control::device_type_name;
   using lvh::tools::virtualhid_control::node_kind_name;
+  using lvh::tools::virtualhid_control::normalized_license_key;
   using lvh::tools::virtualhid_control::output_kind_name;
   using lvh::tools::virtualhid_control::output_summary;
   using lvh::tools::virtualhid_control::OutputLogEntry;
@@ -220,7 +221,6 @@ namespace {
     bool licensed = false;
     std::string plan_name = "Unavailable";
     std::string customer_email;
-    std::string expires_at;
     std::string state_text = "License broker unavailable.";
     std::string message;
     std::string purchase_url;
@@ -275,7 +275,6 @@ namespace {
     snapshot.licensed = status.licensed();
     snapshot.plan_name = status.plan_name;
     snapshot.customer_email = status.customer_email;
-    snapshot.expires_at = status.expires_at;
     snapshot.message = status.message.empty() ? result.status.message() : status.message;
     snapshot.purchase_url = status.purchase_url;
     snapshot.manage_account_url = status.manage_account_url;
@@ -296,9 +295,6 @@ namespace {
     }
     if (status.activation_limit > 0U) {
       snapshot.state_text += std::format(" | machine limit {}", status.activation_limit);
-    }
-    if (!snapshot.expires_at.empty()) {
-      snapshot.state_text += " | expires " + snapshot.expires_at;
     }
     return snapshot;
   }
@@ -334,9 +330,10 @@ namespace {
       ImGui::TextUnformatted("License key");
       ImGui::InputText("##license-key", license_key_input_.data(), license_key_input_.size());
       {
-        ScopedDisabled disabled {!snapshot_.broker_available || license_key_input_[0] == '\0'};
+        const auto license_key = normalized_license_key(license_key_input_.data());
+        ScopedDisabled disabled {license_key.empty()};
         if (ImGui::Button("Activate license", {-FLT_MIN, 0.0F})) {
-          activate(show_error);
+          activate(license_key, show_error);
         }
       }
       {
@@ -404,9 +401,9 @@ namespace {
 
 #if defined(_WIN32)
     template<typename ErrorHandler>
-    void activate(ErrorHandler &show_error) {
+    void activate(std::string_view license_key, ErrorHandler &show_error) {
       std::string error;
-      apply_result(lvh::activate_license(license_key_input_.data()), error);
+      apply_result(lvh::activate_license(license_key), error);
       if (!error.empty()) {
         show_error(error);
       } else {

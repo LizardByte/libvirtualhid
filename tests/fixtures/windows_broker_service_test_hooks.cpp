@@ -485,10 +485,32 @@ namespace lvh::detail::test {
     };
   }
 
+  BrokerSubscriptionValidationResult broker_subscription_validation_policy() {
+    using namespace lvh::detail::windows_broker_service;
+    const auto subscription_validation_seconds = static_cast<std::uint64_t>(
+      std::chrono::duration_cast<std::chrono::seconds>(
+        subscription_validation_max_age
+      )
+        .count()
+    );
+    return {
+      .yearly_benefit_is_subscription_backed =
+        lvh::windows::broker_config::allowed_benefits.front().subscription_backed,
+      .subscription_validation_before_deadline_is_current =
+        license_validation_is_current(
+          1000U,
+          1000U + subscription_validation_seconds - 1U
+        ),
+      .subscription_validation_at_deadline_is_stale =
+        !license_validation_is_current(
+          1000U,
+          1000U + subscription_validation_seconds
+        ),
+    };
+  }
+
   BrokerLicenseFallbackResult broker_license_fallback_policy() {
     using namespace lvh::detail::windows_broker_service;
-    const auto expiration = parse_rfc3339_timestamp("2026-01-03T00:00:00Z");
-    const auto expiration_timestamp = license_calendar_timestamp(*expiration);
     PolarLicenseState persisted_state {
       .provider = "polar",
       .validated_at = 12345U,
@@ -517,17 +539,6 @@ namespace lvh::detail::test {
       true
     );
     return {
-      .before_boundary_is_current = license_expiration_is_current(
-        "2026-01-03T00:00:00Z",
-        true,
-        expiration_timestamp - 1U
-      ),
-      .boundary_is_current = license_expiration_is_current(
-        "2026-01-03T00:00:00Z",
-        true,
-        expiration_timestamp
-      ),
-      .lifetime_is_current = license_expiration_is_current({}, false, 0U),
       .same_boot_anchor_is_accepted = monotonic_timestamp.has_value(),
       .changed_boot_anchor_is_rejected = !changed_boot_timestamp.has_value(),
       .uptime_rollback_is_rejected = !uptime_rollback_timestamp.has_value(),

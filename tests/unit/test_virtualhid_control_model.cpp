@@ -76,6 +76,12 @@ TEST(VirtualHidControlModelTest, NamesKnownAndFallbackEnumValues) {
   EXPECT_EQ(control::yes_no(false), L"no");
 }
 
+TEST(VirtualHidControlModelTest, NormalizesPastedLicenseKeys) {
+  EXPECT_EQ(control::normalized_license_key("test-license-key"), "test-license-key");
+  EXPECT_EQ(control::normalized_license_key("\r\n test-license-key \t"), "test-license-key");
+  EXPECT_TRUE(control::normalized_license_key(" \r\n\t").empty());
+}
+
 TEST(VirtualHidControlModelTest, MapsProfileChoicesToProfiles) {
   for (const auto &choice : control::profile_choices) {
     const auto profile = control::profile_for_choice(choice);

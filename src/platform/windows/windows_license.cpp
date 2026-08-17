@@ -46,7 +46,6 @@ namespace lvh {
         .activation_usage = status.activation_usage,
         .plan_name = status.plan_name.data(),
         .customer_email = status.customer_email.data(),
-        .expires_at = status.expires_at.data(),
         .message = status.message.data(),
         .purchase_url = std::string {windows::broker_config::buy_url},
         .manage_account_url = std::string {windows::broker_config::manage_account_url},

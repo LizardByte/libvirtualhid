@@ -83,6 +83,8 @@ namespace lvh::detail::windows_broker_service {
   constexpr auto license_validation_interval = std::chrono::days {1};
   constexpr auto license_validation_retry_interval = std::chrono::seconds {60};
   constexpr auto license_outage_device_retention = std::chrono::hours {1};
+  constexpr auto subscription_validation_max_age =
+    license_validation_interval + license_outage_device_retention;
   constexpr std::size_t unvalidated_active_gamepad_limit = 1U;
   constexpr auto boot_session_registry_path =
     L"SYSTEM\\CurrentControlSet\\Services\\libvirtualhid_broker\\Runtime";
@@ -186,112 +188,6 @@ namespace lvh::detail::windows_broker_service {
     return encode_boot_marker(*generated);
   }
 
-  bool valid_rfc3339_date_time_parts(
-    const std::optional<unsigned> &year,
-    const std::optional<unsigned> &month,
-    const std::optional<unsigned> &day,
-    const std::optional<unsigned> &hour,
-    const std::optional<unsigned> &minute,
-    const std::optional<unsigned> &second
-  ) {
-    return year.has_value() && month.has_value() && day.has_value() &&
-           hour.has_value() && minute.has_value() && second.has_value() &&
-           *hour <= 23U && *minute <= 59U && *second <= 60U;
-  }
-
-  std::optional<unsigned> parse_rfc3339_part(
-    std::string_view value,
-    std::size_t offset,
-    std::size_t size
-  ) {
-    if (offset > value.size() || size > value.size() - offset) {
-      return std::nullopt;
-    }
-
-    unsigned parsed = 0;
-    const auto *begin = value.data() + offset;
-    const auto *end = begin + size;
-    const auto result = std::from_chars(begin, end, parsed);
-    return result.ec == std::errc {} && result.ptr == end ?
-             std::optional<unsigned> {parsed} :
-             std::nullopt;
-  }
-
-  std::optional<std::chrono::minutes> parse_rfc3339_utc_offset(
-    std::string_view value
-  ) {
-    std::size_t timezone_offset = 19U;
-    if (timezone_offset < value.size() && value[timezone_offset] == '.') {
-      ++timezone_offset;
-      const auto fraction_start = timezone_offset;
-      while (timezone_offset < value.size() && value[timezone_offset] >= '0' && value[timezone_offset] <= '9') {
-        ++timezone_offset;
-      }
-      if (timezone_offset == fraction_start) {
-        return std::nullopt;
-      }
-    }
-
-    if (timezone_offset >= value.size()) {
-      return std::nullopt;
-    }
-    if (value[timezone_offset] == 'Z' || value[timezone_offset] == 'z') {
-      return timezone_offset + 1U == value.size() ?
-               std::optional {std::chrono::minutes::zero()} :
-               std::nullopt;
-    }
-    if (timezone_offset + 6U != value.size() || (value[timezone_offset] != '+' && value[timezone_offset] != '-') || value[timezone_offset + 3U] != ':') {
-      return std::nullopt;
-    }
-
-    const auto offset_hours = parse_rfc3339_part(value, timezone_offset + 1U, 2U);
-    const auto offset_minutes = parse_rfc3339_part(value, timezone_offset + 4U, 2U);
-    if (!offset_hours.has_value() || !offset_minutes.has_value() || *offset_hours > 23U || *offset_minutes > 59U) {
-      return std::nullopt;
-    }
-
-    auto utc_offset = std::chrono::hours {*offset_hours} + std::chrono::minutes {*offset_minutes};
-    return value[timezone_offset] == '-' ? -utc_offset : utc_offset;
-  }
-
-  std::optional<LicenseCalendarClock::time_point> parse_rfc3339_timestamp(
-    std::string_view value
-  ) {
-    if (value.size() < 20U || value[4] != '-' || value[7] != '-' || (value[10] != 'T' && value[10] != 't') || value[13] != ':' || value[16] != ':') {
-      return std::nullopt;
-    }
-
-    const auto year_value = parse_rfc3339_part(value, 0U, 4U);
-    const auto month_value = parse_rfc3339_part(value, 5U, 2U);
-    const auto day_value = parse_rfc3339_part(value, 8U, 2U);
-    const auto hour_value = parse_rfc3339_part(value, 11U, 2U);
-    const auto minute_value = parse_rfc3339_part(value, 14U, 2U);
-    const auto second_value = parse_rfc3339_part(value, 17U, 2U);
-    if (!valid_rfc3339_date_time_parts(year_value, month_value, day_value, hour_value, minute_value, second_value)) {
-      return std::nullopt;
-    }
-
-    const auto utc_offset = parse_rfc3339_utc_offset(value);
-    if (!utc_offset.has_value()) {
-      return std::nullopt;
-    }
-
-    const auto date = std::chrono::year_month_day {
-      std::chrono::year {static_cast<int>(*year_value)},
-      std::chrono::month {*month_value},
-      std::chrono::day {*day_value},
-    };
-    if (!date.ok()) {
-      return std::nullopt;
-    }
-
-    return std::chrono::sys_days {date} +
-           std::chrono::hours {*hour_value} +
-           std::chrono::minutes {*minute_value} +
-           std::chrono::seconds {std::min(*second_value, 59U)} -
-           *utc_offset;
-  }
-
   std::optional<LicenseCalendarClock::time_point> license_server_time(
     const SYSTEMTIME &system_time
   ) {
@@ -337,17 +233,18 @@ namespace lvh::detail::windows_broker_service {
              std::optional<std::uint64_t> {calendar_anchor + elapsed_unsigned};
   }
 
-  bool license_expiration_is_current(
-    std::string_view expires_at,
-    bool expiration_required,
+  bool license_validation_is_current(
+    std::uint64_t validated_at,
     std::uint64_t effective_timestamp
   ) {
-    if (!expiration_required) {
-      return true;
-    }
-    const auto expiration = parse_rfc3339_timestamp(expires_at);
-    return expiration &&
-           effective_timestamp < license_calendar_timestamp(*expiration);
+    const auto maximum_age = static_cast<std::uint64_t>(
+      std::chrono::duration_cast<std::chrono::seconds>(
+        subscription_validation_max_age
+      )
+        .count()
+    );
+    return validated_at != 0U && effective_timestamp >= validated_at &&
+           effective_timestamp - validated_at < maximum_age;
   }
 
   bool unvalidated_gamepad_creation_allowed(
@@ -739,7 +636,6 @@ namespace lvh::detail::windows_broker_service {
     std::string organization_id;
     std::string benefit_id;
     std::string customer_email;
-    std::string expires_at;
     std::uint32_t activation_limit = 0;
     // Audit timestamp supplied by Polar, not the local machine clock.
     std::uint64_t validated_at = 0;
@@ -759,7 +655,6 @@ namespace lvh::detail::windows_broker_service {
     serialized << "organization_id=" << state.organization_id << "\n";
     serialized << "benefit_id=" << state.benefit_id << "\n";
     serialized << "customer_email=" << state.customer_email << "\n";
-    serialized << "expires_at=" << state.expires_at << "\n";
     serialized << "activation_limit=" << state.activation_limit << "\n";
     serialized << "validated_at=" << state.validated_at << "\n";
     serialized << "boot_marker=" << state.boot_marker << "\n";
@@ -898,8 +793,6 @@ namespace lvh::detail::windows_broker_service {
           state.benefit_id = value;
         } else if (key == "customer_email") {
           state.customer_email = value;
-        } else if (key == "expires_at") {
-          state.expires_at = value;
         } else if (key == "activation_limit") {
           state.activation_limit = static_cast<std::uint32_t>(parse_uint64(value).value_or(0));
         } else if (key == "validated_at") {
@@ -1147,7 +1040,6 @@ namespace lvh::detail::windows_broker_service {
     state.license_status = json_string_or_empty(body, "status");
     state.organization_id = json_string_or_empty(body, "organization_id");
     state.benefit_id = json_string_or_empty(body, "benefit_id");
-    state.expires_at = json_string_or_empty(body, "expires_at");
     state.activation_limit = json_uint32_or_zero(body, "limit_activations");
 
     if (const auto customer = body.find("customer"); customer != body.end() && customer->is_object()) {
@@ -1621,7 +1513,7 @@ namespace lvh::detail::windows_broker_service {
                                           now
                                         );
         const auto license_now = LicenseValidationClock::now();
-        if (license_expiration_has_elapsed_locked()) {
+        if (subscription_validation_has_elapsed_locked()) {
           revoke_licensed_devices_ = true;
         }
         const auto revoke_licensed_devices = revoke_licensed_devices_;
@@ -2007,24 +1899,11 @@ namespace lvh::detail::windows_broker_service {
         message = "The license service response did not include trusted server time.";
         return backend_failure;
       }
-      const auto *benefit = polar_benefit(state.benefit_id);
-      if (benefit == nullptr) {
+      if (const auto *benefit = polar_benefit(state.benefit_id); benefit == nullptr) {
         message = "License organization or benefit is not allowed for this driver.";
         return license_invalid;
       }
-      const auto server_timestamp = license_calendar_timestamp(*server_time);
-      if (benefit->expiration_required) {
-        const auto expiration = parse_rfc3339_timestamp(state.expires_at);
-        if (!expiration) {
-          message = "The yearly license has an invalid expiration.";
-          return backend_failure;
-        }
-        if (server_timestamp >= license_calendar_timestamp(*expiration)) {
-          message = "The yearly license has expired.";
-          return license_invalid;
-        }
-      }
-      state.validated_at = server_timestamp;
+      state.validated_at = license_calendar_timestamp(*server_time);
       state.boot_marker = boot_session_marker_;
       state.validated_uptime_ms = ::GetTickCount64();
       if (state.boot_marker.empty()) {
@@ -2048,7 +1927,7 @@ namespace lvh::detail::windows_broker_service {
       );
     }
 
-    bool license_time_is_current_locked() const {
+    bool license_authorization_is_current_locked() const {
       if (!license_state_ || license_state_->license_status != "granted") {
         return false;
       }
@@ -2056,30 +1935,29 @@ namespace lvh::detail::windows_broker_service {
       if (benefit == nullptr) {
         return false;
       }
-      if (!benefit->expiration_required) {
+      if (!benefit->subscription_backed) {
         return true;
       }
       const auto effective_timestamp = license_effective_timestamp_locked();
-      return effective_timestamp && license_expiration_is_current(
-                                      license_state_->expires_at,
-                                      true,
+      return effective_timestamp && license_validation_is_current(
+                                      license_state_->validated_at,
                                       *effective_timestamp
                                     );
     }
 
-    bool license_expiration_has_elapsed_locked() const {
+    bool subscription_validation_has_elapsed_locked() const {
       if (!license_state_) {
         return false;
       }
       const auto *benefit = polar_benefit(license_state_->benefit_id);
       const auto effective_timestamp = license_effective_timestamp_locked();
-      return benefit != nullptr && benefit->expiration_required &&
-             effective_timestamp &&
-             !license_expiration_is_current(
-               license_state_->expires_at,
-               true,
-               *effective_timestamp
-             );
+      if (benefit == nullptr || !benefit->subscription_backed || !effective_timestamp.has_value()) {
+        return false;
+      }
+      return !license_validation_is_current(
+        license_state_->validated_at,
+        *effective_timestamp
+      );
     }
 
     void mark_license_validation_unavailable() {
@@ -2104,7 +1982,7 @@ namespace lvh::detail::windows_broker_service {
     bool license_is_active_locked() const {
       return license_state_ &&
              license_allowed(*license_state_) &&
-             license_time_is_current_locked();
+             license_authorization_is_current_locked();
     }
 
     void invalidate_license() {
@@ -2279,7 +2157,7 @@ namespace lvh::detail::windows_broker_service {
           return {LvhWindowsBrokerStatusCode::success, true};
         }
 
-        if (!license_allowed(*license_state_) || !license_time_is_current_locked()) {
+        if (!license_allowed(*license_state_) || !license_authorization_is_current_locked()) {
           fill_license_status_locked(license);
           copy_c_string(message, license.message.data());
           return {LvhWindowsBrokerStatusCode::license_invalid, false};
@@ -2314,7 +2192,6 @@ namespace lvh::detail::windows_broker_service {
         license.activation_limit = 0;
         license.activation_usage = 0;
         copy_c_string(license.customer_email, "");
-        copy_c_string(license.expires_at, "");
         if (!github_actions_) {
           copy_c_string(license.plan_name, "Unlicensed");
           copy_c_string(license.message, "An active license is required to create gamepads.");
@@ -2349,7 +2226,6 @@ namespace lvh::detail::windows_broker_service {
       const auto plan_name = plan_name_for_benefit(license_state_->benefit_id);
       copy_c_string(license.plan_name, plan_name.empty() ? "Licensed" : plan_name);
       copy_c_string(license.customer_email, license_state_->customer_email);
-      copy_c_string(license.expires_at, license_state_->expires_at);
 
       if (!license_allowed(*license_state_)) {
         license.state = std::to_underlying(LvhWindowsBrokerLicenseState::invalid);
@@ -2360,12 +2236,12 @@ namespace lvh::detail::windows_broker_service {
       } else if (license_state_->license_status == "revoked") {
         license.state = std::to_underlying(LvhWindowsBrokerLicenseState::invalid);
         copy_c_string(license.message, "License revoked.");
-      } else if (!license_time_is_current_locked()) {
+      } else if (!license_authorization_is_current_locked()) {
         license.state = std::to_underlying(LvhWindowsBrokerLicenseState::invalid);
         if (!license_effective_timestamp_locked().has_value()) {
-          copy_c_string(license.message, "Reconnect to Polar after Windows restarts to verify the yearly expiration.");
+          copy_c_string(license.message, "Reconnect to Polar after Windows restarts to validate the license.");
         } else {
-          copy_c_string(license.message, "The yearly license has expired.");
+          copy_c_string(license.message, "Reconnect to Polar to validate the yearly subscription.");
         }
       } else if (license_state_->license_status == "granted") {
         license.state = std::to_underlying(LvhWindowsBrokerLicenseState::licensed);

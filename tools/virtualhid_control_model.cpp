@@ -5,8 +5,10 @@
 
 // standard includes
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <iomanip>
+#include <ranges>
 #include <sstream>
 
 // local includes
@@ -155,6 +157,15 @@ namespace lvh::tools::virtualhid_control {
 
   std::wstring yes_no(bool value) {
     return value ? L"yes" : L"no";
+  }
+
+  std::string normalized_license_key(std::string_view license_key) {
+    const auto is_whitespace = [](char character) {
+      return std::isspace(static_cast<unsigned char>(character)) != 0;
+    };
+    const auto first = std::ranges::find_if_not(license_key, is_whitespace);
+    const auto last = std::ranges::find_if_not(std::views::reverse(license_key), is_whitespace).base();
+    return first == license_key.end() ? std::string {} : std::string {first, last};
   }
 
   bool supports_normalized_feedback(const DeviceProfile &profile) {
