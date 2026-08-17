@@ -91,6 +91,13 @@ namespace lvh::profiles {
   DeviceProfile switch_pro();
 
   /**
+   * @brief Create the Valve Steam Deck-compatible gamepad profile.
+   *
+   * @return Steam Deck-compatible device profile.
+   */
+  DeviceProfile steam_deck();
+
+  /**
    * @brief Create the generic keyboard profile.
    *
    * @return Generic keyboard device profile.

@@ -65,6 +65,7 @@
 #include "core/backend.hpp"
 #if defined(__linux__)
   #include "shared/playstation_feature_reports.hpp"
+  #include "shared/steam_deck_feature_reports.hpp"
 #endif
 
 #include <libvirtualhid/profiles.hpp>
@@ -238,6 +239,16 @@ namespace lvh::detail {
     bool is_playstation_profile(GamepadProfileKind kind) {
       return kind == GamepadProfileKind::dualshock4 || kind == GamepadProfileKind::dualsense;
     }
+
+    bool uses_periodic_uhid_reports(GamepadProfileKind kind) {
+      return is_playstation_profile(kind) || kind == GamepadProfileKind::steam_deck;
+    }
+
+    std::chrono::milliseconds uhid_periodic_report_interval(GamepadProfileKind kind) {
+      return std::chrono::milliseconds {
+        kind == GamepadProfileKind::steam_deck ? 4 : playstation_periodic_report_ms
+      };
+    }
 #endif
 
     bool uses_uinput_gamepad_profile(GamepadProfileKind kind) {
@@ -250,6 +261,12 @@ namespace lvh::detail {
         case xbox_series:
         case switch_pro:
           return true;
+        case steam_deck:
+#if defined(__FreeBSD__)
+          return true;
+#else
+          return false;
+#endif
         case dualshock4:
         case dualsense:
 #if defined(__FreeBSD__)
@@ -268,6 +285,7 @@ namespace lvh::detail {
 
         case generic:
         case xbox_series:
+        case steam_deck:
 #if defined(__FreeBSD__)
         case dualsense:
 #endif
@@ -313,6 +331,9 @@ namespace lvh::detail {
       // the requested descriptor, bus, and report framing.
       if (is_playstation_profile(profile.gamepad_kind)) {
         return "Wireless Controller";
+      }
+      if (profile.gamepad_kind == GamepadProfileKind::steam_deck) {
+        return "Steam Deck Controller";
       }
       return profile.name;
     }
@@ -2814,6 +2835,7 @@ namespace lvh::detail {
         request.version = options.profile.version;
         std::memcpy(request.rd_data, options.profile.report_descriptor.data(), options.profile.report_descriptor.size());
         profile_ = options.profile;
+        steam_deck_feature_state_.set_serial(unique_id_);
         {
           std::lock_guard lock {report_mutex_};
           last_report_ = reports::pack_input_report(profile_, {});
@@ -2839,7 +2861,7 @@ namespace lvh::detail {
           return status;
         }
 
-        if (is_playstation_profile(profile_.gamepad_kind)) {
+        if (uses_periodic_uhid_reports(profile_.gamepad_kind)) {
           periodic_reporter_ = std::jthread {[this](std::stop_token stop_token) {
             periodic_report_loop(stop_token);
           }};
@@ -3037,7 +3059,7 @@ namespace lvh::detail {
 
       void periodic_report_loop(std::stop_token stop_token) {
         while (!stop_token.stop_requested() && running_) {
-          std::this_thread::sleep_for(std::chrono::milliseconds {playstation_periodic_report_ms});
+          std::this_thread::sleep_for(uhid_periodic_report_interval(profile_.gamepad_kind));
           if (stop_token.stop_requested() || !running_ || !open_) {
             break;
           }
@@ -3064,6 +3086,9 @@ namespace lvh::detail {
         std::vector<std::uint8_t> report(data, data + size);
         if (report_number != 0 && (report.empty() || report.front() != report_number)) {
           report.insert(report.begin(), report_number);
+        }
+        if (profile_.gamepad_kind == GamepadProfileKind::steam_deck) {
+          static_cast<void>(steam_deck_feature_state_.handle_set_feature(report));
         }
         dispatch_output_report(report);
       }
@@ -3137,6 +3162,10 @@ namespace lvh::detail {
               event.u.get_report_reply.err = EINVAL;
               break;
           }
+        } else if (profile_.gamepad_kind == GamepadProfileKind::steam_deck && report_number == 0U) {
+          event.u.get_report_reply.err = 0;
+          const auto report = steam_deck_feature_state_.get_feature_report();
+          copy_get_report_payload(event, report);
         }
 
         if (
@@ -3173,6 +3202,7 @@ namespace lvh::detail {
       std::string physical_id_;
       std::string unique_id_;
       std::array<std::uint8_t, 6> playstation_mac_address_ {};
+      SteamDeckFeatureReportState steam_deck_feature_state_;
       std::vector<std::uint8_t> last_report_;
       std::atomic_bool open_ = true;
       std::atomic_bool running_ = false;

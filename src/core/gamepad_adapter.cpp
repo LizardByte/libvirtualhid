@@ -47,6 +47,7 @@ namespace lvh {
         case xbox_series:
         case dualsense:
         case switch_pro:
+        case steam_deck:
           return true;
         case xbox_360:
         case xbox_one:
@@ -88,6 +89,9 @@ namespace lvh {
     support.supports_battery = profile.capabilities.supports_battery;
     support.supports_misc1_button = supports_common_misc1_button(profile.gamepad_kind);
     support.supports_touchpad_button = profile.capabilities.supports_touchpad;
+    if (profile.gamepad_kind == GamepadProfileKind::steam_deck) {
+      support.supported_rear_paddle_count = 4U;
+    }
 
     return support;
   }

@@ -235,6 +235,7 @@ namespace lvh {
     dualsense,  ///< PlayStation DualSense-compatible profile.
     switch_pro,  ///< Nintendo Switch Pro-compatible profile.
     dualshock4,  ///< PlayStation DualShock 4-compatible profile.
+    steam_deck,  ///< Valve Steam Deck-compatible profile.
   };
 
   /**

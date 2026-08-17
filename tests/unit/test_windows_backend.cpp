@@ -94,6 +94,16 @@ TEST_F(WindowsBackendTest, FakeChannelExercisesLifecycleSubmitCloseAndOutput) {
   EXPECT_EQ(result.last_output.raw_report[0], 0x03U);
 }
 
+TEST_F(WindowsBackendTest, SteamDeckRepeatsNativeStateUntilClose) {
+  const auto result = lvh::detail::test::windows_backend_steam_deck_periodic_reports();
+
+  ASSERT_TRUE(result.create_status.ok()) << result.create_status.message();
+  ASSERT_TRUE(result.submit_status.ok()) << result.submit_status.message();
+  ASSERT_TRUE(result.close_status.ok()) << result.close_status.message();
+  EXPECT_GE(result.reports_before_close, 2U);
+  EXPECT_EQ(result.reports_after_close, result.reports_before_close);
+}
+
 TEST_F(WindowsBackendTest, GenericPidTimerCannotDeliverStaleStopAfterNewStart) {
   const auto result = lvh::detail::test::windows_backend_generic_pid_callback_ordering();
 

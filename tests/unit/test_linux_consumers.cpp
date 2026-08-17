@@ -54,6 +54,7 @@ namespace {
   using LibinputEvent = std::unique_ptr<libinput_event, void (*)(libinput_event *)>;
   using SdlGameController = std::unique_ptr<SDL_GameController, void (*)(SDL_GameController *)>;
   constexpr std::string_view playstation_uhid_name = "Wireless Controller";
+  constexpr std::string_view steam_deck_uhid_name = "Steam Deck Controller";
 
   /**
    * @brief SDL-visible gamepad case.
@@ -479,6 +480,7 @@ namespace {
     SDL_SetHint("SDL_JOYSTICK_HIDAPI_PS4_RUMBLE", "1");
     SDL_SetHint("SDL_JOYSTICK_HIDAPI_PS5", "1");
     SDL_SetHint("SDL_JOYSTICK_HIDAPI_PS5_RUMBLE", "1");
+    SDL_SetHint("SDL_JOYSTICK_HIDAPI_STEAMDECK", "1");
   }
 
   lvh::GamepadCreationResult create_sdl_gamepad(lvh::Runtime &runtime, const SdlGamepadConsumerCase &test_case) {
@@ -505,9 +507,13 @@ namespace {
 
     const auto expected_profile = [&test_case]() {
       auto profile = test_case.profile;
-      profile.name = is_playstation_profile(profile.gamepad_kind) ?
-                       std::string {playstation_uhid_name} :
-                       unique_device_name(test_case.name_suffix);
+      if (is_playstation_profile(profile.gamepad_kind)) {
+        profile.name = playstation_uhid_name;
+      } else if (profile.gamepad_kind == lvh::GamepadProfileKind::steam_deck) {
+        profile.name = steam_deck_uhid_name;
+      } else {
+        profile.name = unique_device_name(test_case.name_suffix);
+      }
       if (test_case.expected_vendor_id.has_value()) {
         profile.vendor_id = *test_case.expected_vendor_id;
       }
@@ -859,6 +865,19 @@ TEST_F(LinuxConsumerTest, SdlSeesSwitchProCanonicalButtons) {
     .stable_id = "libvirtualhid-sdl-switch-pro-test",
     .minimum_buttons = 14,
     .minimum_axes = 4,
+  });
+}
+
+TEST_F(LinuxConsumerTest, SdlSeesSteamDeckCanonicalButtonsAndRumble) {
+  ASSERT_TRUE(HasReadableWritableDeviceNode("/dev/uhid"));
+
+  run_sdl_canonical_gamepad_test({
+    .profile = lvh::profiles::steam_deck(),
+    .name_suffix = "SDL Steam Deck",
+    .stable_id = "libvirtualhid-sdl-steam-deck-test",
+    .minimum_buttons = 15,
+    .minimum_axes = 6,
+    .require_sdl_rumble = true,
   });
 }
 

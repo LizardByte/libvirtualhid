@@ -1680,6 +1680,92 @@ namespace lvh::detail::test {
     return result;
   }
 
+  LinuxUhidRoundTripResult linux_steam_deck_uhid_socketpair_reports() {
+    LinuxUhidRoundTripResult result;
+    std::array<int, 2> descriptors {-1, -1};
+    if (::socketpair(AF_UNIX, SOCK_STREAM, 0, descriptors.data()) != 0) {
+      result.create_status = system_error_status(ErrorCode::backend_failure, "failed to create socketpair", errno);
+      result.submit_status = result.create_status;
+      result.close_status = result.create_status;
+      return result;
+    }
+
+    CreateGamepadOptions options;
+    options.profile = profiles::steam_deck();
+    options.metadata.stable_id = "linux-steam-deck";
+
+    UhidGamepad gamepad {descriptors[0]};
+    auto event = create_started_profile_uhid_gamepad(gamepad, 11, options, descriptors[1], BUS_USB, result);
+    gamepad.set_output_callback([&result](const GamepadOutput &output) {
+      if (output.kind == GamepadOutputKind::rumble) {
+        ++result.output.callback_count;
+        result.output.last = output;
+      }
+    });
+
+    if (read_uhid_event_type(descriptors[1], UHID_INPUT2, event)) {
+      result.saw_steam_deck_input = event.u.input2.size == 64U &&
+                                    event.u.input2.data[0] == 0x01U &&
+                                    event.u.input2.data[1] == 0x00U &&
+                                    event.u.input2.data[2] == 0x09U &&
+                                    event.u.input2.data[3] == 64U;
+    }
+
+    event = {};
+    event.type = UHID_SET_REPORT;
+    event.u.set_report.id = 30;
+    event.u.set_report.rnum = 0;
+    event.u.set_report.rtype = UHID_FEATURE_REPORT;
+    event.u.set_report.size = 64U;
+    event.u.set_report.data[0] = 0xAEU;
+    event.u.set_report.data[1] = 0x15U;
+    event.u.set_report.data[2] = 0x01U;
+    static_cast<void>(write_uhid_event(descriptors[1], event));
+    if (read_uhid_event_type(descriptors[1], UHID_SET_REPORT_REPLY, event)) {
+      result.saw_set_report_reply = event.u.set_report_reply.id == 30 && event.u.set_report_reply.err == 0;
+    }
+
+    event = {};
+    event.type = UHID_GET_REPORT;
+    event.u.get_report.id = 31;
+    event.u.get_report.rnum = 0;
+    event.u.get_report.rtype = UHID_FEATURE_REPORT;
+    static_cast<void>(write_uhid_event(descriptors[1], event));
+    if (read_uhid_event_type(descriptors[1], UHID_GET_REPORT_REPLY, event)) {
+      constexpr std::string_view expected_serial = "linux-steam-deck";
+      result.saw_steam_deck_serial = event.u.get_report_reply.err == 0 &&
+                                     event.u.get_report_reply.size == 65U &&
+                                     event.u.get_report_reply.data[0] == 0U &&
+                                     event.u.get_report_reply.data[1] == 0xAEU &&
+                                     event.u.get_report_reply.data[2] == expected_serial.size() + 1U &&
+                                     event.u.get_report_reply.data[3] == 0x01U &&
+                                     std::equal(
+                                       expected_serial.begin(),
+                                       expected_serial.end(),
+                                       event.u.get_report_reply.data + 4U
+                                     );
+    }
+
+    event = {};
+    event.type = UHID_SET_REPORT;
+    event.u.set_report.id = 32;
+    event.u.set_report.rnum = 0;
+    event.u.set_report.rtype = UHID_FEATURE_REPORT;
+    event.u.set_report.size = 64U;
+    event.u.set_report.data[0] = 0xEBU;
+    event.u.set_report.data[5] = 0x78U;
+    event.u.set_report.data[6] = 0x56U;
+    event.u.set_report.data[7] = 0x34U;
+    event.u.set_report.data[8] = 0x12U;
+    static_cast<void>(write_uhid_event(descriptors[1], event));
+    static_cast<void>(read_uhid_event_type(descriptors[1], UHID_SET_REPORT_REPLY, event));
+
+    result.close_status = gamepad.close();
+    static_cast<void>(::close(descriptors[1]));
+    result.submit_status = OperationStatus::success();
+    return result;
+  }
+
   LinuxUhidRoundTripResult linux_dualsense_bluetooth_uhid_socketpair_reports() {
     LinuxUhidRoundTripResult result;
     std::array<int, 2> descriptors {-1, -1};

@@ -139,6 +139,8 @@ namespace lvh::tools::virtualhid_control {
         return profiles::dualsense();
       case switch_pro:
         return profiles::switch_pro();
+      case steam_deck:
+        return profiles::steam_deck();
     }
     return std::nullopt;
   }

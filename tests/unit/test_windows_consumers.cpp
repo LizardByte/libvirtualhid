@@ -387,6 +387,7 @@ namespace {
       SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI, "1");
       SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_PS4, "1");
       SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_PS5, "1");
+      SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_STEAMDECK, "1");
       SDL_SetHint(SDL_HINT_JOYSTICK_ENHANCED_REPORTS, "1");
       initialized_ = SDL_Init(SDL_INIT_GAMEPAD | SDL_INIT_JOYSTICK | SDL_INIT_EVENTS);
     }
@@ -450,7 +451,7 @@ namespace {
 }  // namespace
 
 #if defined(LIBVIRTUALHID_TEST_HAS_SDL3)
-TEST_F(WindowsConsumerTest, SdlHidapiRumbleReachesPlayStationAndSwitchCallbacks) {
+TEST_F(WindowsConsumerTest, SdlHidapiRumbleReachesNativeControllerCallbacks) {
   SdlGamepadSubsystem sdl;
   ASSERT_TRUE(sdl.initialized()) << SDL_GetError();
 
@@ -465,6 +466,7 @@ TEST_F(WindowsConsumerTest, SdlHidapiRumbleReachesPlayStationAndSwitchCallbacks)
     lvh::profiles::dualshock4_usb(),
     lvh::profiles::dualsense_usb(),
     lvh::profiles::switch_pro(),
+    lvh::profiles::steam_deck(),
   };
   for (const auto &profile : profiles) {
     SCOPED_TRACE(profile.name);

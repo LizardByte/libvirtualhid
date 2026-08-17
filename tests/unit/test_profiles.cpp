@@ -85,6 +85,7 @@ TEST(ProfileTest, BuiltInProfilesUseDefaultDeviceNames) {
   EXPECT_EQ(lvh::profiles::dualshock4().name, "(libvirtualhid) PS4 Controller");
   EXPECT_EQ(lvh::profiles::dualsense().name, "(libvirtualhid) PS5 Controller");
   EXPECT_EQ(lvh::profiles::switch_pro().name, "(libvirtualhid) Nintendo Pro Controller");
+  EXPECT_EQ(lvh::profiles::steam_deck().name, "(libvirtualhid) Steam Deck Controller");
 }
 
 TEST(ProfileTest, StreamingControllerProfilesArePresent) {
@@ -92,6 +93,7 @@ TEST(ProfileTest, StreamingControllerProfilesArePresent) {
   const auto dualshock4 = lvh::profiles::dualshock4();
   const auto dualsense = lvh::profiles::dualsense();
   const auto switch_pro = lvh::profiles::switch_pro();
+  const auto steam_deck = lvh::profiles::steam_deck();
 
   EXPECT_EQ(xbox_one.vendor_id, 0x045E);
   EXPECT_EQ(xbox_one.product_id, 0x02EA);
@@ -221,6 +223,24 @@ TEST(ProfileTest, StreamingControllerProfilesArePresent) {
   EXPECT_TRUE(switch_pro.capabilities.supports_rumble);
   EXPECT_TRUE(switch_pro.capabilities.supports_motion);
   EXPECT_TRUE(switch_pro.capabilities.supports_battery);
+
+  EXPECT_EQ(steam_deck.vendor_id, 0x28DE);
+  EXPECT_EQ(steam_deck.product_id, 0x1205);
+  EXPECT_EQ(steam_deck.version, 0x0100);
+  EXPECT_EQ(steam_deck.bus_type, lvh::BusType::usb);
+  EXPECT_EQ(steam_deck.manufacturer, "Valve Software");
+  EXPECT_EQ(steam_deck.report_id, 0U);
+  EXPECT_EQ(steam_deck.input_report_size, 64U);
+  EXPECT_EQ(steam_deck.output_report_size, 64U);
+  EXPECT_TRUE(steam_deck.capabilities.supports_rumble);
+  EXPECT_TRUE(steam_deck.capabilities.supports_motion);
+  EXPECT_TRUE(steam_deck.capabilities.supports_touchpad);
+
+  constexpr std::array<std::uint8_t, 6> steam_deck_input_descriptor {0x75, 0x08, 0x95, 0x40, 0x09, 0x01};
+  constexpr std::array<std::uint8_t, 6> steam_deck_feature_descriptor {0x09, 0x02, 0x95, 0x40, 0xB1, 0x02};
+  expect_descriptor_contains(steam_deck, steam_deck_input_descriptor);
+  expect_descriptor_contains(steam_deck, steam_deck_feature_descriptor);
+  EXPECT_EQ(std::ranges::find(steam_deck.report_descriptor, 0x85), steam_deck.report_descriptor.end());
 
   const auto generic = lvh::profiles::generic_gamepad();
   const std::array<std::uint8_t, 16> standard_button_descriptor {
@@ -510,6 +530,14 @@ TEST(ProfileTest, CanFindProfileByKind) {
 
   ASSERT_TRUE(profile.has_value());
   EXPECT_EQ(profile->gamepad_kind, lvh::GamepadProfileKind::xbox_series);
+}
+
+TEST(ProfileTest, CanFindSteamDeckProfileByKind) {
+  const auto profile = lvh::profiles::gamepad_profile(lvh::GamepadProfileKind::steam_deck);
+
+  ASSERT_TRUE(profile.has_value());
+  EXPECT_EQ(profile->vendor_id, 0x28DE);
+  EXPECT_EQ(profile->product_id, 0x1205);
 }
 
 TEST(ProfileTest, PointerProfilesArePresent) {

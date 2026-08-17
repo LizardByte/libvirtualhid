@@ -212,6 +212,7 @@ Built-in gamepad profiles and their platform-neutral default device names are:
 | DualShock 4 USB and Bluetooth | `(libvirtualhid) PS4 Controller`          |
 | DualSense USB and Bluetooth   | `(libvirtualhid) PS5 Controller`          |
 | Nintendo Switch Pro           | `(libvirtualhid) Nintendo Pro Controller` |
+| Steam Deck                    | `(libvirtualhid) Steam Deck Controller`   |
 
 Consumers may replace `DeviceProfile::name` before creating a gamepad, for
 example, to prepend an application name while preserving the default controller
@@ -226,6 +227,8 @@ Profiles advertise support for features such as rumble, trigger rumble, RGB
 LEDs, adaptive triggers, motion sensors, touchpads, battery state,
 profile-specific buttons, and raw output reports. Consumers should query profile and
 backend capabilities before warning users about unsupported client features.
-The `misc1` button represents Share/Capture/Mic Mute-style controls and is
-available on the generic, Xbox Series, DualSense, and Switch Pro profiles; Xbox
-360 and Xbox One do not advertise that extra button.
+The `misc1` button represents Share/Capture/Mic Mute/Quick Access-style controls
+and is available on the generic, Xbox Series, DualSense, Switch Pro, and Steam
+Deck profiles; Xbox 360 and Xbox One do not advertise that extra button. Steam
+Deck also exposes its two trackpads through the two portable touch contacts and
+maps its L4/R4/L5/R5 rear controls to the four paddle buttons.

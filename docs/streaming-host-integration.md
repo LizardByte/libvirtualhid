@@ -51,9 +51,11 @@ The core API and adapter shape cover the major streaming-host requirements:
 - Rich controller metadata.
 - Gamepad output callbacks.
 - Keyboard and mouse input paths.
-- Linux PlayStation gamepads through `uhid`, Generic/Xbox/Switch Pro gamepads
-  through `uinput`, and `uinput` keyboard/pointer devices.
+- Linux PlayStation and Steam Deck gamepads through `uhid`, Generic/Xbox/Switch
+  Pro gamepads through `uinput`, and `uinput` keyboard/pointer devices.
 - Linux DualSense and DualShock 4 USB/Bluetooth report handling.
+- Native Steam Deck identity, input, feature-report initialization, touch/motion,
+  rear-button, Quick Access, and rumble handling on Windows and Linux.
 - Linux touchscreen, trackpad, and pen tablet device types.
 - FreeBSD uinput gamepads and pointer devices, with basic PlayStation input and
   rumble but without Linux UHID-only PlayStation features.

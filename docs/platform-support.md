@@ -75,7 +75,11 @@ The VHF driver answers the calibration, pairing, and firmware feature reports
 used to initialize DualShock 4 and DualSense HIDAPI output. It also answers the
 Switch Pro USB and subcommand initialization sequence and accepts the native
 `0x30` input layout, so descriptor-aware consumers can initialize those
-controllers before sending their native output reports.
+controllers before sending their native output reports. The Steam Deck profile
+uses Valve's `0x28DE:0x1205` USB identity and native 64-byte state and feature
+reports. SDL/HIDAPI can therefore recognize it as a Steam Deck, disable its
+desktop mappings, and send native rumble without exposing Valve protocol details
+through the public C++ API.
 
 See [Windows driver package](windows-driver.md) for build, install, validation,
 and signing details.
@@ -84,7 +88,7 @@ and signing details.
 
 The Linux backend uses standard user-space kernel interfaces:
 
-- `uhid` for descriptor-driven HID gamepads.
+- `uhid` for descriptor-driven HID gamepads, including Steam Deck.
 - `uinput` for Generic, Xbox 360, Xbox One, Xbox Series, and Switch Pro
   gamepads, plus keyboard, mouse, touchscreen, trackpad, and pen tablet
   devices.
@@ -131,12 +135,19 @@ buttons, Guide, L3, and R3 at their expected indices. D-pad directions are
 reported through the hat axes and exposed as logical buttons by standard
 gamepad consumers.
 
-DualShock 4 and DualSense remain on `uhid` so their descriptors, motion,
+DualShock 4, DualSense, and Steam Deck remain on `uhid` so their descriptors, motion,
 touchpad, battery, feature reports, and profile-specific output reports stay
 available. The backend accepts PlayStation output through both UHID interrupt
 and control channels. Numbered control-channel output is normalized before
 parsing, whether the kernel includes the report number in the payload or
 provides it separately on the UHID event.
+
+Steam Deck retains Valve's native USB identity and emits the 64-byte Deck state
+packet periodically so both the kernel `hid-steam` driver and SDL's direct
+HIDAPI path can initialize before the first client input arrives. The backend
+answers the unit-serial feature query used during Linux registration, accepts
+the desktop-mapping/settings commands used by SDL and `hid-steam`, and forwards
+native `0xEB` rumble requests through the portable output callback.
 
 The backend opens `/dev/uhid` in nonblocking mode, matching the original
 asynchronous gamepad registration path. Its event reader is active before
@@ -246,8 +257,8 @@ The FreeBSD backend uses the native evdev compatibility stack through
 FreeBSD path, and `/dev/uinput` for environments that provide the Linux-style
 alias. It supports the same uinput device categories as the Linux backend:
 
-- Generic, Xbox 360, Xbox One, Xbox Series, DualShock 4, DualSense, and Switch
-  Pro gamepads.
+- Generic, Xbox 360, Xbox One, Xbox Series, DualShock 4, DualSense, Switch Pro,
+  and Steam Deck gamepads.
 - Keyboard and mouse devices, with X11/XTest available as a fallback.
 - Touchscreen, trackpad, and pen tablet devices.
 
@@ -259,8 +270,8 @@ with the kernel HID bus. FreeBSD CUSE applications such as
 a `uhid(4)`-compatible character device for direct consumers, but that is a
 different integration surface and is not used by the current backend.
 
-Generic, Xbox-family, Switch Pro, DualShock 4, and DualSense behavior therefore
-uses uinput. Ordinary buttons, sticks, analog triggers, and rumble are available,
+Generic, Xbox-family, Switch Pro, DualShock 4, DualSense, and Steam Deck behavior
+therefore uses uinput. Ordinary buttons, sticks, analog triggers, and rumble are available,
 but raw HID reports and descriptor-driven features are not.
 
 For each created gamepad, `Gamepad::profile()` reports the effective FreeBSD

@@ -67,6 +67,7 @@ namespace lvh::tools::virtualhid_control {
     ProfileChoice {L"ds4", L"DualShock 4", GamepadProfileKind::dualshock4, ClientControllerType::playstation},
     ProfileChoice {L"ds5", L"DualSense", GamepadProfileKind::dualsense, ClientControllerType::playstation},
     ProfileChoice {L"switch", L"Switch Pro", GamepadProfileKind::switch_pro, ClientControllerType::nintendo},
+    ProfileChoice {L"steamdeck", L"Steam Deck", GamepadProfileKind::steam_deck, ClientControllerType::unknown},
   };
 
   inline constexpr std::array button_choices {

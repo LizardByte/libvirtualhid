@@ -381,6 +381,11 @@ gamepad.
 DualShock 4 and DualSense answer the calibration, pairing, and firmware feature
 requests used by their Windows HIDAPI initialization paths. Switch Pro answers
 the native USB and subcommand handshake and submits native `0x30` input reports.
+Steam Deck uses Valve's `VID_28DE&PID_1205` identity, responds to the unnumbered
+feature-report sequence used by SDL/HIDAPI, submits native 64-byte Deck state
+reports, and normalizes native `0xEB` rumble requests into the public callback.
+The driver queues a neutral Deck state before starting VHF so already-running
+consumers can receive the first packet within SDL's short endpoint-probe window.
 The built-in Generic profile is presented to Windows as a DirectInput PID
 Joystick with the complete output-report set required for DirectInput
 enumeration. Constant Force and Sine output is normalized to the portable

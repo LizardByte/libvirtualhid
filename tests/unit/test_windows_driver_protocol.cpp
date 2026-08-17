@@ -6,6 +6,7 @@
 // local includes
 #include "fixtures/fixtures.hpp"
 #include "playstation_feature_protocol.hpp"
+#include "shared/steam_deck_feature_reports.hpp"
 #include "switch_pro_protocol.hpp"
 #include "windows_device_identity.hpp"
 
@@ -276,5 +277,38 @@ TEST_F(WindowsDriverProtocolTest, BluetoothPlayStationFeaturesCarryCrcAndGenerat
   EXPECT_EQ(bluetooth_calibration->size(), 41U);
   EXPECT_TRUE(std::ranges::any_of(bluetooth_calibration->end() - 4, bluetooth_calibration->end(), [](auto value) {
     return value != 0U;
+  }));
+}
+
+TEST_F(WindowsDriverProtocolTest, RespondsToSteamDeckFeatureReports) {
+  lvh::detail::SteamDeckFeatureReportState state {"deck-serial"};
+  const std::array<std::uint8_t, 3> serial_request {0xAEU, 0x15U, 0x01U};
+
+  EXPECT_TRUE(state.handle_set_feature(serial_request));
+  const auto serial_reply = state.get_feature_report();
+  ASSERT_EQ(serial_reply.size(), lvh::detail::steam_deck_feature_report_size + 1U);
+  EXPECT_EQ(serial_reply[0], 0U);
+  EXPECT_EQ(serial_reply[1], 0xAEU);
+  EXPECT_EQ(serial_reply[2], 12U);
+  EXPECT_EQ(serial_reply[3], 0x01U);
+  EXPECT_EQ(std::string(serial_reply.begin() + 4U, serial_reply.begin() + 15U), "deck-serial");
+
+  std::array<std::uint8_t, 65> report_id_prefixed_request {};
+  report_id_prefixed_request[1] = 0x81U;
+  EXPECT_TRUE(state.handle_set_feature(report_id_prefixed_request));
+  EXPECT_EQ(state.get_feature_report()[1], 0x81U);
+  EXPECT_FALSE(state.handle_set_feature({}));
+}
+
+TEST_F(WindowsDriverProtocolTest, QueuesNativeSteamDeckStateForImmediateConsumerDiscovery) {
+  const auto report = lvh::detail::make_steam_deck_neutral_input_report();
+
+  ASSERT_EQ(report.size(), lvh::detail::steam_deck_input_report_size);
+  EXPECT_EQ(report[0], 0x01U);
+  EXPECT_EQ(report[1], 0x00U);
+  EXPECT_EQ(report[2], 0x09U);
+  EXPECT_EQ(report[3], 64U);
+  EXPECT_TRUE(std::ranges::all_of(report.begin() + 4U, report.end(), [](const auto value) {
+    return value == 0U;
   }));
 }

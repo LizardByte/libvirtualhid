@@ -137,6 +137,9 @@ namespace lvh::detail::windows {
       if (gamepad_kind_ == LVH_WINDOWS_GAMEPAD_SWITCH_PRO) {
         return equal_at(left, right, {0U, 3U, 4U, 5U});
       }
+      if (gamepad_kind_ == LVH_WINDOWS_GAMEPAD_STEAM_DECK) {
+        return equal_at(left, right, {8U, 9U, 10U, 11U, 12U, 13U, 14U, 15U});
+      }
 
       const auto is_bluetooth = bus_type_ == LVH_WINDOWS_BUS_BLUETOOTH;
       if (gamepad_kind_ == LVH_WINDOWS_GAMEPAD_DUALSHOCK4) {

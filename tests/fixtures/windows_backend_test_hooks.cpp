@@ -494,6 +494,33 @@ namespace lvh::detail {
       return result;
     }
 
+    WindowsSteamDeckPeriodicReportResult windows_backend_steam_deck_periodic_reports() {
+      WindowsSteamDeckPeriodicReportResult result;
+      auto command_state = std::make_shared<FakeWindowsControlChannelState>();
+      auto event_state = std::make_shared<FakeWindowsControlChannelState>();
+      auto backend = make_fake_windows_backend(command_state, event_state);
+
+      CreateGamepadOptions options;
+      options.profile = profiles::steam_deck();
+      auto created = backend->create_gamepad(31, options);
+      result.create_status = created.status;
+      if (!created) {
+        return result;
+      }
+
+      const auto report = reports::pack_input_report(options.profile, {});
+      result.submit_status = created.gamepad->submit({}, report);
+      static_cast<void>(wait_until([&command_state] {
+        return command_state->submit_report_count() >= 2U;
+      }));
+
+      result.close_status = created.gamepad->close();
+      result.reports_before_close = command_state->submit_report_count();
+      std::this_thread::sleep_for(std::chrono::milliseconds {12});
+      result.reports_after_close = command_state->submit_report_count();
+      return result;
+    }
+
     WindowsGenericPidOrderingResult windows_backend_generic_pid_callback_ordering() {
       WindowsGenericPidOrderingResult result;
       auto command_state = std::make_shared<FakeWindowsControlChannelState>();

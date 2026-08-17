@@ -51,6 +51,14 @@ namespace lvh::detail::test {
     std::vector<std::uint16_t> strengths;
   };
 
+  struct WindowsSteamDeckPeriodicReportResult {
+    OperationStatus create_status;
+    OperationStatus submit_status;
+    OperationStatus close_status;
+    std::size_t reports_before_close = 0;
+    std::size_t reports_after_close = 0;
+  };
+
   struct WindowsBackendUtilityResult {
     std::vector<std::string> default_device_paths;
     std::vector<std::string> custom_device_paths;
@@ -164,6 +172,8 @@ namespace lvh::detail::test {
   };
 
   WindowsBackendLifecycleResult windows_backend_fake_channel_lifecycle();
+
+  WindowsSteamDeckPeriodicReportResult windows_backend_steam_deck_periodic_reports();
   WindowsGenericPidOrderingResult windows_backend_generic_pid_callback_ordering();
   WindowsBackendFailureResult windows_backend_fake_channel_failures();
   WindowsBackendUtilityResult windows_backend_fake_channel_utilities();

@@ -89,6 +89,8 @@ namespace lvh::detail::windows {
         return LVH_WINDOWS_GAMEPAD_DUALSENSE;
       case switch_pro:
         return LVH_WINDOWS_GAMEPAD_SWITCH_PRO;
+      case steam_deck:
+        return LVH_WINDOWS_GAMEPAD_STEAM_DECK;
     }
 
     return LVH_WINDOWS_GAMEPAD_GENERIC;

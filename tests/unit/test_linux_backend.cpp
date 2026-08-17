@@ -819,6 +819,22 @@ TEST_F(LinuxBackendTest, SocketpairBackedDualSenseRepliesToFeatureReports) {
   EXPECT_EQ(result.output.last.high_frequency_rumble, 0x1212);
 }
 
+TEST_F(LinuxBackendTest, SocketpairBackedSteamDeckUsesNativeProtocol) {
+  const auto result = lvh::detail::test::linux_steam_deck_uhid_socketpair_reports();
+  EXPECT_TRUE(result.create_status.ok()) << result.create_status.message();
+  EXPECT_TRUE(result.close_status.ok()) << result.close_status.message();
+  EXPECT_TRUE(result.creation.saw_create);
+  EXPECT_TRUE(result.creation.waited_for_start);
+  EXPECT_EQ(result.creation.name, "Steam Deck Controller");
+  EXPECT_TRUE(result.saw_steam_deck_input);
+  EXPECT_TRUE(result.saw_steam_deck_serial);
+  EXPECT_TRUE(result.saw_set_report_reply);
+  ASSERT_EQ(result.output.callback_count, 1U);
+  EXPECT_EQ(result.output.last.kind, lvh::GamepadOutputKind::rumble);
+  EXPECT_EQ(result.output.last.low_frequency_rumble, 0x5678U);
+  EXPECT_EQ(result.output.last.high_frequency_rumble, 0x1234U);
+}
+
 TEST_F(LinuxBackendTest, SocketpairBackedDualSenseBluetoothFramesReports) {
   const auto result = lvh::detail::test::linux_dualsense_bluetooth_uhid_socketpair_reports();
   EXPECT_TRUE(result.create_status.ok()) << result.create_status.message();

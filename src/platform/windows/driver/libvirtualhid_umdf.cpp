@@ -55,6 +55,7 @@
 #include "lvh_windows_protocol.h"
 #include "playstation_feature_protocol.hpp"
 #include "rotating_trace_log.hpp"
+#include "shared/steam_deck_feature_reports.hpp"
 #include "switch_pro_protocol.hpp"
 #include "unique_win32_handle.hpp"
 #include "vhf_input_report_queue.hpp"
@@ -95,6 +96,9 @@ namespace {
           create_request.bus_type,
           create_request.hardware_ids.report_id,
         } {
+      steam_deck_feature_state.set_serial(
+        std::string_view {create_request.stable_id.data(), create_request.report_sizes.stable_id_size}
+      );
     }
 
     std::mutex mutex;
@@ -109,6 +113,7 @@ namespace {
     std::vector<UCHAR> report_descriptor;
     std::wstring hardware_ids;
     lvh::detail::windows::GenericPidFeatureState generic_pid_feature_state;
+    lvh::detail::SteamDeckFeatureReportState steam_deck_feature_state;
     lvh::detail::windows::VhfInputReportQueue pending_input_reports;
     std::shared_ptr<std::vector<std::uint8_t>> in_flight_input_report;
     std::size_t active_input_submissions {};
@@ -555,6 +560,15 @@ namespace {
       return status;
     }
 
+    if (record->request.gamepad_kind == LVH_WINDOWS_GAMEPAD_STEAM_DECK) {
+      status = queue_vhf_input_report(*record, lvh::detail::make_steam_deck_neutral_input_report());
+      trace_status("create_vhf_device queue Steam Deck initial report", status);
+      if (!NT_SUCCESS(status)) {
+        delete_vhf_device(record);
+        return status;
+      }
+    }
+
     status = VhfStart(record->vhf_handle);
     trace_status("create_vhf_device VhfStart", status);
     if (!NT_SUCCESS(status)) {
@@ -846,6 +860,9 @@ namespace {
     if (record.request.gamepad_kind == LVH_WINDOWS_GAMEPAD_GENERIC) {
       std::lock_guard lock {record.mutex};
       report = record.generic_pid_feature_state.get_feature_report(report_number);
+    } else if (record.request.gamepad_kind == LVH_WINDOWS_GAMEPAD_STEAM_DECK && report_number == 0U) {
+      std::lock_guard lock {record.mutex};
+      report = record.steam_deck_feature_state.get_feature_report();
     } else {
       report = lvh::detail::windows::make_playstation_feature_report(record.request, report_number);
     }
@@ -870,6 +887,11 @@ namespace {
         static_cast<std::uint8_t>(report_id),
         {event.report.data(), event.report_size}
       );
+    }
+    if (record.request.gamepad_kind == LVH_WINDOWS_GAMEPAD_STEAM_DECK) {
+      const auto event = make_output_event(record, packet);
+      std::lock_guard lock {record.mutex};
+      return record.steam_deck_feature_state.handle_set_feature({event.report.data(), event.report_size});
     }
     return lvh::detail::windows::is_playstation_gamepad(record.request.gamepad_kind);
   }

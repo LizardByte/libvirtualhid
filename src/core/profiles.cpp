@@ -41,6 +41,10 @@ namespace lvh::profiles {
 
     constexpr std::size_t switch_pro_output_report_size = 64;
 
+    constexpr std::size_t steam_deck_input_report_size = 64;
+
+    constexpr std::size_t steam_deck_feature_report_size = 64;
+
     constexpr std::size_t dualshock4_usb_input_report_size = 64;
 
     constexpr std::size_t dualshock4_usb_output_report_size = 32;
@@ -267,6 +271,40 @@ namespace lvh::profiles {
         "953f9183858009057508953f9183858209067508953f9183c0";
 
       return bytes_from_hex(descriptor);
+    }
+
+    std::vector<std::uint8_t> make_steam_deck_report_descriptor() {
+      // The native Steam Deck controller endpoint carries an unnumbered
+      // 64-byte vendor input report and an unnumbered 64-byte feature report.
+      return {
+        0x06,
+        0x00,
+        0xFF,  // Usage Page (Vendor Defined 0xFF00)
+        0x09,
+        0x01,  // Usage (Vendor Usage 1)
+        0xA1,
+        0x01,  // Collection (Application)
+        0x15,
+        0x00,  // Logical Minimum (0)
+        0x26,
+        0xFF,
+        0x00,  // Logical Maximum (255)
+        0x75,
+        0x08,  // Report Size (8)
+        0x95,
+        0x40,  // Report Count (64)
+        0x09,
+        0x01,  // Usage (Vendor Usage 1)
+        0x81,
+        0x02,  // Input (Data,Var,Abs)
+        0x09,
+        0x02,  // Usage (Vendor Usage 2)
+        0x95,
+        0x40,  // Report Count (64)
+        0xB1,
+        0x02,  // Feature (Data,Var,Abs)
+        0xC0,  // End Collection
+      };
     }
 
     std::vector<std::uint8_t> make_gamepad_report_descriptor(std::uint8_t report_id, bool supports_rumble) {
@@ -2036,6 +2074,28 @@ namespace lvh::profiles {
       return profile;
     }
 
+    DeviceProfile make_steam_deck_profile() {
+      DeviceProfile profile;
+      profile.device_type = DeviceType::gamepad;
+      profile.gamepad_kind = GamepadProfileKind::steam_deck;
+      profile.bus_type = BusType::usb;
+      profile.vendor_id = 0x28DE;
+      profile.product_id = 0x1205;
+      profile.version = 0x0100;
+      profile.report_id = 0;
+      profile.input_report_size = steam_deck_input_report_size;
+      profile.output_report_size = steam_deck_feature_report_size;
+      profile.name = "(libvirtualhid) Steam Deck Controller";
+      profile.manufacturer = "Valve Software";
+      profile.capabilities = {
+        .supports_rumble = true,
+        .supports_motion = true,
+        .supports_touchpad = true,
+      };
+      profile.report_descriptor = make_steam_deck_report_descriptor();
+      return profile;
+    }
+
     DeviceProfile make_simple_profile(DeviceType device_type, std::string name, std::uint16_t product_id) {
       DeviceProfile profile;
       profile.device_type = device_type;
@@ -2124,6 +2184,10 @@ namespace lvh::profiles {
     return make_switch_pro_profile();
   }
 
+  DeviceProfile steam_deck() {
+    return make_steam_deck_profile();
+  }
+
   DeviceProfile keyboard() {
     return make_simple_profile(DeviceType::keyboard, "libvirtualhid Keyboard", 0x0002);
   }
@@ -2160,6 +2224,8 @@ namespace lvh::profiles {
         return dualsense();
       case GamepadProfileKind::switch_pro:
         return switch_pro();
+      case GamepadProfileKind::steam_deck:
+        return steam_deck();
     }
 
     return std::nullopt;
@@ -2174,6 +2240,7 @@ namespace lvh::profiles {
       dualshock4(),
       dualsense(),
       switch_pro(),
+      steam_deck(),
     };
   }
 

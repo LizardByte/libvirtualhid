@@ -95,6 +95,7 @@ enum class LvhWindowsGamepadProfileKind : uint32_t {
   dualsense = 4,
   switch_pro = 5,
   dualshock4 = 6,
+  steam_deck = 7,
 };
 
 namespace lvh_windows_protocol_detail {
@@ -122,6 +123,7 @@ namespace lvh_windows_protocol_detail {
   inline constexpr uint32_t gamepad_dualsense = to_uint32(dualsense);
   inline constexpr uint32_t gamepad_switch_pro = to_uint32(switch_pro);
   inline constexpr uint32_t gamepad_dualshock4 = to_uint32(dualshock4);
+  inline constexpr uint32_t gamepad_steam_deck = to_uint32(steam_deck);
 }  // namespace lvh_windows_protocol_detail
 
 inline constexpr uint32_t LVH_WINDOWS_STATUS_SUCCESS = lvh_windows_protocol_detail::status_success;
@@ -144,6 +146,8 @@ inline constexpr uint32_t LVH_WINDOWS_GAMEPAD_DUALSENSE = lvh_windows_protocol_d
 inline constexpr uint32_t LVH_WINDOWS_GAMEPAD_SWITCH_PRO = lvh_windows_protocol_detail::gamepad_switch_pro;
 inline constexpr uint32_t LVH_WINDOWS_GAMEPAD_DUALSHOCK4 =
   lvh_windows_protocol_detail::gamepad_dualshock4;
+inline constexpr uint32_t LVH_WINDOWS_GAMEPAD_STEAM_DECK =
+  lvh_windows_protocol_detail::gamepad_steam_deck;
 
 #pragma pack(push, 1)
 
