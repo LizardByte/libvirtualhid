@@ -253,11 +253,7 @@ TEST(ProfileTest, StreamingControllerProfilesArePresent) {
   };
   constexpr std::array<std::uint8_t, 6> steam_deck_feature_descriptor {0x95, 0x40, 0x09, 0x02, 0xB1, 0x02};
   ASSERT_GE(steam_deck.report_descriptor.size(), steam_deck_gamepad_collection.size());
-  EXPECT_TRUE(std::equal(
-    steam_deck_gamepad_collection.begin(),
-    steam_deck_gamepad_collection.end(),
-    steam_deck.report_descriptor.begin()
-  ));
+  EXPECT_TRUE(std::equal(steam_deck_gamepad_collection.begin(), steam_deck_gamepad_collection.end(), steam_deck.report_descriptor.begin()));
   expect_descriptor_contains(steam_deck, steam_deck_axis_descriptor);
   expect_descriptor_contains(steam_deck, steam_deck_feature_descriptor);
   EXPECT_EQ(std::ranges::find(steam_deck.report_descriptor, 0x85), steam_deck.report_descriptor.end());
