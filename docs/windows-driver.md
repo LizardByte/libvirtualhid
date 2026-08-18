@@ -384,8 +384,14 @@ the native USB and subcommand handshake and submits native `0x30` input reports.
 Steam Deck uses Valve's `VID_28DE&PID_1205` identity, responds to the unnumbered
 feature-report sequence used by SDL/HIDAPI, submits native 64-byte Deck state
 reports, and normalizes native `0xEB` rumble requests into the public callback.
-The driver queues a neutral Deck state before starting VHF so already-running
-consumers can receive the first packet within SDL's short endpoint-probe window.
+The same native report is described by a Generic Desktop/Game Pad top-level
+collection, allowing Windows' Game Controllers control panel and generic HID
+clients to classify the VHF child as a gamepad. The backend begins sending a
+sequenced neutral Deck state immediately after creation and repeats the latest
+state every four milliseconds, keeping a packet available throughout SDL's
+short endpoint-probe window. The driver also queues a neutral state before
+starting VHF and handles Deck feature requests as unnumbered reports regardless
+of the initial contents of the transfer buffer.
 The built-in Generic profile is presented to Windows as a DirectInput PID
 Joystick with the complete output-report set required for DirectInput
 enumeration. Constant Force and Sine output is normalized to the portable

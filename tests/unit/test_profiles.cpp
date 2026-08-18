@@ -236,9 +236,29 @@ TEST(ProfileTest, StreamingControllerProfilesArePresent) {
   EXPECT_TRUE(steam_deck.capabilities.supports_motion);
   EXPECT_TRUE(steam_deck.capabilities.supports_touchpad);
 
-  constexpr std::array<std::uint8_t, 6> steam_deck_input_descriptor {0x75, 0x08, 0x95, 0x40, 0x09, 0x01};
-  constexpr std::array<std::uint8_t, 6> steam_deck_feature_descriptor {0x09, 0x02, 0x95, 0x40, 0xB1, 0x02};
-  expect_descriptor_contains(steam_deck, steam_deck_input_descriptor);
+  constexpr std::array<std::uint8_t, 6> steam_deck_gamepad_collection {0x05, 0x01, 0x09, 0x05, 0xA1, 0x01};
+  constexpr std::array<std::uint8_t, 12> steam_deck_axis_descriptor {
+    0x09,
+    0x30,
+    0x09,
+    0x31,
+    0x09,
+    0x33,
+    0x09,
+    0x34,
+    0x81,
+    0x02,
+    0x75,
+    0x08,
+  };
+  constexpr std::array<std::uint8_t, 6> steam_deck_feature_descriptor {0x95, 0x40, 0x09, 0x02, 0xB1, 0x02};
+  ASSERT_GE(steam_deck.report_descriptor.size(), steam_deck_gamepad_collection.size());
+  EXPECT_TRUE(std::equal(
+    steam_deck_gamepad_collection.begin(),
+    steam_deck_gamepad_collection.end(),
+    steam_deck.report_descriptor.begin()
+  ));
+  expect_descriptor_contains(steam_deck, steam_deck_axis_descriptor);
   expect_descriptor_contains(steam_deck, steam_deck_feature_descriptor);
   EXPECT_EQ(std::ranges::find(steam_deck.report_descriptor, 0x85), steam_deck.report_descriptor.end());
 

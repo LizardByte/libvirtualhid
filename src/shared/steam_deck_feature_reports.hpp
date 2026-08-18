@@ -22,13 +22,35 @@ namespace lvh::detail {
 
   inline constexpr std::size_t steam_deck_feature_report_size = 64U;
 
+  inline constexpr std::size_t steam_deck_packet_number_offset = 4U;
+
   /**
-   * @brief Create the native neutral report queued before VHF enumeration.
+   * @brief Stamp a Valve-native Steam Deck input report with its sequence.
+   * @param report Mutable native input-report bytes.
+   * @param packet_number Packet sequence value.
+   * @return Whether the report was large enough to stamp.
+   */
+  inline bool stamp_steam_deck_packet_number(
+    std::span<std::uint8_t> report,
+    std::uint32_t packet_number
+  ) {
+    if (report.size() < steam_deck_packet_number_offset + sizeof(packet_number)) {
+      return false;
+    }
+
+    for (std::size_t index = 0; index < sizeof(packet_number); ++index) {
+      report[steam_deck_packet_number_offset + index] =
+        static_cast<std::uint8_t>((packet_number >> (index * 8U)) & 0xFFU);
+    }
+    return true;
+  }
+
+  /**
+   * @brief Create a native neutral report for immediate consumer discovery.
    *
    * SDL probes a newly arrived Steam Deck endpoint by waiting only 16 ms for
-   * its first state packet. Queueing this report before VhfStart lets an
-   * already-running consumer complete that probe while the create request is
-   * still in progress.
+   * its first state packet. Backends seed their periodic state with this
+   * packet so an already-running consumer can complete that probe immediately.
    */
   inline std::vector<std::uint8_t> make_steam_deck_neutral_input_report() {
     auto report = std::vector<std::uint8_t>(steam_deck_input_report_size, 0U);

@@ -55,8 +55,10 @@ namespace lvh::detail::test {
     OperationStatus create_status;
     OperationStatus submit_status;
     OperationStatus close_status;
+    std::size_t reports_before_submit = 0;
     std::size_t reports_before_close = 0;
     std::size_t reports_after_close = 0;
+    bool packet_numbers_advance = false;
   };
 
   struct WindowsBackendUtilityResult {

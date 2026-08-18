@@ -301,7 +301,7 @@ TEST_F(WindowsDriverProtocolTest, RespondsToSteamDeckFeatureReports) {
 }
 
 TEST_F(WindowsDriverProtocolTest, QueuesNativeSteamDeckStateForImmediateConsumerDiscovery) {
-  const auto report = lvh::detail::make_steam_deck_neutral_input_report();
+  auto report = lvh::detail::make_steam_deck_neutral_input_report();
 
   ASSERT_EQ(report.size(), lvh::detail::steam_deck_input_report_size);
   EXPECT_EQ(report[0], 0x01U);
@@ -311,4 +311,13 @@ TEST_F(WindowsDriverProtocolTest, QueuesNativeSteamDeckStateForImmediateConsumer
   EXPECT_TRUE(std::ranges::all_of(report.begin() + 4U, report.end(), [](const auto value) {
     return value == 0U;
   }));
+
+  EXPECT_TRUE(lvh::detail::stamp_steam_deck_packet_number(report, 0x78563412U));
+  EXPECT_EQ(report[4], 0x12U);
+  EXPECT_EQ(report[5], 0x34U);
+  EXPECT_EQ(report[6], 0x56U);
+  EXPECT_EQ(report[7], 0x78U);
+
+  std::array<std::uint8_t, 7> short_report {};
+  EXPECT_FALSE(lvh::detail::stamp_steam_deck_packet_number(short_report, 1U));
 }

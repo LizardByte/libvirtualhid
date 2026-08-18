@@ -319,7 +319,13 @@ namespace lvh::detail {
 
 #if defined(__linux__)
     std::uint16_t to_uhid_bus(const DeviceProfile &profile) {
-      if (profile.gamepad_kind == GamepadProfileKind::switch_pro) {
+      if (
+        profile.gamepad_kind == GamepadProfileKind::switch_pro ||
+        profile.gamepad_kind == GamepadProfileKind::steam_deck
+      ) {
+        // Prevent hardware-specific kernel drivers from taking over these
+        // virtual endpoints. In particular, hid-steam suppresses Steam Deck
+        // gamepad input while its hardware-only lizard-mode gate is active.
         return BUS_VIRTUAL;
       }
       return to_uhid_bus(profile.bus_type);
@@ -2873,22 +2879,31 @@ namespace lvh::detail {
         const GamepadState & /*state*/,
         const std::vector<std::uint8_t> &report
       ) override {
+        std::lock_guard submit_lock {submit_mutex_};
         if (!open_) {
           return OperationStatus::failure(ErrorCode::device_closed, "UHID gamepad is closed");
         }
 
+        auto submitted_report = report;
+        if (profile_.gamepad_kind == GamepadProfileKind::steam_deck) {
+          static_cast<void>(stamp_steam_deck_packet_number(
+            submitted_report,
+            steam_deck_packet_number_.fetch_add(1U) + 1U
+          ));
+        }
+
         uhid_event event {};
-        if (report.size() > sizeof(event.u.input2.data)) {
+        if (submitted_report.size() > sizeof(event.u.input2.data)) {
           return OperationStatus::failure(ErrorCode::invalid_argument, "HID input report is too large for UHID");
         }
 
         event.type = UHID_INPUT2;
-        event.u.input2.size = static_cast<std::uint16_t>(report.size());
-        std::memcpy(event.u.input2.data, report.data(), report.size());
+        event.u.input2.size = static_cast<std::uint16_t>(submitted_report.size());
+        std::memcpy(event.u.input2.data, submitted_report.data(), submitted_report.size());
         auto status = write_event(event);
         if (status.ok()) {
           std::lock_guard lock {report_mutex_};
-          last_report_ = report;
+          last_report_ = std::move(submitted_report);
         }
         return status;
       }
@@ -3204,10 +3219,12 @@ namespace lvh::detail {
       std::array<std::uint8_t, 6> playstation_mac_address_ {};
       SteamDeckFeatureReportState steam_deck_feature_state_;
       std::vector<std::uint8_t> last_report_;
+      std::atomic_uint32_t steam_deck_packet_number_ = 0;
       std::atomic_bool open_ = true;
       std::atomic_bool running_ = false;
       std::jthread reader_;
       std::jthread periodic_reporter_;
+      std::mutex submit_mutex_;
       std::mutex lifecycle_mutex_;
       std::condition_variable lifecycle_condition_;
       bool started_ = false;

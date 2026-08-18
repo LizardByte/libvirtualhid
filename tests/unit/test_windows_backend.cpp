@@ -100,7 +100,9 @@ TEST_F(WindowsBackendTest, SteamDeckRepeatsNativeStateUntilClose) {
   ASSERT_TRUE(result.create_status.ok()) << result.create_status.message();
   ASSERT_TRUE(result.submit_status.ok()) << result.submit_status.message();
   ASSERT_TRUE(result.close_status.ok()) << result.close_status.message();
-  EXPECT_GE(result.reports_before_close, 2U);
+  EXPECT_GE(result.reports_before_submit, 2U);
+  EXPECT_GT(result.reports_before_close, result.reports_before_submit);
+  EXPECT_TRUE(result.packet_numbers_advance);
   EXPECT_EQ(result.reports_after_close, result.reports_before_close);
 }
 

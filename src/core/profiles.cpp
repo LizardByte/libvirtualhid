@@ -274,33 +274,198 @@ namespace lvh::profiles {
     }
 
     std::vector<std::uint8_t> make_steam_deck_report_descriptor() {
-      // The native Steam Deck controller endpoint carries an unnumbered
-      // 64-byte vendor input report and an unnumbered 64-byte feature report.
+      // Keep Valve's unnumbered 64-byte native packet layout, but expose its
+      // controls from a Generic Desktop/Game Pad top-level collection. This
+      // lets generic HID consumers (including the Windows game-controller
+      // control panel) classify the endpoint when Valve-specific HIDAPI
+      // handling is unavailable.
       return {
-        0x06,
-        0x00,
-        0xFF,  // Usage Page (Vendor Defined 0xFF00)
+        0x05,
+        0x01,  // Usage Page (Generic Desktop)
         0x09,
-        0x01,  // Usage (Vendor Usage 1)
+        0x05,  // Usage (Game Pad)
         0xA1,
         0x01,  // Collection (Application)
+
+        // Native header and packet sequence (bytes 0-7).
+        0x75,
+        0x08,  // Report Size (8)
+        0x95,
+        0x08,  // Report Count (8)
+        0x81,
+        0x03,  // Input (Const,Var,Abs)
+
+        // Native button bitfields (bytes 8-15). Constants preserve every
+        // native bit offset while named Button usages provide a generic view.
+        0x05,
+        0x09,  // Usage Page (Button)
+        0x75,
+        0x01,  // Report Size (1)
+        0x95,
+        0x02,
+        0x81,
+        0x03,  // Input (Const,Var,Abs)
+        0x09,
+        0x06,  // Right shoulder
+        0x09,
+        0x05,  // Left shoulder
+        0x09,
+        0x04,  // Y
+        0x09,
+        0x02,  // B
+        0x09,
+        0x03,  // X
+        0x09,
+        0x01,  // A
+        0x95,
+        0x06,
+        0x81,
+        0x02,  // Input (Data,Var,Abs)
+        0x09,
+        0x0C,  // D-pad up
+        0x09,
+        0x0F,  // D-pad right
+        0x09,
+        0x0E,  // D-pad left
+        0x09,
+        0x0D,  // D-pad down
+        0x09,
+        0x07,  // Back
+        0x09,
+        0x0B,  // Guide
+        0x09,
+        0x08,  // Start
+        0x09,
+        0x14,  // L5
+        0x95,
+        0x08,
+        0x81,
+        0x02,
+        0x09,
+        0x13,  // R5
+        0x09,
+        0x10,  // Left pad click
+        0x95,
+        0x02,
+        0x81,
+        0x02,
+        0x95,
+        0x04,
+        0x81,
+        0x03,
+        0x09,
+        0x09,  // Left stick click
+        0x95,
+        0x01,
+        0x81,
+        0x02,
+        0x95,
+        0x03,
+        0x81,
+        0x03,
+        0x09,
+        0x0A,  // Right stick click
+        0x95,
+        0x01,
+        0x81,
+        0x02,
+        0x95,
+        0x0E,
+        0x81,
+        0x03,
+        0x09,
+        0x12,  // L4
+        0x09,
+        0x11,  // R4
+        0x95,
+        0x02,
+        0x81,
+        0x02,
+        0x95,
+        0x07,
+        0x81,
+        0x03,
+        0x09,
+        0x15,  // Quick Access
+        0x95,
+        0x01,
+        0x81,
+        0x02,
+        0x95,
+        0x0D,
+        0x81,
+        0x03,
+
+        // Native touch and motion fields (bytes 16-43).
+        0x75,
+        0x08,
+        0x95,
+        0x1C,
+        0x81,
+        0x03,
+
+        // Full-range native trigger values (bytes 44-47).
+        0x05,
+        0x01,  // Usage Page (Generic Desktop)
         0x15,
         0x00,  // Logical Minimum (0)
         0x26,
         0xFF,
-        0x00,  // Logical Maximum (255)
+        0x7F,  // Logical Maximum (32767)
         0x75,
-        0x08,  // Report Size (8)
+        0x10,  // Report Size (16)
         0x95,
-        0x40,  // Report Count (64)
+        0x02,
         0x09,
-        0x01,  // Usage (Vendor Usage 1)
+        0x32,  // Usage (Z)
+        0x09,
+        0x35,  // Usage (Rz)
         0x81,
-        0x02,  // Input (Data,Var,Abs)
+        0x02,
+
+        // Native signed stick values (bytes 48-55).
+        0x16,
+        0x00,
+        0x80,  // Logical Minimum (-32768)
+        0x26,
+        0xFF,
+        0x7F,  // Logical Maximum (32767)
+        0x95,
+        0x04,
+        0x09,
+        0x30,  // Usage (X)
+        0x09,
+        0x31,  // Usage (Y)
+        0x09,
+        0x33,  // Usage (Rx)
+        0x09,
+        0x34,  // Usage (Ry)
+        0x81,
+        0x02,
+
+        // Native pressure values and spare bytes (bytes 56-63).
+        0x75,
+        0x08,
+        0x95,
+        0x08,
+        0x81,
+        0x03,
+
+        // Valve's unnumbered 64-byte feature report.
+        0x06,
+        0x00,
+        0xFF,  // Usage Page (Vendor Defined 0xFF00)
+        0x15,
+        0x00,
+        0x26,
+        0xFF,
+        0x00,
+        0x75,
+        0x08,
+        0x95,
+        0x40,
         0x09,
         0x02,  // Usage (Vendor Usage 2)
-        0x95,
-        0x40,  // Report Count (64)
         0xB1,
         0x02,  // Feature (Data,Var,Abs)
         0xC0,  // End Collection

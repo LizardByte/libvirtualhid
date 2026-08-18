@@ -852,7 +852,13 @@ namespace {
 
   NTSTATUS copy_vhf_feature_report(DeviceRecord &record, HID_XFER_PACKET &packet) {
     auto report_number = packet.reportId;
-    if (report_number == 0U && packet.reportBufferLen > 0U) {
+    // The Steam Deck feature report is unnumbered. VHF does not guarantee the
+    // contents of an input buffer for GET_FEATURE, so its first payload byte
+    // must never be interpreted as a report ID.
+    if (
+      record.request.gamepad_kind != LVH_WINDOWS_GAMEPAD_STEAM_DECK &&
+      report_number == 0U && packet.reportBufferLen > 0U
+    ) {
       report_number = packet.reportBuffer[0];
     }
 

@@ -31,6 +31,7 @@
 #include "platform/windows/keylayout.hpp"
 #include "platform/windows/shared/generic_pid_rumble.hpp"
 #include "platform/windows/windows_broker_client.hpp"
+#include "shared/steam_deck_feature_reports.hpp"
 
 #include <libvirtualhid/profiles.hpp>
 #include <libvirtualhid/report.hpp>
@@ -918,6 +919,8 @@ namespace lvh::detail {
           path {std::move(device_path)} {
         if (profile.gamepad_kind == GamepadProfileKind::generic && profile.capabilities.supports_rumble) {
           uses_generic_pid = !windows::make_generic_pid_report_descriptor(profile.report_descriptor).empty();
+        } else if (profile.gamepad_kind == GamepadProfileKind::steam_deck) {
+          last_input_report = make_steam_deck_neutral_input_report();
         }
       }
 
@@ -933,6 +936,7 @@ namespace lvh::detail {
       DeviceProfile profile;
       std::string path;
       std::vector<std::uint8_t> last_input_report;
+      std::uint32_t steam_deck_packet_number = 0;
       bool open = true;
       OutputCallback output_callback;
       bool uses_generic_pid = false;
@@ -968,6 +972,7 @@ namespace lvh::detail {
 
       std::shared_ptr<WindowsBackendContext> context_;
       std::shared_ptr<WindowsGamepadState> state_;
+      std::mutex submit_mutex_;
       std::jthread periodic_reporter_;
     };
 
@@ -1238,6 +1243,7 @@ namespace lvh::detail {
     ) {
       using enum ErrorCode;
 
+      std::lock_guard submit_lock {submit_mutex_};
       auto submitted_report = report;
       {
         std::lock_guard lock {state_->mutex_};
@@ -1251,6 +1257,8 @@ namespace lvh::detail {
 
         if (state_->uses_generic_pid) {
           submitted_report = windows::make_generic_windows_input_report(report);
+        } else if (state_->profile.gamepad_kind == GamepadProfileKind::steam_deck) {
+          static_cast<void>(stamp_steam_deck_packet_number(submitted_report, ++state_->steam_deck_packet_number));
         }
       }
 
@@ -1266,22 +1274,23 @@ namespace lvh::detail {
       using namespace std::chrono_literals;
 
       while (!stop_token.stop_requested()) {
-        std::this_thread::sleep_for(4ms);
-        if (stop_token.stop_requested()) {
-          break;
+        {
+          std::lock_guard submit_lock {submit_mutex_};
+          std::vector<std::uint8_t> report;
+          {
+            std::lock_guard lock {state_->mutex_};
+            if (!state_->open) {
+              break;
+            }
+            report = state_->last_input_report;
+            static_cast<void>(stamp_steam_deck_packet_number(report, ++state_->steam_deck_packet_number));
+          }
+          if (!report.empty()) {
+            static_cast<void>(context_->submit_gamepad_report(state_, report));
+          }
         }
 
-        std::vector<std::uint8_t> report;
-        {
-          std::lock_guard lock {state_->mutex_};
-          if (!state_->open) {
-            break;
-          }
-          report = state_->last_input_report;
-        }
-        if (!report.empty()) {
-          static_cast<void>(context_->submit_gamepad_report(state_, report));
-        }
+        std::this_thread::sleep_for(4ms);
       }
     }
 
