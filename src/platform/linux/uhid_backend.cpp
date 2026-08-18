@@ -324,12 +324,6 @@ namespace lvh::detail {
         // virtual endpoint.
         return BUS_VIRTUAL;
       }
-      if (profile.gamepad_kind == GamepadProfileKind::steam_deck) {
-        // hid-steam matches the Deck's USB identity and suppresses its input
-        // while a hidraw client is open. BUS_VIRTUAL avoids that driver but is
-        // filtered out by hidapi, so use its other supported HID transport.
-        return BUS_BLUETOOTH;
-      }
       return to_uhid_bus(profile.bus_type);
     }
 
