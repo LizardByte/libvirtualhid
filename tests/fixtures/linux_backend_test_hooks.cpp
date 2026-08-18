@@ -1695,7 +1695,7 @@ namespace lvh::detail::test {
     options.metadata.stable_id = "linux-steam-deck";
 
     UhidGamepad gamepad {descriptors[0]};
-    auto event = create_started_profile_uhid_gamepad(gamepad, 11, options, descriptors[1], BUS_VIRTUAL, result);
+    auto event = create_started_profile_uhid_gamepad(gamepad, 11, options, descriptors[1], BUS_BLUETOOTH, result);
     gamepad.set_output_callback([&result](const GamepadOutput &output) {
       if (output.kind == GamepadOutputKind::rumble) {
         ++result.output.callback_count;

@@ -55,6 +55,7 @@ namespace lvh::detail::test {
     OperationStatus create_status;
     OperationStatus submit_status;
     OperationStatus close_status;
+    std::size_t reports_immediately_after_create = 0;
     std::size_t reports_before_submit = 0;
     std::size_t reports_before_close = 0;
     std::size_t reports_after_close = 0;

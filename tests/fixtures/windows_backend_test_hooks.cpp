@@ -512,6 +512,7 @@ namespace lvh::detail {
       if (!created) {
         return result;
       }
+      result.reports_immediately_after_create = command_state->submit_report_count();
 
       static_cast<void>(wait_until([&command_state] {
         return command_state->submit_report_count() >= 2U;

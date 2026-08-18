@@ -1048,6 +1048,16 @@ namespace lvh::detail {
           response.device_path[0] == '\0' ? command_channel_->path() : std::string {response.device_path.data()}
         );
 
+        if (state->profile.gamepad_kind == GamepadProfileKind::steam_deck) {
+          static_cast<void>(
+            stamp_steam_deck_packet_number(state->last_input_report, ++state->steam_deck_packet_number)
+          );
+          if (const auto status = submit_gamepad_report(state, state->last_input_report); !status.ok()) {
+            static_cast<void>(command_channel_->destroy_device(state->driver_id, state->token));
+            return {status, nullptr};
+          }
+        }
+
         {
           std::lock_guard lock {devices_mutex_};
           gamepads_[state->driver_id] = state;

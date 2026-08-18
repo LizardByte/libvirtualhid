@@ -82,8 +82,9 @@ Game Pad while retaining the Valve-native report bytes, so Windows Game
 Controllers and generic HID clients can enumerate it even if the Valve-specific
 path is unavailable. SDL/HIDAPI can recognize it as a Steam Deck, disable its
 desktop mappings, and send native rumble without exposing Valve protocol details
-through the public C++ API. A neutral state is submitted continuously from the
-moment the backend is created, and each packet carries an advancing native
+through the public C++ API. The driver seeds a neutral report before exposing the
+device, the backend submits another synchronously during creation, and periodic
+updates continue afterward. Each backend packet carries an advancing native
 sequence number.
 
 See [Windows driver package](windows-driver.md) for build, install, validation,
@@ -149,14 +150,14 @@ provides it separately on the UHID event.
 
 Steam Deck retains Valve's native identity and emits the 64-byte Deck state
 packet periodically so SDL's direct HIDAPI path can initialize before the first
-client input arrives. Its UHID endpoint uses the virtual bus, preventing the
-hardware-specific `hid-steam` driver from suppressing input behind the physical
-Deck's lizard-mode gate; the Generic Desktop/Game Pad descriptor remains
-available as an evdev fallback. The backend answers the unit-serial feature
-query used during Linux registration, accepts the desktop-mapping/settings
-commands used by SDL, and forwards native `0xEB` rumble requests through the
-portable output callback. Each submitted native packet carries an advancing
-sequence number.
+client input arrives. Its UHID endpoint uses the Bluetooth HID transport tag:
+this remains visible to HIDAPI while avoiding the USB-only `hid-steam` match
+that otherwise suppresses the virtual endpoint's reports when a direct HID
+client opens it. The Generic Desktop/Game Pad descriptor remains available as
+an evdev fallback. The backend answers the unit-serial feature query used during
+Linux registration, accepts the desktop-mapping/settings commands used by SDL,
+and forwards native `0xEB` rumble requests through the portable output callback.
+Each submitted native packet carries an advancing sequence number.
 
 The backend opens `/dev/uhid` in nonblocking mode, matching the original
 asynchronous gamepad registration path. Its event reader is active before

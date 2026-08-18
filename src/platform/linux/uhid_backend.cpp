@@ -319,14 +319,16 @@ namespace lvh::detail {
 
 #if defined(__linux__)
     std::uint16_t to_uhid_bus(const DeviceProfile &profile) {
-      if (
-        profile.gamepad_kind == GamepadProfileKind::switch_pro ||
-        profile.gamepad_kind == GamepadProfileKind::steam_deck
-      ) {
-        // Prevent hardware-specific kernel drivers from taking over these
-        // virtual endpoints. In particular, hid-steam suppresses Steam Deck
-        // gamepad input while its hardware-only lizard-mode gate is active.
+      if (profile.gamepad_kind == GamepadProfileKind::switch_pro) {
+        // Prevent hardware-specific kernel drivers from taking over this
+        // virtual endpoint.
         return BUS_VIRTUAL;
+      }
+      if (profile.gamepad_kind == GamepadProfileKind::steam_deck) {
+        // hid-steam matches the Deck's USB identity and suppresses its input
+        // while a hidraw client is open. BUS_VIRTUAL avoids that driver but is
+        // filtered out by hidapi, so use its other supported HID transport.
+        return BUS_BLUETOOTH;
       }
       return to_uhid_bus(profile.bus_type);
     }
