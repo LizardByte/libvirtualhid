@@ -324,6 +324,12 @@ namespace lvh::detail {
         // virtual endpoint.
         return BUS_VIRTUAL;
       }
+      if (profile.gamepad_kind == GamepadProfileKind::steam_deck) {
+        // hid-steam claims USB endpoints with Valve's Deck VID/PID and
+        // publishes its own evdev device. Use a HID transport SDL accepts but
+        // hid-steam does not match so SDL can own the native hidraw stream.
+        return BUS_BLUETOOTH;
+      }
       return to_uhid_bus(profile.bus_type);
     }
 

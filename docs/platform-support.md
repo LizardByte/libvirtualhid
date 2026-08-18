@@ -150,15 +150,14 @@ provides it separately on the UHID event.
 
 Steam Deck retains Valve's native identity and emits the 64-byte Deck state
 packet periodically so SDL's direct HIDAPI path can initialize before the first
-client input arrives. Its UHID endpoint keeps Valve's USB transport identity so
-Linux `hid-steam` can expose the dedicated hidraw client expected by SDL. When
-that client opens, `hid-steam` hands the native report stream to userspace; the
-Generic Desktop/Game Pad descriptor remains available as an evdev fallback when
-no direct HID client owns it. The backend answers the unit-serial feature query
-used during Linux registration, accepts the desktop-mapping/settings commands
-used by SDL, and forwards native `0xEB` rumble requests through the portable
-output callback. Each submitted native packet carries an advancing sequence
-number.
+client input arrives. Linux exposes that endpoint as Bluetooth HID so SDL can
+own the native hidraw stream directly; advertising it as USB would make the
+kernel's `hid-steam` driver claim the virtual endpoint and substitute an evdev
+controller. The Generic Desktop/Game Pad descriptor remains available as an
+evdev fallback. The backend answers the unit-serial feature query, accepts the
+desktop-mapping/settings commands used by SDL, and forwards native `0xEB`
+rumble requests through the portable output callback. Each submitted native
+packet carries an advancing sequence number.
 
 The backend opens `/dev/uhid` in nonblocking mode, matching the original
 asynchronous gamepad registration path. Its event reader is active before

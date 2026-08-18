@@ -437,8 +437,10 @@ namespace {
           SDL_GetGamepadProductForID(gamepad_id) == product_id
         ) {
           auto *opened = SDL_OpenGamepad(gamepad_id);
-          SDL_free(gamepads);
-          return {opened, &SDL_CloseGamepad};
+          if (opened != nullptr) {
+            SDL_free(gamepads);
+            return {opened, &SDL_CloseGamepad};
+          }
         }
       }
       SDL_free(gamepads);
