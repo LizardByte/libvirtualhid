@@ -5,6 +5,11 @@ HID Framework. The driver package is separate from the normal C++ library build:
 the library remains consumable from MSVC and MinGW/UCRT64, while the driver
 package is built with the Microsoft SDK/WDK toolchain.
 
+Windows 11 version 21H2 and later is the supported driver target. The INF also
+provides a best-effort compatibility path for Windows 10 version 2004 and later
+by using explicit `WUDFRd` service registration, but Windows 10 is not an
+officially supported driver target.
+
 ## Microsoft Store Listing Text
 
 The Windows driver package is not the same product surface as the C++ library,

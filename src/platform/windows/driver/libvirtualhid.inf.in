@@ -17,10 +17,15 @@ CatalogFile=libvirtualhid.cat
 PnpLockdown=1
 
 [Manufacturer]
-%ManufacturerName%=Standard,NT@LIBVIRTUALHID_INF_ARCH@
+; Windows 10 requires explicit WUDFRd service registration. Windows 11 can use
+; the inbox WUDFRD.NT sections instead.
+%ManufacturerName%=Standard,NT@LIBVIRTUALHID_INF_ARCH@.10.0...19041,NT@LIBVIRTUALHID_INF_ARCH@.10.0...22000
 
-[Standard.NT@LIBVIRTUALHID_INF_ARCH@]
+[Standard.NT@LIBVIRTUALHID_INF_ARCH@.10.0...19041]
 %DeviceName%=DeviceInstall,ROOT\LIBVIRTUALHID
+
+[Standard.NT@LIBVIRTUALHID_INF_ARCH@.10.0...22000]
+%DeviceName%=DeviceInstall_Win11,ROOT\LIBVIRTUALHID
 
 [DestinationDirs]
 UMDriverCopy=13
@@ -33,13 +38,9 @@ libvirtualhid_umdf.dll=1
 
 [DeviceInstall.NT]
 CopyFiles=UMDriverCopy
-Include=wudfrd.inf
-Needs=WUDFRD.NT
 
 [DeviceInstall.NT.HW]
 AddReg=DeviceInstall_Device_AddReg,DeviceInstall_Vhf_AddReg
-Include=wudfrd.inf
-Needs=WUDFRD.NT.HW
 
 [UMDriverCopy]
 libvirtualhid_umdf.dll
@@ -52,20 +53,47 @@ HKR,,"LowerFilters",0x00010008,"vhf"
 HKR,,VhfMode,0x00010001,0x1
 
 [DeviceInstall.NT.Services]
-Include=wudfrd.inf
-Needs=WUDFRD.NT.Services
+AddService=WUDFRd,0x000001fa,WUDFRD_ServiceInstall
 
 [DeviceInstall.NT.Wdf]
 UmdfService=libvirtualhid_umdf,libvirtualhid_umdf_Install
 UmdfServiceOrder=libvirtualhid_umdf
+UmdfHostProcessSharing=ProcessSharingDisabled
+UmdfHostPriority=PriorityHigh
+
+[WUDFRD_ServiceInstall]
+DisplayName=%WudfRdDisplayName%
+ServiceType=1
+StartType=3
+ErrorControl=1
+ServiceBinary=%12%\WUDFRd.sys
+
+[DeviceInstall_Win11.NT]
+CopyFiles=UMDriverCopy
+Include=wudfrd.inf
+Needs=WUDFRD.NT
+
+[DeviceInstall_Win11.NT.HW]
+AddReg=DeviceInstall_Device_AddReg,DeviceInstall_Vhf_AddReg
+Include=wudfrd.inf
+Needs=WUDFRD.NT.HW
+
+[DeviceInstall_Win11.NT.Services]
+Include=wudfrd.inf
+Needs=WUDFRD.NT.Services
+
+[DeviceInstall_Win11.NT.Wdf]
+UmdfService=libvirtualhid_umdf,libvirtualhid_umdf_Install
+UmdfServiceOrder=libvirtualhid_umdf
+UmdfHostProcessSharing=ProcessSharingDisabled
+UmdfHostPriority=PriorityHigh
 
 [libvirtualhid_umdf_Install]
 UmdfLibraryVersion=@LIBVIRTUALHID_UMDF_LIBRARY_VERSION@
-UmdfHostProcessSharing=ProcessSharingDisabled
-UmdfHostPriority=PriorityHigh
 ServiceBinary=%13%\libvirtualhid_umdf.dll
 
 [Strings]
 ManufacturerName="LizardByte"
 DiskName="libvirtualhid UMDF Driver Install Disk"
 DeviceName="libvirtualhid Virtual HID Control Device"
+WudfRdDisplayName="Windows Driver Foundation - User-mode Driver Framework Reflector"
