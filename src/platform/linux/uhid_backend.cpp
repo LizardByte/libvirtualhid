@@ -2815,8 +2815,8 @@ namespace lvh::detail {
         std::memcpy(request.rd_data, options.profile.report_descriptor.data(), options.profile.report_descriptor.size());
         profile_ = options.profile;
         {
-          std::lock_guard lock {report_mutex_};
-          last_report_ = reports::pack_input_report(profile_, {});
+          std::lock_guard lock {state_mutex_};
+          last_state_ = {};
         }
 
         {
@@ -2848,25 +2848,13 @@ namespace lvh::detail {
       }
 
       OperationStatus submit(
-        const GamepadState & /*state*/,
+        const GamepadState &state,
         const std::vector<std::uint8_t> &report
       ) override {
-        if (!open_) {
-          return OperationStatus::failure(ErrorCode::device_closed, "UHID gamepad is closed");
-        }
-
-        uhid_event event {};
-        if (report.size() > sizeof(event.u.input2.data)) {
-          return OperationStatus::failure(ErrorCode::invalid_argument, "HID input report is too large for UHID");
-        }
-
-        event.type = UHID_INPUT2;
-        event.u.input2.size = static_cast<std::uint16_t>(report.size());
-        std::memcpy(event.u.input2.data, report.data(), report.size());
-        auto status = write_event(event);
+        std::lock_guard lock {state_mutex_};
+        auto status = write_input_report(report);
         if (status.ok()) {
-          std::lock_guard lock {report_mutex_};
-          last_report_ = report;
+          last_state_ = state;
         }
         return status;
       }
@@ -2922,6 +2910,22 @@ namespace lvh::detail {
       }
 
     private:
+      OperationStatus write_input_report(const std::vector<std::uint8_t> &report) {
+        if (!open_) {
+          return OperationStatus::failure(ErrorCode::device_closed, "UHID gamepad is closed");
+        }
+
+        uhid_event event {};
+        if (report.size() > sizeof(event.u.input2.data)) {
+          return OperationStatus::failure(ErrorCode::invalid_argument, "HID input report is too large for UHID");
+        }
+
+        event.type = UHID_INPUT2;
+        event.u.input2.size = static_cast<std::uint16_t>(report.size());
+        std::memcpy(event.u.input2.data, report.data(), report.size());
+        return write_event(event);
+      }
+
       OperationStatus write_event(const uhid_event &event) {
         using enum ErrorCode;
 
@@ -3042,13 +3046,10 @@ namespace lvh::detail {
             break;
           }
 
-          std::vector<std::uint8_t> report;
-          {
-            std::lock_guard lock {report_mutex_};
-            report = last_report_;
-          }
+          std::lock_guard lock {state_mutex_};
+          const auto report = reports::pack_input_report(profile_, last_state_);
           if (!report.empty()) {
-            static_cast<void>(submit({}, report));
+            static_cast<void>(write_input_report(report));
           }
         }
       }
@@ -3173,7 +3174,7 @@ namespace lvh::detail {
       std::string physical_id_;
       std::string unique_id_;
       std::array<std::uint8_t, 6> playstation_mac_address_ {};
-      std::vector<std::uint8_t> last_report_;
+      GamepadState last_state_;
       std::atomic_bool open_ = true;
       std::atomic_bool running_ = false;
       std::jthread reader_;
@@ -3183,7 +3184,7 @@ namespace lvh::detail {
       bool started_ = false;
       bool reader_exited_ = false;
       std::mutex write_mutex_;
-      std::mutex report_mutex_;
+      std::mutex state_mutex_;
       std::mutex callback_mutex_;
       OutputCallback output_callback_;
     };

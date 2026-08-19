@@ -6,11 +6,13 @@
 // standard includes
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <numbers>
 #include <optional>
 #include <span>
 #include <utility>
@@ -60,6 +62,10 @@ namespace lvh::reports {
     constexpr auto dualsense_flag1_lightbar = std::byte {0x04};
 
     constexpr auto dualsense_flag2_compatible_vibration = std::byte {0x04};
+
+    constexpr auto dualsense_acceleration_scale = 9.80665F * 100.0F;
+
+    constexpr auto dualsense_gyroscope_scale = 1145.0F * std::numbers::pi_v<float> / 180.0F;
 
     constexpr std::uint8_t switch_rumble_and_subcommand_output_report_id = 0x01;
 
@@ -613,6 +619,19 @@ namespace lvh::reports {
       return static_cast<std::uint16_t>((static_cast<std::uint64_t>(elapsed) * 3U) / 16U);
     }
 
+    std::uint8_t dualsense_sequence_number() {
+      static std::atomic_uint32_t sequence_number = 0;
+      return static_cast<std::uint8_t>((sequence_number.fetch_add(1U, std::memory_order_relaxed) + 1U) % 255U);
+    }
+
+    std::uint32_t dualsense_sensor_timestamp() {
+      const auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                             std::chrono::steady_clock::now().time_since_epoch()
+      )
+                             .count();
+      return static_cast<std::uint32_t>(static_cast<std::uint64_t>(elapsed) / 333U);
+    }
+
     std::vector<std::uint8_t> pack_dualshock4_input_report(const DeviceProfile &profile, const GamepadState &state) {
       const auto is_bluetooth = profile.bus_type == BusType::bluetooth;
       const auto payload_offset = is_bluetooth ? 3U : 1U;
@@ -722,6 +741,7 @@ namespace lvh::reports {
       report[payload_offset + 3U] = to_byte(normalize_u8_axis(-normalized.right_stick.y));
       report[payload_offset + 4U] = to_byte(normalize_trigger(normalized.left_trigger));
       report[payload_offset + 5U] = to_byte(normalize_trigger(normalized.right_trigger));
+      report[payload_offset + 6U] = to_byte(dualsense_sequence_number());
       report[payload_offset + 7U] = to_byte(hat_from_buttons(normalized.buttons));
 
       if (normalized.buttons.test(GamepadButton::x)) {
@@ -773,15 +793,16 @@ namespace lvh::reports {
       }
 
       if (normalized.gyroscope) {
-        write_i16(report, payload_offset + 15U, scale_i16(normalized.gyroscope->x, 1145.0F));
-        write_i16(report, payload_offset + 17U, scale_i16(normalized.gyroscope->y, 1145.0F));
-        write_i16(report, payload_offset + 19U, scale_i16(normalized.gyroscope->z, 1145.0F));
+        write_i16(report, payload_offset + 15U, scale_i16(normalized.gyroscope->x, dualsense_gyroscope_scale));
+        write_i16(report, payload_offset + 17U, scale_i16(normalized.gyroscope->y, dualsense_gyroscope_scale));
+        write_i16(report, payload_offset + 19U, scale_i16(normalized.gyroscope->z, dualsense_gyroscope_scale));
       }
       if (normalized.acceleration) {
-        write_i16(report, payload_offset + 21U, scale_i16(normalized.acceleration->x, 100.0F));
-        write_i16(report, payload_offset + 23U, scale_i16(normalized.acceleration->y, 100.0F));
-        write_i16(report, payload_offset + 25U, scale_i16(normalized.acceleration->z, 100.0F));
+        write_i16(report, payload_offset + 21U, scale_i16(normalized.acceleration->x, dualsense_acceleration_scale));
+        write_i16(report, payload_offset + 23U, scale_i16(normalized.acceleration->y, dualsense_acceleration_scale));
+        write_i16(report, payload_offset + 25U, scale_i16(normalized.acceleration->z, dualsense_acceleration_scale));
       }
+      write_u32(report, payload_offset + 27U, dualsense_sensor_timestamp());
 
       write_dualsense_touch_contact(report, payload_offset + 32U, normalized.touchpad_contacts[0]);
       write_dualsense_touch_contact(report, payload_offset + 36U, normalized.touchpad_contacts[1]);

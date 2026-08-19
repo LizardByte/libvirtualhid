@@ -1698,13 +1698,42 @@ namespace lvh::detail::test {
     UhidGamepad gamepad {descriptors[0]};
     auto event = create_started_profile_uhid_gamepad(gamepad, 9, options, descriptors[1], BUS_BLUETOOTH, result);
 
+    GamepadState motion_state;
+    motion_state.acceleration = Vector3 {.x = 1.0F, .y = 2.0F, .z = 3.0F};
+    motion_state.gyroscope = Vector3 {.x = 4.0F, .y = 5.0F, .z = 6.0F};
+    const auto submitted_report = reports::pack_input_report(options.profile, motion_state);
+    result.submit_status = gamepad.submit(motion_state, submitted_report);
+
+    bool first_input_report_valid = false;
+    std::uint8_t first_sequence = 0;
+    std::uint32_t first_sensor_timestamp = 0;
+    std::array<std::uint8_t, 12> first_sensor_values {};
     if (read_uhid_event_type(descriptors[1], UHID_INPUT2, event)) {
       const auto report_size = static_cast<std::size_t>(event.u.input2.size);
       if (report_size == options.profile.input_report_size && event.u.input2.data[0] == 0x31) {
         const auto crc_offset = report_size - 4U;
         const auto expected_crc = crc32(std::span<const std::uint8_t> {event.u.input2.data, crc_offset}, playstation_crc_seed(0xA1));
         const auto actual_crc = read_u32_le(event.u.input2.data + crc_offset);
-        result.saw_dualsense_bluetooth_input = expected_crc == actual_crc;
+        std::copy_n(event.u.input2.data + 17U, first_sensor_values.size(), first_sensor_values.begin());
+        first_input_report_valid = expected_crc == actual_crc && std::equal(
+                                                                   first_sensor_values.begin(),
+                                                                   first_sensor_values.end(),
+                                                                   submitted_report.begin() + 17
+                                                                 );
+        first_sequence = event.u.input2.data[8];
+        first_sensor_timestamp = read_u32_le(event.u.input2.data + 29U);
+      }
+    }
+
+    if (read_uhid_event_type(descriptors[1], UHID_INPUT2, event)) {
+      const auto report_size = static_cast<std::size_t>(event.u.input2.size);
+      if (report_size == options.profile.input_report_size && event.u.input2.data[0] == 0x31) {
+        const auto crc_offset = report_size - 4U;
+        const auto expected_crc = crc32(std::span<const std::uint8_t> {event.u.input2.data, crc_offset}, playstation_crc_seed(0xA1));
+        const auto actual_crc = read_u32_le(event.u.input2.data + crc_offset);
+        result.saw_dualsense_bluetooth_input_with_live_sensor_metadata =
+          first_input_report_valid && expected_crc == actual_crc && event.u.input2.data[8] != first_sequence &&
+          read_u32_le(event.u.input2.data + 29U) != first_sensor_timestamp && std::equal(first_sensor_values.begin(), first_sensor_values.end(), event.u.input2.data + 17U);
       }
     }
 
@@ -1732,7 +1761,6 @@ namespace lvh::detail::test {
 
     result.close_status = gamepad.close();
     static_cast<void>(::close(descriptors[1]));
-    result.submit_status = OperationStatus::success();
     return result;
   }
 

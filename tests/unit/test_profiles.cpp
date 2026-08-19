@@ -176,8 +176,10 @@ TEST(ProfileTest, StreamingControllerProfilesArePresent) {
   EXPECT_EQ(dualshock4.vendor_id, 0x054C);
   EXPECT_EQ(dualshock4.product_id, 0x05C4);
   EXPECT_EQ(dualshock4.version, 0x0100);
-  EXPECT_EQ(dualshock4.input_report_size, 64U);
-  EXPECT_EQ(dualshock4.output_report_size, 32U);
+  EXPECT_EQ(dualshock4.bus_type, lvh::BusType::bluetooth);
+  EXPECT_EQ(dualshock4.report_id, 0x11);
+  EXPECT_EQ(dualshock4.input_report_size, 78U);
+  EXPECT_EQ(dualshock4.output_report_size, 78U);
   EXPECT_TRUE(dualshock4.capabilities.supports_motion);
   EXPECT_TRUE(dualshock4.capabilities.supports_touchpad);
   EXPECT_TRUE(dualshock4.capabilities.supports_rgb_led);
@@ -193,9 +195,20 @@ TEST(ProfileTest, StreamingControllerProfilesArePresent) {
   EXPECT_EQ(dualshock4_bluetooth.report_id, 0x11);
   EXPECT_EQ(dualshock4_bluetooth.input_report_size, 78U);
   EXPECT_EQ(dualshock4_bluetooth.output_report_size, 78U);
-  EXPECT_NE(dualshock4_bluetooth.report_descriptor, dualshock4.report_descriptor);
+  EXPECT_EQ(dualshock4_bluetooth.report_descriptor, dualshock4.report_descriptor);
+
+  const auto dualshock4_usb = lvh::profiles::dualshock4_usb();
+  EXPECT_EQ(dualshock4_usb.bus_type, lvh::BusType::usb);
+  EXPECT_EQ(dualshock4_usb.report_id, 0x01);
+  EXPECT_EQ(dualshock4_usb.input_report_size, 64U);
+  EXPECT_EQ(dualshock4_usb.output_report_size, 32U);
+  EXPECT_NE(dualshock4_usb.report_descriptor, dualshock4.report_descriptor);
 
   EXPECT_EQ(dualsense.vendor_id, 0x054C);
+  EXPECT_EQ(dualsense.bus_type, lvh::BusType::bluetooth);
+  EXPECT_EQ(dualsense.report_id, 0x31);
+  EXPECT_EQ(dualsense.input_report_size, 78U);
+  EXPECT_EQ(dualsense.output_report_size, 78U);
   EXPECT_TRUE(dualsense.capabilities.supports_motion);
   EXPECT_TRUE(dualsense.capabilities.supports_touchpad);
   EXPECT_TRUE(dualsense.capabilities.supports_rgb_led);
@@ -210,7 +223,14 @@ TEST(ProfileTest, StreamingControllerProfilesArePresent) {
   EXPECT_EQ(dualsense_bluetooth.report_id, 0x31);
   EXPECT_EQ(dualsense_bluetooth.input_report_size, 78U);
   EXPECT_EQ(dualsense_bluetooth.output_report_size, 78U);
-  EXPECT_NE(dualsense_bluetooth.report_descriptor, dualsense.report_descriptor);
+  EXPECT_EQ(dualsense_bluetooth.report_descriptor, dualsense.report_descriptor);
+
+  const auto dualsense_usb = lvh::profiles::dualsense_usb();
+  EXPECT_EQ(dualsense_usb.bus_type, lvh::BusType::usb);
+  EXPECT_EQ(dualsense_usb.report_id, 0x01);
+  EXPECT_EQ(dualsense_usb.input_report_size, 64U);
+  EXPECT_EQ(dualsense_usb.output_report_size, 48U);
+  EXPECT_NE(dualsense_usb.report_descriptor, dualsense.report_descriptor);
 
   EXPECT_EQ(switch_pro.vendor_id, 0x057E);
   EXPECT_EQ(switch_pro.product_id, 0x2009);

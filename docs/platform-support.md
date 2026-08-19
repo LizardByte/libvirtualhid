@@ -138,6 +138,17 @@ and control channels. Numbered control-channel output is normalized before
 parsing, whether the kernel includes the report number in the payload or
 provides it separately on the UHID event.
 
+The default DualShock 4 and DualSense profiles use Bluetooth framing, avoiding
+the parent-USB checks that can make virtual USB devices appear late in Steam.
+Explicit USB and Bluetooth factories remain available for consumers that
+require a particular transport. DualSense motion packing preserves the public
+meters-per-second-squared and degrees-per-second units while applying the same
+raw sensor calibration used by Inputtino. Periodic PlayStation reports are
+repacked at 100 Hz so their sequence number and sensor timestamp continue to
+advance even when controller state is unchanged. Periodic and application
+submissions are serialized so a repeated report cannot restore stale motion
+state after a newer application report.
+
 The backend opens `/dev/uhid` in nonblocking mode, matching the original
 asynchronous gamepad registration path. Its event reader is active before
 device registration begins, and creation does not report success until the

@@ -822,11 +822,12 @@ TEST_F(LinuxBackendTest, SocketpairBackedDualSenseRepliesToFeatureReports) {
 TEST_F(LinuxBackendTest, SocketpairBackedDualSenseBluetoothFramesReports) {
   const auto result = lvh::detail::test::linux_dualsense_bluetooth_uhid_socketpair_reports();
   EXPECT_TRUE(result.create_status.ok()) << result.create_status.message();
+  EXPECT_TRUE(result.submit_status.ok()) << result.submit_status.message();
   EXPECT_TRUE(result.close_status.ok()) << result.close_status.message();
   EXPECT_TRUE(result.creation.saw_create);
   EXPECT_TRUE(result.creation.waited_for_start);
   EXPECT_EQ(result.creation.name, "Wireless Controller");
-  EXPECT_TRUE(result.saw_dualsense_bluetooth_input);
+  EXPECT_TRUE(result.saw_dualsense_bluetooth_input_with_live_sensor_metadata);
   EXPECT_TRUE(result.saw_dualsense_pairing);
   EXPECT_TRUE(result.saw_dualsense_feature_crc);
 }
