@@ -618,12 +618,25 @@ namespace lvh::detail {
           return kCGEventLeftMouseDragged;
         }
         if (mouse_down_[1]) {
-          return kCGEventOtherMouseDragged;
-        }
-        if (mouse_down_[2]) {
           return kCGEventRightMouseDragged;
         }
+        if (mouse_down_[2]) {
+          return kCGEventOtherMouseDragged;
+        }
         return kCGEventMouseMoved;
+      }
+
+      CGMouseButton button_for_current_buttons() const {
+        if (mouse_down_[0]) {
+          return kCGMouseButtonLeft;
+        }
+        if (mouse_down_[1]) {
+          return kCGMouseButtonRight;
+        }
+        if (mouse_down_[2]) {
+          return kCGMouseButtonCenter;
+        }
+        return kCGMouseButtonLeft;
       }
 
       OperationStatus post_mouse(
@@ -660,13 +673,13 @@ namespace lvh::detail {
       OperationStatus submit_relative_motion(std::int32_t delta_x, std::int32_t delta_y) {
         const auto current = current_location();
         const auto location = CGPoint {current.x + delta_x, current.y + delta_y};
-        return post_mouse(kCGMouseButtonLeft, event_type_for_current_buttons(), location, current, 0);
+        return post_mouse(button_for_current_buttons(), event_type_for_current_buttons(), location, current, 0);
       }
 
       OperationStatus submit_absolute_motion(const MouseEvent &event) {
         const auto display_bounds = CGDisplayBounds(state_->display);
         const auto location = absolute_mouse_location(event, display_bounds);
-        return post_mouse(kCGMouseButtonLeft, event_type_for_current_buttons(), location, current_location(), 0);
+        return post_mouse(button_for_current_buttons(), event_type_for_current_buttons(), location, current_location(), 0);
       }
 
       OperationStatus submit_button(const MouseEvent &event) {
