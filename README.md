@@ -43,8 +43,8 @@ behind backend implementations.
 ## 🎮 Capabilities
 
 - Gamepad profiles for generic HID, Xbox 360, Xbox One, Xbox Series,
-  DualShock 4, DualSense, and Nintendo Switch Pro-style controllers.
-- Descriptor-driven PlayStation gamepads through Linux `uhid`; Generic, Xbox,
+  DualShock 4, DualSense, Nintendo Switch Pro-style, and Steam Deck controllers.
+- Descriptor-driven PlayStation and Steam Deck gamepads through Linux `uhid`; Generic, Xbox,
   and Switch Pro gamepads plus keyboard, mouse, touchscreen, trackpad, and pen
   tablet devices through `uinput`.
 - Windows gamepads through a user-mode UMDF2 control driver backed by Virtual
@@ -149,6 +149,7 @@ Alternatives exist if `libvirtualhid` does not meet your needs.
 | DualShock 4 gamepad               | ✅                                                | ✅                                                | ✅                                                       | ❌                                                        | ✅<sup><a href="#alternatives-note-4">4</a></sup> |
 | DualSense gamepad                 | ✅                                                | ❌                                                | ✅                                                       | ✅                                                        | ✅<sup><a href="#alternatives-note-4">4</a></sup> |
 | Nintendo Switch Pro-style gamepad | ✅                                                | ❌                                                | ✅                                                       | ✅                                                        | ✅<sup><a href="#alternatives-note-4">4</a></sup> |
+| Steam Deck gamepad                | ✅                                                | ❌                                                | ❌                                                       | ❌                                                        | ❌                                                |
 | Rumble or output callbacks        | ✅                                                | ❌                                                | ✅                                                       | ✅                                                        | ✅<sup><a href="#alternatives-note-4">4</a></sup> |
 | Data-driven profiles              | ❌                                                | ❌                                                | ✅                                                       | ❌                                                        | ❌                                                |
 | Actively developed                | ✅                                                | ❌                                                | ✅                                                       | ✅                                                        | ✅                                                |

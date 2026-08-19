@@ -191,6 +191,51 @@ TEST(ReportTest, PacksSwitchProReport) {
   EXPECT_EQ(report[11], 0x40U);
 }
 
+TEST(ReportTest, PacksSteamDeckNativeReport) {
+  using enum lvh::GamepadButton;
+
+  const auto profile = lvh::profiles::steam_deck();
+  lvh::GamepadState state;
+  for (const auto button : {a, b, x, y, left_shoulder, right_shoulder, dpad_up, dpad_right, dpad_left, dpad_down, back, guide, start, left_stick, right_stick, touchpad, misc1, paddle1, paddle2, paddle3, paddle4}) {
+    state.buttons.set(button);
+  }
+  state.left_stick = {1.0F, -1.0F};
+  state.right_stick = {0.5F, -0.5F};
+  state.left_trigger = 0.25F;
+  state.right_trigger = 1.0F;
+  state.acceleration = lvh::Vector3 {.x = 9.80665F, .y = 0.0F, .z = -9.80665F};
+  state.gyroscope = lvh::Vector3 {.x = 1000.0F, .y = -500.0F, .z = 250.0F};
+  state.touchpad_contacts[0] = {.id = 1U, .active = true, .x = 0.75F, .y = 0.25F};
+  state.touchpad_contacts[1] = {.id = 2U, .active = true, .x = 0.25F, .y = 0.75F};
+
+  const auto report = lvh::reports::pack_input_report(profile, state);
+
+  ASSERT_EQ(report.size(), 64U);
+  EXPECT_EQ(read_u16_le(report, 0U), 1U);
+  EXPECT_EQ(report[2], 9U);
+  EXPECT_EQ(report[3], 64U);
+  EXPECT_EQ(read_u32_le(report, 8U), 0x045BFFFFU);
+  EXPECT_EQ(read_u32_le(report, 12U), 0x00040600U);
+  EXPECT_EQ(read_u16_le(report, 16U), 0x4000U);
+  EXPECT_EQ(read_u16_le(report, 18U), 0x4000U);
+  EXPECT_EQ(read_u16_le(report, 20U), 0xC000U);
+  EXPECT_EQ(read_u16_le(report, 22U), 0xC000U);
+  EXPECT_EQ(read_u16_le(report, 24U), 0x4000U);
+  EXPECT_EQ(read_u16_le(report, 26U), 0x4000U);
+  EXPECT_EQ(read_u16_le(report, 28U), 0U);
+  EXPECT_EQ(read_u16_le(report, 30U), 0x4000U);
+  EXPECT_EQ(read_u16_le(report, 32U), 0xF000U);
+  EXPECT_EQ(read_u16_le(report, 34U), 0xE000U);
+  EXPECT_EQ(read_u16_le(report, 44U), 8192U);
+  EXPECT_EQ(read_u16_le(report, 46U), 32767U);
+  EXPECT_EQ(read_u16_le(report, 48U), 0x7FFFU);
+  EXPECT_EQ(read_u16_le(report, 50U), 0x8000U);
+  EXPECT_EQ(read_u16_le(report, 52U), 0x4000U);
+  EXPECT_EQ(read_u16_le(report, 54U), 0xC000U);
+  EXPECT_EQ(read_u16_le(report, 56U), 0x7FFFU);
+  EXPECT_EQ(read_u16_le(report, 58U), 0x7FFFU);
+}
+
 TEST(ReportTest, PacksXboxGipNeutralReport) {
   const auto profile = lvh::profiles::xbox_series();
 
@@ -347,6 +392,29 @@ TEST(ReportTest, ParsesRumbleOutputReport) {
   EXPECT_EQ(output.low_frequency_rumble, 0x1234);
   EXPECT_EQ(output.high_frequency_rumble, 0xABCD);
   EXPECT_EQ(output.raw_report, report);
+}
+
+TEST(ReportTest, ParsesSteamDeckRumbleFeatureReport) {
+  const auto profile = lvh::profiles::steam_deck();
+  std::vector<std::uint8_t> report(profile.output_report_size, 0U);
+  report[0] = 0xEBU;
+  report[5] = 0x34U;
+  report[6] = 0x12U;
+  report[7] = 0xCDU;
+  report[8] = 0xABU;
+
+  const auto output = lvh::reports::parse_output_report(profile, report);
+
+  EXPECT_EQ(output.kind, lvh::GamepadOutputKind::rumble);
+  EXPECT_EQ(output.low_frequency_rumble, 0x1234U);
+  EXPECT_EQ(output.high_frequency_rumble, 0xABCDU);
+  EXPECT_EQ(output.raw_report, report);
+
+  report.insert(report.begin(), 0U);
+  const auto report_id_prefixed_output = lvh::reports::parse_output_report(profile, report);
+  EXPECT_EQ(report_id_prefixed_output.kind, lvh::GamepadOutputKind::rumble);
+  EXPECT_EQ(report_id_prefixed_output.low_frequency_rumble, 0x1234U);
+  EXPECT_EQ(report_id_prefixed_output.high_frequency_rumble, 0xABCDU);
 }
 
 TEST(ReportTest, ParsesPidRumbleReports) {

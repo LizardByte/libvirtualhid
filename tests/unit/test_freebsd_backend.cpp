@@ -64,6 +64,7 @@ TEST(FreeBsdBackendTest, CreatesEveryGamepadWithTheExpectedPlayStationSubset) {
     lvh::profiles::dualshock4(),
     lvh::profiles::dualsense(),
     lvh::profiles::switch_pro(),
+    lvh::profiles::steam_deck(),
   };
 
   for (const auto &profile : profiles) {

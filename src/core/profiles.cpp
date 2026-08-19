@@ -41,6 +41,10 @@ namespace lvh::profiles {
 
     constexpr std::size_t switch_pro_output_report_size = 64;
 
+    constexpr std::size_t steam_deck_input_report_size = 64;
+
+    constexpr std::size_t steam_deck_feature_report_size = 64;
+
     constexpr std::size_t dualshock4_usb_input_report_size = 64;
 
     constexpr std::size_t dualshock4_usb_output_report_size = 32;
@@ -267,6 +271,205 @@ namespace lvh::profiles {
         "953f9183858009057508953f9183858209067508953f9183c0";
 
       return bytes_from_hex(descriptor);
+    }
+
+    std::vector<std::uint8_t> make_steam_deck_report_descriptor() {
+      // Keep Valve's unnumbered 64-byte native packet layout, but expose its
+      // controls from a Generic Desktop/Game Pad top-level collection. This
+      // lets generic HID consumers (including the Windows game-controller
+      // control panel) classify the endpoint when Valve-specific HIDAPI
+      // handling is unavailable.
+      return {
+        0x05,
+        0x01,  // Usage Page (Generic Desktop)
+        0x09,
+        0x05,  // Usage (Game Pad)
+        0xA1,
+        0x01,  // Collection (Application)
+
+        // Native header and packet sequence (bytes 0-7).
+        0x75,
+        0x08,  // Report Size (8)
+        0x95,
+        0x08,  // Report Count (8)
+        0x81,
+        0x03,  // Input (Const,Var,Abs)
+
+        // Native button bitfields (bytes 8-15). Constants preserve every
+        // native bit offset while named Button usages provide a generic view.
+        0x05,
+        0x09,  // Usage Page (Button)
+        0x75,
+        0x01,  // Report Size (1)
+        0x95,
+        0x02,
+        0x81,
+        0x03,  // Input (Const,Var,Abs)
+        0x09,
+        0x06,  // Right shoulder
+        0x09,
+        0x05,  // Left shoulder
+        0x09,
+        0x04,  // Y
+        0x09,
+        0x02,  // B
+        0x09,
+        0x03,  // X
+        0x09,
+        0x01,  // A
+        0x95,
+        0x06,
+        0x81,
+        0x02,  // Input (Data,Var,Abs)
+        0x09,
+        0x0C,  // D-pad up
+        0x09,
+        0x0F,  // D-pad right
+        0x09,
+        0x0E,  // D-pad left
+        0x09,
+        0x0D,  // D-pad down
+        0x09,
+        0x07,  // Back
+        0x09,
+        0x0B,  // Guide
+        0x09,
+        0x08,  // Start
+        0x09,
+        0x14,  // L5
+        0x95,
+        0x08,
+        0x81,
+        0x02,
+        0x09,
+        0x13,  // R5
+        0x09,
+        0x10,  // Left pad click
+        0x95,
+        0x02,
+        0x81,
+        0x02,
+        0x95,
+        0x04,
+        0x81,
+        0x03,
+        0x09,
+        0x09,  // Left stick click
+        0x95,
+        0x01,
+        0x81,
+        0x02,
+        0x95,
+        0x03,
+        0x81,
+        0x03,
+        0x09,
+        0x0A,  // Right stick click
+        0x95,
+        0x01,
+        0x81,
+        0x02,
+        0x95,
+        0x0E,
+        0x81,
+        0x03,
+        0x09,
+        0x12,  // L4
+        0x09,
+        0x11,  // R4
+        0x95,
+        0x02,
+        0x81,
+        0x02,
+        0x95,
+        0x07,
+        0x81,
+        0x03,
+        0x09,
+        0x15,  // Quick Access
+        0x95,
+        0x01,
+        0x81,
+        0x02,
+        0x95,
+        0x0D,
+        0x81,
+        0x03,
+
+        // Native touch and motion fields (bytes 16-43).
+        0x75,
+        0x08,
+        0x95,
+        0x1C,
+        0x81,
+        0x03,
+
+        // Full-range native trigger values (bytes 44-47).
+        0x05,
+        0x01,  // Usage Page (Generic Desktop)
+        0x15,
+        0x00,  // Logical Minimum (0)
+        0x26,
+        0xFF,
+        0x7F,  // Logical Maximum (32767)
+        0x75,
+        0x10,  // Report Size (16)
+        0x95,
+        0x02,
+        0x09,
+        0x32,  // Usage (Z)
+        0x09,
+        0x35,  // Usage (Rz)
+        0x81,
+        0x02,
+
+        // Native signed stick values (bytes 48-55).
+        0x16,
+        0x00,
+        0x80,  // Logical Minimum (-32768)
+        0x26,
+        0xFF,
+        0x7F,  // Logical Maximum (32767)
+        0x95,
+        0x04,
+        0x09,
+        0x30,  // Usage (X)
+        0x09,
+        0x31,  // Usage (Y)
+        0x09,
+        0x33,  // Usage (Rx)
+        0x09,
+        0x34,  // Usage (Ry)
+        0x81,
+        0x02,
+
+        // Native pressure values and spare bytes (bytes 56-63).
+        0x75,
+        0x08,
+        0x95,
+        0x08,
+        0x81,
+        0x03,
+
+        // Valve's unnumbered 64-byte feature report.
+        0x06,
+        0x00,
+        0xFF,  // Usage Page (Vendor Defined 0xFF00)
+        0x15,
+        0x00,
+        0x26,
+        0xFF,
+        0x00,
+        0x75,
+        0x08,
+        0x95,
+        0x40,
+        0x09,
+        0x02,  // Usage (Vendor Usage 2)
+        0xB1,
+        0x02,  // Feature (Data,Var,Abs)
+        0xC0,  // End Collection
+      };
     }
 
     std::vector<std::uint8_t> make_gamepad_report_descriptor(std::uint8_t report_id, bool supports_rumble) {
@@ -2036,6 +2239,28 @@ namespace lvh::profiles {
       return profile;
     }
 
+    DeviceProfile make_steam_deck_profile() {
+      DeviceProfile profile;
+      profile.device_type = DeviceType::gamepad;
+      profile.gamepad_kind = GamepadProfileKind::steam_deck;
+      profile.bus_type = BusType::usb;
+      profile.vendor_id = 0x28DE;
+      profile.product_id = 0x1205;
+      profile.version = 0x0100;
+      profile.report_id = 0;
+      profile.input_report_size = steam_deck_input_report_size;
+      profile.output_report_size = steam_deck_feature_report_size;
+      profile.name = "(libvirtualhid) Steam Deck Controller";
+      profile.manufacturer = "Valve Software";
+      profile.capabilities = {
+        .supports_rumble = true,
+        .supports_motion = true,
+        .supports_touchpad = true,
+      };
+      profile.report_descriptor = make_steam_deck_report_descriptor();
+      return profile;
+    }
+
     DeviceProfile make_simple_profile(DeviceType device_type, std::string name, std::uint16_t product_id) {
       DeviceProfile profile;
       profile.device_type = device_type;
@@ -2124,6 +2349,10 @@ namespace lvh::profiles {
     return make_switch_pro_profile();
   }
 
+  DeviceProfile steam_deck() {
+    return make_steam_deck_profile();
+  }
+
   DeviceProfile keyboard() {
     return make_simple_profile(DeviceType::keyboard, "libvirtualhid Keyboard", 0x0002);
   }
@@ -2160,6 +2389,8 @@ namespace lvh::profiles {
         return dualsense();
       case GamepadProfileKind::switch_pro:
         return switch_pro();
+      case GamepadProfileKind::steam_deck:
+        return steam_deck();
     }
 
     return std::nullopt;
@@ -2174,6 +2405,7 @@ namespace lvh::profiles {
       dualshock4(),
       dualsense(),
       switch_pro(),
+      steam_deck(),
     };
   }
 

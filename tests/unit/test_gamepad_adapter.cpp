@@ -19,6 +19,7 @@ TEST(GamepadAdapterTest, ReportsProfileSupport) {
   const auto dualshock4 = lvh::profiles::dualshock4();
   const auto dualsense = lvh::profiles::dualsense();
   const auto switch_pro = lvh::profiles::switch_pro();
+  const auto steam_deck = lvh::profiles::steam_deck();
   const auto keyboard = lvh::profiles::keyboard();
 
   const auto generic_support = lvh::gamepad_profile_support(generic);
@@ -56,6 +57,14 @@ TEST(GamepadAdapterTest, ReportsProfileSupport) {
   EXPECT_TRUE(switch_pro_support.supports_battery);
   EXPECT_TRUE(switch_pro_support.supports_misc1_button);
 
+  const auto steam_deck_support = lvh::gamepad_profile_support(steam_deck);
+  EXPECT_TRUE(steam_deck_support.supports_rumble);
+  EXPECT_TRUE(steam_deck_support.supports_motion);
+  EXPECT_TRUE(steam_deck_support.supports_touchpad);
+  EXPECT_TRUE(steam_deck_support.supports_touchpad_button);
+  EXPECT_TRUE(steam_deck_support.supports_misc1_button);
+  EXPECT_EQ(steam_deck_support.supported_rear_paddle_count, 4U);
+
   const auto keyboard_support = lvh::gamepad_profile_support(keyboard);
   EXPECT_FALSE(keyboard_support.supports_rumble);
   EXPECT_FALSE(keyboard_support.supports_motion);
@@ -74,6 +83,7 @@ TEST(GamepadAdapterTest, ChecksButtonsAndOutputsByProfile) {
   const auto dualshock4 = lvh::profiles::dualshock4();
   const auto dualsense = lvh::profiles::dualsense();
   const auto switch_pro = lvh::profiles::switch_pro();
+  const auto steam_deck = lvh::profiles::steam_deck();
   const auto keyboard = lvh::profiles::keyboard();
 
   EXPECT_TRUE(lvh::supports_gamepad_button(xbox, lvh::GamepadButton::guide));
@@ -98,6 +108,9 @@ TEST(GamepadAdapterTest, ChecksButtonsAndOutputsByProfile) {
   EXPECT_TRUE(lvh::supports_gamepad_output(dualsense, lvh::GamepadOutputKind::adaptive_triggers));
   EXPECT_TRUE(lvh::supports_gamepad_output(switch_pro, lvh::GamepadOutputKind::rumble));
   EXPECT_TRUE(lvh::supports_gamepad_output(switch_pro, lvh::GamepadOutputKind::raw_report));
+  EXPECT_TRUE(lvh::supports_gamepad_button(steam_deck, lvh::GamepadButton::touchpad));
+  EXPECT_TRUE(lvh::supports_gamepad_button(steam_deck, lvh::GamepadButton::paddle4));
+  EXPECT_TRUE(lvh::supports_gamepad_output(steam_deck, lvh::GamepadOutputKind::rumble));
   EXPECT_TRUE(lvh::supports_gamepad_output(generic, lvh::GamepadOutputKind::raw_report));
   EXPECT_FALSE(lvh::supports_gamepad_output(keyboard, lvh::GamepadOutputKind::rumble));
   EXPECT_FALSE(lvh::supports_gamepad_output(generic, static_cast<lvh::GamepadOutputKind>(255)));

@@ -80,7 +80,7 @@ namespace lvh::windows::broker_validation {
     const auto known_bus = request.bus_type == LVH_WINDOWS_BUS_UNKNOWN ||
                            request.bus_type == LVH_WINDOWS_BUS_USB ||
                            request.bus_type == LVH_WINDOWS_BUS_BLUETOOTH;
-    const auto known_profile = request.gamepad_kind <= LVH_WINDOWS_GAMEPAD_DUALSHOCK4;
+    const auto known_profile = request.gamepad_kind <= LVH_WINDOWS_GAMEPAD_STEAM_DECK;
 
     return request.version == LVH_WINDOWS_CONTROL_PROTOCOL_VERSION &&
            request.size == sizeof(request) &&

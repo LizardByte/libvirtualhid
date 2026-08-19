@@ -126,6 +126,11 @@ namespace lvh::detail {
         return submit_reports_.size();
       }
 
+      std::vector<std::vector<std::uint8_t>> submit_reports() const {
+        std::lock_guard lock {mutex_};
+        return submit_reports_;
+      }
+
       std::size_t destroy_request_count() const {
         std::lock_guard lock {mutex_};
         return destroyed_ids_.size();
@@ -491,6 +496,62 @@ namespace lvh::detail {
         result.destroy_requests = command_state->destroy_request_count();
       }
 
+      return result;
+    }
+
+    WindowsSteamDeckPeriodicReportResult windows_backend_steam_deck_periodic_reports() {
+      WindowsSteamDeckPeriodicReportResult result;
+      auto command_state = std::make_shared<FakeWindowsControlChannelState>();
+      auto event_state = std::make_shared<FakeWindowsControlChannelState>();
+      auto backend = make_fake_windows_backend(command_state, event_state);
+
+      CreateGamepadOptions options;
+      options.profile = profiles::steam_deck();
+      auto created = backend->create_gamepad(31, options);
+      result.create_status = created.status;
+      if (!created) {
+        return result;
+      }
+      result.reports_immediately_after_create = command_state->submit_report_count();
+
+      static_cast<void>(wait_until([&command_state] {
+        return command_state->submit_report_count() >= 2U;
+      }));
+      result.reports_before_submit = command_state->submit_report_count();
+
+      const auto report = reports::pack_input_report(options.profile, {});
+      result.submit_status = created.gamepad->submit({}, report);
+      static_cast<void>(wait_until([&command_state, &result] {
+        return command_state->submit_report_count() >= result.reports_before_submit + 2U;
+      }));
+
+      result.close_status = created.gamepad->close();
+      result.reports_before_close = command_state->submit_report_count();
+      const auto submitted_reports = command_state->submit_reports();
+      result.packet_numbers_advance = submitted_reports.size() >= 2U;
+      auto previous_packet_number = std::uint32_t {};
+      for (std::size_t report_index = 0; report_index < submitted_reports.size(); ++report_index) {
+        const auto &submitted_report = submitted_reports[report_index];
+        if (submitted_report.size() < steam_deck_packet_number_offset + sizeof(std::uint32_t)) {
+          result.packet_numbers_advance = false;
+          break;
+        }
+
+        auto packet_number = std::uint32_t {};
+        for (std::size_t byte_index = 0; byte_index < sizeof(packet_number); ++byte_index) {
+          packet_number |= static_cast<std::uint32_t>(
+                             submitted_report[steam_deck_packet_number_offset + byte_index]
+                           )
+                           << (byte_index * 8U);
+        }
+        if (report_index > 0U && packet_number <= previous_packet_number) {
+          result.packet_numbers_advance = false;
+          break;
+        }
+        previous_packet_number = packet_number;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds {12});
+      result.reports_after_close = command_state->submit_report_count();
       return result;
     }
 

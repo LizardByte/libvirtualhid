@@ -113,6 +113,10 @@ TEST(WindowsProtocolTest, MapsBusTypesAndGamepadKinds) {
     LVH_WINDOWS_GAMEPAD_SWITCH_PRO
   );
   EXPECT_EQ(
+    lvh::detail::windows::protocol_gamepad_kind(lvh::GamepadProfileKind::steam_deck),
+    LVH_WINDOWS_GAMEPAD_STEAM_DECK
+  );
+  EXPECT_EQ(
     lvh::detail::windows::protocol_gamepad_kind(static_cast<lvh::GamepadProfileKind>(255)),
     LVH_WINDOWS_GAMEPAD_GENERIC
   );

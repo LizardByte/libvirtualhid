@@ -67,6 +67,14 @@ namespace lvh::reports {
 
     constexpr std::size_t switch_rumble_output_report_size = 10;
 
+    constexpr std::uint8_t steam_deck_input_report_version = 0x01;
+
+    constexpr std::uint8_t steam_deck_state_report_type = 0x09;
+
+    constexpr std::uint8_t steam_deck_rumble_feature_type = 0xEB;
+
+    constexpr std::size_t steam_deck_report_size = 64;
+
     // SDL maps 16-bit rumble strengths to Nintendo's shared 101-step amplitude
     // scale. This is the inverse table for the packed high- and low-band values:
     // https://github.com/libsdl-org/SDL/blob/main/src/joystick/hidapi/SDL_hidapi_switch.c
@@ -287,6 +295,16 @@ namespace lvh::reports {
 
     std::uint16_t scale_output_byte(std::uint8_t value) {
       return static_cast<std::uint16_t>(std::lround((static_cast<float>(value) / 255.0F) * 65535.0F));
+    }
+
+    std::optional<std::size_t> steam_deck_feature_payload_offset(const std::vector<std::uint8_t> &report) {
+      if (report.size() >= 9U && report[0] == steam_deck_rumble_feature_type) {
+        return 0U;
+      }
+      if (report.size() >= 10U && report[0] == 0U && report[1] == steam_deck_rumble_feature_type) {
+        return 1U;
+      }
+      return std::nullopt;
     }
 
     constexpr std::size_t pid_rumble_payload_size = 8;
@@ -1060,6 +1078,100 @@ namespace lvh::reports {
     return static_cast<std::uint8_t>(std::lround((static_cast<float>(battery->percentage) / 100.0F) * 255.0F));
   }
 
+  std::vector<std::uint8_t> pack_steam_deck_input_report(const DeviceProfile &profile, const GamepadState &state) {
+    if (profile.input_report_size < steam_deck_report_size) {
+      return {};
+    }
+
+    const auto normalized = normalize_state(state);
+    const auto acceleration = normalized.acceleration.value_or(Vector3 {.x = 0.0F, .y = 9.80665F, .z = 0.0F});
+    const auto gyroscope = normalized.gyroscope.value_or(Vector3 {});
+
+    ByteReport report(profile.input_report_size, zero_byte);
+    write_u16(report, 0U, steam_deck_input_report_version);
+    report[2] = to_byte(steam_deck_state_report_type);
+    report[3] = to_byte(static_cast<std::uint8_t>(steam_deck_report_size));
+
+    std::uint32_t buttons_low = 0U;
+    std::uint32_t buttons_high = 0U;
+    const auto set_low = [&](GamepadButton button, std::uint32_t mask) {
+      if (normalized.buttons.test(button)) {
+        buttons_low |= mask;
+      }
+    };
+    const auto set_high = [&](GamepadButton button, std::uint32_t mask) {
+      if (normalized.buttons.test(button)) {
+        buttons_high |= mask;
+      }
+    };
+
+    set_low(GamepadButton::a, 0x00000080U);
+    set_low(GamepadButton::b, 0x00000020U);
+    set_low(GamepadButton::x, 0x00000040U);
+    set_low(GamepadButton::y, 0x00000010U);
+    set_low(GamepadButton::left_shoulder, 0x00000008U);
+    set_low(GamepadButton::right_shoulder, 0x00000004U);
+    set_low(GamepadButton::dpad_up, 0x00000100U);
+    set_low(GamepadButton::dpad_right, 0x00000200U);
+    set_low(GamepadButton::dpad_left, 0x00000400U);
+    set_low(GamepadButton::dpad_down, 0x00000800U);
+    set_low(GamepadButton::back, 0x00001000U);
+    set_low(GamepadButton::guide, 0x00002000U);
+    set_low(GamepadButton::start, 0x00004000U);
+    set_low(GamepadButton::left_stick, 0x00400000U);
+    set_low(GamepadButton::right_stick, 0x04000000U);
+    set_low(GamepadButton::touchpad, 0x00020000U);  // Left trackpad click.
+    set_low(GamepadButton::paddle3, 0x00010000U);  // R5.
+    set_low(GamepadButton::paddle4, 0x00008000U);  // L5.
+    set_high(GamepadButton::misc1, 0x00040000U);  // Quick Access Menu.
+    set_high(GamepadButton::paddle1, 0x00000400U);  // R4.
+    set_high(GamepadButton::paddle2, 0x00000200U);  // L4.
+
+    if (normalized.right_trigger > 0.0F) {
+      buttons_low |= 0x00000001U;
+    }
+    if (normalized.left_trigger > 0.0F) {
+      buttons_low |= 0x00000002U;
+    }
+    if (normalized.touchpad_contacts[0].active) {
+      buttons_low |= 0x00080000U;
+    }
+    if (normalized.touchpad_contacts[1].active) {
+      buttons_low |= 0x00100000U;
+    }
+
+    write_u32(report, 8U, buttons_low);
+    write_u32(report, 12U, buttons_high);
+
+    const auto write_touch_contact = [&](std::size_t offset, const GamepadTouchContact &contact) {
+      write_i16(report, offset, normalize_axis(contact.x * 2.0F - 1.0F));
+      write_i16(report, offset + 2U, normalize_axis(1.0F - contact.y * 2.0F));
+    };
+    write_touch_contact(16U, normalized.touchpad_contacts[0]);
+    write_touch_contact(20U, normalized.touchpad_contacts[1]);
+
+    constexpr auto acceleration_scale = 16384.0F / 9.80665F;
+    write_i16(report, 24U, scale_i16(acceleration.x, acceleration_scale));
+    write_i16(report, 26U, scale_i16(-acceleration.z, acceleration_scale));
+    write_i16(report, 28U, scale_i16(acceleration.y, acceleration_scale));
+
+    constexpr auto gyroscope_scale = 32768.0F / 2000.0F;
+    write_i16(report, 30U, scale_i16(gyroscope.x, gyroscope_scale));
+    write_i16(report, 32U, scale_i16(-gyroscope.z, gyroscope_scale));
+    write_i16(report, 34U, scale_i16(gyroscope.y, gyroscope_scale));
+
+    write_u16(report, 44U, static_cast<std::uint16_t>(std::lround(normalized.left_trigger * 32767.0F)));
+    write_u16(report, 46U, static_cast<std::uint16_t>(std::lround(normalized.right_trigger * 32767.0F)));
+    write_i16(report, 48U, normalize_axis(normalized.left_stick.x));
+    write_i16(report, 50U, normalize_axis(normalized.left_stick.y));
+    write_i16(report, 52U, normalize_axis(normalized.right_stick.x));
+    write_i16(report, 54U, normalize_axis(normalized.right_stick.y));
+    write_u16(report, 56U, normalized.touchpad_contacts[0].active ? 0x7FFFU : 0U);
+    write_u16(report, 58U, normalized.touchpad_contacts[1].active ? 0x7FFFU : 0U);
+
+    return to_uint8_report(report);
+  }
+
   std::uint16_t dpad_hat_bits(const ButtonSet &buttons) {
     const auto hat = to_byte(hat_from_buttons(buttons));
     return static_cast<std::uint16_t>(std::to_integer<std::uint16_t>(hat) << 12U);
@@ -1213,6 +1325,8 @@ namespace lvh::reports {
           return pack_dualsense_input_report(profile, state);
         case switch_pro:
           return pack_switch_pro_input_report(profile, state);
+        case steam_deck:
+          return pack_steam_deck_input_report(profile, state);
         case generic:
           return pack_standard_gamepad_input_report(profile, state);
         case xbox_360:
@@ -1281,6 +1395,18 @@ namespace lvh::reports {
         output.kind = GamepadOutputKind::rumble;
         output.low_frequency_rumble = rumble->low_frequency;
         output.high_frequency_rumble = rumble->high_frequency;
+        output.raw_report = report;
+        outputs.push_back(std::move(output));
+        return outputs;
+      }
+    }
+
+    if (profile.gamepad_kind == GamepadProfileKind::steam_deck) {
+      if (const auto offset = steam_deck_feature_payload_offset(report); offset.has_value()) {
+        GamepadOutput output;
+        output.kind = GamepadOutputKind::rumble;
+        output.low_frequency_rumble = read_u16(report, *offset + 5U);
+        output.high_frequency_rumble = read_u16(report, *offset + 7U);
         output.raw_report = report;
         outputs.push_back(std::move(output));
         return outputs;

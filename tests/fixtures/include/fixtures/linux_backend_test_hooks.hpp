@@ -227,6 +227,16 @@ namespace lvh::detail::test {
     bool saw_dualshock4_usb_input = false;
 
     /**
+     * @brief Whether the peer observed a native Steam Deck input report.
+     */
+    bool saw_steam_deck_input = false;
+
+    /**
+     * @brief Whether the peer observed the Steam Deck unit-serial feature reply.
+     */
+    bool saw_steam_deck_serial = false;
+
+    /**
      * @brief Whether the peer observed a set-report reply.
      */
     bool saw_set_report_reply = false;
@@ -830,6 +840,13 @@ namespace lvh::detail::test {
    * @return Round-trip result with feature-report observations.
    */
   LinuxUhidRoundTripResult linux_dualsense_uhid_socketpair_reports();
+
+  /**
+   * @brief Exercise Steam Deck UHID input, feature, and rumble reports over a socketpair.
+   *
+   * @return Round-trip result with native Deck protocol observations.
+   */
+  LinuxUhidRoundTripResult linux_steam_deck_uhid_socketpair_reports();
 
   /**
    * @brief Exercise Bluetooth DualSense UHID framing and signed feature replies over a socketpair.

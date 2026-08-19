@@ -31,6 +31,7 @@
 #include "platform/windows/keylayout.hpp"
 #include "platform/windows/shared/generic_pid_rumble.hpp"
 #include "platform/windows/windows_broker_client.hpp"
+#include "shared/steam_deck_feature_reports.hpp"
 
 #include <libvirtualhid/profiles.hpp>
 #include <libvirtualhid/report.hpp>
@@ -918,6 +919,8 @@ namespace lvh::detail {
           path {std::move(device_path)} {
         if (profile.gamepad_kind == GamepadProfileKind::generic && profile.capabilities.supports_rumble) {
           uses_generic_pid = !windows::make_generic_pid_report_descriptor(profile.report_descriptor).empty();
+        } else if (profile.gamepad_kind == GamepadProfileKind::steam_deck) {
+          last_input_report = make_steam_deck_neutral_input_report();
         }
       }
 
@@ -932,6 +935,8 @@ namespace lvh::detail {
       LvhWindowsSessionToken token {};
       DeviceProfile profile;
       std::string path;
+      std::vector<std::uint8_t> last_input_report;
+      std::uint32_t steam_deck_packet_number = 0;
       bool open = true;
       OutputCallback output_callback;
       bool uses_generic_pid = false;
@@ -942,7 +947,17 @@ namespace lvh::detail {
     public:
       WindowsGamepad(std::shared_ptr<WindowsBackendContext> context, std::shared_ptr<WindowsGamepadState> state):
           context_ {std::move(context)},
-          state_ {std::move(state)} {}
+          state_ {std::move(state)} {
+        if (state_->profile.gamepad_kind == GamepadProfileKind::steam_deck) {
+          periodic_reporter_ = std::jthread {[this](std::stop_token stop_token) {
+            periodic_report_loop(stop_token);
+          }};
+        }
+      }
+
+      ~WindowsGamepad() override {
+        static_cast<void>(close());
+      }
 
       OperationStatus submit(
         const GamepadState &state,
@@ -953,8 +968,12 @@ namespace lvh::detail {
       OperationStatus close() override;
 
     private:
+      void periodic_report_loop(std::stop_token stop_token);
+
       std::shared_ptr<WindowsBackendContext> context_;
       std::shared_ptr<WindowsGamepadState> state_;
+      std::mutex submit_mutex_;
+      std::jthread periodic_reporter_;
     };
 
     class WindowsBackendContext: public std::enable_shared_from_this<WindowsBackendContext> {
@@ -1028,6 +1047,16 @@ namespace lvh::detail {
           options.profile,
           response.device_path[0] == '\0' ? command_channel_->path() : std::string {response.device_path.data()}
         );
+
+        if (state->profile.gamepad_kind == GamepadProfileKind::steam_deck) {
+          static_cast<void>(
+            stamp_steam_deck_packet_number(state->last_input_report, ++state->steam_deck_packet_number)
+          );
+          if (const auto status = submit_gamepad_report(state, state->last_input_report); !status.ok()) {
+            static_cast<void>(command_channel_->destroy_device(state->driver_id, state->token));
+            return {status, nullptr};
+          }
+        }
 
         {
           std::lock_guard lock {devices_mutex_};
@@ -1224,6 +1253,8 @@ namespace lvh::detail {
     ) {
       using enum ErrorCode;
 
+      std::lock_guard submit_lock {submit_mutex_};
+      auto submitted_report = report;
       {
         std::lock_guard lock {state_->mutex_};
         if (!state_->open) {
@@ -1235,11 +1266,42 @@ namespace lvh::detail {
         }
 
         if (state_->uses_generic_pid) {
-          return context_->submit_gamepad_report(state_, windows::make_generic_windows_input_report(report));
+          submitted_report = windows::make_generic_windows_input_report(report);
+        } else if (state_->profile.gamepad_kind == GamepadProfileKind::steam_deck) {
+          static_cast<void>(stamp_steam_deck_packet_number(submitted_report, ++state_->steam_deck_packet_number));
         }
       }
 
-      return context_->submit_gamepad_report(state_, report);
+      auto status = context_->submit_gamepad_report(state_, submitted_report);
+      if (status.ok() && state_->profile.gamepad_kind == GamepadProfileKind::steam_deck) {
+        std::lock_guard lock {state_->mutex_};
+        state_->last_input_report = std::move(submitted_report);
+      }
+      return status;
+    }
+
+    void WindowsGamepad::periodic_report_loop(std::stop_token stop_token) {
+      using namespace std::chrono_literals;
+
+      while (!stop_token.stop_requested()) {
+        {
+          std::lock_guard submit_lock {submit_mutex_};
+          std::vector<std::uint8_t> report;
+          {
+            std::lock_guard lock {state_->mutex_};
+            if (!state_->open) {
+              break;
+            }
+            report = state_->last_input_report;
+            static_cast<void>(stamp_steam_deck_packet_number(report, ++state_->steam_deck_packet_number));
+          }
+          if (!report.empty()) {
+            static_cast<void>(context_->submit_gamepad_report(state_, report));
+          }
+        }
+
+        std::this_thread::sleep_for(4ms);
+      }
     }
 
     void WindowsGamepad::set_output_callback(OutputCallback callback) {
@@ -1257,6 +1319,10 @@ namespace lvh::detail {
     }
 
     OperationStatus WindowsGamepad::close() {
+      if (periodic_reporter_.joinable()) {
+        periodic_reporter_.request_stop();
+        periodic_reporter_.join();
+      }
       return context_->close_gamepad(state_);
     }
 

@@ -39,6 +39,9 @@ namespace {
     if (name == "switch") {
       return lvh::profiles::switch_pro();
     }
+    if (name == "steamdeck") {
+      return lvh::profiles::steam_deck();
+    }
 
     return std::nullopt;
   }
@@ -58,6 +61,7 @@ namespace {
       case switch_pro:
         return nintendo;
       case generic:
+      case steam_deck:
         return unknown;
     }
 
