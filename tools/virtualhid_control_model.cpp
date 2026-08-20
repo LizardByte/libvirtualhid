@@ -215,6 +215,16 @@ namespace lvh::tools::virtualhid_control {
              << static_cast<unsigned>(state.latest_rgb_led->blue);
       wrote = true;
     }
+    if (state.latest_player_led) {
+      append_summary_separator(stream, wrote);
+      stream << L"player LEDs=" << static_cast<unsigned>(state.latest_player_led->player_led);
+      wrote = true;
+    }
+    if (state.latest_mic_led) {
+      append_summary_separator(stream, wrote);
+      stream << L"mic LED=" << static_cast<unsigned>(state.latest_mic_led->mic_led);
+      wrote = true;
+    }
     if (state.latest_adaptive_triggers) {
       append_summary_separator(stream, wrote);
       stream << L"adaptive flags=" << static_cast<unsigned>(state.latest_adaptive_triggers->adaptive_trigger_flags);
@@ -283,6 +293,12 @@ namespace lvh::tools::virtualhid_control {
         break;
       case rgb_led:
         state.latest_rgb_led = output;
+        break;
+      case player_led:
+        state.latest_player_led = output;
+        break;
+      case mic_led:
+        state.latest_mic_led = output;
         break;
       case adaptive_triggers:
         state.latest_adaptive_triggers = output;

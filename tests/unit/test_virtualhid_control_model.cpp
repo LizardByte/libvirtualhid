@@ -198,12 +198,16 @@ TEST(VirtualHidControlModelTest, SummarizesOutputState) {
   state.latest_rgb_led->red = 1;
   state.latest_rgb_led->green = 2;
   state.latest_rgb_led->blue = 3;
+  state.latest_player_led = output(player_led);
+  state.latest_player_led->player_led = 31;
+  state.latest_mic_led = output(mic_led);
+  state.latest_mic_led->mic_led = 2;
   state.latest_adaptive_triggers = output(adaptive_triggers);
   state.latest_adaptive_triggers->adaptive_trigger_flags = 4;
 
   EXPECT_EQ(
     control::output_summary(state, dualsense),
-    L"Output: rumble low=10 high=20 | trigger rumble L=30 R=40 | RGB 1,2,3 | adaptive flags=4"
+    L"Output: rumble low=10 high=20 | trigger rumble L=30 R=40 | RGB 1,2,3 | player LEDs=31 | mic LED=2 | adaptive flags=4"
   );
 }
 
@@ -250,4 +254,22 @@ TEST(VirtualHidControlModelTest, RecordsOutputsAndMaintainsLatestSummaryFields) 
   EXPECT_EQ(state.latest_adaptive_triggers->adaptive_trigger_flags, 8);
   ASSERT_TRUE(state.latest_raw_report.has_value());
   EXPECT_EQ(state.latest_raw_report->raw_report, (std::vector<std::uint8_t> {0x12, 0x34}));
+}
+
+TEST(VirtualHidControlModelTest, RecordsPlayerAndMicLedOutputs) {
+  control::OutputState state;
+  auto next_sequence = std::uint64_t {1};
+
+  auto player = output(lvh::GamepadOutputKind::player_led);
+  player.player_led = 0x1F;
+  control::record_output(state, player, next_sequence, 8);
+
+  auto mic = output(lvh::GamepadOutputKind::mic_led);
+  mic.mic_led = 2;
+  control::record_output(state, mic, next_sequence, 8);
+
+  ASSERT_TRUE(state.latest_player_led.has_value());
+  EXPECT_EQ(state.latest_player_led->player_led, 0x1F);
+  ASSERT_TRUE(state.latest_mic_led.has_value());
+  EXPECT_EQ(state.latest_mic_led->mic_led, 2);
 }
