@@ -1868,7 +1868,11 @@ namespace lvh::detail::test {
 
     if (read_uhid_event_type(descriptors[1], UHID_INPUT2, event)) {
       const auto report_size = static_cast<std::size_t>(event.u.input2.size);
-      if (report_size == options.profile.input_report_size && event.u.input2.data[0] == 0x11) {
+      if (
+        report_size == options.profile.input_report_size &&
+        event.u.input2.data[0] == 0x11 &&
+        (event.u.input2.data[1] & 0x80U) != 0U
+      ) {
         const auto crc_offset = report_size - 4U;
         const auto expected_crc = crc32(std::span<const std::uint8_t> {event.u.input2.data, crc_offset}, playstation_crc_seed(0xA1));
         const auto actual_crc = read_u32_le(event.u.input2.data + crc_offset);

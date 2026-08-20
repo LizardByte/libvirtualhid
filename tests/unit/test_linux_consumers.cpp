@@ -886,7 +886,7 @@ TEST_F(LinuxConsumerTest, SdlSeesDualShock4UsbControllerBehavior) {
   });
 }
 
-TEST_F(LinuxConsumerTest, SdlSeesDualShock4BluetoothControllerDiscovery) {
+TEST_F(LinuxConsumerTest, SdlSeesDualShock4BluetoothControllerBehavior) {
   ASSERT_TRUE(HasReadableWritableDeviceNode("/dev/uhid"));
 
   run_sdl_playstation_controller_test({
@@ -895,7 +895,6 @@ TEST_F(LinuxConsumerTest, SdlSeesDualShock4BluetoothControllerDiscovery) {
     .stable_id = "02:00:00:00:00:04",
     .minimum_buttons = 10,
     .minimum_axes = 4,
-    .expect_live_input = false,
   });
 }
 

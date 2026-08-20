@@ -141,8 +141,11 @@ provides it separately on the UHID event.
 The default DualShock 4 and DualSense profiles use Bluetooth framing, avoiding
 the parent-USB checks that can make virtual USB devices appear late in Steam.
 Explicit USB and Bluetooth factories remain available for consumers that
-require a particular transport. DualSense motion packing preserves the public
-meters-per-second-squared and degrees-per-second units while applying the same
+require a particular transport. DualShock 4 Bluetooth input reports set the
+HID-present header flag required by HIDAPI consumers and include the transport
+CRC, so a running consumer can accept live input after hotplug. DualSense motion
+packing preserves the public meters-per-second-squared and degrees-per-second
+units while applying the same
 raw sensor calibration used by Inputtino. Periodic PlayStation reports are
 repacked at 100 Hz so their sequence number and sensor timestamp continue to
 advance even when controller state is unchanged. Periodic and application
@@ -158,9 +161,8 @@ a controller before its kernel HID device has started.
 
 On Linux, DualShock 4 and DualSense emit Sony's native `Wireless Controller`
 product name for Steam HID discovery. The requested USB or Bluetooth bus,
-descriptor, and report framing remain unchanged; in particular, the default
-DualShock 4 profile stays on its USB report contract. This transport-only name
-is confined to the Linux backend; public profile names, Windows names, and VHF
+descriptor, and report framing remain unchanged. This transport-only name is
+confined to the Linux backend; public profile names, Windows names, and VHF
 behavior are unchanged.
 
 Switch Pro keeps its Nintendo identity on the Linux uinput path. This follows

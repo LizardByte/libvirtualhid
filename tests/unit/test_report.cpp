@@ -350,6 +350,7 @@ TEST(ReportTest, PacksDualShock4BluetoothReportWithCrc) {
 
   ASSERT_EQ(report.size(), profile.input_report_size);
   EXPECT_EQ(report[0], 0x11);
+  EXPECT_EQ(report[1], 0x80);
   EXPECT_EQ(report[3], 128);
   EXPECT_EQ(report[4], 128);
   EXPECT_EQ(report[9], 0x02);

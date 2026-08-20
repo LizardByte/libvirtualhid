@@ -33,6 +33,8 @@ namespace lvh::reports {
 
     constexpr auto dualshock4_bt_input_report_id = std::byte {0x11};
 
+    constexpr auto dualshock4_bt_input_hid_present = std::byte {0x80};
+
     constexpr auto dualshock4_bt_output_report_id = std::byte {0x11};
 
     constexpr auto dualshock4_output_hwctl_crc32 = std::byte {0x40};
@@ -646,6 +648,9 @@ namespace lvh::reports {
 
       ByteReport report(profile.input_report_size, zero_byte);
       report[0] = is_bluetooth ? dualshock4_bt_input_report_id : to_byte(profile.report_id);
+      if (is_bluetooth) {
+        report[1] = dualshock4_bt_input_hid_present;
+      }
 
       report[payload_offset + 0U] = to_byte(normalize_u8_axis(normalized.left_stick.x));
       report[payload_offset + 1U] = to_byte(normalize_u8_axis(-normalized.left_stick.y));
