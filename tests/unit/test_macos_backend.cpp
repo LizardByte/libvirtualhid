@@ -104,6 +104,26 @@ TEST_F(MacosBackendTest, ConvertsAbsoluteMouseCoordinates) {
   EXPECT_DOUBLE_EQ(location.y, 170.0);
 }
 
+TEST_F(MacosBackendTest, SelectsMouseMotionMetadataForHeldButtons) {
+  using lvh::detail::test::macos_backend_mouse_motion;
+
+  auto motion = macos_backend_mouse_motion(false, false, false);
+  EXPECT_EQ(motion.button, kCGMouseButtonLeft);
+  EXPECT_EQ(motion.event_type, kCGEventMouseMoved);
+
+  motion = macos_backend_mouse_motion(true, false, false);
+  EXPECT_EQ(motion.button, kCGMouseButtonLeft);
+  EXPECT_EQ(motion.event_type, kCGEventLeftMouseDragged);
+
+  motion = macos_backend_mouse_motion(false, true, false);
+  EXPECT_EQ(motion.button, kCGMouseButtonRight);
+  EXPECT_EQ(motion.event_type, kCGEventRightMouseDragged);
+
+  motion = macos_backend_mouse_motion(false, false, true);
+  EXPECT_EQ(motion.button, kCGMouseButtonCenter);
+  EXPECT_EQ(motion.event_type, kCGEventOtherMouseDragged);
+}
+
 TEST_F(MacosBackendTest, ReportsCapabilitiesAndUnsupportedDevices) {
   const auto result = lvh::detail::test::macos_backend_utilities();
 
