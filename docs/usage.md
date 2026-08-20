@@ -217,6 +217,10 @@ Consumers may replace `DeviceProfile::name` before creating a gamepad, for
 example, to prepend an application name while preserving the default controller
 identity across platform backends.
 
+`profiles::dualshock4()` and `profiles::dualsense()` select Bluetooth framing
+for reliable native-controller discovery. Consumers can use the corresponding
+`_usb()` or `_bluetooth()` factory when the transport must be explicit.
+
 The platform-neutral Generic HID descriptor reports the D-pad as buttons 13
 through 16 in the input report. Linux may still route that profile through
 `uinput`, where the backend exposes those same logical directions through the

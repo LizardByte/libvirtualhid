@@ -2013,7 +2013,13 @@ namespace lvh::detail {
           };
         }
 
-        return context_->create_gamepad(id, options);
+        auto effective_options = options;
+        effective_options.profile = windows::effective_vhf_gamepad_profile(options.profile);
+        auto result = context_->create_gamepad(id, effective_options);
+        if (result) {
+          result.effective_profile = std::move(effective_options.profile);
+        }
+        return result;
       }
 
       BackendKeyboardCreationResult create_keyboard(

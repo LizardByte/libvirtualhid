@@ -28,6 +28,9 @@
 #include "fixtures/fixtures.hpp"
 #include "fixtures/windows_backend_test_hooks.hpp"
 
+// lib includes
+#include <libvirtualhid/profiles.hpp>
+
 // standard includes
 #include <algorithm>
 #include <vector>
@@ -92,6 +95,24 @@ TEST_F(WindowsBackendTest, FakeChannelExercisesLifecycleSubmitCloseAndOutput) {
   EXPECT_EQ(result.last_output.high_frequency_rumble, 65535U);
   ASSERT_EQ(result.last_output.raw_report.size(), 8U);
   EXPECT_EQ(result.last_output.raw_report[0], 0x03U);
+}
+
+TEST_F(WindowsBackendTest, PlayStationDefaultsUseEffectiveUsbProfiles) {
+  const auto result = lvh::detail::test::windows_backend_playstation_transport();
+  const auto dualshock4_usb = lvh::profiles::dualshock4_usb();
+  const auto dualsense_usb = lvh::profiles::dualsense_usb();
+
+  ASSERT_TRUE(result.dualshock4_status.ok()) << result.dualshock4_status.message();
+  EXPECT_EQ(result.dualshock4_effective_profile.bus_type, lvh::BusType::usb);
+  EXPECT_EQ(result.dualshock4_effective_profile.report_descriptor, dualshock4_usb.report_descriptor);
+  EXPECT_EQ(result.dualshock4_effective_profile.input_report_size, dualshock4_usb.input_report_size);
+  EXPECT_EQ(result.dualshock4_effective_profile.output_report_size, dualshock4_usb.output_report_size);
+
+  ASSERT_TRUE(result.dualsense_status.ok()) << result.dualsense_status.message();
+  EXPECT_EQ(result.dualsense_effective_profile.bus_type, lvh::BusType::usb);
+  EXPECT_EQ(result.dualsense_effective_profile.report_descriptor, dualsense_usb.report_descriptor);
+  EXPECT_EQ(result.dualsense_effective_profile.input_report_size, dualsense_usb.input_report_size);
+  EXPECT_EQ(result.dualsense_effective_profile.output_report_size, dualsense_usb.output_report_size);
 }
 
 TEST_F(WindowsBackendTest, GenericPidTimerCannotDeliverStaleStopAfterNewStart) {

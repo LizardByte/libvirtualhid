@@ -77,6 +77,17 @@ Switch Pro USB and subcommand initialization sequence and accepts the native
 `0x30` input layout, so descriptor-aware consumers can initialize those
 controllers before sending their native output reports.
 
+Windows VHF devices do not expose a Bluetooth transport identity to HIDAPI.
+The Windows backend therefore reports DualShock 4 and DualSense requests as
+effective USB profiles through `Gamepad::profile()` and uses the matching USB
+descriptor, input reports, output reports, and feature-report framing. This
+keeps Steam and SDL's transport detection aligned with the reports accepted by
+the driver, including rumble and RGB LED output. The DualSense firmware feature
+report identifies the base controller's `0x0004` software series and current
+`0x0630` device software instead of reporting DualSense Edge series `0x0044`
+with the older `0x0154` revision. Linux keeps the Bluetooth defaults described
+below.
+
 See [Windows driver package](windows-driver.md) for build, install, validation,
 and signing details.
 
@@ -138,6 +149,20 @@ and control channels. Numbered control-channel output is normalized before
 parsing, whether the kernel includes the report number in the payload or
 provides it separately on the UHID event.
 
+The default DualShock 4 and DualSense profiles use Bluetooth framing, avoiding
+the parent-USB checks that can make virtual USB devices appear late in Steam.
+Explicit USB and Bluetooth factories remain available for consumers that
+require a particular transport. DualShock 4 Bluetooth input reports set the
+HID-present header flag required by HIDAPI consumers and include the transport
+CRC, so a running consumer can accept live input after hotplug. DualSense motion
+packing preserves the public meters-per-second-squared and degrees-per-second
+units while applying the same
+raw sensor calibration used by Inputtino. Periodic PlayStation reports are
+repacked at 100 Hz so their sequence number and sensor timestamp continue to
+advance even when controller state is unchanged. Periodic and application
+submissions are serialized so a repeated report cannot restore stale motion
+state after a newer application report.
+
 The backend opens `/dev/uhid` in nonblocking mode, matching the original
 asynchronous gamepad registration path. Its event reader is active before
 device registration begins, and creation does not report success until the
@@ -147,9 +172,8 @@ a controller before its kernel HID device has started.
 
 On Linux, DualShock 4 and DualSense emit Sony's native `Wireless Controller`
 product name for Steam HID discovery. The requested USB or Bluetooth bus,
-descriptor, and report framing remain unchanged; in particular, the default
-DualShock 4 profile stays on its USB report contract. This transport-only name
-is confined to the Linux backend; public profile names, Windows names, and VHF
+descriptor, and report framing remain unchanged. This transport-only name is
+confined to the Linux backend; public profile names, Windows names, and VHF
 behavior are unchanged.
 
 Switch Pro keeps its Nintendo identity on the Linux uinput path. This follows

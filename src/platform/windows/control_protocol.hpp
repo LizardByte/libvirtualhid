@@ -13,6 +13,7 @@
 #include <iterator>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 // driver includes
@@ -20,6 +21,7 @@
 #include "lvh_windows_protocol.h"
 
 // local includes
+#include <libvirtualhid/profiles.hpp>
 #include <libvirtualhid/types.hpp>
 
 namespace lvh::detail::windows {
@@ -92,6 +94,32 @@ namespace lvh::detail::windows {
     }
 
     return LVH_WINDOWS_GAMEPAD_GENERIC;
+  }
+
+  inline DeviceProfile effective_vhf_gamepad_profile(const DeviceProfile &requested_profile) {
+    if (requested_profile.bus_type != BusType::bluetooth) {
+      return requested_profile;
+    }
+
+    auto usb_profile = DeviceProfile {};
+    switch (requested_profile.gamepad_kind) {
+      case GamepadProfileKind::dualshock4:
+        usb_profile = profiles::dualshock4_usb();
+        break;
+      case GamepadProfileKind::dualsense:
+        usb_profile = profiles::dualsense_usb();
+        break;
+      default:
+        return requested_profile;
+    }
+
+    auto effective_profile = requested_profile;
+    effective_profile.bus_type = usb_profile.bus_type;
+    effective_profile.report_id = usb_profile.report_id;
+    effective_profile.input_report_size = usb_profile.input_report_size;
+    effective_profile.output_report_size = usb_profile.output_report_size;
+    effective_profile.report_descriptor = std::move(usb_profile.report_descriptor);
+    return effective_profile;
   }
 
   template<std::size_t Size>

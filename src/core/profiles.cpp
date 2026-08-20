@@ -2095,7 +2095,7 @@ namespace lvh::profiles {
   }
 
   DeviceProfile dualshock4() {
-    return dualshock4_usb();
+    return dualshock4_bluetooth();
   }
 
   DeviceProfile dualshock4_usb() {
@@ -2107,7 +2107,7 @@ namespace lvh::profiles {
   }
 
   DeviceProfile dualsense() {
-    return dualsense_usb();
+    return dualsense_bluetooth();
   }
 
   DeviceProfile dualsense_usb() {

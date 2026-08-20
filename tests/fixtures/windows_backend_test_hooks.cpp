@@ -494,6 +494,36 @@ namespace lvh::detail {
       return result;
     }
 
+    WindowsPlayStationTransportResult windows_backend_playstation_transport() {
+      WindowsPlayStationTransportResult result;
+      auto command_state = std::make_shared<FakeWindowsControlChannelState>();
+      auto event_state = std::make_shared<FakeWindowsControlChannelState>();
+      auto backend = make_fake_windows_backend(command_state, event_state);
+
+      CreateGamepadOptions options;
+      options.profile = profiles::dualshock4();
+      auto dualshock4 = backend->create_gamepad(40, options);
+      result.dualshock4_status = dualshock4.status;
+      if (dualshock4.effective_profile.has_value()) {
+        result.dualshock4_effective_profile = std::move(*dualshock4.effective_profile);
+      }
+      if (dualshock4.gamepad) {
+        static_cast<void>(dualshock4.gamepad->close());
+      }
+
+      options.profile = profiles::dualsense();
+      auto dualsense = backend->create_gamepad(41, options);
+      result.dualsense_status = dualsense.status;
+      if (dualsense.effective_profile.has_value()) {
+        result.dualsense_effective_profile = std::move(*dualsense.effective_profile);
+      }
+      if (dualsense.gamepad) {
+        static_cast<void>(dualsense.gamepad->close());
+      }
+
+      return result;
+    }
+
     WindowsGenericPidOrderingResult windows_backend_generic_pid_callback_ordering() {
       WindowsGenericPidOrderingResult result;
       auto command_state = std::make_shared<FakeWindowsControlChannelState>();

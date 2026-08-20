@@ -255,6 +255,10 @@ TEST_F(WindowsDriverProtocolTest, DualSenseReturnsCalibrationPairingAndFirmwareF
   ASSERT_TRUE(firmware.has_value());
   EXPECT_EQ(firmware->size(), 64U);
   EXPECT_EQ(firmware->front(), 0x20);
+  EXPECT_EQ(firmware->at(22), 0x04);
+  EXPECT_EQ(firmware->at(23), 0x00);
+  EXPECT_EQ(firmware->at(44), 0x30);
+  EXPECT_EQ(firmware->at(45), 0x06);
   EXPECT_FALSE(lvh::detail::windows::make_playstation_feature_report(request, 0xFF).has_value());
 }
 

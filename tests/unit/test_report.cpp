@@ -50,6 +50,10 @@ namespace {
     return static_cast<std::uint16_t>(low | static_cast<std::uint16_t>(high << 8U));
   }
 
+  std::int16_t read_i16_le(std::span<const std::uint8_t> bytes, std::size_t offset) {
+    return static_cast<std::int16_t>(read_u16_le(bytes, offset));
+  }
+
   lvh::GamepadState make_active_gamepad_state() {
     using enum lvh::GamepadButton;
 
@@ -232,10 +236,30 @@ TEST(ReportTest, PacksDualSenseUsbReport) {
   EXPECT_EQ(report[5], 255);
   EXPECT_EQ(report[8] & 0x20, 0x20);
   EXPECT_EQ(report[9] & 0x05, 0x05);
+  EXPECT_EQ(read_i16_le(report, 16U), 80);
+  EXPECT_EQ(read_i16_le(report, 18U), 100);
+  EXPECT_EQ(read_i16_le(report, 20U), 120);
+  EXPECT_EQ(read_i16_le(report, 22U), 981);
+  EXPECT_EQ(read_i16_le(report, 24U), 1961);
+  EXPECT_EQ(read_i16_le(report, 26U), 2942);
+  EXPECT_NE(read_u32_le(report, 28U), 0U);
   EXPECT_EQ(report[33] & 0x7F, 3);
   EXPECT_EQ(report[33] & 0x80, 0);
   EXPECT_EQ(report[53] & 0x0F, 8);
   EXPECT_EQ(report[53] >> 4, 1);
+}
+
+TEST(ReportTest, AdvancesDualSenseSensorMetadata) {
+  const auto profile = lvh::profiles::dualsense_bluetooth();
+
+  const auto first = lvh::reports::pack_input_report(profile, {});
+  const auto second = lvh::reports::pack_input_report(profile, {});
+
+  ASSERT_EQ(first.size(), profile.input_report_size);
+  ASSERT_EQ(second.size(), profile.input_report_size);
+  EXPECT_NE(first[8], second[8]);
+  EXPECT_NE(read_u32_le(first, 29U), 0U);
+  EXPECT_GE(read_u32_le(second, 29U), read_u32_le(first, 29U));
 }
 
 TEST(ReportTest, PacksDualSenseBluetoothReportWithCrc) {
@@ -326,6 +350,7 @@ TEST(ReportTest, PacksDualShock4BluetoothReportWithCrc) {
 
   ASSERT_EQ(report.size(), profile.input_report_size);
   EXPECT_EQ(report[0], 0x11);
+  EXPECT_EQ(report[1], 0x80);
   EXPECT_EQ(report[3], 128);
   EXPECT_EQ(report[4], 128);
   EXPECT_EQ(report[9], 0x02);

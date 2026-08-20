@@ -317,35 +317,6 @@ namespace {
     return report;
   }
 
-  std::optional<lvh::GamepadOutput> wait_for_rumble_output(
-    std::mutex &output_mutex,
-    std::condition_variable &output_ready,
-    const std::vector<lvh::GamepadOutput> &outputs,
-    std::size_t &next_output,
-    bool expect_nonzero
-  ) {
-    const auto matches = [expect_nonzero](const lvh::GamepadOutput &output) {
-      const auto has_strength = output.low_frequency_rumble > 0U || output.high_frequency_rumble > 0U;
-      return output.kind == lvh::GamepadOutputKind::rumble && has_strength == expect_nonzero;
-    };
-    const auto find_next_match = [&outputs, &next_output, &matches] {
-      return std::find_if(
-        outputs.begin() + static_cast<std::ptrdiff_t>(next_output),
-        outputs.end(),
-        matches
-      );
-    };
-
-    if (std::unique_lock lock {output_mutex}; output_ready.wait_for(lock, 5s, [&outputs, &find_next_match] {
-          return find_next_match() != outputs.end();
-        })) {
-      const auto match = find_next_match();
-      next_output = static_cast<std::size_t>(std::distance(outputs.begin(), match)) + 1U;
-      return *match;
-    }
-    return std::nullopt;
-  }
-
   HidInterfacePaths current_gamepad_interface_paths() {
     HidInterfacePaths paths;
     for (const auto &hid_interface : enumerate_gamepad_interfaces()) {
@@ -367,10 +338,44 @@ namespace {
     }
 
     std::optional<lvh::GamepadOutput> wait_for_rumble(bool expect_nonzero) {
-      return wait_for_rumble_output(mutex_, ready_, outputs_, next_output_, expect_nonzero);
+      return wait_for([expect_nonzero](const lvh::GamepadOutput &output) {
+        const auto has_strength = output.low_frequency_rumble > 0U || output.high_frequency_rumble > 0U;
+        return output.kind == lvh::GamepadOutputKind::rumble && has_strength == expect_nonzero;
+      });
+    }
+
+    std::optional<lvh::GamepadOutput> wait_for_rgb_led(
+      std::uint8_t red,
+      std::uint8_t green,
+      std::uint8_t blue
+    ) {
+      return wait_for([red, green, blue](const lvh::GamepadOutput &output) {
+        return output.kind == lvh::GamepadOutputKind::rgb_led && output.red == red && output.green == green &&
+               output.blue == blue;
+      });
     }
 
   private:
+    template<typename Predicate>
+    std::optional<lvh::GamepadOutput> wait_for(Predicate matches) {
+      const auto find_next_match = [this, &matches] {
+        return std::find_if(
+          outputs_.begin() + static_cast<std::ptrdiff_t>(next_output_),
+          outputs_.end(),
+          matches
+        );
+      };
+
+      if (std::unique_lock lock {mutex_}; ready_.wait_for(lock, 5s, [this, &find_next_match] {
+            return find_next_match() != outputs_.end();
+          })) {
+        const auto match = find_next_match();
+        next_output_ = static_cast<std::size_t>(std::distance(outputs_.begin(), match)) + 1U;
+        return *match;
+      }
+      return std::nullopt;
+    }
+
     std::mutex mutex_;
     std::condition_variable ready_;
     std::vector<lvh::GamepadOutput> outputs_;
@@ -450,7 +455,7 @@ namespace {
 }  // namespace
 
 #if defined(LIBVIRTUALHID_TEST_HAS_SDL3)
-TEST_F(WindowsConsumerTest, SdlHidapiRumbleReachesPlayStationAndSwitchCallbacks) {
+TEST_F(WindowsConsumerTest, SdlHidapiOutputReachesDefaultPlayStationAndSwitchCallbacks) {
   SdlGamepadSubsystem sdl;
   ASSERT_TRUE(sdl.initialized()) << SDL_GetError();
 
@@ -462,8 +467,8 @@ TEST_F(WindowsConsumerTest, SdlHidapiRumbleReachesPlayStationAndSwitchCallbacks)
     << "The installed libvirtualhid Windows driver is required for this integration test";
 
   const std::array profiles {
-    lvh::profiles::dualshock4_usb(),
-    lvh::profiles::dualsense_usb(),
+    lvh::profiles::dualshock4(),
+    lvh::profiles::dualsense(),
     lvh::profiles::switch_pro(),
   };
   for (const auto &profile : profiles) {
@@ -475,6 +480,13 @@ TEST_F(WindowsConsumerTest, SdlHidapiRumbleReachesPlayStationAndSwitchCallbacks)
     options.metadata.stable_id = "02:11:22:33:44:55";
     auto created = lvh::GamepadStateAdapter::create(*runtime, options);
     ASSERT_TRUE(created) << created.status.message();
+    ASSERT_NE(created.adapter->gamepad(), nullptr);
+    if (
+      profile.gamepad_kind == lvh::GamepadProfileKind::dualshock4 ||
+      profile.gamepad_kind == lvh::GamepadProfileKind::dualsense
+    ) {
+      EXPECT_EQ(created.adapter->gamepad()->profile().bus_type, lvh::BusType::usb);
+    }
     GamepadOutputCapture output_capture;
     output_capture.attach(*created.adapter);
 
@@ -484,6 +496,15 @@ TEST_F(WindowsConsumerTest, SdlHidapiRumbleReachesPlayStationAndSwitchCallbacks)
     ASSERT_NE(joystick, nullptr) << SDL_GetError();
     const auto properties = SDL_GetGamepadProperties(gamepad.get());
     ASSERT_NE(properties, 0U) << SDL_GetError();
+    if (
+      profile.gamepad_kind == lvh::GamepadProfileKind::dualshock4 ||
+      profile.gamepad_kind == lvh::GamepadProfileKind::dualsense
+    ) {
+      ASSERT_TRUE(SDL_GetBooleanProperty(properties, SDL_PROP_GAMEPAD_CAP_RGB_LED_BOOLEAN, false)) << SDL_GetError();
+      ASSERT_TRUE(SDL_SetGamepadLED(gamepad.get(), 0x12U, 0x34U, 0x56U)) << SDL_GetError();
+      const auto rgb_led = output_capture.wait_for_rgb_led(0x12U, 0x34U, 0x56U);
+      ASSERT_TRUE(rgb_led.has_value()) << "No normalized RGB LED callback followed SDL HIDAPI LED output";
+    }
     ASSERT_TRUE(SDL_GetBooleanProperty(properties, SDL_PROP_GAMEPAD_CAP_RUMBLE_BOOLEAN, false)) << SDL_GetError();
     ASSERT_TRUE(SDL_RumbleGamepad(gamepad.get(), 0x5678U, 0x1234U, 1000U)) << SDL_GetError();
 
@@ -514,7 +535,7 @@ TEST_F(WindowsConsumerTest, NativePlayStationFeatureAndOutputReportsReachOwningR
 
   const std::array test_cases {
     NativePlayStationCase {
-      .profile = lvh::profiles::dualshock4_usb(),
+      .profile = lvh::profiles::dualshock4(),
       .calibration_report_id = 0x02,
       .pairing_report_id = 0x12,
       .firmware_report_id = 0xA3,
@@ -526,11 +547,11 @@ TEST_F(WindowsConsumerTest, NativePlayStationFeatureAndOutputReportsReachOwningR
       .minimum_feature_report_size = 49U,
     },
     NativePlayStationCase {
-      .profile = lvh::profiles::dualsense_usb(),
+      .profile = lvh::profiles::dualsense(),
       .calibration_report_id = 0x05,
       .pairing_report_id = 0x09,
       .firmware_report_id = 0x20,
-      .firmware_prefix = {'J', 'u', 'n'},
+      .firmware_prefix = {'J', 'u', 'l'},
       .output_report_id = 0x02,
       .valid_flags_offset = 1U,
       .right_motor_offset = 3U,
@@ -560,12 +581,15 @@ TEST_F(WindowsConsumerTest, NativePlayStationFeatureAndOutputReportsReachOwningR
     options.metadata.stable_id = "02:11:22:33:44:55";
     auto created = lvh::GamepadStateAdapter::create(*runtime, options);
     ASSERT_TRUE(created) << profile.name << ": " << created.status.message();
+    ASSERT_NE(created.adapter->gamepad(), nullptr);
+    const auto &effective_profile = created.adapter->gamepad()->profile();
+    ASSERT_EQ(effective_profile.bus_type, lvh::BusType::usb);
     GamepadOutputCapture output_capture;
     output_capture.attach(*created.adapter);
 
     const auto hid_interface = wait_for_new_interface(previous_paths, profile.vendor_id, profile.product_id);
     ASSERT_TRUE(hid_interface.has_value()) << "The VHF " << profile.name << " HID interface was not enumerated";
-    ASSERT_EQ(hid_interface->output_report_size, profile.output_report_size);
+    ASSERT_EQ(hid_interface->output_report_size, effective_profile.output_report_size);
 
     Handle hid {CreateFileW(
       hid_interface->path.c_str(),
@@ -605,6 +629,12 @@ TEST_F(WindowsConsumerTest, NativePlayStationFeatureAndOutputReportsReachOwningR
       << profile.name << " firmware GetFeature failed: " << GetLastError();
     EXPECT_EQ(firmware[0], test_case.firmware_report_id);
     EXPECT_TRUE(std::ranges::equal(test_case.firmware_prefix, std::span {firmware}.subspan(1U, 3U)));
+    if (profile.gamepad_kind == lvh::GamepadProfileKind::dualsense) {
+      EXPECT_EQ(firmware[22], 0x04U);
+      EXPECT_EQ(firmware[23], 0x00U);
+      EXPECT_EQ(firmware[44], 0x30U);
+      EXPECT_EQ(firmware[45], 0x06U);
+    }
 
     std::vector<std::uint8_t> report(hid_interface->output_report_size, 0);
     report[0] = test_case.output_report_id;

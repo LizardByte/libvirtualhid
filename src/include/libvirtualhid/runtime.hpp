@@ -54,9 +54,12 @@ namespace lvh {
     virtual DeviceId device_id() const = 0;
 
     /**
-     * @brief Get the profile used to create this device.
+     * @brief Get the effective profile exposed by the backend for this device.
      *
-     * @return Device profile.
+     * A backend may adjust transport-specific profile fields when its native
+     * device stack cannot represent the requested transport directly.
+     *
+     * @return Effective device profile.
      */
     virtual const DeviceProfile &profile() const = 0;
 

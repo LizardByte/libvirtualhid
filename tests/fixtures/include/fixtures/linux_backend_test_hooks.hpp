@@ -212,9 +212,9 @@ namespace lvh::detail::test {
     bool saw_dualshock4_feature_crc = false;
 
     /**
-     * @brief Whether the peer observed a Bluetooth-framed DualSense input report.
+     * @brief Whether periodic Bluetooth DualSense reports preserved motion and advanced sensor metadata.
      */
-    bool saw_dualsense_bluetooth_input = false;
+    bool saw_dualsense_bluetooth_input_with_live_sensor_metadata = false;
 
     /**
      * @brief Whether the peer observed a Bluetooth-framed DualShock 4 input report.

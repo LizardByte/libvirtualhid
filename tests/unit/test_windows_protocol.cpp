@@ -200,6 +200,39 @@ TEST(WindowsProtocolTest, PacksGamepadCreateRequest) {
   EXPECT_NE(request.flags & LVH_WINDOWS_GAMEPAD_FLAG_SUPPORTS_BATTERY, 0U);
 }
 
+TEST(WindowsProtocolTest, UsesUsbFramingForPlayStationProfilesOnVhf) {
+  const std::array requested_profiles {
+    lvh::profiles::dualshock4(),
+    lvh::profiles::dualsense(),
+  };
+  const std::array usb_profiles {
+    lvh::profiles::dualshock4_usb(),
+    lvh::profiles::dualsense_usb(),
+  };
+
+  for (std::size_t index = 0; index < requested_profiles.size(); ++index) {
+    const auto &requested = requested_profiles[index];
+    const auto &usb = usb_profiles[index];
+    SCOPED_TRACE(requested.name);
+    ASSERT_EQ(requested.bus_type, lvh::BusType::bluetooth);
+
+    const auto effective = lvh::detail::windows::effective_vhf_gamepad_profile(requested);
+
+    EXPECT_EQ(effective.bus_type, lvh::BusType::usb);
+    EXPECT_EQ(effective.report_id, usb.report_id);
+    EXPECT_EQ(effective.input_report_size, usb.input_report_size);
+    EXPECT_EQ(effective.output_report_size, usb.output_report_size);
+    EXPECT_EQ(effective.report_descriptor, usb.report_descriptor);
+    EXPECT_EQ(effective.vendor_id, requested.vendor_id);
+    EXPECT_EQ(effective.product_id, requested.product_id);
+    EXPECT_EQ(effective.version, requested.version);
+    EXPECT_EQ(effective.name, requested.name);
+    EXPECT_EQ(effective.manufacturer, requested.manufacturer);
+    EXPECT_EQ(effective.capabilities.supports_rumble, requested.capabilities.supports_rumble);
+    EXPECT_EQ(effective.capabilities.supports_rgb_led, requested.capabilities.supports_rgb_led);
+  }
+}
+
 TEST(WindowsProtocolTest, PacksGenericUnknownBusGamepadCreateRequestWithoutOptionalFlags) {
   lvh::CreateGamepadOptions options;
   options.profile = minimal_gamepad_profile();
