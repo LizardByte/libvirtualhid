@@ -2012,6 +2012,8 @@ namespace lvh::profiles {
         .supports_rgb_led = true,
         .supports_battery = true,
         .supports_adaptive_triggers = true,
+        .supports_player_led = true,
+        .supports_mic_led = true,
       };
       profile.report_descriptor =
         bus_type == BusType::bluetooth ? make_dualsense_bluetooth_report_descriptor() : make_dualsense_usb_report_descriptor();

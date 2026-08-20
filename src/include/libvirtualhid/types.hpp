@@ -270,6 +270,16 @@ namespace lvh {
      * @brief Whether the profile supports adaptive trigger output.
      */
     bool supports_adaptive_triggers = false;
+
+    /**
+     * @brief Whether the profile supports player-indicator LED output.
+     */
+    bool supports_player_led = false;
+
+    /**
+     * @brief Whether the profile supports mic-mute LED output.
+     */
+    bool supports_mic_led = false;
   };
 
   /**
@@ -998,6 +1008,8 @@ namespace lvh {
     adaptive_triggers,  ///< Adaptive trigger output.
     raw_report,  ///< Raw output report bytes.
     trigger_rumble,  ///< Independent trigger rumble output.
+    player_led,  ///< Player-indicator LED output.
+    mic_led,  ///< Mic-mute LED output.
   };
 
   /**
@@ -1043,6 +1055,16 @@ namespace lvh {
      * @brief Blue LED channel value.
      */
     std::uint8_t blue = 0;
+
+    /**
+     * @brief Player-indicator LED bitmask.
+     */
+    std::uint8_t player_led = 0;
+
+    /**
+     * @brief Mic-mute LED state (0 = off, 1 = on, 2 = pulse).
+     */
+    std::uint8_t mic_led = 0;
 
     /**
      * @brief Adaptive trigger event flags from a profile-specific output report.

@@ -58,6 +58,8 @@ TEST(VirtualHidControlModelTest, NamesKnownAndFallbackEnumValues) {
   EXPECT_EQ(control::output_kind_name(lvh::GamepadOutputKind::adaptive_triggers), L"adaptive triggers");
   EXPECT_EQ(control::output_kind_name(lvh::GamepadOutputKind::raw_report), L"raw report");
   EXPECT_EQ(control::output_kind_name(lvh::GamepadOutputKind::trigger_rumble), L"trigger rumble");
+  EXPECT_EQ(control::output_kind_name(lvh::GamepadOutputKind::player_led), L"player led");
+  EXPECT_EQ(control::output_kind_name(lvh::GamepadOutputKind::mic_led), L"mic led");
   EXPECT_EQ(control::output_kind_name(static_cast<lvh::GamepadOutputKind>(255)), L"raw report");
 
   EXPECT_EQ(control::battery_state_name(lvh::GamepadBatteryState::unknown), L"unknown");

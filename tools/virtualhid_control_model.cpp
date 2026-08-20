@@ -77,6 +77,10 @@ namespace lvh::tools::virtualhid_control {
         return L"raw report";
       case trigger_rumble:
         return L"trigger rumble";
+      case player_led:
+        return L"player led";
+      case mic_led:
+        return L"mic led";
     }
     return L"raw report";
   }

@@ -213,6 +213,8 @@ TEST(ProfileTest, StreamingControllerProfilesArePresent) {
   EXPECT_TRUE(dualsense.capabilities.supports_touchpad);
   EXPECT_TRUE(dualsense.capabilities.supports_rgb_led);
   EXPECT_TRUE(dualsense.capabilities.supports_adaptive_triggers);
+  EXPECT_TRUE(dualsense.capabilities.supports_player_led);
+  EXPECT_TRUE(dualsense.capabilities.supports_mic_led);
   EXPECT_GT(dualsense.input_report_size, 14U);
   EXPECT_GT(dualsense.output_report_size, 5U);
   EXPECT_EQ(dualsense.manufacturer, "Sony Interactive Entertainment");
