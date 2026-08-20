@@ -532,6 +532,14 @@ namespace lvh::detail {
     };
 
     /**
+     * @brief CoreGraphics metadata for a mouse motion event.
+     */
+    struct MacosMouseMotion {
+      CGMouseButton button {};  ///< CoreGraphics button associated with the motion.
+      CGEventType event_type {};  ///< CoreGraphics motion event type.
+    };
+
+    /**
      * @brief Translate a portable mouse button to CoreGraphics metadata.
      *
      * @param button Portable mouse button.
@@ -553,6 +561,25 @@ namespace lvh::detail {
       }
 
       return std::nullopt;
+    }
+
+    /**
+     * @brief Select CoreGraphics motion metadata for the currently held mouse buttons.
+     *
+     * @param mouse_down Local left, right, and middle button state.
+     * @return Matching CoreGraphics button and motion event type.
+     */
+    inline MacosMouseMotion macos_mouse_motion(const std::array<bool, 3> &mouse_down) {
+      if (mouse_down[0]) {
+        return {kCGMouseButtonLeft, kCGEventLeftMouseDragged};
+      }
+      if (mouse_down[1]) {
+        return {kCGMouseButtonRight, kCGEventRightMouseDragged};
+      }
+      if (mouse_down[2]) {
+        return {kCGMouseButtonCenter, kCGEventOtherMouseDragged};
+      }
+      return {kCGMouseButtonLeft, kCGEventMouseMoved};
     }
 
     /**
@@ -613,19 +640,6 @@ namespace lvh::detail {
         return current;
       }
 
-      CGEventType event_type_for_current_buttons() const {
-        if (mouse_down_[0]) {
-          return kCGEventLeftMouseDragged;
-        }
-        if (mouse_down_[1]) {
-          return kCGEventOtherMouseDragged;
-        }
-        if (mouse_down_[2]) {
-          return kCGEventRightMouseDragged;
-        }
-        return kCGEventMouseMoved;
-      }
-
       OperationStatus post_mouse(
         CGMouseButton button,
         CGEventType type,
@@ -660,13 +674,15 @@ namespace lvh::detail {
       OperationStatus submit_relative_motion(std::int32_t delta_x, std::int32_t delta_y) {
         const auto current = current_location();
         const auto location = CGPoint {current.x + delta_x, current.y + delta_y};
-        return post_mouse(kCGMouseButtonLeft, event_type_for_current_buttons(), location, current, 0);
+        const auto motion = macos_mouse_motion(mouse_down_);
+        return post_mouse(motion.button, motion.event_type, location, current, 0);
       }
 
       OperationStatus submit_absolute_motion(const MouseEvent &event) {
         const auto display_bounds = CGDisplayBounds(state_->display);
         const auto location = absolute_mouse_location(event, display_bounds);
-        return post_mouse(kCGMouseButtonLeft, event_type_for_current_buttons(), location, current_location(), 0);
+        const auto motion = macos_mouse_motion(mouse_down_);
+        return post_mouse(motion.button, motion.event_type, location, current_location(), 0);
       }
 
       OperationStatus submit_button(const MouseEvent &event) {

@@ -56,6 +56,14 @@ namespace lvh::detail::test {
     return {.x = location.x, .y = location.y};
   }
 
+  MacosMouseMotionResult macos_backend_mouse_motion(bool left_down, bool right_down, bool middle_down) {
+    const auto motion = macos::macos_mouse_motion({left_down, right_down, middle_down});
+    return {
+      .button = static_cast<std::uint32_t>(motion.button),
+      .event_type = static_cast<std::uint32_t>(motion.event_type),
+    };
+  }
+
   MacosBackendUtilityResult macos_backend_utilities() {
     auto backend = create_platform_backend_for_macos_backend_test_hooks();
     MacosBackendUtilityResult result;

@@ -22,6 +22,14 @@ namespace lvh::detail::test {
   };
 
   /**
+   * @brief Portable representation of CoreGraphics mouse motion metadata for tests.
+   */
+  struct MacosMouseMotionResult {
+    std::uint32_t button {};  ///< CoreGraphics mouse button value.
+    std::uint32_t event_type {};  ///< CoreGraphics mouse event type value.
+  };
+
+  /**
    * @brief Result set for macOS backend lifecycle utility coverage.
    */
   struct MacosBackendUtilityResult {
@@ -92,6 +100,16 @@ namespace lvh::detail::test {
     double width,
     double height
   );
+
+  /**
+   * @brief Select CoreGraphics motion metadata for a mouse button state.
+   *
+   * @param left_down Whether the left button is held.
+   * @param right_down Whether the right button is held.
+   * @param middle_down Whether the middle button is held.
+   * @return CoreGraphics button and motion event type values.
+   */
+  MacosMouseMotionResult macos_backend_mouse_motion(bool left_down, bool right_down, bool middle_down);
 
   /**
    * @brief Exercise macOS backend creation and unsupported-device paths.
