@@ -130,7 +130,7 @@ TEST(RuntimeTest, PlatformDefaultReportsCurrentPlatformCapabilities) {
 
   auto keyboard = runtime->create_keyboard();
   ASSERT_TRUE(keyboard) << keyboard.status.message();
-  EXPECT_EQ(keyboard.keyboard->type_text({.text = "A"}).code(), lvh::ErrorCode::unsupported_profile);
+  EXPECT_TRUE(keyboard.keyboard->type_text({.text = "A"}).ok());
   EXPECT_TRUE(keyboard.keyboard->close().ok());
 
   auto mouse = runtime->create_mouse();

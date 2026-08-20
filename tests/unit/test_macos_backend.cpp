@@ -139,9 +139,12 @@ TEST_F(MacosBackendTest, ReportsCapabilitiesAndUnsupportedDevices) {
   EXPECT_FALSE(result.capabilities.requires_installed_driver);
 
   ASSERT_TRUE(result.keyboard_create_status.ok()) << result.keyboard_create_status.message();
-  EXPECT_EQ(result.keyboard_text_status.code(), lvh::ErrorCode::unsupported_profile);
+  EXPECT_TRUE(result.keyboard_text_status.ok()) << result.keyboard_text_status.message();
+  EXPECT_TRUE(result.keyboard_empty_text_status.ok()) << result.keyboard_empty_text_status.message();
+  EXPECT_EQ(result.keyboard_invalid_text_status.code(), lvh::ErrorCode::invalid_argument);
   ASSERT_TRUE(result.keyboard_close_status.ok()) << result.keyboard_close_status.message();
   EXPECT_EQ(result.keyboard_submit_after_close_status.code(), lvh::ErrorCode::device_closed);
+  EXPECT_EQ(result.keyboard_text_after_close_status.code(), lvh::ErrorCode::device_closed);
   EXPECT_EQ(result.keyboard_invalid_profile_status.code(), lvh::ErrorCode::unsupported_profile);
 
   ASSERT_TRUE(result.mouse_create_status.ok()) << result.mouse_create_status.message();
