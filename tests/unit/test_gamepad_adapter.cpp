@@ -44,6 +44,8 @@ TEST(GamepadAdapterTest, ReportsProfileSupport) {
   EXPECT_TRUE(dualsense_support.supports_rumble);
   EXPECT_TRUE(dualsense_support.supports_rgb_led);
   EXPECT_TRUE(dualsense_support.supports_adaptive_triggers);
+  EXPECT_TRUE(dualsense_support.supports_player_led);
+  EXPECT_TRUE(dualsense_support.supports_mic_led);
   EXPECT_TRUE(dualsense_support.supports_motion);
   EXPECT_TRUE(dualsense_support.supports_touchpad);
   EXPECT_TRUE(dualsense_support.supports_battery);
@@ -96,6 +98,8 @@ TEST(GamepadAdapterTest, ChecksButtonsAndOutputsByProfile) {
   EXPECT_FALSE(lvh::supports_gamepad_output(dualshock4, lvh::GamepadOutputKind::trigger_rumble));
   EXPECT_TRUE(lvh::supports_gamepad_output(dualshock4, lvh::GamepadOutputKind::raw_report));
   EXPECT_TRUE(lvh::supports_gamepad_output(dualsense, lvh::GamepadOutputKind::adaptive_triggers));
+  EXPECT_TRUE(lvh::supports_gamepad_output(dualsense, lvh::GamepadOutputKind::player_led));
+  EXPECT_TRUE(lvh::supports_gamepad_output(dualsense, lvh::GamepadOutputKind::mic_led));
   EXPECT_TRUE(lvh::supports_gamepad_output(switch_pro, lvh::GamepadOutputKind::rumble));
   EXPECT_TRUE(lvh::supports_gamepad_output(switch_pro, lvh::GamepadOutputKind::raw_report));
   EXPECT_TRUE(lvh::supports_gamepad_output(generic, lvh::GamepadOutputKind::raw_report));

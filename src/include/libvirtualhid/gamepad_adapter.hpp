@@ -41,6 +41,16 @@ namespace lvh {
     bool supports_adaptive_triggers = false;
 
     /**
+     * @brief Whether the profile supports player-indicator LED output.
+     */
+    bool supports_player_led = false;
+
+    /**
+     * @brief Whether the profile supports mic-mute LED output.
+     */
+    bool supports_mic_led = false;
+
+    /**
      * @brief Whether the profile exposes motion sensor input.
      */
     bool supports_motion = false;
