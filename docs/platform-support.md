@@ -77,6 +77,17 @@ Switch Pro USB and subcommand initialization sequence and accepts the native
 `0x30` input layout, so descriptor-aware consumers can initialize those
 controllers before sending their native output reports.
 
+Windows VHF devices do not expose a Bluetooth transport identity to HIDAPI.
+The Windows backend therefore reports DualShock 4 and DualSense requests as
+effective USB profiles through `Gamepad::profile()` and uses the matching USB
+descriptor, input reports, output reports, and feature-report framing. This
+keeps Steam and SDL's transport detection aligned with the reports accepted by
+the driver, including rumble and RGB LED output. The DualSense firmware feature
+report identifies the base controller's `0x0004` software series and current
+`0x0630` device software instead of reporting DualSense Edge series `0x0044`
+with the older `0x0154` revision. Linux keeps the Bluetooth defaults described
+below.
+
 See [Windows driver package](windows-driver.md) for build, install, validation,
 and signing details.
 

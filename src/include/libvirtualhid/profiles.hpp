@@ -46,7 +46,10 @@ namespace lvh::profiles {
    *
    * The default uses Bluetooth framing because Linux native-controller
    * consumers discover virtual DualShock 4 devices more reliably through that
-   * transport. Use `dualshock4_usb()` when USB framing is explicitly required.
+   * transport. Backends may select a different effective transport when their
+   * native virtual HID stack cannot expose Bluetooth identity; query
+   * `Gamepad::profile()` after creation. Use `dualshock4_usb()` when USB
+   * framing is explicitly required.
    *
    * @return Bluetooth DualShock 4-compatible device profile.
    */
@@ -71,7 +74,10 @@ namespace lvh::profiles {
    *
    * The default uses Bluetooth framing because Linux native-controller
    * consumers discover virtual DualSense devices more reliably through that
-   * transport. Use `dualsense_usb()` when USB framing is explicitly required.
+   * transport. Backends may select a different effective transport when their
+   * native virtual HID stack cannot expose Bluetooth identity; query
+   * `Gamepad::profile()` after creation. Use `dualsense_usb()` when USB framing
+   * is explicitly required.
    *
    * @return Bluetooth DualSense-compatible device profile.
    */
