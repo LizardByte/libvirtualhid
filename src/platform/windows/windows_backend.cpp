@@ -1645,16 +1645,12 @@ namespace lvh::detail {
        */
       OperationStatus submit_button(const MouseEvent &event) {
         const auto bit = hid_mouse_button_bit(event.button);
-        if (!bit) {
+        if (!bit.has_value()) {
           return OperationStatus::success();
         }
 
-        const auto mask = static_cast<std::uint8_t>(1U << *bit);
-        if (event.pressed) {
-          buttons_ = static_cast<std::uint8_t>(buttons_ | mask);
-        } else {
-          buttons_ = static_cast<std::uint8_t>(buttons_ & ~mask);
-        }
+        const auto mask = std::byte {1} << *bit;
+        buttons_ = event.pressed ? (buttons_ | mask) : (buttons_ & ~mask);
 
         return emit(0, 0, 0, 0);
       }
@@ -1670,7 +1666,7 @@ namespace lvh::detail {
        */
       OperationStatus emit(std::int16_t x, std::int16_t y, std::int8_t wheel, std::int8_t pan) {
         std::vector<std::uint8_t> report(mouse_input_report_size, 0U);
-        report[0] = buttons_;
+        report[0] = std::to_integer<std::uint8_t>(buttons_);
         report[1] = static_cast<std::uint8_t>(static_cast<std::uint16_t>(x) & 0xFFU);
         report[2] = static_cast<std::uint8_t>((static_cast<std::uint16_t>(x) >> 8U) & 0xFFU);
         report[3] = static_cast<std::uint8_t>(static_cast<std::uint16_t>(y) & 0xFFU);
@@ -1683,7 +1679,7 @@ namespace lvh::detail {
       std::shared_ptr<WindowsBackendContext> context_;
       std::shared_ptr<WindowsGamepadState> state_;
       WindowsMouse fallback_;
-      std::uint8_t buttons_ = 0U;
+      std::byte buttons_ {};
       int vertical_scroll_remainder_ = 0;
       int horizontal_scroll_remainder_ = 0;
       bool open_ = true;
