@@ -62,7 +62,7 @@ namespace lvh::detail::test {
       OperationStatus protocol_failure_status;
       OperationStatus license_fallback_create_status;
       OperationStatus license_fallback_submit_status;
-    } operations;
+    };
 
     struct CreatedDevice {
       std::uint32_t device_type = 0;
@@ -77,14 +77,18 @@ namespace lvh::detail::test {
       std::string name;
       std::string manufacturer;
       std::string stable_id;
-    } device;
+    };
 
     struct RequestObservations {
       std::vector<std::vector<std::uint8_t>> reports;
       std::size_t destroy_requests = 0;
       std::size_t license_create_requests = 0;
       std::size_t license_fallback_send_inputs = 0;
-    } observations;
+    };
+
+    OperationResults operations;
+    CreatedDevice device;
+    RequestObservations observations;
   };
 
   struct WindowsPlayStationTransportResult {
