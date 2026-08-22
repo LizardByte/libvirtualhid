@@ -535,8 +535,19 @@ namespace lvh::detail {
       return it->second;
     }
 
-    int key_code_to_linux(KeyboardKeyCode key_code) {
-      static constexpr std::array<std::pair<KeyboardKeyCode, int>, 47> special_keys {{
+    int key_code_to_linux(KeyboardKeyCode key_code, bool uses_normalized_key_code) {
+      if (!uses_normalized_key_code) {
+        switch (key_code) {
+          case 0xDC:
+            return KEY_YEN;
+          case 0xE2:
+            return KEY_RO;
+          default:
+            break;
+        }
+      }
+
+      static constexpr std::array<std::pair<KeyboardKeyCode, int>, 50> special_keys {{
         {0x08, KEY_BACKSPACE},
         {0x09, KEY_TAB},
         {0x0D, KEY_ENTER},
@@ -547,7 +558,10 @@ namespace lvh::detail {
         {0x12, KEY_LEFTALT},
         {0xA4, KEY_LEFTALT},
         {0x14, KEY_CAPSLOCK},
+        {0x15, KEY_KATAKANAHIRAGANA},
         {0x1B, KEY_ESC},
+        {0x1C, KEY_HENKAN},
+        {0x1D, KEY_MUHENKAN},
         {0x20, KEY_SPACE},
         {0x21, KEY_PAGEUP},
         {0x22, KEY_PAGEDOWN},
@@ -1442,7 +1456,7 @@ namespace lvh::detail {
 
     private:
       OperationStatus emit_keyboard_event(const KeyboardEvent &event) {
-        const auto linux_key = key_code_to_linux(event.key_code);
+        const auto linux_key = key_code_to_linux(event.key_code, event.uses_normalized_key_code);
         if (linux_key < 0) {
           return OperationStatus::failure(ErrorCode::invalid_argument, "keyboard key code is not supported by the Linux backend");
         }
@@ -2034,8 +2048,19 @@ namespace lvh::detail {
     };
 
 #if defined(LIBVIRTUALHID_HAVE_XTEST)
-    KeySym key_code_to_keysym(KeyboardKeyCode key_code) {
-      static constexpr std::array<std::pair<KeyboardKeyCode, KeySym>, 45> special_keysyms {{
+    KeySym key_code_to_keysym(KeyboardKeyCode key_code, bool uses_normalized_key_code) {
+      if (!uses_normalized_key_code) {
+        switch (key_code) {
+          case 0xDC:
+            return XK_yen;
+          case 0xE2:
+            return XK_backslash;
+          default:
+            break;
+        }
+      }
+
+      static constexpr std::array<std::pair<KeyboardKeyCode, KeySym>, 49> special_keysyms {{
         {0x08, XK_BackSpace},
         {0x09, XK_Tab},
         {0x0D, XK_Return},
@@ -2046,7 +2071,10 @@ namespace lvh::detail {
         {0x12, XK_Alt_L},
         {0xA4, XK_Alt_L},
         {0x14, XK_Caps_Lock},
+        {0x15, XK_Hiragana_Katakana},
         {0x1B, XK_Escape},
+        {0x1C, XK_Henkan},
+        {0x1D, XK_Muhenkan},
         {0x20, XK_space},
         {0x21, XK_Page_Up},
         {0x22, XK_Page_Down},
@@ -2081,6 +2109,7 @@ namespace lvh::detail {
         {0xDC, XK_backslash},
         {0xDD, XK_bracketright},
         {0xDE, XK_apostrophe},
+        {0xE2, XK_backslash},
       }};
 
       if (const auto keysym = mapped_keyboard_code(key_code, special_keysyms); keysym.has_value()) {
@@ -2169,7 +2198,7 @@ namespace lvh::detail {
           return OperationStatus::failure(ErrorCode::device_closed, "XTest keyboard is closed");
         }
 
-        const auto keysym = key_code_to_keysym(event.key_code);
+        const auto keysym = key_code_to_keysym(event.key_code, event.uses_normalized_key_code);
         if (keysym == NoSymbol) {
           return OperationStatus::failure(ErrorCode::invalid_argument, "keyboard key code is not supported by XTest fallback");
         }
