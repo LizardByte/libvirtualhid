@@ -542,8 +542,8 @@ namespace lvh::detail::test {
       .same_boot_anchor_is_accepted = monotonic_timestamp.has_value(),
       .changed_boot_anchor_is_rejected = !changed_boot_timestamp.has_value(),
       .uptime_rollback_is_rejected = !uptime_rollback_timestamp.has_value(),
-      .first_unvalidated_gamepad_is_allowed = unvalidated_gamepad_creation_allowed(0U),
-      .second_unvalidated_gamepad_is_rejected = !unvalidated_gamepad_creation_allowed(1U),
+      .first_unvalidated_device_is_allowed = unvalidated_device_creation_allowed(0U),
+      .second_unvalidated_device_is_rejected = !unvalidated_device_creation_allowed(1U),
       .existing_gamepads_are_retained_before_one_hour =
         !license_outage_retention_elapsed(
           license_outage_device_retention - std::chrono::milliseconds {1}
@@ -552,11 +552,11 @@ namespace lvh::detail::test {
         license_outage_device_retention
       ),
       .first_gamepad_is_retained_after_one_hour =
-        !license_outage_gamepad_should_be_revoked(false, true, 0U),
+        !license_outage_device_should_be_revoked(false, true, 0U),
       .excess_gamepad_is_revoked_after_one_hour =
-        license_outage_gamepad_should_be_revoked(false, true, 1U),
+        license_outage_device_should_be_revoked(false, true, 1U),
       .evaluation_gamepad_is_not_outage_limited =
-        !license_outage_gamepad_should_be_revoked(true, true, 1U),
+        !license_outage_device_should_be_revoked(true, true, 1U),
       .licensed_device_is_revoked = broker_device_should_be_revoked(
         false,
         false,

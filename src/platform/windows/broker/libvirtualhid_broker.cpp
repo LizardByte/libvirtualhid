@@ -85,7 +85,7 @@ namespace lvh::detail::windows_broker_service {
   constexpr auto license_outage_device_retention = std::chrono::hours {1};
   constexpr auto subscription_validation_max_age =
     license_validation_interval + license_outage_device_retention;
-  constexpr std::size_t unvalidated_active_gamepad_limit = 1U;
+  constexpr std::size_t unvalidated_active_device_limit = 1U;
   constexpr auto boot_session_registry_path =
     L"SYSTEM\\CurrentControlSet\\Services\\libvirtualhid_broker\\Runtime";
   constexpr auto boot_session_registry_value = L"BootMarker";
@@ -247,10 +247,10 @@ namespace lvh::detail::windows_broker_service {
            effective_timestamp - validated_at < maximum_age;
   }
 
-  bool unvalidated_gamepad_creation_allowed(
-    std::size_t active_licensed_gamepads
+  bool unvalidated_device_creation_allowed(
+    std::size_t active_licensed_devices
   ) {
-    return active_licensed_gamepads < unvalidated_active_gamepad_limit;
+    return active_licensed_devices < unvalidated_active_device_limit;
   }
 
   bool license_outage_retention_elapsed(
@@ -259,14 +259,14 @@ namespace lvh::detail::windows_broker_service {
     return elapsed >= license_outage_device_retention;
   }
 
-  bool license_outage_gamepad_should_be_revoked(
+  bool license_outage_device_should_be_revoked(
     bool github_actions_evaluation,
     bool limit_licensed_devices,
     std::size_t licensed_devices_kept
   ) {
     return limit_licensed_devices &&
            !github_actions_evaluation &&
-           licensed_devices_kept >= unvalidated_active_gamepad_limit;
+           licensed_devices_kept >= unvalidated_active_device_limit;
   }
 
   bool broker_device_should_be_revoked(
@@ -1203,10 +1203,10 @@ namespace lvh::detail::windows_broker_service {
       return false;
     }
 
-    bool create_gamepad(
+    bool create_device(
       HANDLE control_handle,
-      LvhWindowsCreateGamepadRequest request,
-      LvhWindowsCreateGamepadResponse &response,
+      LvhWindowsCreateDeviceRequest request,
+      LvhWindowsCreateDeviceResponse &response,
       LvhWindowsBrokerStatusCode &status,
       std::string &message
     ) const {
@@ -1226,26 +1226,26 @@ namespace lvh::detail::windows_broker_service {
       OVERLAPPED overlapped {};
       overlapped.hEvent = operation_event.get();
       DWORD bytes_returned = 0;
-      if (::DeviceIoControl(control_handle, LVH_WINDOWS_IOCTL_CREATE_GAMEPAD, &request, sizeof(request), &response, sizeof(response), nullptr, &overlapped) == FALSE && ::GetLastError() != ERROR_IO_PENDING) {
+      if (::DeviceIoControl(control_handle, LVH_WINDOWS_IOCTL_CREATE_DEVICE, &request, sizeof(request), &response, sizeof(response), nullptr, &overlapped) == FALSE && ::GetLastError() != ERROR_IO_PENDING) {
         status = LvhWindowsBrokerStatusCode::backend_failure;
-        message = "create Windows gamepad: " + windows_error_message(::GetLastError());
+        message = "create Windows virtual HID device: " + windows_error_message(::GetLastError());
         return false;
       }
       if (::GetOverlappedResult(control_handle, &overlapped, &bytes_returned, TRUE) == FALSE) {
         status = LvhWindowsBrokerStatusCode::backend_failure;
-        message = "create Windows gamepad: " + windows_error_message(::GetLastError());
+        message = "create Windows virtual HID device: " + windows_error_message(::GetLastError());
         return false;
       }
 
       if (bytes_returned < sizeof(response)) {
         status = LvhWindowsBrokerStatusCode::backend_failure;
-        message = "Windows driver returned a truncated gamepad response";
+        message = "Windows driver returned a truncated device response";
         return false;
       }
 
       status = broker_status_from_protocol(response.status);
       if (status != LvhWindowsBrokerStatusCode::success) {
-        message = "Windows driver rejected gamepad creation";
+        message = "Windows driver rejected virtual HID device creation";
         return false;
       }
 
@@ -1360,15 +1360,15 @@ namespace lvh::detail::windows_broker_service {
       return response;
     }
 
-    LvhWindowsBrokerCreateGamepadResponse handle_create(
-      const LvhWindowsBrokerCreateGamepadRequest &request,
+    LvhWindowsBrokerCreateDeviceResponse handle_create(
+      const LvhWindowsBrokerCreateDeviceRequest &request,
       DWORD client_process_id
     ) {
-      LvhWindowsBrokerCreateGamepadResponse response {};
+      LvhWindowsBrokerCreateDeviceResponse response {};
       response.version = LVH_WINDOWS_BROKER_PROTOCOL_VERSION;
       response.size = sizeof(response);
-      response.gamepad.version = LVH_WINDOWS_CONTROL_PROTOCOL_VERSION;
-      response.gamepad.size = sizeof(response.gamepad);
+      response.device.version = LVH_WINDOWS_CONTROL_PROTOCOL_VERSION;
+      response.device.size = sizeof(response.device);
 
       if (!lvh::windows::broker_validation::valid_request(request)) {
         response.status = std::to_underlying(LvhWindowsBrokerStatusCode::invalid_argument);
@@ -1404,7 +1404,7 @@ namespace lvh::detail::windows_broker_service {
         return response;
       }
 
-      const auto [authorization_status, github_actions_evaluation] = authorize_gamepad_create(
+      const auto [authorization_status, github_actions_evaluation] = authorize_device_create(
         response.license,
         response.message
       );
@@ -1414,7 +1414,7 @@ namespace lvh::detail::windows_broker_service {
       }
 
       auto status = LvhWindowsBrokerStatusCode::success;
-      if (std::string message; !driver_.create_gamepad(client_control_handle.get(), request.gamepad, response.gamepad, status, message)) {
+      if (std::string message; !driver_.create_device(client_control_handle.get(), request.device, response.device, status, message)) {
         response.status = std::to_underlying(status);
         fill_license_status(response.license);
         copy_c_string(response.message, message);
@@ -1424,9 +1424,9 @@ namespace lvh::detail::windows_broker_service {
       {
         std::lock_guard lock {mutex_};
         devices_.try_emplace(
-          response.gamepad.driver_device_id,
+          response.device.driver_device_id,
           DeviceRecord {
-            .session_token = response.gamepad.session_token,
+            .session_token = response.device.session_token,
             .owner_process_id = client_process_id,
             .owner_process = std::move(owner_process),
             .github_actions_evaluation = github_actions_evaluation,
@@ -1439,8 +1439,8 @@ namespace lvh::detail::windows_broker_service {
       copy_c_string(
         response.message,
         github_actions_evaluation ?
-          "Created virtual gamepad using the GitHub Actions evaluation window." :
-          "Created virtual gamepad."
+          "Created virtual HID device using the GitHub Actions evaluation window." :
+          "Created virtual HID device."
       );
       return response;
     }
@@ -1531,7 +1531,7 @@ namespace lvh::detail::windows_broker_service {
             evaluation_expired,
             revoke_licensed_devices
           );
-          if (const auto over_outage_limit = license_outage_gamepad_should_be_revoked(device.github_actions_evaluation, limit_licensed_devices, licensed_devices_kept); owner_gone || revoke_for_license || over_outage_limit) {
+          if (const auto over_outage_limit = license_outage_device_should_be_revoked(device.github_actions_evaluation, limit_licensed_devices, licensed_devices_kept); owner_gone || revoke_for_license || over_outage_limit) {
             cleanup_requests.push_back(make_destroy_device_request(driver_device_id, device.session_token));
             continue;
           }
@@ -1559,7 +1559,7 @@ namespace lvh::detail::windows_broker_service {
 
       {
         std::lock_guard lock {mutex_};
-        if (revoke_licensed_devices_ && active_licensed_gamepad_count_locked() == 0U) {
+        if (revoke_licensed_devices_ && active_licensed_device_count_locked() == 0U) {
           revoke_licensed_devices_ = false;
         }
       }
@@ -1970,7 +1970,7 @@ namespace lvh::detail::windows_broker_service {
       }
     }
 
-    std::size_t active_licensed_gamepad_count_locked() const {
+    std::size_t active_licensed_device_count_locked() const {
       return static_cast<std::size_t>(std::ranges::count_if(
         devices_,
         [](const auto &entry) {
@@ -2113,7 +2113,7 @@ namespace lvh::detail::windows_broker_service {
       };
     }
 
-    std::pair<LvhWindowsBrokerStatusCode, bool> authorize_gamepad_create(
+    std::pair<LvhWindowsBrokerStatusCode, bool> authorize_device_create(
       LvhWindowsBrokerLicenseStatus &license,
       std::array<char, LVH_WINDOWS_BROKER_MAX_MESSAGE_SIZE> &message
     ) {
@@ -2122,7 +2122,7 @@ namespace lvh::detail::windows_broker_service {
         if (!license_state_) {
           if (!github_actions_) {
             fill_license_status_locked(license);
-            copy_c_string(message, "An active license is required to create virtual gamepads.");
+            copy_c_string(message, "An active license is required to create virtual HID devices.");
             return {LvhWindowsBrokerStatusCode::license_required, false};
           }
 
@@ -2169,14 +2169,14 @@ namespace lvh::detail::windows_broker_service {
           return {LvhWindowsBrokerStatusCode::success, false};
         }
 
-        if (unvalidated_gamepad_creation_allowed(active_licensed_gamepad_count_locked())) {
+        if (unvalidated_device_creation_allowed(active_licensed_device_count_locked())) {
           fill_license_status_locked(license);
-          copy_c_string(message, "Polar validation is unavailable; one active gamepad is permitted.");
+          copy_c_string(message, "Polar validation is unavailable; one active device is permitted.");
           return {LvhWindowsBrokerStatusCode::success, false};
         }
 
         fill_license_status_locked(license);
-        copy_c_string(message, "Polar validation is unavailable; the one-gamepad fallback is already in use.");
+        copy_c_string(message, "Polar validation is unavailable; the one-device fallback is already in use.");
         return {LvhWindowsBrokerStatusCode::network_unavailable, false};
       }
     }
@@ -2194,7 +2194,7 @@ namespace lvh::detail::windows_broker_service {
         copy_c_string(license.customer_email, "");
         if (!github_actions_) {
           copy_c_string(license.plan_name, "Unlicensed");
-          copy_c_string(license.message, "An active license is required to create gamepads.");
+          copy_c_string(license.message, "An active license is required to create virtual HID devices.");
           return;
         }
 
@@ -2202,7 +2202,7 @@ namespace lvh::detail::windows_broker_service {
         if (!github_actions_evaluation_state_) {
           copy_c_string(
             license.message,
-            "Five-minute GitHub Actions evaluation starts with the first gamepad creation."
+            "Five-minute GitHub Actions evaluation starts with the first virtual HID device creation."
           );
           return;
         }
@@ -2249,7 +2249,7 @@ namespace lvh::detail::windows_broker_service {
           license.message,
           license_online_confirmed_ ?
             "Licensed." :
-            "Polar validation unavailable; existing gamepads are retained for one hour and new creation is limited to one active gamepad."
+            "Polar validation unavailable; existing devices are retained for one hour and new creation is limited to one active device."
         );
       } else {
         license.state = std::to_underlying(LvhWindowsBrokerLicenseState::invalid);
@@ -2355,9 +2355,9 @@ namespace lvh::detail::windows_broker_service {
         }
         break;
 
-      case LvhWindowsBrokerRequestType::create_gamepad:
-        if (header.size == sizeof(LvhWindowsBrokerCreateGamepadRequest)) {
-          const auto request = request_from_buffer<LvhWindowsBrokerCreateGamepadRequest>(request_buffer);
+      case LvhWindowsBrokerRequestType::create_device:
+        if (header.size == sizeof(LvhWindowsBrokerCreateDeviceRequest)) {
+          const auto request = request_from_buffer<LvhWindowsBrokerCreateDeviceRequest>(request_buffer);
           static_cast<void>(send_response(
             broker_state().handle_create(request, pipe_client_process_id(pipe))
           ));

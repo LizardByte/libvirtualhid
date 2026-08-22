@@ -33,8 +33,9 @@ namespace {
     return entries;
   }
 
-  LvhWindowsCreateGamepadRequest series_request() {
-    LvhWindowsCreateGamepadRequest request {};
+  LvhWindowsCreateDeviceRequest series_request() {
+    LvhWindowsCreateDeviceRequest request {};
+    request.device_type = LVH_WINDOWS_DEVICE_GAMEPAD;
     request.gamepad_kind = LVH_WINDOWS_GAMEPAD_XBOX_SERIES;
     request.hardware_ids.vendor_id = 0x045E;
     request.hardware_ids.product_id = 0x0B12;
@@ -42,12 +43,13 @@ namespace {
     return request;
   }
 
-  LvhWindowsCreateGamepadRequest playstation_request(
+  LvhWindowsCreateDeviceRequest playstation_request(
     std::uint32_t gamepad_kind,
     std::uint32_t bus_type = LVH_WINDOWS_BUS_USB,
     std::string_view stable_id = "10:20:30:40:50:60"
   ) {
-    LvhWindowsCreateGamepadRequest request {};
+    LvhWindowsCreateDeviceRequest request {};
+    request.device_type = LVH_WINDOWS_DEVICE_GAMEPAD;
     request.client_device_id = 0x12345678U;
     request.gamepad_kind = gamepad_kind;
     request.bus_type = bus_type;

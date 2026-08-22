@@ -60,18 +60,18 @@ TEST(WindowsProtocolTest, ExposesStableProtocolConstants) {
   EXPECT_STREQ(lvh::detail::windows::default_control_device_path.data(), R"(\\.\LibVirtualHid)");
   EXPECT_STREQ(lvh::detail::windows::global_control_device_path.data(), R"(\\.\Global\LibVirtualHid)");
 
-  EXPECT_EQ(LVH_WINDOWS_CONTROL_PROTOCOL_VERSION, 2U);
-  EXPECT_EQ(LVH_WINDOWS_IOCTL_CREATE_GAMEPAD, 0x8000E000U);
+  EXPECT_EQ(LVH_WINDOWS_CONTROL_PROTOCOL_VERSION, 3U);
+  EXPECT_EQ(LVH_WINDOWS_IOCTL_CREATE_DEVICE, 0x8000E000U);
   EXPECT_EQ(LVH_WINDOWS_IOCTL_DESTROY_DEVICE, 0x8000E004U);
   EXPECT_EQ(LVH_WINDOWS_IOCTL_SUBMIT_INPUT_REPORT, 0x8000E008U);
   EXPECT_EQ(LVH_WINDOWS_IOCTL_READ_OUTPUT_REPORT, 0x8000600CU);
   EXPECT_EQ(LVH_WINDOWS_IOCTL_RESET_DEVICES, 0x8000E010U);
 
-  EXPECT_EQ(sizeof(LvhWindowsGamepadHardwareIds), 14U);
-  EXPECT_EQ(sizeof(LvhWindowsGamepadReportSizes), 24U);
-  EXPECT_EQ(sizeof(LvhWindowsCreateGamepadRequest), 2498U);
+  EXPECT_EQ(sizeof(LvhWindowsDeviceHardwareIds), 14U);
+  EXPECT_EQ(sizeof(LvhWindowsDeviceReportSizes), 24U);
+  EXPECT_EQ(sizeof(LvhWindowsCreateDeviceRequest), 2502U);
   EXPECT_EQ(sizeof(LvhWindowsSessionToken), 32U);
-  EXPECT_EQ(sizeof(LvhWindowsCreateGamepadResponse), 316U);
+  EXPECT_EQ(sizeof(LvhWindowsCreateDeviceResponse), 316U);
   EXPECT_EQ(sizeof(LvhWindowsDestroyDeviceRequest), 48U);
   EXPECT_EQ(sizeof(LvhWindowsResetDevicesRequest), 8U);
   EXPECT_EQ(sizeof(LvhWindowsSubmitInputReportRequest), 312U);
@@ -83,6 +83,10 @@ TEST(WindowsProtocolTest, MapsBusTypesAndGamepadKinds) {
   EXPECT_EQ(lvh::detail::windows::protocol_bus_type(lvh::BusType::usb), LVH_WINDOWS_BUS_USB);
   EXPECT_EQ(lvh::detail::windows::protocol_bus_type(lvh::BusType::bluetooth), LVH_WINDOWS_BUS_BLUETOOTH);
   EXPECT_EQ(lvh::detail::windows::protocol_bus_type(static_cast<lvh::BusType>(255)), LVH_WINDOWS_BUS_UNKNOWN);
+
+  EXPECT_EQ(lvh::detail::windows::protocol_device_type(lvh::DeviceType::gamepad), LVH_WINDOWS_DEVICE_GAMEPAD);
+  EXPECT_EQ(lvh::detail::windows::protocol_device_type(lvh::DeviceType::mouse), LVH_WINDOWS_DEVICE_MOUSE);
+  EXPECT_EQ(lvh::detail::windows::protocol_device_type(lvh::DeviceType::keyboard), 0U);
 
   EXPECT_EQ(
     lvh::detail::windows::protocol_gamepad_kind(lvh::GamepadProfileKind::generic),
@@ -139,7 +143,7 @@ TEST(WindowsProtocolTest, BuildsCapabilityFlags) {
 }
 
 TEST(WindowsProtocolTest, CopyHelpersTruncateAndZeroFill) {
-  LvhWindowsCreateGamepadRequest create_request {};
+  LvhWindowsCreateDeviceRequest create_request {};
   create_request.name[0] = 'x';
   create_request.name[1] = 'x';
   create_request.name[2] = 'x';
@@ -176,11 +180,12 @@ TEST(WindowsProtocolTest, PacksGamepadCreateRequest) {
   options.profile = lvh::profiles::dualsense_bluetooth();
   options.metadata.stable_id = "client-0-controller-1";
 
-  const auto request = lvh::detail::windows::make_create_gamepad_request(42, options);
+  const auto request = lvh::detail::windows::make_create_device_request(42, options);
 
   EXPECT_EQ(request.version, LVH_WINDOWS_CONTROL_PROTOCOL_VERSION);
   EXPECT_EQ(request.size, sizeof(request));
   EXPECT_EQ(request.client_device_id, 42U);
+  EXPECT_EQ(request.device_type, LVH_WINDOWS_DEVICE_GAMEPAD);
   EXPECT_EQ(request.bus_type, LVH_WINDOWS_BUS_BLUETOOTH);
   EXPECT_EQ(request.gamepad_kind, LVH_WINDOWS_GAMEPAD_DUALSENSE);
   EXPECT_EQ(request.hardware_ids.vendor_id, options.profile.vendor_id);
@@ -198,6 +203,40 @@ TEST(WindowsProtocolTest, PacksGamepadCreateRequest) {
   EXPECT_NE(request.flags & LVH_WINDOWS_GAMEPAD_FLAG_SUPPORTS_MOTION, 0U);
   EXPECT_NE(request.flags & LVH_WINDOWS_GAMEPAD_FLAG_SUPPORTS_TOUCHPAD, 0U);
   EXPECT_NE(request.flags & LVH_WINDOWS_GAMEPAD_FLAG_SUPPORTS_BATTERY, 0U);
+}
+
+TEST(WindowsProtocolTest, PacksMouseCreateRequestWithoutGamepadPolicy) {
+  lvh::CreateMouseOptions options;
+  options.profile.device_type = lvh::DeviceType::mouse;
+  options.profile.gamepad_kind = lvh::GamepadProfileKind::generic;
+  options.profile.bus_type = lvh::BusType::bluetooth;
+  options.profile.vendor_id = 0x1234;
+  options.profile.product_id = 0x5678;
+  options.profile.version = 0x4321;
+  options.profile.report_id = 0U;
+  options.profile.input_report_size = LVH_WINDOWS_MOUSE_INPUT_REPORT_SIZE;
+  options.profile.output_report_size = 0U;
+  options.profile.name = "Configured mouse";
+  options.profile.manufacturer = "Configured manufacturer";
+  options.profile.report_descriptor = {0x05, 0x01, 0x09, 0x02};
+  options.profile.capabilities.supports_rumble = true;
+  options.stable_id = "configured-mouse";
+
+  const auto request = lvh::detail::windows::make_create_device_request(43U, options);
+
+  EXPECT_EQ(request.device_type, LVH_WINDOWS_DEVICE_MOUSE);
+  EXPECT_EQ(request.bus_type, LVH_WINDOWS_BUS_BLUETOOTH);
+  EXPECT_EQ(request.gamepad_kind, LVH_WINDOWS_GAMEPAD_GENERIC);
+  EXPECT_EQ(request.flags, 0U);
+  EXPECT_EQ(request.hardware_ids.vendor_id, 0x1234U);
+  EXPECT_EQ(request.hardware_ids.product_id, 0x5678U);
+  EXPECT_EQ(request.hardware_ids.device_version, 0x4321U);
+  EXPECT_EQ(request.hardware_ids.report_id, 0U);
+  EXPECT_EQ(request.report_sizes.input_report_size, LVH_WINDOWS_MOUSE_INPUT_REPORT_SIZE);
+  EXPECT_EQ(request.report_sizes.output_report_size, 0U);
+  EXPECT_STREQ(request.name.data(), "Configured mouse");
+  EXPECT_STREQ(request.manufacturer.data(), "Configured manufacturer");
+  EXPECT_STREQ(request.stable_id.data(), "configured-mouse");
 }
 
 TEST(WindowsProtocolTest, UsesUsbFramingForPlayStationProfilesOnVhf) {
@@ -239,7 +278,7 @@ TEST(WindowsProtocolTest, PacksGenericUnknownBusGamepadCreateRequestWithoutOptio
   options.profile.bus_type = lvh::BusType::unknown;
   options.profile.output_report_size = 0;
 
-  const auto request = lvh::detail::windows::make_create_gamepad_request(7, options);
+  const auto request = lvh::detail::windows::make_create_device_request(7, options);
 
   EXPECT_EQ(request.bus_type, LVH_WINDOWS_BUS_UNKNOWN);
   EXPECT_EQ(request.gamepad_kind, LVH_WINDOWS_GAMEPAD_GENERIC);
@@ -254,7 +293,7 @@ TEST(WindowsProtocolTest, PresentsXboxSeriesNativeWindowsIdentityAndReportShape)
   lvh::CreateGamepadOptions options;
   options.profile = lvh::profiles::xbox_series();
 
-  const auto request = lvh::detail::windows::make_create_gamepad_request(8, options);
+  const auto request = lvh::detail::windows::make_create_device_request(8, options);
   const std::vector<std::uint8_t> descriptor(
     request.report_descriptor.data(),
     request.report_descriptor.data() + request.report_sizes.report_descriptor_size
@@ -312,7 +351,7 @@ TEST(WindowsProtocolTest, PresentsBuiltInGenericControllerAsDirectInputPidJoysti
   lvh::CreateGamepadOptions options;
   options.profile = lvh::profiles::generic_gamepad();
 
-  const auto request = lvh::detail::windows::make_create_gamepad_request(8, options);
+  const auto request = lvh::detail::windows::make_create_device_request(8, options);
   const std::vector<std::uint8_t> descriptor(
     request.report_descriptor.data(),
     request.report_descriptor.data() + request.report_sizes.report_descriptor_size
@@ -568,7 +607,7 @@ TEST(WindowsProtocolTest, TruncatesOversizedGamepadCreateRequestFields) {
   options.profile.manufacturer.assign(LVH_WINDOWS_MAX_MANUFACTURER_SIZE + 5U, 'm');
   options.metadata.stable_id.assign(LVH_WINDOWS_MAX_STABLE_ID_SIZE + 5U, 's');
 
-  const auto request = lvh::detail::windows::make_create_gamepad_request(9, options);
+  const auto request = lvh::detail::windows::make_create_device_request(9, options);
 
   EXPECT_EQ(request.report_sizes.input_report_size, LVH_WINDOWS_MAX_INPUT_REPORT_SIZE);
   EXPECT_EQ(request.report_sizes.output_report_size, LVH_WINDOWS_MAX_OUTPUT_REPORT_SIZE);
