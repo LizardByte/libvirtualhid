@@ -8,7 +8,7 @@
 #include <array>
 #include <stdint.h>
 
-inline constexpr uint32_t LVH_WINDOWS_CONTROL_PROTOCOL_VERSION = 2u;
+inline constexpr uint32_t LVH_WINDOWS_CONTROL_PROTOCOL_VERSION = 3u;
 inline constexpr char LVH_WINDOWS_CONTROL_DEVICE_PATH[] = R"(\\.\LibVirtualHid)";
 inline constexpr char LVH_WINDOWS_GLOBAL_CONTROL_DEVICE_PATH[] = R"(\\.\Global\LibVirtualHid)";
 
@@ -35,7 +35,7 @@ constexpr uint32_t lvh_windows_ctl_code(
   return (device_type << 16u) | (access << 14u) | (function_code << 2u) | method;
 }
 
-inline constexpr uint32_t LVH_WINDOWS_IOCTL_CREATE_GAMEPAD = lvh_windows_ctl_code(
+inline constexpr uint32_t LVH_WINDOWS_IOCTL_CREATE_DEVICE = lvh_windows_ctl_code(
   LVH_WINDOWS_FILE_DEVICE_LIBVIRTUALHID,
   0x800u,
   LVH_WINDOWS_METHOD_BUFFERED,
@@ -87,6 +87,11 @@ enum class LvhWindowsBusType : uint32_t {
   bluetooth = 2,
 };
 
+enum class LvhWindowsDeviceType : uint32_t {
+  gamepad = 1,
+  mouse = 2,
+};
+
 enum class LvhWindowsGamepadProfileKind : uint32_t {
   generic = 0,
   xbox_360 = 1,
@@ -114,6 +119,10 @@ namespace lvh_windows_protocol_detail {
   inline constexpr uint32_t bus_usb = to_uint32(usb);
   inline constexpr uint32_t bus_bluetooth = to_uint32(bluetooth);
 
+  using enum LvhWindowsDeviceType;
+  inline constexpr uint32_t device_gamepad = to_uint32(gamepad);
+  inline constexpr uint32_t device_mouse = to_uint32(mouse);
+
   using enum LvhWindowsGamepadProfileKind;
   inline constexpr uint32_t gamepad_generic = to_uint32(generic);
   inline constexpr uint32_t gamepad_xbox_360 = to_uint32(xbox_360);
@@ -136,6 +145,11 @@ inline constexpr uint32_t LVH_WINDOWS_BUS_UNKNOWN = lvh_windows_protocol_detail:
 inline constexpr uint32_t LVH_WINDOWS_BUS_USB = lvh_windows_protocol_detail::bus_usb;
 inline constexpr uint32_t LVH_WINDOWS_BUS_BLUETOOTH = lvh_windows_protocol_detail::bus_bluetooth;
 
+inline constexpr uint32_t LVH_WINDOWS_DEVICE_GAMEPAD = lvh_windows_protocol_detail::device_gamepad;
+inline constexpr uint32_t LVH_WINDOWS_DEVICE_MOUSE = lvh_windows_protocol_detail::device_mouse;
+
+inline constexpr uint32_t LVH_WINDOWS_MOUSE_INPUT_REPORT_SIZE = 7u;
+
 inline constexpr uint32_t LVH_WINDOWS_GAMEPAD_GENERIC = lvh_windows_protocol_detail::gamepad_generic;
 inline constexpr uint32_t LVH_WINDOWS_GAMEPAD_XBOX_360 = lvh_windows_protocol_detail::gamepad_xbox_360;
 inline constexpr uint32_t LVH_WINDOWS_GAMEPAD_XBOX_ONE = lvh_windows_protocol_detail::gamepad_xbox_one;
@@ -147,7 +161,7 @@ inline constexpr uint32_t LVH_WINDOWS_GAMEPAD_DUALSHOCK4 =
 
 #pragma pack(push, 1)
 
-struct LvhWindowsGamepadHardwareIds {
+struct LvhWindowsDeviceHardwareIds {
   uint16_t vendor_id;
   uint16_t product_id;
   uint16_t device_version;
@@ -155,7 +169,7 @@ struct LvhWindowsGamepadHardwareIds {
   std::array<uint8_t, 7> reserved0;
 };
 
-struct LvhWindowsGamepadReportSizes {
+struct LvhWindowsDeviceReportSizes {
   uint32_t input_report_size;
   uint32_t output_report_size;
   uint32_t report_descriptor_size;
@@ -168,22 +182,23 @@ struct LvhWindowsSessionToken {
   std::array<uint8_t, LVH_WINDOWS_SESSION_TOKEN_SIZE> bytes;
 };
 
-struct LvhWindowsCreateGamepadRequest {
+struct LvhWindowsCreateDeviceRequest {
   uint32_t version;
   uint32_t size;
   uint64_t client_device_id;
+  uint32_t device_type;
   uint32_t bus_type;
   uint32_t gamepad_kind;
   uint32_t flags;
-  LvhWindowsGamepadHardwareIds hardware_ids;
-  LvhWindowsGamepadReportSizes report_sizes;
+  LvhWindowsDeviceHardwareIds hardware_ids;
+  LvhWindowsDeviceReportSizes report_sizes;
   std::array<uint8_t, LVH_WINDOWS_MAX_REPORT_DESCRIPTOR_SIZE> report_descriptor;
   std::array<char, LVH_WINDOWS_MAX_DEVICE_NAME_SIZE> name;
   std::array<char, LVH_WINDOWS_MAX_MANUFACTURER_SIZE> manufacturer;
   std::array<char, LVH_WINDOWS_MAX_STABLE_ID_SIZE> stable_id;
 };
 
-struct LvhWindowsCreateGamepadResponse {
+struct LvhWindowsCreateDeviceResponse {
   uint32_t version;
   uint32_t size;
   uint32_t status;

@@ -73,6 +73,24 @@ namespace lvh::detail::windows {
     return LVH_WINDOWS_BUS_UNKNOWN;
   }
 
+  inline std::uint32_t protocol_device_type(DeviceType device_type) {
+    switch (device_type) {
+      using enum DeviceType;
+
+      case gamepad:
+        return LVH_WINDOWS_DEVICE_GAMEPAD;
+      case mouse:
+        return LVH_WINDOWS_DEVICE_MOUSE;
+      case keyboard:
+      case touchscreen:
+      case trackpad:
+      case pen_tablet:
+        break;
+    }
+
+    return 0U;
+  }
+
   inline std::uint32_t protocol_gamepad_kind(GamepadProfileKind kind) {
     switch (kind) {
       using enum GamepadProfileKind;
@@ -146,20 +164,22 @@ namespace lvh::detail::windows {
     return static_cast<std::uint32_t>(copied);
   }
 
-  inline LvhWindowsCreateGamepadRequest make_create_gamepad_request(
+  inline LvhWindowsCreateDeviceRequest make_create_device_request(
     DeviceId device_id,
-    const CreateGamepadOptions &options
+    const DeviceProfile &profile,
+    std::string_view stable_id
   ) {
-    auto report_descriptor = options.profile.report_descriptor;
-    auto input_report_size = options.profile.input_report_size;
-    auto output_report_size = options.profile.output_report_size;
-    auto bus_type = options.profile.bus_type;
-    auto product_id = options.profile.product_id;
-    auto device_version = options.profile.version;
-    auto report_id = options.profile.report_id;
+    auto report_descriptor = profile.report_descriptor;
+    auto input_report_size = profile.input_report_size;
+    auto output_report_size = profile.output_report_size;
+    auto bus_type = profile.bus_type;
+    auto product_id = profile.product_id;
+    auto device_version = profile.version;
+    auto report_id = profile.report_id;
     if (
-      options.profile.gamepad_kind == GamepadProfileKind::generic &&
-      options.profile.capabilities.supports_rumble
+      profile.device_type == DeviceType::gamepad &&
+      profile.gamepad_kind == GamepadProfileKind::generic &&
+      profile.capabilities.supports_rumble
     ) {
       auto pid_descriptor = make_generic_pid_report_descriptor(report_descriptor);
       if (!pid_descriptor.empty()) {
@@ -167,20 +187,21 @@ namespace lvh::detail::windows {
         output_report_size = generic_pid_output_report_size;
       }
     }
-    if (options.profile.gamepad_kind == GamepadProfileKind::xbox_series) {
+    if (profile.device_type == DeviceType::gamepad && profile.gamepad_kind == GamepadProfileKind::xbox_series) {
       input_report_size = xbox_series_windows_input_report_size;
       output_report_size = xbox_series_windows_output_report_size;
       product_id = xbox_series_windows_product_id;
       device_version = xbox_series_windows_device_version;
     }
-    LvhWindowsCreateGamepadRequest request {};
+    LvhWindowsCreateDeviceRequest request {};
     request.version = LVH_WINDOWS_CONTROL_PROTOCOL_VERSION;
     request.size = sizeof(request);
     request.client_device_id = device_id;
+    request.device_type = protocol_device_type(profile.device_type);
     request.bus_type = protocol_bus_type(bus_type);
-    request.gamepad_kind = protocol_gamepad_kind(options.profile.gamepad_kind);
-    request.flags = gamepad_flags(options.profile.capabilities);
-    request.hardware_ids.vendor_id = options.profile.vendor_id;
+    request.gamepad_kind = protocol_gamepad_kind(profile.gamepad_kind);
+    request.flags = profile.device_type == DeviceType::gamepad ? gamepad_flags(profile.capabilities) : 0U;
+    request.hardware_ids.vendor_id = profile.vendor_id;
     request.hardware_ids.product_id = product_id;
     request.hardware_ids.device_version = device_version;
     request.hardware_ids.report_id = report_id;
@@ -192,11 +213,25 @@ namespace lvh::detail::windows {
     );
     request.report_sizes.report_descriptor_size =
       copy_bytes(request.report_descriptor, report_descriptor);
-    request.report_sizes.name_size = copy_string(request.name, options.profile.name);
-    request.report_sizes.manufacturer_size = copy_string(request.manufacturer, options.profile.manufacturer);
-    request.report_sizes.stable_id_size = copy_string(request.stable_id, options.metadata.stable_id);
+    request.report_sizes.name_size = copy_string(request.name, profile.name);
+    request.report_sizes.manufacturer_size = copy_string(request.manufacturer, profile.manufacturer);
+    request.report_sizes.stable_id_size = copy_string(request.stable_id, stable_id);
 
     return request;
+  }
+
+  inline LvhWindowsCreateDeviceRequest make_create_device_request(
+    DeviceId device_id,
+    const CreateGamepadOptions &options
+  ) {
+    return make_create_device_request(device_id, options.profile, options.metadata.stable_id);
+  }
+
+  inline LvhWindowsCreateDeviceRequest make_create_device_request(
+    DeviceId device_id,
+    const CreateMouseOptions &options
+  ) {
+    return make_create_device_request(device_id, options.profile, options.stable_id);
   }
 
   inline LvhWindowsDestroyDeviceRequest make_destroy_device_request(

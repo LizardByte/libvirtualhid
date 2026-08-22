@@ -67,7 +67,7 @@ namespace lvh::detail::windows {
     return is_xbox_gamepad(gamepad_kind);
   }
 
-  inline std::wstring make_hardware_ids(const LvhWindowsCreateGamepadRequest &request) {
+  inline std::wstring make_hardware_ids(const LvhWindowsCreateDeviceRequest &request) {
     const auto &ids = request.hardware_ids;
     std::wstring hardware_ids;
     if (uses_xinputhid_match_id(request.gamepad_kind)) {

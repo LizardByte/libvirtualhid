@@ -41,9 +41,9 @@ namespace lvh::detail {
         create_protocol_status_ = status;
       }
 
-      OperationStatus create_gamepad(
-        const LvhWindowsCreateGamepadRequest &request,
-        LvhWindowsCreateGamepadResponse &response
+      OperationStatus create_device(
+        const LvhWindowsCreateDeviceRequest &request,
+        LvhWindowsCreateDeviceResponse &response
       ) {
         std::lock_guard lock {mutex_};
         create_requests_.push_back(request);
@@ -57,7 +57,7 @@ namespace lvh::detail {
         response.driver_device_id = next_driver_id_++;
         response.session_token = session_token_;
         windows::copy_string(response.device_path, response_device_path_);
-        return protocol_status(response.status, "Windows driver rejected gamepad creation");
+        return protocol_status(response.status, "Windows driver rejected virtual HID device creation");
       }
 
       OperationStatus destroy_device(
@@ -131,6 +131,16 @@ namespace lvh::detail {
         return destroyed_ids_.size();
       }
 
+      std::vector<LvhWindowsCreateDeviceRequest> create_requests() const {
+        std::lock_guard lock {mutex_};
+        return create_requests_;
+      }
+
+      std::vector<std::vector<std::uint8_t>> submit_reports() const {
+        std::lock_guard lock {mutex_};
+        return submit_reports_;
+      }
+
     private:
       bool session_token_matches(const LvhWindowsSessionToken &session_token) const {
         return std::ranges::equal(session_token.bytes, session_token_.bytes);
@@ -154,7 +164,7 @@ namespace lvh::detail {
       std::uint32_t create_protocol_status_ = LVH_WINDOWS_STATUS_SUCCESS;
       OperationStatus submit_status_ = OperationStatus::success();
       OperationStatus destroy_status_ = OperationStatus::success();
-      std::vector<LvhWindowsCreateGamepadRequest> create_requests_;
+      std::vector<LvhWindowsCreateDeviceRequest> create_requests_;
       std::vector<std::vector<std::uint8_t>> submit_reports_;
       std::vector<std::uint64_t> destroyed_ids_;
       std::vector<LvhWindowsOutputReportEvent> output_events_;
@@ -169,11 +179,11 @@ namespace lvh::detail {
         return state_->path();
       }
 
-      OperationStatus create_gamepad(
-        const LvhWindowsCreateGamepadRequest &request,
-        LvhWindowsCreateGamepadResponse &response
+      OperationStatus create_device(
+        const LvhWindowsCreateDeviceRequest &request,
+        LvhWindowsCreateDeviceResponse &response
       ) const override {
-        return state_->create_gamepad(request, response);
+        return state_->create_device(request, response);
       }
 
       OperationStatus destroy_device(
@@ -489,6 +499,100 @@ namespace lvh::detail {
         result.create_requests = command_state->create_request_count();
         result.submit_requests = command_state->submit_report_count();
         result.destroy_requests = command_state->destroy_request_count();
+      }
+
+      return result;
+    }
+
+    WindowsHidMouseResult windows_backend_hid_mouse() {
+      WindowsHidMouseResult result;
+      auto command_state = std::make_shared<FakeWindowsControlChannelState>();
+      auto backend = make_fake_windows_backend(command_state, std::make_shared<FakeWindowsControlChannelState>());
+
+      CreateMouseOptions options;
+      options.profile = profiles::mouse();
+      options.profile.bus_type = BusType::bluetooth;
+      options.profile.vendor_id = 0x1234;
+      options.profile.product_id = 0x5678;
+      options.profile.version = 0x4321;
+      options.profile.name = "Configured mouse";
+      options.profile.manufacturer = "Configured manufacturer";
+      options.stable_id = "configured-mouse";
+
+      auto created = backend->create_mouse(8U, options);
+      result.create_status = created.status;
+      if (created) {
+        result.motion_status = created.mouse->submit(MouseEvent {
+          .kind = MouseEventKind::relative_motion,
+          .x = 70000,
+          .y = -70000,
+        });
+        result.large_scroll_status = created.mouse->submit(MouseEvent {
+          .kind = MouseEventKind::vertical_scroll,
+          .high_resolution_scroll = 120 * 132,
+        });
+        result.partial_scroll_status = created.mouse->submit(MouseEvent {
+          .kind = MouseEventKind::horizontal_scroll,
+          .high_resolution_scroll = 60,
+        });
+        result.completed_scroll_status = created.mouse->submit(MouseEvent {
+          .kind = MouseEventKind::horizontal_scroll,
+          .high_resolution_scroll = 60,
+        });
+        result.close_status = created.mouse->close();
+      }
+
+      const auto requests = command_state->create_requests();
+      if (!requests.empty()) {
+        const auto &request = requests.front();
+        result.device_type = request.device_type;
+        result.bus_type = request.bus_type;
+        result.flags = request.flags;
+        result.vendor_id = request.hardware_ids.vendor_id;
+        result.product_id = request.hardware_ids.product_id;
+        result.version = request.hardware_ids.device_version;
+        result.report_id = request.hardware_ids.report_id;
+        result.input_report_size = request.report_sizes.input_report_size;
+        result.output_report_size = request.report_sizes.output_report_size;
+        result.name = request.name.data();
+        result.manufacturer = request.manufacturer.data();
+        result.stable_id = request.stable_id.data();
+      }
+      result.reports = command_state->submit_reports();
+      result.destroy_requests = command_state->destroy_request_count();
+
+      {
+        auto failure_state = std::make_shared<FakeWindowsControlChannelState>();
+        failure_state->set_create_protocol_status(LVH_WINDOWS_STATUS_BACKEND_FAILURE);
+        auto failure_backend = make_fake_windows_backend(
+          failure_state,
+          std::make_shared<FakeWindowsControlChannelState>()
+        );
+        result.protocol_failure_status = failure_backend->create_mouse(9U, options).status;
+      }
+
+      {
+        FakeSendInputState send_input_state;
+        ScopedFakeSendInput fake_send_input {send_input_state};
+        auto license_state = std::make_shared<FakeWindowsControlChannelState>();
+        license_state->set_create_transport_status(
+          OperationStatus::failure(ErrorCode::license_required, "license required")
+        );
+        auto license_backend = make_fake_windows_backend(
+          license_state,
+          std::make_shared<FakeWindowsControlChannelState>()
+        );
+        auto fallback = license_backend->create_mouse(10U, options);
+        result.license_fallback_create_status = fallback.status;
+        if (fallback) {
+          result.license_fallback_submit_status = fallback.mouse->submit(MouseEvent {
+            .kind = MouseEventKind::relative_motion,
+            .x = 1,
+            .y = 2,
+          });
+        }
+        result.license_create_requests = license_state->create_request_count();
+        result.license_fallback_send_inputs = send_input_state.sent_inputs.size();
       }
 
       return result;

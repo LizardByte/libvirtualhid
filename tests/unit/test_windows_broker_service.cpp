@@ -329,15 +329,15 @@ TEST_F(WindowsBrokerServiceTest, DriverRejectsDirectGamepadCreation) {
     GTEST_SKIP() << "The installed libvirtualhid control device is unavailable.";
   }
 
-  LvhWindowsCreateGamepadRequest request {};
+  LvhWindowsCreateDeviceRequest request {};
   request.version = LVH_WINDOWS_CONTROL_PROTOCOL_VERSION;
   request.size = sizeof(request);
-  LvhWindowsCreateGamepadResponse response {};
+  LvhWindowsCreateDeviceResponse response {};
   DWORD bytes_returned = 0;
   const auto request_result =
     ::DeviceIoControl(
       control,
-      LVH_WINDOWS_IOCTL_CREATE_GAMEPAD,
+      LVH_WINDOWS_IOCTL_CREATE_DEVICE,
       &request,
       sizeof(request),
       &response,
@@ -409,8 +409,8 @@ TEST(WindowsBrokerImplementationTest, EnforcesLimitedUnvalidatedFallback) {
   EXPECT_TRUE(policy.same_boot_anchor_is_accepted);
   EXPECT_TRUE(policy.changed_boot_anchor_is_rejected);
   EXPECT_TRUE(policy.uptime_rollback_is_rejected);
-  EXPECT_TRUE(policy.first_unvalidated_gamepad_is_allowed);
-  EXPECT_TRUE(policy.second_unvalidated_gamepad_is_rejected);
+  EXPECT_TRUE(policy.first_unvalidated_device_is_allowed);
+  EXPECT_TRUE(policy.second_unvalidated_device_is_rejected);
   EXPECT_TRUE(policy.existing_gamepads_are_retained_before_one_hour);
   EXPECT_TRUE(policy.outage_limit_applies_at_one_hour);
   EXPECT_TRUE(policy.first_gamepad_is_retained_after_one_hour);

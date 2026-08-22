@@ -66,8 +66,8 @@ namespace lvh::detail::test {
     bool same_boot_anchor_is_accepted = false;
     bool changed_boot_anchor_is_rejected = false;
     bool uptime_rollback_is_rejected = false;
-    bool first_unvalidated_gamepad_is_allowed = false;
-    bool second_unvalidated_gamepad_is_rejected = false;
+    bool first_unvalidated_device_is_allowed = false;
+    bool second_unvalidated_device_is_rejected = false;
     bool existing_gamepads_are_retained_before_one_hour = false;
     bool outage_limit_applies_at_one_hour = false;
     bool first_gamepad_is_retained_after_one_hour = false;

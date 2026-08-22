@@ -18,6 +18,7 @@
 
 // local includes
 #include "lvh_windows_broker_protocol.h"
+#include "mouse_protocol.hpp"
 
 namespace lvh::windows::broker_validation {
 
@@ -75,18 +76,37 @@ namespace lvh::windows::broker_validation {
            header.reserved0 == 0U;
   }
 
-  inline bool valid_gamepad_request(const LvhWindowsCreateGamepadRequest &request) {
+  inline bool valid_device_request(const LvhWindowsCreateDeviceRequest &request) {
     const auto &sizes = request.report_sizes;
+    const auto known_device = request.device_type == LVH_WINDOWS_DEVICE_GAMEPAD ||
+                              request.device_type == LVH_WINDOWS_DEVICE_MOUSE;
     const auto known_bus = request.bus_type == LVH_WINDOWS_BUS_UNKNOWN ||
                            request.bus_type == LVH_WINDOWS_BUS_USB ||
                            request.bus_type == LVH_WINDOWS_BUS_BLUETOOTH;
     const auto known_profile = request.gamepad_kind <= LVH_WINDOWS_GAMEPAD_DUALSHOCK4;
+    const auto valid_mouse_descriptor =
+      request.device_type == LVH_WINDOWS_DEVICE_GAMEPAD ||
+      (sizes.report_descriptor_size == lvh::detail::windows::mouse_report_descriptor.size() &&
+       std::equal(
+         lvh::detail::windows::mouse_report_descriptor.begin(),
+         lvh::detail::windows::mouse_report_descriptor.end(),
+         request.report_descriptor.begin()
+       ));
+    const auto valid_device_fields = request.device_type == LVH_WINDOWS_DEVICE_GAMEPAD ||
+                                     (request.gamepad_kind == LVH_WINDOWS_GAMEPAD_GENERIC &&
+                                      request.flags == 0U &&
+                                      request.hardware_ids.report_id == 0U &&
+                                      sizes.input_report_size == LVH_WINDOWS_MOUSE_INPUT_REPORT_SIZE &&
+                                      sizes.output_report_size == 0U);
 
     return request.version == LVH_WINDOWS_CONTROL_PROTOCOL_VERSION &&
            request.size == sizeof(request) &&
            request.client_device_id != 0U &&
+           known_device &&
            known_bus &&
            known_profile &&
+           valid_device_fields &&
+           valid_mouse_descriptor &&
            (request.flags & ~known_gamepad_flags) == 0U &&
            all_zero(request.hardware_ids.reserved0) &&
            sizes.input_report_size > 0U &&
@@ -121,14 +141,14 @@ namespace lvh::windows::broker_validation {
     );
   }
 
-  inline bool valid_request(const LvhWindowsBrokerCreateGamepadRequest &request) {
+  inline bool valid_request(const LvhWindowsBrokerCreateDeviceRequest &request) {
     return valid_header(
              request.header,
-             LvhWindowsBrokerRequestType::create_gamepad,
+             LvhWindowsBrokerRequestType::create_device,
              sizeof(request)
            ) &&
            request.client_control_handle != 0U &&
-           valid_gamepad_request(request.gamepad);
+           valid_device_request(request.device);
   }
 
   inline bool valid_request(const LvhWindowsBrokerDestroyDeviceRequest &request) {
@@ -158,7 +178,7 @@ namespace lvh::windows::broker_validation {
       case deactivate_license:
         return all_zero(request.license_key) && all_zero(request.instance_name);
       case status:
-      case create_gamepad:
+      case create_device:
       case destroy_device:
         return false;
     }

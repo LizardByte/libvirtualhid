@@ -51,6 +51,34 @@ namespace lvh::detail::test {
     std::vector<std::uint16_t> strengths;
   };
 
+  struct WindowsHidMouseResult {
+    OperationStatus create_status;
+    OperationStatus motion_status;
+    OperationStatus large_scroll_status;
+    OperationStatus partial_scroll_status;
+    OperationStatus completed_scroll_status;
+    OperationStatus close_status;
+    OperationStatus protocol_failure_status;
+    OperationStatus license_fallback_create_status;
+    OperationStatus license_fallback_submit_status;
+    std::uint32_t device_type = 0;
+    std::uint32_t bus_type = 0;
+    std::uint32_t flags = 0;
+    std::uint16_t vendor_id = 0;
+    std::uint16_t product_id = 0;
+    std::uint16_t version = 0;
+    std::uint8_t report_id = 0;
+    std::uint32_t input_report_size = 0;
+    std::uint32_t output_report_size = 0;
+    std::string name;
+    std::string manufacturer;
+    std::string stable_id;
+    std::vector<std::vector<std::uint8_t>> reports;
+    std::size_t destroy_requests = 0;
+    std::size_t license_create_requests = 0;
+    std::size_t license_fallback_send_inputs = 0;
+  };
+
   struct WindowsPlayStationTransportResult {
     OperationStatus dualshock4_status;
     OperationStatus dualsense_status;
@@ -173,6 +201,7 @@ namespace lvh::detail::test {
   WindowsBackendLifecycleResult windows_backend_fake_channel_lifecycle();
   WindowsPlayStationTransportResult windows_backend_playstation_transport();
   WindowsGenericPidOrderingResult windows_backend_generic_pid_callback_ordering();
+  WindowsHidMouseResult windows_backend_hid_mouse();
   WindowsBackendFailureResult windows_backend_fake_channel_failures();
   WindowsBackendUtilityResult windows_backend_fake_channel_utilities();
   WindowsOverlappedIoResult windows_backend_overlapped_device_io();
