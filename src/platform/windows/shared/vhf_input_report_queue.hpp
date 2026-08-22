@@ -64,11 +64,12 @@ namespace lvh::detail::windows {
         return;
       }
 
-      if (!reports_.empty()) {
-        if (device_type_ == LVH_WINDOWS_DEVICE_GAMEPAD && same_discrete_state(reports_.back(), report)) {
-          reports_.back() = std::move(report);
-          return;
-        }
+      if (
+        !reports_.empty() && device_type_ == LVH_WINDOWS_DEVICE_GAMEPAD &&
+        same_discrete_state(reports_.back(), report)
+      ) {
+        reports_.back() = std::move(report);
+        return;
       }
 
       make_room();

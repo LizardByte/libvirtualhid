@@ -1620,8 +1620,7 @@ namespace lvh::detail {
 
         while (detents != 0) {
           const auto report_detents = static_cast<std::int8_t>(std::clamp<std::int64_t>(detents, -127, 127));
-          const auto status = vertical ? emit(0, 0, report_detents, 0) : emit(0, 0, 0, report_detents);
-          if (!status.ok()) {
+          if (const auto status = vertical ? emit(0, 0, report_detents, 0) : emit(0, 0, 0, report_detents); !status.ok()) {
             return status;
           }
           detents -= report_detents;

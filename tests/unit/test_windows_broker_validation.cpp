@@ -231,7 +231,7 @@ TEST(WindowsBrokerValidationTest, ValidatesMouseCreateFields) {
   request.device.report_sizes.output_report_size = 1U;
   EXPECT_FALSE(lvh::windows::broker_validation::valid_request(request));
   request.device.report_sizes.output_report_size = 0U;
-  request.device.report_descriptor[0] ^= 0x01U;
+  request.device.report_descriptor[0] = 0U;
   EXPECT_FALSE(lvh::windows::broker_validation::valid_request(request));
 }
 

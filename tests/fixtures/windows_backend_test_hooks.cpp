@@ -505,6 +505,8 @@ namespace lvh::detail {
     }
 
     WindowsHidMouseResult windows_backend_hid_mouse() {
+      using enum MouseEventKind;
+
       WindowsHidMouseResult result;
       auto command_state = std::make_shared<FakeWindowsControlChannelState>();
       auto backend = make_fake_windows_backend(command_state, std::make_shared<FakeWindowsControlChannelState>());
@@ -520,46 +522,45 @@ namespace lvh::detail {
       options.stable_id = "configured-mouse";
 
       auto created = backend->create_mouse(8U, options);
-      result.create_status = created.status;
+      result.operations.create_status = created.status;
       if (created) {
-        result.motion_status = created.mouse->submit(MouseEvent {
-          .kind = MouseEventKind::relative_motion,
+        result.operations.motion_status = created.mouse->submit(MouseEvent {
+          .kind = relative_motion,
           .x = 70000,
           .y = -70000,
         });
-        result.large_scroll_status = created.mouse->submit(MouseEvent {
-          .kind = MouseEventKind::vertical_scroll,
+        result.operations.large_scroll_status = created.mouse->submit(MouseEvent {
+          .kind = vertical_scroll,
           .high_resolution_scroll = 120 * 132,
         });
-        result.partial_scroll_status = created.mouse->submit(MouseEvent {
-          .kind = MouseEventKind::horizontal_scroll,
+        result.operations.partial_scroll_status = created.mouse->submit(MouseEvent {
+          .kind = horizontal_scroll,
           .high_resolution_scroll = 60,
         });
-        result.completed_scroll_status = created.mouse->submit(MouseEvent {
-          .kind = MouseEventKind::horizontal_scroll,
+        result.operations.completed_scroll_status = created.mouse->submit(MouseEvent {
+          .kind = horizontal_scroll,
           .high_resolution_scroll = 60,
         });
-        result.close_status = created.mouse->close();
+        result.operations.close_status = created.mouse->close();
       }
 
-      const auto requests = command_state->create_requests();
-      if (!requests.empty()) {
+      if (const auto requests = command_state->create_requests(); !requests.empty()) {
         const auto &request = requests.front();
-        result.device_type = request.device_type;
-        result.bus_type = request.bus_type;
-        result.flags = request.flags;
-        result.vendor_id = request.hardware_ids.vendor_id;
-        result.product_id = request.hardware_ids.product_id;
-        result.version = request.hardware_ids.device_version;
-        result.report_id = request.hardware_ids.report_id;
-        result.input_report_size = request.report_sizes.input_report_size;
-        result.output_report_size = request.report_sizes.output_report_size;
-        result.name = request.name.data();
-        result.manufacturer = request.manufacturer.data();
-        result.stable_id = request.stable_id.data();
+        result.device.device_type = request.device_type;
+        result.device.bus_type = request.bus_type;
+        result.device.flags = request.flags;
+        result.device.vendor_id = request.hardware_ids.vendor_id;
+        result.device.product_id = request.hardware_ids.product_id;
+        result.device.version = request.hardware_ids.device_version;
+        result.device.report_id = request.hardware_ids.report_id;
+        result.device.input_report_size = request.report_sizes.input_report_size;
+        result.device.output_report_size = request.report_sizes.output_report_size;
+        result.device.name = request.name.data();
+        result.device.manufacturer = request.manufacturer.data();
+        result.device.stable_id = request.stable_id.data();
       }
-      result.reports = command_state->submit_reports();
-      result.destroy_requests = command_state->destroy_request_count();
+      result.observations.reports = command_state->submit_reports();
+      result.observations.destroy_requests = command_state->destroy_request_count();
 
       {
         auto failure_state = std::make_shared<FakeWindowsControlChannelState>();
@@ -568,7 +569,7 @@ namespace lvh::detail {
           failure_state,
           std::make_shared<FakeWindowsControlChannelState>()
         );
-        result.protocol_failure_status = failure_backend->create_mouse(9U, options).status;
+        result.operations.protocol_failure_status = failure_backend->create_mouse(9U, options).status;
       }
 
       {
@@ -583,16 +584,16 @@ namespace lvh::detail {
           std::make_shared<FakeWindowsControlChannelState>()
         );
         auto fallback = license_backend->create_mouse(10U, options);
-        result.license_fallback_create_status = fallback.status;
+        result.operations.license_fallback_create_status = fallback.status;
         if (fallback) {
-          result.license_fallback_submit_status = fallback.mouse->submit(MouseEvent {
-            .kind = MouseEventKind::relative_motion,
+          result.operations.license_fallback_submit_status = fallback.mouse->submit(MouseEvent {
+            .kind = relative_motion,
             .x = 1,
             .y = 2,
           });
         }
-        result.license_create_requests = license_state->create_request_count();
-        result.license_fallback_send_inputs = send_input_state.sent_inputs.size();
+        result.observations.license_create_requests = license_state->create_request_count();
+        result.observations.license_fallback_send_inputs = send_input_state.sent_inputs.size();
       }
 
       return result;

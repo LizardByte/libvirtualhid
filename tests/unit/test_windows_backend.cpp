@@ -126,45 +126,45 @@ TEST_F(WindowsBackendTest, PlayStationDefaultsUseEffectiveUsbProfiles) {
 TEST_F(WindowsBackendTest, HidMousePreservesIdentityChunksInputAndUsesNarrowFallback) {
   const auto result = lvh::detail::test::windows_backend_hid_mouse();
 
-  expect_ok(result.create_status);
-  EXPECT_EQ(result.device_type, LVH_WINDOWS_DEVICE_MOUSE);
-  EXPECT_EQ(result.bus_type, LVH_WINDOWS_BUS_BLUETOOTH);
-  EXPECT_EQ(result.flags, 0U);
-  EXPECT_EQ(result.vendor_id, 0x1234U);
-  EXPECT_EQ(result.product_id, 0x5678U);
-  EXPECT_EQ(result.version, 0x4321U);
-  EXPECT_EQ(result.report_id, 0U);
-  EXPECT_EQ(result.input_report_size, LVH_WINDOWS_MOUSE_INPUT_REPORT_SIZE);
-  EXPECT_EQ(result.output_report_size, 0U);
-  EXPECT_EQ(result.name, "Configured mouse");
-  EXPECT_EQ(result.manufacturer, "Configured manufacturer");
-  EXPECT_EQ(result.stable_id, "configured-mouse");
+  expect_ok(result.operations.create_status);
+  EXPECT_EQ(result.device.device_type, LVH_WINDOWS_DEVICE_MOUSE);
+  EXPECT_EQ(result.device.bus_type, LVH_WINDOWS_BUS_BLUETOOTH);
+  EXPECT_EQ(result.device.flags, 0U);
+  EXPECT_EQ(result.device.vendor_id, 0x1234U);
+  EXPECT_EQ(result.device.product_id, 0x5678U);
+  EXPECT_EQ(result.device.version, 0x4321U);
+  EXPECT_EQ(result.device.report_id, 0U);
+  EXPECT_EQ(result.device.input_report_size, LVH_WINDOWS_MOUSE_INPUT_REPORT_SIZE);
+  EXPECT_EQ(result.device.output_report_size, 0U);
+  EXPECT_EQ(result.device.name, "Configured mouse");
+  EXPECT_EQ(result.device.manufacturer, "Configured manufacturer");
+  EXPECT_EQ(result.device.stable_id, "configured-mouse");
 
-  expect_ok(result.motion_status);
-  expect_ok(result.large_scroll_status);
-  expect_ok(result.partial_scroll_status);
-  expect_ok(result.completed_scroll_status);
-  expect_ok(result.close_status);
-  ASSERT_EQ(result.reports.size(), 6U);
-  for (const auto &report : result.reports) {
+  expect_ok(result.operations.motion_status);
+  expect_ok(result.operations.large_scroll_status);
+  expect_ok(result.operations.partial_scroll_status);
+  expect_ok(result.operations.completed_scroll_status);
+  expect_ok(result.operations.close_status);
+  ASSERT_EQ(result.observations.reports.size(), 6U);
+  for (const auto &report : result.observations.reports) {
     EXPECT_EQ(report.size(), LVH_WINDOWS_MOUSE_INPUT_REPORT_SIZE);
   }
-  EXPECT_EQ(mouse_report_i16(result.reports[0], 1U), 32767);
-  EXPECT_EQ(mouse_report_i16(result.reports[0], 3U), -32768);
-  EXPECT_EQ(mouse_report_i16(result.reports[1], 1U), 32767);
-  EXPECT_EQ(mouse_report_i16(result.reports[1], 3U), -32768);
-  EXPECT_EQ(mouse_report_i16(result.reports[2], 1U), 4466);
-  EXPECT_EQ(mouse_report_i16(result.reports[2], 3U), -4464);
-  EXPECT_EQ(static_cast<std::int8_t>(result.reports[3][5]), 127);
-  EXPECT_EQ(static_cast<std::int8_t>(result.reports[4][5]), 5);
-  EXPECT_EQ(static_cast<std::int8_t>(result.reports[5][6]), 1);
-  EXPECT_EQ(result.destroy_requests, 1U);
+  EXPECT_EQ(mouse_report_i16(result.observations.reports[0], 1U), 32767);
+  EXPECT_EQ(mouse_report_i16(result.observations.reports[0], 3U), -32768);
+  EXPECT_EQ(mouse_report_i16(result.observations.reports[1], 1U), 32767);
+  EXPECT_EQ(mouse_report_i16(result.observations.reports[1], 3U), -32768);
+  EXPECT_EQ(mouse_report_i16(result.observations.reports[2], 1U), 4466);
+  EXPECT_EQ(mouse_report_i16(result.observations.reports[2], 3U), -4464);
+  EXPECT_EQ(static_cast<std::int8_t>(result.observations.reports[3][5]), 127);
+  EXPECT_EQ(static_cast<std::int8_t>(result.observations.reports[4][5]), 5);
+  EXPECT_EQ(static_cast<std::int8_t>(result.observations.reports[5][6]), 1);
+  EXPECT_EQ(result.observations.destroy_requests, 1U);
 
-  EXPECT_EQ(result.protocol_failure_status.code(), lvh::ErrorCode::backend_failure);
-  expect_ok(result.license_fallback_create_status);
-  expect_ok(result.license_fallback_submit_status);
-  EXPECT_EQ(result.license_create_requests, 1U);
-  EXPECT_EQ(result.license_fallback_send_inputs, 1U);
+  EXPECT_EQ(result.operations.protocol_failure_status.code(), lvh::ErrorCode::backend_failure);
+  expect_ok(result.operations.license_fallback_create_status);
+  expect_ok(result.operations.license_fallback_submit_status);
+  EXPECT_EQ(result.observations.license_create_requests, 1U);
+  EXPECT_EQ(result.observations.license_fallback_send_inputs, 1U);
 }
 
 TEST_F(WindowsBackendTest, GenericPidTimerCannotDeliverStaleStopAfterNewStart) {
