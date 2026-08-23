@@ -322,6 +322,8 @@ Current macOS capabilities:
 
 - Keyboard key press and release using the existing Windows-style portable key
   codes.
+- UTF-8 keyboard text input, converted to the UTF-16 strings expected by
+  CoreGraphics keyboard events.
 - Mouse relative movement, absolute movement on the main display, left/middle/
   right button transitions, and pixel-based vertical/horizontal scroll.
 - Shared keyboard modifier state on mouse events, so combinations such as
@@ -331,7 +333,6 @@ Unsupported macOS capabilities currently return `unsupported_profile`:
 
 - Gamepad devices and output reports.
 - Touchscreen, trackpad, and pen tablet devices.
-- Keyboard text input through `KeyboardTextEvent`.
 
 Native macOS virtual-HID gamepad support is planned. A future backend may use
 `IOHIDUserDevice`, DriverKit/HIDDriverKit, or a combination that preserves the

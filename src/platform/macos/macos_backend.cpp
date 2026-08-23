@@ -12,6 +12,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <vector>
 
 // platform includes
 #include <ApplicationServices/ApplicationServices.h>
@@ -508,7 +509,47 @@ namespace lvh::detail {
           return OperationStatus::success();
         }
 
-        return OperationStatus::failure(unsupported_profile, "macOS keyboard text input is not implemented");
+        if (!state_->keyboard_source) {
+          return OperationStatus::failure(backend_failure, "macOS keyboard event source is unavailable");
+        }
+
+        const auto text = CFStringCreateWithBytes(
+          kCFAllocatorDefault,
+          reinterpret_cast<const UInt8 *>(event.text.data()),
+          static_cast<CFIndex>(event.text.size()),
+          kCFStringEncodingUTF8,
+          false
+        );
+        if (!text) {
+          return OperationStatus::failure(invalid_argument, "convert UTF-8 text for macOS keyboard input");
+        }
+
+        const auto length = CFStringGetLength(text);
+        std::vector<UniChar> characters(static_cast<std::size_t>(length));
+        CFStringGetCharacters(text, CFRangeMake(0, length), characters.data());
+        CFRelease(text);
+
+        const auto key_down = CGEventCreateKeyboardEvent(state_->keyboard_source, 0, true);
+        if (!key_down) {
+          return OperationStatus::failure(backend_failure, "create macOS keyboard text key-down event");
+        }
+
+        const auto key_up = CGEventCreateKeyboardEvent(state_->keyboard_source, 0, false);
+        if (!key_up) {
+          CFRelease(key_down);
+          return OperationStatus::failure(backend_failure, "create macOS keyboard text key-up event");
+        }
+
+        std::lock_guard lock {state_->keyboard_mutex};
+        CGEventKeyboardSetUnicodeString(key_down, characters.size(), characters.data());
+        CGEventKeyboardSetUnicodeString(key_up, characters.size(), characters.data());
+        CGEventSetFlags(key_down, state_->keyboard_flags);
+        CGEventSetFlags(key_up, state_->keyboard_flags);
+        CGEventPost(kCGSessionEventTap, key_down);
+        CGEventPost(kCGSessionEventTap, key_up);
+        CFRelease(key_down);
+        CFRelease(key_up);
+        return OperationStatus::success();
       }
 
       OperationStatus close() override {

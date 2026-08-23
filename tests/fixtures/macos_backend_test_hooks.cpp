@@ -75,9 +75,12 @@ namespace lvh::detail::test {
     auto keyboard = backend->create_keyboard(1, keyboard_options);
     result.keyboard_create_status = keyboard.status;
     if (keyboard) {
-      result.keyboard_text_status = keyboard.keyboard->type_text({.text = "A"});
+      result.keyboard_text_status = keyboard.keyboard->type_text({.text = "Text \x{E2}\x{98}\x{80} \x{F0}\x{9F}\x{98}\x{80}"});
+      result.keyboard_empty_text_status = keyboard.keyboard->type_text({.text = ""});
+      result.keyboard_invalid_text_status = keyboard.keyboard->type_text({.text = std::string(1U, static_cast<char>(0xFF))});
       result.keyboard_close_status = keyboard.keyboard->close();
       result.keyboard_submit_after_close_status = keyboard.keyboard->submit({.key_code = 0x41, .pressed = true});
+      result.keyboard_text_after_close_status = keyboard.keyboard->type_text({.text = "A"});
     }
 
     CreateKeyboardOptions invalid_keyboard_options;

@@ -36,8 +36,11 @@ namespace lvh::detail::test {
     BackendCapabilities capabilities;  ///< Backend capabilities reported by the macOS backend.
     OperationStatus keyboard_create_status;  ///< Keyboard creation status.
     OperationStatus keyboard_text_status;  ///< Non-empty keyboard text submit status.
+    OperationStatus keyboard_empty_text_status;  ///< Empty keyboard text submit status.
+    OperationStatus keyboard_invalid_text_status;  ///< Invalid UTF-8 keyboard text submit status.
     OperationStatus keyboard_close_status;  ///< Keyboard close status.
     OperationStatus keyboard_submit_after_close_status;  ///< Keyboard submit status after close.
+    OperationStatus keyboard_text_after_close_status;  ///< Keyboard text submit status after close.
     OperationStatus keyboard_invalid_profile_status;  ///< Keyboard creation status for a non-keyboard profile.
     OperationStatus mouse_create_status;  ///< Mouse creation status.
     OperationStatus mouse_close_status;  ///< Mouse close status.
