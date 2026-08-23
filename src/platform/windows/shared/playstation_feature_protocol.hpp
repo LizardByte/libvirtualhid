@@ -78,7 +78,7 @@ namespace lvh::detail::windows {
       };
     }
 
-    inline std::array<std::uint8_t, 6> request_mac_address(const LvhWindowsCreateGamepadRequest &request) {
+    inline std::array<std::uint8_t, 6> request_mac_address(const LvhWindowsCreateDeviceRequest &request) {
       const auto size = std::min<std::size_t>(request.report_sizes.stable_id_size, sizeof(request.stable_id));
       const auto stable_id = std::string_view {request.stable_id.data(), size};
       return parse_mac_address(stable_id).value_or(generated_mac_address(request.client_device_id));
@@ -88,7 +88,7 @@ namespace lvh::detail::windows {
       return {payload.begin(), payload.end()};
     }
 
-    inline void set_pairing_mac(std::vector<std::uint8_t> &report, const LvhWindowsCreateGamepadRequest &request) {
+    inline void set_pairing_mac(std::vector<std::uint8_t> &report, const LvhWindowsCreateDeviceRequest &request) {
       const auto mac = request_mac_address(request);
       std::copy(mac.rbegin(), mac.rend(), report.begin() + 1);
     }
@@ -109,7 +109,7 @@ namespace lvh::detail::windows {
   }
 
   inline std::optional<std::vector<std::uint8_t>> make_playstation_feature_report(
-    const LvhWindowsCreateGamepadRequest &request,
+    const LvhWindowsCreateDeviceRequest &request,
     std::uint8_t report_number
   ) {
     using namespace playstation_feature_protocol_detail;

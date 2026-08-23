@@ -10,7 +10,7 @@
 #include <array>
 #include <stdint.h>
 
-inline constexpr uint32_t LVH_WINDOWS_BROKER_PROTOCOL_VERSION = 3u;
+inline constexpr uint32_t LVH_WINDOWS_BROKER_PROTOCOL_VERSION = 4u;
 inline constexpr uint32_t LVH_WINDOWS_BROKER_MAX_MESSAGE_SIZE = 512u;
 inline constexpr uint32_t LVH_WINDOWS_BROKER_MAX_LICENSE_KEY_SIZE = 128u;
 inline constexpr uint32_t LVH_WINDOWS_BROKER_MAX_INSTANCE_NAME_SIZE = 128u;
@@ -20,7 +20,7 @@ inline constexpr char LVH_WINDOWS_BROKER_PIPE_PATH[] = R"(\\.\pipe\libvirtualhid
 
 enum class LvhWindowsBrokerRequestType : uint32_t {
   status = 1,
-  create_gamepad = 2,
+  create_device = 2,
   destroy_device = 3,
   activate_license = 4,
   validate_license = 5,
@@ -81,18 +81,18 @@ struct LvhWindowsBrokerStatusResponse {
   std::array<char, LVH_WINDOWS_BROKER_MAX_MESSAGE_SIZE> message;
 };
 
-struct LvhWindowsBrokerCreateGamepadRequest {
+struct LvhWindowsBrokerCreateDeviceRequest {
   LvhWindowsBrokerRequestHeader header;
   uint64_t client_control_handle;
-  LvhWindowsCreateGamepadRequest gamepad;
+  LvhWindowsCreateDeviceRequest device;
 };
 
-struct LvhWindowsBrokerCreateGamepadResponse {
+struct LvhWindowsBrokerCreateDeviceResponse {
   uint32_t version;
   uint32_t size;
   uint32_t status;
   uint32_t reserved0;
-  LvhWindowsCreateGamepadResponse gamepad;
+  LvhWindowsCreateDeviceResponse device;
   LvhWindowsBrokerLicenseStatus license;
   std::array<char, LVH_WINDOWS_BROKER_MAX_MESSAGE_SIZE> message;
 };

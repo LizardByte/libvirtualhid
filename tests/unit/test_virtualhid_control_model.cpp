@@ -100,6 +100,58 @@ TEST(VirtualHidControlModelTest, MapsProfileChoicesToProfiles) {
   EXPECT_FALSE(control::profile_for_choice(invalid).has_value());
 }
 
+TEST(VirtualHidControlModelTest, ExposesGamepadAndMouseDeviceChoices) {
+  ASSERT_EQ(control::device_type_choices.size(), 2U);
+  EXPECT_EQ(control::device_type_choices[0].type, lvh::DeviceType::gamepad);
+  EXPECT_EQ(control::device_type_choices[1].type, lvh::DeviceType::mouse);
+
+  ASSERT_EQ(control::mouse_button_choices.size(), 5U);
+  EXPECT_EQ(control::mouse_button_choices[0].button, lvh::MouseButton::left);
+  EXPECT_EQ(control::mouse_button_choices[1].button, lvh::MouseButton::middle);
+  EXPECT_EQ(control::mouse_button_choices[2].button, lvh::MouseButton::right);
+  EXPECT_EQ(control::mouse_button_choices[3].button, lvh::MouseButton::side);
+  EXPECT_EQ(control::mouse_button_choices[4].button, lvh::MouseButton::extra);
+}
+
+TEST(VirtualHidControlModelTest, MapsKeyboardMouseActionsToEvents) {
+  using enum control::MouseControlAction;
+
+  const auto left = control::mouse_event_for_action(move_left, 25, 120);
+  EXPECT_EQ(left.kind, lvh::MouseEventKind::relative_motion);
+  EXPECT_EQ(left.x, -25);
+  EXPECT_EQ(left.y, 0);
+
+  const auto right = control::mouse_event_for_action(move_right, 25, 120);
+  EXPECT_EQ(right.x, 25);
+  const auto up = control::mouse_event_for_action(move_up, 25, 120);
+  EXPECT_EQ(up.y, -25);
+  const auto down = control::mouse_event_for_action(move_down, 25, 120);
+  EXPECT_EQ(down.y, 25);
+
+  const auto wheel_up_event = control::mouse_event_for_action(wheel_up, 25, 120);
+  EXPECT_EQ(wheel_up_event.kind, lvh::MouseEventKind::vertical_scroll);
+  EXPECT_EQ(wheel_up_event.high_resolution_scroll, 120);
+  const auto wheel_down_event = control::mouse_event_for_action(wheel_down, 25, 120);
+  EXPECT_EQ(wheel_down_event.high_resolution_scroll, -120);
+  const auto pan_left_event = control::mouse_event_for_action(pan_left, 25, 120);
+  EXPECT_EQ(pan_left_event.kind, lvh::MouseEventKind::horizontal_scroll);
+  EXPECT_EQ(pan_left_event.high_resolution_scroll, -120);
+  const auto pan_right_event = control::mouse_event_for_action(pan_right, 25, 120);
+  EXPECT_EQ(pan_right_event.high_resolution_scroll, 120);
+}
+
+TEST(VirtualHidControlModelTest, BuildsMomentaryMouseButtonEvents) {
+  const auto press = control::mouse_button_event(lvh::MouseButton::side, true);
+  EXPECT_EQ(press.kind, lvh::MouseEventKind::button);
+  EXPECT_EQ(press.button, lvh::MouseButton::side);
+  EXPECT_TRUE(press.pressed);
+
+  const auto release = control::mouse_button_event(lvh::MouseButton::side, false);
+  EXPECT_EQ(release.kind, lvh::MouseEventKind::button);
+  EXPECT_EQ(release.button, lvh::MouseButton::side);
+  EXPECT_FALSE(release.pressed);
+}
+
 TEST(VirtualHidControlModelTest, ConvertsSliderValues) {
   EXPECT_EQ(control::axis_to_slider(-2.0F), -control::slider_scale);
   EXPECT_EQ(control::axis_to_slider(-0.5F), -50);
@@ -132,6 +184,7 @@ TEST(VirtualHidControlModelTest, FormatsRawHex) {
 TEST(VirtualHidControlModelTest, SummarizesProfileFeatures) {
   const auto generic = lvh::profiles::generic_gamepad();
   const auto dualsense = lvh::profiles::dualsense();
+  const auto mouse = lvh::profiles::mouse();
 
   EXPECT_TRUE(control::supports_normalized_feedback(generic));
   EXPECT_TRUE(control::supports_normalized_feedback(dualsense));
@@ -144,6 +197,11 @@ TEST(VirtualHidControlModelTest, SummarizesProfileFeatures) {
     control::profile_feature_summary(dualsense),
     L"Features: battery yes | rumble yes | trigger rumble no | RGB LED yes | adaptive triggers yes | raw output yes"
   );
+  EXPECT_EQ(
+    control::device_feature_summary(mouse),
+    L"Features: relative motion | five buttons | vertical wheel | horizontal wheel"
+  );
+  EXPECT_EQ(control::device_feature_summary(generic), control::profile_feature_summary(generic));
 }
 
 TEST(VirtualHidControlModelTest, UpdatesVisibleControlsForProfiles) {

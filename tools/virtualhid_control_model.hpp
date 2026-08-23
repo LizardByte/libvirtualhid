@@ -22,6 +22,11 @@ namespace lvh::tools::virtualhid_control {
 
   inline constexpr auto slider_scale = 100;
 
+  struct DeviceTypeChoice {
+    std::wstring_view label;
+    DeviceType type;
+  };
+
   struct ProfileChoice {
     std::wstring_view id;
     std::wstring_view label;
@@ -32,6 +37,22 @@ namespace lvh::tools::virtualhid_control {
   struct ButtonChoice {
     std::wstring_view label;
     GamepadButton button;
+  };
+
+  struct MouseButtonChoice {
+    std::wstring_view label;
+    MouseButton button;
+  };
+
+  enum class MouseControlAction {
+    move_left,
+    move_right,
+    move_up,
+    move_down,
+    wheel_up,
+    wheel_down,
+    pan_left,
+    pan_right,
   };
 
   struct AxisChoice {
@@ -57,6 +78,11 @@ namespace lvh::tools::virtualhid_control {
     std::optional<GamepadOutput> latest_rgb_led;
     std::optional<GamepadOutput> latest_adaptive_triggers;
     std::optional<GamepadOutput> latest_raw_report;
+  };
+
+  inline constexpr std::array device_type_choices {
+    DeviceTypeChoice {L"Gamepad", DeviceType::gamepad},
+    DeviceTypeChoice {L"Mouse", DeviceType::mouse},
   };
 
   inline constexpr std::array profile_choices {
@@ -93,6 +119,14 @@ namespace lvh::tools::virtualhid_control {
     ButtonChoice {L"Paddle 4", GamepadButton::paddle4},
   };
 
+  inline constexpr std::array mouse_button_choices {
+    MouseButtonChoice {L"Left", MouseButton::left},
+    MouseButtonChoice {L"Middle", MouseButton::middle},
+    MouseButtonChoice {L"Right", MouseButton::right},
+    MouseButtonChoice {L"Side", MouseButton::side},
+    MouseButtonChoice {L"Extra", MouseButton::extra},
+  };
+
   inline constexpr std::array axis_choices {
     AxisChoice {L"Left X", -slider_scale, slider_scale},
     AxisChoice {L"Left Y", -slider_scale, slider_scale},
@@ -119,6 +153,12 @@ namespace lvh::tools::virtualhid_control {
   int battery_choice_index(GamepadBatteryState state);
   std::wstring raw_hex(const std::vector<std::uint8_t> &bytes);
   std::optional<DeviceProfile> profile_for_choice(const ProfileChoice &choice);
+  MouseEvent mouse_event_for_action(
+    MouseControlAction action,
+    std::int32_t motion_step,
+    std::int32_t scroll_step
+  );
+  MouseEvent mouse_button_event(MouseButton button, bool pressed);
   int axis_to_slider(float value);
   int trigger_to_slider(float value);
   float slider_to_float(long value);
@@ -134,6 +174,7 @@ namespace lvh::tools::virtualhid_control {
 
   bool supports_normalized_feedback(const DeviceProfile &profile);
   std::wstring profile_feature_summary(const DeviceProfile &profile);
+  std::wstring device_feature_summary(const DeviceProfile &profile);
   bool append_latest_output_summary(std::wostringstream &stream, const OutputState &state);
   std::wstring output_summary(const OutputState &state, const DeviceProfile &profile);
   bool update_visible_controls_for_profile(

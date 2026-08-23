@@ -32,8 +32,30 @@ namespace {
     return report;
   }
 
+  std::vector<std::uint8_t> make_mouse_report(
+    std::uint8_t buttons,
+    std::int16_t x,
+    std::int16_t y,
+    std::int8_t wheel,
+    std::int8_t pan
+  ) {
+    const auto encode_i16 = [](std::vector<std::uint8_t> &report, std::size_t offset, std::int16_t value) {
+      const auto encoded = static_cast<std::uint16_t>(value);
+      report[offset] = static_cast<std::uint8_t>(encoded & 0xFFU);
+      report[offset + 1U] = static_cast<std::uint8_t>(encoded >> 8U);
+    };
+
+    std::vector<std::uint8_t> report(LVH_WINDOWS_MOUSE_INPUT_REPORT_SIZE, 0U);
+    report[0] = buttons;
+    encode_i16(report, 1U, x);
+    encode_i16(report, 3U, y);
+    report[5] = static_cast<std::uint8_t>(wheel);
+    report[6] = static_cast<std::uint8_t>(pan);
+    return report;
+  }
+
   TEST(WindowsVhfInputReportQueueTest, CollapsesAnAxisBurstToItsLatestState) {
-    VhfInputReportQueue queue {LVH_WINDOWS_GAMEPAD_GENERIC, LVH_WINDOWS_BUS_USB, 1U};
+    VhfInputReportQueue queue {LVH_WINDOWS_DEVICE_GAMEPAD, LVH_WINDOWS_GAMEPAD_GENERIC, LVH_WINDOWS_BUS_USB, 1U};
     auto latest = make_report(9U, 1U);
     for (std::uint8_t axis = 0U; axis < 64U; ++axis) {
       latest[3] = axis;
@@ -46,7 +68,7 @@ namespace {
   }
 
   TEST(WindowsVhfInputReportQueueTest, PreservesButtonTransitionsWhileCoalescingTheirAxes) {
-    VhfInputReportQueue queue {LVH_WINDOWS_GAMEPAD_GENERIC, LVH_WINDOWS_BUS_USB, 1U};
+    VhfInputReportQueue queue {LVH_WINDOWS_DEVICE_GAMEPAD, LVH_WINDOWS_GAMEPAD_GENERIC, LVH_WINDOWS_BUS_USB, 1U};
     auto neutral = make_report(9U, 1U);
     neutral[3] = 10U;
     auto pressed = neutral;
@@ -91,6 +113,7 @@ namespace {
     for (const auto &test_case : profiles) {
       SCOPED_TRACE(test_case.profile.name);
       VhfInputReportQueue queue {
+        LVH_WINDOWS_DEVICE_GAMEPAD,
         test_case.gamepad_kind,
         test_case.bus_type,
         test_case.profile.report_id,
@@ -151,6 +174,7 @@ namespace {
     for (const auto &test_case : profiles) {
       SCOPED_TRACE(test_case.profile.name);
       VhfInputReportQueue queue {
+        LVH_WINDOWS_DEVICE_GAMEPAD,
         test_case.gamepad_kind,
         test_case.bus_type,
         test_case.profile.report_id,
@@ -169,7 +193,7 @@ namespace {
   }
 
   TEST(WindowsVhfInputReportQueueTest, PrioritizesSwitchProtocolRepliesWithoutCoalescingThem) {
-    VhfInputReportQueue queue {LVH_WINDOWS_GAMEPAD_SWITCH_PRO, LVH_WINDOWS_BUS_USB, 0x30U};
+    VhfInputReportQueue queue {LVH_WINDOWS_DEVICE_GAMEPAD, LVH_WINDOWS_GAMEPAD_SWITCH_PRO, LVH_WINDOWS_BUS_USB, 0x30U};
     auto controller_state = make_report(64U, 0x30U);
     auto first_reply = make_report(64U, 0x21U);
     auto second_reply = first_reply;
@@ -187,7 +211,7 @@ namespace {
   }
 
   TEST(WindowsVhfInputReportQueueTest, BoundsSwitchProtocolReplyHistory) {
-    VhfInputReportQueue queue {LVH_WINDOWS_GAMEPAD_SWITCH_PRO, LVH_WINDOWS_BUS_USB, 0x30U};
+    VhfInputReportQueue queue {LVH_WINDOWS_DEVICE_GAMEPAD, LVH_WINDOWS_GAMEPAD_SWITCH_PRO, LVH_WINDOWS_BUS_USB, 0x30U};
     constexpr auto submitted_reports = vhf_max_pending_input_reports + 8U;
     for (std::size_t index = 0U; index < submitted_reports; ++index) {
       auto reply = make_report(64U, 0x21U);
@@ -202,7 +226,7 @@ namespace {
   }
 
   TEST(WindowsVhfInputReportQueueTest, KeepsOnlyTheNewestBoundedTransitionHistory) {
-    VhfInputReportQueue queue {LVH_WINDOWS_GAMEPAD_GENERIC, LVH_WINDOWS_BUS_USB, 1U};
+    VhfInputReportQueue queue {LVH_WINDOWS_DEVICE_GAMEPAD, LVH_WINDOWS_GAMEPAD_GENERIC, LVH_WINDOWS_BUS_USB, 1U};
     constexpr auto submitted_reports = vhf_max_pending_input_reports + 8U;
     for (std::size_t index = 0U; index < submitted_reports; ++index) {
       auto report = make_report(9U, 1U);
@@ -225,7 +249,7 @@ namespace {
   }
 
   TEST(WindowsVhfInputReportQueueTest, KeepsMalformedAndUnknownReportsDistinctAndCanClearThem) {
-    VhfInputReportQueue malformed_queue {LVH_WINDOWS_GAMEPAD_GENERIC, LVH_WINDOWS_BUS_USB, 0U};
+    VhfInputReportQueue malformed_queue {LVH_WINDOWS_DEVICE_GAMEPAD, LVH_WINDOWS_GAMEPAD_GENERIC, LVH_WINDOWS_BUS_USB, 0U};
     malformed_queue.push({});
     malformed_queue.push({});
     malformed_queue.push({0U});
@@ -235,10 +259,44 @@ namespace {
     EXPECT_FALSE(malformed_queue.pop().has_value());
 
     constexpr auto unknown_gamepad_kind = 0xFFFFFFFFU;
-    VhfInputReportQueue unknown_queue {unknown_gamepad_kind, LVH_WINDOWS_BUS_UNKNOWN, 0U};
+    VhfInputReportQueue unknown_queue {LVH_WINDOWS_DEVICE_GAMEPAD, unknown_gamepad_kind, LVH_WINDOWS_BUS_UNKNOWN, 0U};
     unknown_queue.push(make_report(9U, 0U));
     unknown_queue.push(make_report(9U, 0U));
     EXPECT_EQ(unknown_queue.size(), 2U);
+  }
+
+  TEST(WindowsVhfInputReportQueueTest, AccumulatesRelativeMouseReportsWithoutLosingLargeDeltas) {
+    VhfInputReportQueue queue {
+      LVH_WINDOWS_DEVICE_MOUSE,
+      LVH_WINDOWS_GAMEPAD_GENERIC,
+      LVH_WINDOWS_BUS_USB,
+      0U,
+    };
+    queue.push(make_mouse_report(0U, 30000, -30000, 100, -100));
+    queue.push(make_mouse_report(0U, 30000, -30000, 100, -100));
+
+    ASSERT_EQ(queue.size(), 1U);
+    EXPECT_EQ(queue.pop(), make_mouse_report(0U, 32767, -32768, 127, -127));
+    EXPECT_EQ(queue.pop(), make_mouse_report(0U, 27233, -27232, 73, -73));
+    EXPECT_TRUE(queue.empty());
+  }
+
+  TEST(WindowsVhfInputReportQueueTest, PreservesMouseButtonTransitions) {
+    VhfInputReportQueue queue {
+      LVH_WINDOWS_DEVICE_MOUSE,
+      LVH_WINDOWS_GAMEPAD_GENERIC,
+      LVH_WINDOWS_BUS_USB,
+      0U,
+    };
+    queue.push(make_mouse_report(0U, 5, 0, 0, 0));
+    queue.push(make_mouse_report(1U, 0, 0, 0, 0));
+    queue.push(make_mouse_report(1U, 7, 0, 0, 0));
+    queue.push(make_mouse_report(0U, 0, 0, 0, 0));
+
+    ASSERT_EQ(queue.size(), 3U);
+    EXPECT_EQ(queue.pop(), make_mouse_report(0U, 5, 0, 0, 0));
+    EXPECT_EQ(queue.pop(), make_mouse_report(1U, 7, 0, 0, 0));
+    EXPECT_EQ(queue.pop(), make_mouse_report(0U, 0, 0, 0, 0));
   }
 
 }  // namespace

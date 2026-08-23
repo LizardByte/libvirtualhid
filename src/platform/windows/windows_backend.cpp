@@ -30,6 +30,7 @@
 #include "platform/windows/control_protocol.hpp"
 #include "platform/windows/keylayout.hpp"
 #include "platform/windows/shared/generic_pid_rumble.hpp"
+#include "platform/windows/shared/mouse_protocol.hpp"
 #include "platform/windows/windows_broker_client.hpp"
 
 #include <libvirtualhid/profiles.hpp>
@@ -528,6 +529,21 @@ namespace lvh::detail {
       return OperationStatus::success();
     }
 
+    bool mouse_driver_fallback_allowed(ErrorCode code) {
+      switch (code) {
+        using enum ErrorCode;
+
+        case backend_unavailable:
+        case license_required:
+        case license_invalid:
+        case activation_limit_reached:
+        case network_unavailable:
+          return true;
+        default:
+          return false;
+      }
+    }
+
     class WindowsControlChannel {
     public:
       WindowsControlChannel(const WindowsControlChannel &) = delete;
@@ -543,9 +559,9 @@ namespace lvh::detail {
         return nullptr;
       }
 
-      virtual OperationStatus create_gamepad(
-        const LvhWindowsCreateGamepadRequest &request,
-        LvhWindowsCreateGamepadResponse &response
+      virtual OperationStatus create_device(
+        const LvhWindowsCreateDeviceRequest &request,
+        LvhWindowsCreateDeviceResponse &response
       ) const = 0;
 
       virtual OperationStatus destroy_device(
@@ -606,23 +622,23 @@ namespace lvh::detail {
         return handle_->value.get();
       }
 
-      OperationStatus create_gamepad(
-        const LvhWindowsCreateGamepadRequest &request,
-        LvhWindowsCreateGamepadResponse &response
+      OperationStatus create_device(
+        const LvhWindowsCreateDeviceRequest &request,
+        LvhWindowsCreateDeviceResponse &response
       ) const override {
         using enum ErrorCode;
 
         auto request_copy = request;
         DWORD bytes_returned = 0;
-        if (const auto status = device_io_control(LVH_WINDOWS_IOCTL_CREATE_GAMEPAD, request_copy, response, &bytes_returned, "create Windows gamepad"); !status.ok()) {
+        if (const auto status = device_io_control(LVH_WINDOWS_IOCTL_CREATE_DEVICE, request_copy, response, &bytes_returned, "create Windows virtual HID device"); !status.ok()) {
           return status;
         }
 
         if (bytes_returned < sizeof(response)) {
-          return OperationStatus::failure(backend_failure, "Windows driver returned a truncated gamepad response");
+          return OperationStatus::failure(backend_failure, "Windows driver returned a truncated device response");
         }
 
-        return protocol_status(response.status, "Windows driver rejected gamepad creation");
+        return protocol_status(response.status, "Windows driver rejected virtual HID device creation");
       }
 
       OperationStatus destroy_device(
@@ -831,27 +847,27 @@ namespace lvh::detail {
         return direct_channel_->native_handle();
       }
 
-      OperationStatus create_gamepad(
-        const LvhWindowsCreateGamepadRequest &request,
-        LvhWindowsCreateGamepadResponse &response
+      OperationStatus create_device(
+        const LvhWindowsCreateDeviceRequest &request,
+        LvhWindowsCreateDeviceResponse &response
       ) const override {
-        LvhWindowsBrokerCreateGamepadRequest broker_request {};
+        LvhWindowsBrokerCreateDeviceRequest broker_request {};
         broker_request.header = windows_broker::make_request_header(
-          LvhWindowsBrokerRequestType::create_gamepad,
+          LvhWindowsBrokerRequestType::create_device,
           sizeof(broker_request)
         );
         broker_request.client_control_handle = static_cast<std::uint64_t>(
           reinterpret_cast<std::uintptr_t>(direct_channel_->native_handle())
         );
-        broker_request.gamepad = request;
+        broker_request.device = request;
 
-        LvhWindowsBrokerCreateGamepadResponse broker_response {};
-        if (const auto status = windows_broker::call(broker_request, broker_response, "create Windows gamepad through broker"); !status.ok()) {
+        LvhWindowsBrokerCreateDeviceResponse broker_response {};
+        if (const auto status = windows_broker::call(broker_request, broker_response, "create Windows virtual HID device through broker"); !status.ok()) {
           return status;
         }
 
-        response = broker_response.gamepad;
-        return protocol_status(response.status, "Windows driver rejected gamepad creation");
+        response = broker_response.device;
+        return protocol_status(response.status, "Windows driver rejected virtual HID device creation");
       }
 
       OperationStatus destroy_device(
@@ -902,9 +918,9 @@ namespace lvh::detail {
       return channels;
     }
 
-    class WindowsGamepadState {
+    class WindowsVhfDeviceState {
     public:
-      WindowsGamepadState(
+      WindowsVhfDeviceState(
         DeviceId client_device_id,
         std::uint64_t driver_device_id,
         const LvhWindowsSessionToken &session_token,
@@ -924,6 +940,7 @@ namespace lvh::detail {
     private:
       friend class WindowsBackendContext;
       friend class WindowsGamepad;
+      friend class WindowsHidMouse;
 
       std::mutex output_dispatch_mutex_;
       mutable std::mutex mutex_;
@@ -940,7 +957,7 @@ namespace lvh::detail {
 
     class WindowsGamepad final: public BackendGamepad {
     public:
-      WindowsGamepad(std::shared_ptr<WindowsBackendContext> context, std::shared_ptr<WindowsGamepadState> state):
+      WindowsGamepad(std::shared_ptr<WindowsBackendContext> context, std::shared_ptr<WindowsVhfDeviceState> state):
           context_ {std::move(context)},
           state_ {std::move(state)} {}
 
@@ -954,7 +971,7 @@ namespace lvh::detail {
 
     private:
       std::shared_ptr<WindowsBackendContext> context_;
-      std::shared_ptr<WindowsGamepadState> state_;
+      std::shared_ptr<WindowsVhfDeviceState> state_;
     };
 
     class WindowsBackendContext: public std::enable_shared_from_this<WindowsBackendContext> {
@@ -1012,16 +1029,16 @@ namespace lvh::detail {
       }
 
       BackendGamepadCreationResult create_gamepad(DeviceId id, const CreateGamepadOptions &options) {
-        auto request = windows::make_create_gamepad_request(id, options);
-        LvhWindowsCreateGamepadResponse response {};
+        auto request = windows::make_create_device_request(id, options);
+        LvhWindowsCreateDeviceResponse response {};
         response.version = LVH_WINDOWS_CONTROL_PROTOCOL_VERSION;
         response.size = sizeof(response);
 
-        if (const auto status = command_channel_->create_gamepad(request, response); !status.ok()) {
+        if (const auto status = command_channel_->create_device(request, response); !status.ok()) {
           return {status, nullptr};
         }
 
-        auto state = std::make_shared<WindowsGamepadState>(
+        auto state = std::make_shared<WindowsVhfDeviceState>(
           id,
           response.driver_device_id,
           response.session_token,
@@ -1031,7 +1048,7 @@ namespace lvh::detail {
 
         {
           std::lock_guard lock {devices_mutex_};
-          gamepads_[state->driver_id] = state;
+          devices_[state->driver_id] = state;
         }
         notify_pid_timer();
 
@@ -1039,8 +1056,20 @@ namespace lvh::detail {
         return {OperationStatus::success(), std::move(gamepad)};
       }
 
-      OperationStatus submit_gamepad_report(
-        const std::shared_ptr<WindowsGamepadState> &state,
+      /**
+       * @brief Create a driver-backed HID mouse.
+       *
+       * Defined out of line because it constructs `WindowsHidMouse`, which is
+       * declared after this class.
+       *
+       * @param id Client device identity.
+       * @param options Mouse creation options.
+       * @return Creation result; the device is null when the driver declines.
+       */
+      BackendMouseCreationResult create_hid_mouse(DeviceId id, const CreateMouseOptions &options);
+
+      OperationStatus submit_device_report(
+        const std::shared_ptr<WindowsVhfDeviceState> &state,
         const std::vector<std::uint8_t> &report
       ) const {
         const auto driver_id = state->driver_id;
@@ -1048,7 +1077,7 @@ namespace lvh::detail {
         return command_channel_->submit_input_report(driver_id, token, report);
       }
 
-      OperationStatus close_gamepad(const std::shared_ptr<WindowsGamepadState> &state) {
+      OperationStatus close_device(const std::shared_ptr<WindowsVhfDeviceState> &state) {
         std::uint64_t driver_id = 0;
         LvhWindowsSessionToken token {};
         {
@@ -1064,7 +1093,7 @@ namespace lvh::detail {
 
         {
           std::lock_guard lock {devices_mutex_};
-          gamepads_.erase(driver_id);
+          devices_.erase(driver_id);
         }
         notify_pid_timer();
 
@@ -1103,11 +1132,11 @@ namespace lvh::detail {
       }
 
       std::optional<PidTimePoint> dispatch_pid_transitions() {
-        std::vector<std::shared_ptr<WindowsGamepadState>> states;
+        std::vector<std::shared_ptr<WindowsVhfDeviceState>> states;
         {
           std::lock_guard lock {devices_mutex_};
-          states.reserve(gamepads_.size());
-          for (const auto &[driver_id, weak_state] : gamepads_) {
+          states.reserve(devices_.size());
+          for (const auto &[driver_id, weak_state] : devices_) {
             static_cast<void>(driver_id);
             if (auto state = weak_state.lock(); state) {
               states.push_back(std::move(state));
@@ -1154,10 +1183,10 @@ namespace lvh::detail {
       }
 
       void dispatch_output_report(const LvhWindowsOutputReportEvent &event) {
-        std::shared_ptr<WindowsGamepadState> state;
+        std::shared_ptr<WindowsVhfDeviceState> state;
         {
           std::lock_guard lock {devices_mutex_};
-          if (const auto iter = gamepads_.find(event.driver_device_id); iter != gamepads_.end()) {
+          if (const auto iter = devices_.find(event.driver_device_id); iter != devices_.end()) {
             state = iter->second.lock();
           }
         }
@@ -1215,7 +1244,7 @@ namespace lvh::detail {
       std::mutex pid_timer_mutex_;
       std::atomic_uint64_t pid_timer_generation_ = 0;
       std::mutex devices_mutex_;
-      std::map<std::uint64_t, std::weak_ptr<WindowsGamepadState>> gamepads_;
+      std::map<std::uint64_t, std::weak_ptr<WindowsVhfDeviceState>> devices_;
     };
 
     OperationStatus WindowsGamepad::submit(
@@ -1235,11 +1264,11 @@ namespace lvh::detail {
         }
 
         if (state_->uses_generic_pid) {
-          return context_->submit_gamepad_report(state_, windows::make_generic_windows_input_report(report));
+          return context_->submit_device_report(state_, windows::make_generic_windows_input_report(report));
         }
       }
 
-      return context_->submit_gamepad_report(state_, report);
+      return context_->submit_device_report(state_, report);
     }
 
     void WindowsGamepad::set_output_callback(OutputCallback callback) {
@@ -1257,7 +1286,7 @@ namespace lvh::detail {
     }
 
     OperationStatus WindowsGamepad::close() {
-      return context_->close_gamepad(state_);
+      return context_->close_device(state_);
     }
 
     class WindowsKeyboard final: public BackendKeyboard {
@@ -1419,6 +1448,266 @@ namespace lvh::detail {
     private:
       bool open_ = true;
     };
+
+    /**
+     * @brief Report descriptor for the driver-backed relative mouse.
+     *
+     * Five buttons, 16-bit relative X/Y, an 8-bit wheel and an 8-bit AC Pan
+     * axis. No report ID is declared, matching the seven byte input report
+     * emitted by `WindowsHidMouse`.
+     *
+     * @return Report descriptor bytes.
+     */
+    std::vector<std::uint8_t> make_mouse_report_descriptor() {
+      return {windows::mouse_report_descriptor.begin(), windows::mouse_report_descriptor.end()};
+    }
+
+    /**
+     * @brief High-resolution scroll units that make up a single wheel detent.
+     */
+    constexpr std::int64_t mouse_scroll_units_per_detent = 120;
+
+    /**
+     * @brief Device profile describing the driver-backed mouse.
+     *
+     * @param requested Caller-supplied profile whose public identity is kept.
+     * @return Effective mouse device profile.
+     */
+    DeviceProfile make_hid_mouse_profile(const DeviceProfile &requested) {
+      auto profile = requested;
+      profile.device_type = DeviceType::mouse;
+      profile.gamepad_kind = GamepadProfileKind::generic;
+      profile.report_id = 0;
+      profile.report_descriptor = make_mouse_report_descriptor();
+      profile.input_report_size = LVH_WINDOWS_MOUSE_INPUT_REPORT_SIZE;
+      profile.output_report_size = 0;
+      profile.capabilities = {};
+      return profile;
+    }
+
+    /**
+     * @brief Map a mouse button onto its HID button bit.
+     *
+     * HID orders the primary buttons left, right, middle, which differs from
+     * the `MouseButton` declaration order.
+     *
+     * @param button Mouse button.
+     * @return Bit index, or `std::nullopt` when the button is unmapped.
+     */
+    std::optional<unsigned> hid_mouse_button_bit(MouseButton button) {
+      switch (button) {
+        using enum MouseButton;
+
+        case left:
+          return 0U;
+        case right:
+          return 1U;
+        case middle:
+          return 2U;
+        case side:
+          return 3U;
+        case extra:
+          return 4U;
+      }
+
+      return std::nullopt;
+    }
+
+    /**
+     * @brief Mouse backed by a real HID device created through the UMDF driver.
+     *
+     * Relative motion, buttons and scrolling are delivered as HID input
+     * reports, so applications reading the Raw Input API observe them exactly
+     * as they would a physical mouse. Absolute motion has no relative HID
+     * equivalent and is delegated to the Win32 injection path.
+     */
+    class WindowsHidMouse final: public BackendMouse {
+    public:
+      WindowsHidMouse(
+        std::shared_ptr<WindowsBackendContext> context,
+        std::shared_ptr<WindowsVhfDeviceState> state
+      ):
+          context_ {std::move(context)},
+          state_ {std::move(state)} {}
+
+      OperationStatus submit(const MouseEvent &event) override {
+        using enum ErrorCode;
+
+        if (!open_) {
+          return OperationStatus::failure(device_closed, "Windows HID mouse is closed");
+        }
+
+        switch (event.kind) {
+          using enum MouseEventKind;
+
+          case relative_motion:
+            return submit_relative_motion(event.x, event.y);
+          case absolute_motion:
+            // Relative HID reports cannot express absolute positioning.
+            return fallback_.submit(event);
+          case button:
+            return submit_button(event);
+          case vertical_scroll:
+            return submit_scroll(vertical_scroll_remainder_, event.high_resolution_scroll, true);
+          case horizontal_scroll:
+            return submit_scroll(horizontal_scroll_remainder_, event.high_resolution_scroll, false);
+        }
+
+        return OperationStatus::success();
+      }
+
+      std::vector<DeviceNode> device_nodes() const override {
+        return {DeviceNode {.path = state_->path}};
+      }
+
+      OperationStatus close() override {
+        if (!open_) {
+          return OperationStatus::success();
+        }
+
+        open_ = false;
+        return context_->close_device(state_);
+      }
+
+    private:
+      /**
+       * @brief Submit every part of a relative motion delta without clipping.
+       *
+       * @param x Incoming horizontal delta.
+       * @param y Incoming vertical delta.
+       * @return Submission status.
+       */
+      OperationStatus submit_relative_motion(std::int32_t x, std::int32_t y) {
+        while (x != 0 || y != 0) {
+          const auto report_x = static_cast<std::int16_t>(std::clamp(
+            x,
+            static_cast<std::int32_t>(std::numeric_limits<std::int16_t>::min()),
+            static_cast<std::int32_t>(std::numeric_limits<std::int16_t>::max())
+          ));
+          const auto report_y = static_cast<std::int16_t>(std::clamp(
+            y,
+            static_cast<std::int32_t>(std::numeric_limits<std::int16_t>::min()),
+            static_cast<std::int32_t>(std::numeric_limits<std::int16_t>::max())
+          ));
+          if (const auto status = emit(report_x, report_y, 0, 0); !status.ok()) {
+            return status;
+          }
+          x -= report_x;
+          y -= report_y;
+        }
+        return OperationStatus::success();
+      }
+
+      /**
+       * @brief Convert high-resolution scroll units into whole wheel detents.
+       *
+       * The descriptor exposes a detent-based wheel, so sub-detent movement is
+       * carried in @p remainder until it accumulates into a full step.
+       *
+       * @param remainder Running sub-detent remainder for this axis.
+       * @param high_resolution_scroll Incoming high-resolution distance.
+       * @param vertical Whether to emit wheel rather than pan reports.
+       * @return Submission status.
+       */
+      OperationStatus submit_scroll(
+        std::int64_t &remainder,
+        std::int32_t high_resolution_scroll,
+        bool vertical
+      ) {
+        const auto total = remainder + high_resolution_scroll;
+        auto detents = total / mouse_scroll_units_per_detent;
+        remainder = total % mouse_scroll_units_per_detent;
+
+        while (detents != 0) {
+          const auto report_detents = static_cast<std::int8_t>(std::clamp<std::int64_t>(detents, -127, 127));
+          if (const auto status = vertical ? emit(0, 0, report_detents, 0) : emit(0, 0, 0, report_detents); !status.ok()) {
+            return status;
+          }
+          detents -= report_detents;
+        }
+        return OperationStatus::success();
+      }
+
+      /**
+       * @brief Track a button transition and emit the updated button state.
+       *
+       * @param event Mouse event describing the transition.
+       * @return Submission status.
+       */
+      OperationStatus submit_button(const MouseEvent &event) {
+        const auto bit = hid_mouse_button_bit(event.button);
+        if (!bit.has_value()) {
+          return OperationStatus::success();
+        }
+
+        const auto mask = std::byte {1} << *bit;
+        buttons_ = event.pressed ? (buttons_ | mask) : (buttons_ & ~mask);
+
+        return emit(0, 0, 0, 0);
+      }
+
+      /**
+       * @brief Pack and submit a single HID input report.
+       *
+       * @param x Relative X delta.
+       * @param y Relative Y delta.
+       * @param wheel Vertical wheel detents.
+       * @param pan Horizontal wheel detents.
+       * @return Submission status.
+       */
+      OperationStatus emit(std::int16_t x, std::int16_t y, std::int8_t wheel, std::int8_t pan) {
+        std::vector<std::uint8_t> report(LVH_WINDOWS_MOUSE_INPUT_REPORT_SIZE, 0U);
+        report[0] = std::to_integer<std::uint8_t>(buttons_);
+        report[1] = static_cast<std::uint8_t>(static_cast<std::uint16_t>(x) & 0xFFU);
+        report[2] = static_cast<std::uint8_t>((static_cast<std::uint16_t>(x) >> 8U) & 0xFFU);
+        report[3] = static_cast<std::uint8_t>(static_cast<std::uint16_t>(y) & 0xFFU);
+        report[4] = static_cast<std::uint8_t>((static_cast<std::uint16_t>(y) >> 8U) & 0xFFU);
+        report[5] = static_cast<std::uint8_t>(wheel);
+        report[6] = static_cast<std::uint8_t>(pan);
+        return context_->submit_device_report(state_, report);
+      }
+
+      std::shared_ptr<WindowsBackendContext> context_;
+      std::shared_ptr<WindowsVhfDeviceState> state_;
+      WindowsMouse fallback_;
+      std::byte buttons_ {};
+      std::int64_t vertical_scroll_remainder_ = 0;
+      std::int64_t horizontal_scroll_remainder_ = 0;
+      bool open_ = true;
+    };
+
+    BackendMouseCreationResult WindowsBackendContext::create_hid_mouse(
+      DeviceId id,
+      const CreateMouseOptions &options
+    ) {
+      auto effective_options = options;
+      effective_options.profile = make_hid_mouse_profile(options.profile);
+
+      auto request = windows::make_create_device_request(id, effective_options);
+      LvhWindowsCreateDeviceResponse response {};
+      response.version = LVH_WINDOWS_CONTROL_PROTOCOL_VERSION;
+      response.size = sizeof(response);
+
+      if (const auto status = command_channel_->create_device(request, response); !status.ok()) {
+        return {status, nullptr};
+      }
+
+      auto state = std::make_shared<WindowsVhfDeviceState>(
+        id,
+        response.driver_device_id,
+        response.session_token,
+        effective_options.profile,
+        response.device_path[0] == '\0' ? command_channel_->path() : std::string {response.device_path.data()}
+      );
+
+      {
+        std::lock_guard lock {devices_mutex_};
+        devices_[state->driver_id] = state;
+      }
+      notify_pid_timer();
+
+      return {OperationStatus::success(), std::make_unique<WindowsHidMouse>(shared_from_this(), std::move(state))};
+    }
 
     /**
      * @brief Shared lifecycle and refresh support for Windows synthetic pointer devices.
@@ -2033,9 +2322,23 @@ namespace lvh::detail {
         return {OperationStatus::success(), std::make_unique<WindowsKeyboard>()};
       }
 
-      BackendMouseCreationResult create_mouse(DeviceId /*id*/, const CreateMouseOptions &options) override {
+      BackendMouseCreationResult create_mouse(DeviceId id, const CreateMouseOptions &options) override {
         if (options.profile.device_type != DeviceType::mouse) {
           return {unsupported_profile_status("Windows mouse backend requires a mouse profile"), nullptr};
+        }
+
+        // A driver-backed HID mouse is visible to Raw Input and requires the
+        // same machine license as every broker-created driver device. Preserve
+        // the SendInput behavior only when that licensed path is unavailable;
+        // protocol and driver failures must remain visible to the caller.
+        if (context_) {
+          auto hid = context_->create_hid_mouse(id, options);
+          if (hid.mouse) {
+            return hid;
+          }
+          if (!mouse_driver_fallback_allowed(hid.status.code())) {
+            return hid;
+          }
         }
 
         return {OperationStatus::success(), std::make_unique<WindowsMouse>()};

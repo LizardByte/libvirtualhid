@@ -53,6 +53,7 @@
 // local includes
 #include "generic_pid_protocol.hpp"
 #include "lvh_windows_protocol.h"
+#include "mouse_protocol.hpp"
 #include "playstation_feature_protocol.hpp"
 #include "rotating_trace_log.hpp"
 #include "switch_pro_protocol.hpp"
@@ -82,15 +83,23 @@ namespace {
   constexpr auto broker_service_name = L"libvirtualhid_broker";
   constexpr auto broker_service_account_name = L"NT SERVICE\\libvirtualhid_broker";
   constexpr auto trace_file_name = std::wstring_view {L"libvirtualhid-umdf-driver.log"};
+  constexpr auto known_gamepad_flags =
+    LVH_WINDOWS_GAMEPAD_FLAG_SUPPORTS_RUMBLE |
+    LVH_WINDOWS_GAMEPAD_FLAG_SUPPORTS_MOTION |
+    LVH_WINDOWS_GAMEPAD_FLAG_SUPPORTS_TOUCHPAD |
+    LVH_WINDOWS_GAMEPAD_FLAG_SUPPORTS_RGB_LED |
+    LVH_WINDOWS_GAMEPAD_FLAG_SUPPORTS_BATTERY |
+    LVH_WINDOWS_GAMEPAD_FLAG_SUPPORTS_ADAPTIVE_TRIGGERS;
 
   using UniqueServiceHandle = std::unique_ptr<
     std::remove_pointer_t<SC_HANDLE>,
     decltype(&::CloseServiceHandle)>;
 
   struct DeviceRecord {
-    explicit DeviceRecord(const LvhWindowsCreateGamepadRequest &create_request):
+    explicit DeviceRecord(const LvhWindowsCreateDeviceRequest &create_request):
         request {create_request},
         pending_input_reports {
+          create_request.device_type,
           create_request.gamepad_kind,
           create_request.bus_type,
           create_request.hardware_ids.report_id,
@@ -103,7 +112,7 @@ namespace {
     WDFDEVICE owner_device {};
     WDFFILEOBJECT owner_file {};
     WDFIOTARGET vhf_io_target {};
-    LvhWindowsCreateGamepadRequest request {};
+    LvhWindowsCreateDeviceRequest request {};
     LvhWindowsSessionToken session_token {};
     VHFHANDLE vhf_handle {};
     std::vector<UCHAR> report_descriptor;
@@ -564,15 +573,40 @@ namespace {
     return status;
   }
 
-  bool valid_create_request(const LvhWindowsCreateGamepadRequest &request) {
+  bool valid_create_request(const LvhWindowsCreateDeviceRequest &request) {
     const auto descriptor_size = request.report_sizes.report_descriptor_size;
     const auto input_report_size = request.report_sizes.input_report_size;
     const auto output_report_size = request.report_sizes.output_report_size;
 
-    return valid_header(request.version, request.size, sizeof(request)) && descriptor_size > 0U &&
-           descriptor_size <= LVH_WINDOWS_MAX_REPORT_DESCRIPTOR_SIZE && input_report_size > 0U &&
-           input_report_size <= LVH_WINDOWS_MAX_INPUT_REPORT_SIZE &&
-           output_report_size <= LVH_WINDOWS_MAX_OUTPUT_REPORT_SIZE;
+    const auto known_device = request.device_type == LVH_WINDOWS_DEVICE_GAMEPAD ||
+                              request.device_type == LVH_WINDOWS_DEVICE_MOUSE;
+    const auto known_bus = request.bus_type == LVH_WINDOWS_BUS_UNKNOWN ||
+                           request.bus_type == LVH_WINDOWS_BUS_USB ||
+                           request.bus_type == LVH_WINDOWS_BUS_BLUETOOTH;
+    const auto known_profile = request.gamepad_kind <= LVH_WINDOWS_GAMEPAD_DUALSHOCK4;
+    const auto valid_mouse_descriptor =
+      request.device_type == LVH_WINDOWS_DEVICE_GAMEPAD ||
+      (descriptor_size == lvh::detail::windows::mouse_report_descriptor.size() &&
+       std::equal(
+         lvh::detail::windows::mouse_report_descriptor.begin(),
+         lvh::detail::windows::mouse_report_descriptor.end(),
+         request.report_descriptor.begin()
+       ));
+    const auto valid_device_fields = request.device_type == LVH_WINDOWS_DEVICE_GAMEPAD ||
+                                     (request.gamepad_kind == LVH_WINDOWS_GAMEPAD_GENERIC &&
+                                      request.flags == 0U &&
+                                      request.hardware_ids.report_id == 0U &&
+                                      input_report_size == LVH_WINDOWS_MOUSE_INPUT_REPORT_SIZE &&
+                                      output_report_size == 0U);
+
+    return valid_header(request.version, request.size, sizeof(request)) &&
+           request.client_device_id != 0U && known_device && known_bus && known_profile && valid_device_fields &&
+           valid_mouse_descriptor &&
+           (request.flags & ~known_gamepad_flags) == 0U &&
+           std::ranges::all_of(request.hardware_ids.reserved0, [](const auto value) {
+             return value == 0U;
+           }) &&
+           descriptor_size > 0U && descriptor_size <= LVH_WINDOWS_MAX_REPORT_DESCRIPTOR_SIZE && input_report_size > 0U && input_report_size <= LVH_WINDOWS_MAX_INPUT_REPORT_SIZE && output_report_size <= LVH_WINDOWS_MAX_OUTPUT_REPORT_SIZE;
   }
 
   bool valid_submit_input_report_request(const LvhWindowsSubmitInputReportRequest &request) {
@@ -778,6 +812,10 @@ namespace {
     const DeviceRecord &record,
     const LvhWindowsSubmitInputReportRequest &request
   ) {
+    if (request.report_size != record.request.report_sizes.input_report_size) {
+      return {};
+    }
+
     const auto report_id = record.request.hardware_ids.report_id;
     const auto report_begin = request.report.data();
     const auto report_end = request.report.data() + request.report_size;
@@ -843,7 +881,10 @@ namespace {
     }
 
     auto report = std::optional<std::vector<std::uint8_t>> {};
-    if (record.request.gamepad_kind == LVH_WINDOWS_GAMEPAD_GENERIC) {
+    if (
+      record.request.device_type == LVH_WINDOWS_DEVICE_GAMEPAD &&
+      record.request.gamepad_kind == LVH_WINDOWS_GAMEPAD_GENERIC
+    ) {
       std::lock_guard lock {record.mutex};
       report = record.generic_pid_feature_state.get_feature_report(report_number);
     } else {
@@ -862,7 +903,10 @@ namespace {
   }
 
   bool handle_vhf_set_feature(DeviceRecord &record, const HID_XFER_PACKET &packet) {
-    if (record.request.gamepad_kind == LVH_WINDOWS_GAMEPAD_GENERIC) {
+    if (
+      record.request.device_type == LVH_WINDOWS_DEVICE_GAMEPAD &&
+      record.request.gamepad_kind == LVH_WINDOWS_GAMEPAD_GENERIC
+    ) {
       auto event = make_output_event(record, packet);
       const auto report_id = packet.reportId == 0U && event.report_size > 0U ? event.report[0] : packet.reportId;
       std::lock_guard lock {record.mutex};
@@ -875,7 +919,10 @@ namespace {
   }
 
   void handle_vhf_output_report(DeviceRecord &record, const LvhWindowsOutputReportEvent &event) {
-    if (record.request.gamepad_kind != LVH_WINDOWS_GAMEPAD_GENERIC) {
+    if (
+      record.request.device_type != LVH_WINDOWS_DEVICE_GAMEPAD ||
+      record.request.gamepad_kind != LVH_WINDOWS_GAMEPAD_GENERIC
+    ) {
       return;
     }
 
@@ -909,20 +956,20 @@ namespace {
     }
   }
 
-  void handle_create_gamepad_request(WDFDEVICE device, WDFREQUEST request) {
+  void handle_create_device_request(WDFDEVICE device, WDFREQUEST request) {
     if (!request_is_authorized_broker_service(request)) {
       complete_request(request, STATUS_ACCESS_DENIED);
       return;
     }
 
-    auto *create_request = static_cast<LvhWindowsCreateGamepadRequest *>(nullptr);
+    auto *create_request = static_cast<LvhWindowsCreateDeviceRequest *>(nullptr);
     auto status = retrieve_input_buffer(request, create_request);
     if (!NT_SUCCESS(status)) {
       complete_request(request, status);
       return;
     }
 
-    auto *create_response = static_cast<LvhWindowsCreateGamepadResponse *>(nullptr);
+    auto *create_response = static_cast<LvhWindowsCreateDeviceResponse *>(nullptr);
     status = retrieve_output_buffer(request, create_response);
     if (!NT_SUCCESS(status)) {
       complete_request(request, status);
@@ -947,17 +994,17 @@ namespace {
     record->owner_file = WdfRequestGetFileObject(request);
     status = generate_session_token(record->session_token);
     if (!NT_SUCCESS(status)) {
-      trace_status("create_gamepad token failed", status);
+      trace_status("create_device token failed", status);
       create_response->status = LVH_WINDOWS_STATUS_BACKEND_FAILURE;
       complete_request(request, STATUS_SUCCESS, sizeof(*create_response));
       return;
     }
 
-    trace_status("create_gamepad begin");
+    trace_status("create_device begin");
 
     status = create_vhf_device(device, record);
     if (!NT_SUCCESS(status)) {
-      trace_status("create_gamepad failed", status);
+      trace_status("create_device failed", status);
       create_response->status = LVH_WINDOWS_STATUS_BACKEND_FAILURE;
       complete_request(request, STATUS_SUCCESS, sizeof(*create_response));
       return;
@@ -971,7 +1018,7 @@ namespace {
     create_response->driver_device_id = driver_device_id;
     create_response->session_token = record->session_token;
     set_device_path(driver_device_id, create_response->device_path);
-    trace_status("create_gamepad success");
+    trace_status("create_device success");
     complete_request(request, STATUS_SUCCESS, sizeof(*create_response));
   }
 
@@ -1313,8 +1360,8 @@ void LvhEvtIoDeviceControl(
   UNREFERENCED_PARAMETER(input_buffer_length);
 
   switch (io_control_code) {
-    case LVH_WINDOWS_IOCTL_CREATE_GAMEPAD:
-      handle_create_gamepad_request(WdfIoQueueGetDevice(queue), request);
+    case LVH_WINDOWS_IOCTL_CREATE_DEVICE:
+      handle_create_device_request(WdfIoQueueGetDevice(queue), request);
       return;
 
     case LVH_WINDOWS_IOCTL_DESTROY_DEVICE:

@@ -5,6 +5,7 @@
 
 // local includes
 #include "broker_request_validation.hpp"
+#include "mouse_protocol.hpp"
 #include "platform/windows/control_protocol.hpp"
 
 // test includes
@@ -32,7 +33,7 @@ namespace {
     };
   }
 
-  LvhWindowsBrokerCreateGamepadRequest valid_create_request() {
+  LvhWindowsBrokerCreateDeviceRequest valid_create_request() {
     lvh::CreateGamepadOptions options;
     options.profile.device_type = lvh::DeviceType::gamepad;
     options.profile.gamepad_kind = lvh::GamepadProfileKind::generic;
@@ -46,13 +47,13 @@ namespace {
     options.profile.manufacturer = "LizardByte";
     options.profile.report_descriptor = {0x05, 0x01, 0x09, 0x05};
 
-    LvhWindowsBrokerCreateGamepadRequest request {};
+    LvhWindowsBrokerCreateDeviceRequest request {};
     request.header = request_header(
-      LvhWindowsBrokerRequestType::create_gamepad,
+      LvhWindowsBrokerRequestType::create_device,
       sizeof(request)
     );
     request.client_control_handle = 1U;
-    request.gamepad = lvh::detail::windows::make_create_gamepad_request(1U, options);
+    request.device = lvh::detail::windows::make_create_device_request(1U, options);
     return request;
   }
 
@@ -115,85 +116,122 @@ TEST(WindowsBrokerValidationTest, RejectsMalformedCreateFields) {
   EXPECT_FALSE(lvh::windows::broker_validation::valid_request(request));
 
   request = valid;
-  ++request.gamepad.version;
+  ++request.device.version;
   EXPECT_FALSE(lvh::windows::broker_validation::valid_request(request));
 
   request = valid;
-  request.gamepad.client_device_id = 0U;
+  request.device.client_device_id = 0U;
   EXPECT_FALSE(lvh::windows::broker_validation::valid_request(request));
 
   request = valid;
-  ++request.gamepad.size;
+  ++request.device.size;
   EXPECT_FALSE(lvh::windows::broker_validation::valid_request(request));
 
   request = valid;
-  request.gamepad.bus_type = LVH_WINDOWS_BUS_UNKNOWN;
+  request.device.device_type = 99U;
+  EXPECT_FALSE(lvh::windows::broker_validation::valid_request(request));
+
+  request = valid;
+  request.device.bus_type = LVH_WINDOWS_BUS_UNKNOWN;
   EXPECT_TRUE(lvh::windows::broker_validation::valid_request(request));
 
   request = valid;
-  request.gamepad.bus_type = LVH_WINDOWS_BUS_BLUETOOTH;
+  request.device.bus_type = LVH_WINDOWS_BUS_BLUETOOTH;
   EXPECT_TRUE(lvh::windows::broker_validation::valid_request(request));
 
   request = valid;
-  request.gamepad.bus_type = 99U;
+  request.device.bus_type = 99U;
   EXPECT_FALSE(lvh::windows::broker_validation::valid_request(request));
 
   request = valid;
-  request.gamepad.gamepad_kind = 99U;
+  request.device.gamepad_kind = 99U;
   EXPECT_FALSE(lvh::windows::broker_validation::valid_request(request));
 
   request = valid;
-  request.gamepad.flags = 0x80000000U;
+  request.device.flags = 0x80000000U;
   EXPECT_FALSE(lvh::windows::broker_validation::valid_request(request));
 
   request = valid;
-  request.gamepad.hardware_ids.reserved0[0] = 1U;
+  request.device.hardware_ids.reserved0[0] = 1U;
   EXPECT_FALSE(lvh::windows::broker_validation::valid_request(request));
 
   request = valid;
-  request.gamepad.report_sizes.report_descriptor_size = 0U;
+  request.device.report_sizes.report_descriptor_size = 0U;
   EXPECT_FALSE(lvh::windows::broker_validation::valid_request(request));
 
   request = valid;
-  request.gamepad.report_sizes.input_report_size = 0U;
+  request.device.report_sizes.input_report_size = 0U;
   EXPECT_FALSE(lvh::windows::broker_validation::valid_request(request));
 
   request = valid;
-  request.gamepad.report_sizes.input_report_size = LVH_WINDOWS_MAX_INPUT_REPORT_SIZE + 1U;
+  request.device.report_sizes.input_report_size = LVH_WINDOWS_MAX_INPUT_REPORT_SIZE + 1U;
   EXPECT_FALSE(lvh::windows::broker_validation::valid_request(request));
 
   request = valid;
-  request.gamepad.report_sizes.output_report_size = LVH_WINDOWS_MAX_OUTPUT_REPORT_SIZE + 1U;
+  request.device.report_sizes.output_report_size = LVH_WINDOWS_MAX_OUTPUT_REPORT_SIZE + 1U;
   EXPECT_FALSE(lvh::windows::broker_validation::valid_request(request));
 
   request = valid;
-  request.gamepad.report_sizes.report_descriptor_size = LVH_WINDOWS_MAX_REPORT_DESCRIPTOR_SIZE + 1U;
+  request.device.report_sizes.report_descriptor_size = LVH_WINDOWS_MAX_REPORT_DESCRIPTOR_SIZE + 1U;
   EXPECT_FALSE(lvh::windows::broker_validation::valid_request(request));
 
   request = valid;
-  request.gamepad.report_sizes.name_size = sizeof(request.gamepad.name);
+  request.device.report_sizes.name_size = sizeof(request.device.name);
   EXPECT_FALSE(lvh::windows::broker_validation::valid_request(request));
 
   request = valid;
-  request.gamepad.name[1] = '\0';
+  request.device.name[1] = '\0';
   EXPECT_FALSE(lvh::windows::broker_validation::valid_request(request));
 
   request = valid;
-  request.gamepad.manufacturer[1] = '\0';
+  request.device.manufacturer[1] = '\0';
   EXPECT_FALSE(lvh::windows::broker_validation::valid_request(request));
 
   request = valid;
-  std::memcpy(request.gamepad.stable_id.data(), "stable", sizeof("stable"));
-  request.gamepad.report_sizes.stable_id_size = sizeof("stable") - 1U;
-  request.gamepad.stable_id[1] = '\0';
+  std::memcpy(request.device.stable_id.data(), "stable", sizeof("stable"));
+  request.device.report_sizes.stable_id_size = sizeof("stable") - 1U;
+  request.device.stable_id[1] = '\0';
   EXPECT_FALSE(lvh::windows::broker_validation::valid_request(request));
 
   request = valid;
-  request.gamepad.name[request.gamepad.report_sizes.name_size] = 'x';
+  request.device.name[request.device.report_sizes.name_size] = 'x';
   EXPECT_FALSE(lvh::windows::broker_validation::valid_request(request));
 
   request = valid;
-  request.gamepad.report_descriptor[request.gamepad.report_sizes.report_descriptor_size] = 1U;
+  request.device.report_descriptor[request.device.report_sizes.report_descriptor_size] = 1U;
+  EXPECT_FALSE(lvh::windows::broker_validation::valid_request(request));
+}
+
+TEST(WindowsBrokerValidationTest, ValidatesMouseCreateFields) {
+  auto request = valid_create_request();
+  request.device.device_type = LVH_WINDOWS_DEVICE_MOUSE;
+  request.device.gamepad_kind = LVH_WINDOWS_GAMEPAD_GENERIC;
+  request.device.flags = 0U;
+  request.device.hardware_ids.report_id = 0U;
+  request.device.report_sizes.input_report_size = LVH_WINDOWS_MOUSE_INPUT_REPORT_SIZE;
+  request.device.report_sizes.output_report_size = 0U;
+  std::ranges::fill(request.device.report_descriptor, std::uint8_t {});
+  std::ranges::copy(
+    lvh::detail::windows::mouse_report_descriptor,
+    request.device.report_descriptor.begin()
+  );
+  request.device.report_sizes.report_descriptor_size =
+    static_cast<std::uint32_t>(lvh::detail::windows::mouse_report_descriptor.size());
+  EXPECT_TRUE(lvh::windows::broker_validation::valid_request(request));
+
+  request.device.flags = LVH_WINDOWS_GAMEPAD_FLAG_SUPPORTS_RUMBLE;
+  EXPECT_FALSE(lvh::windows::broker_validation::valid_request(request));
+  request.device.flags = 0U;
+  request.device.hardware_ids.report_id = 1U;
+  EXPECT_FALSE(lvh::windows::broker_validation::valid_request(request));
+  request.device.hardware_ids.report_id = 0U;
+  request.device.report_sizes.input_report_size = LVH_WINDOWS_MOUSE_INPUT_REPORT_SIZE - 1U;
+  EXPECT_FALSE(lvh::windows::broker_validation::valid_request(request));
+  request.device.report_sizes.input_report_size = LVH_WINDOWS_MOUSE_INPUT_REPORT_SIZE;
+  request.device.report_sizes.output_report_size = 1U;
+  EXPECT_FALSE(lvh::windows::broker_validation::valid_request(request));
+  request.device.report_sizes.output_report_size = 0U;
+  request.device.report_descriptor[0] = 0U;
   EXPECT_FALSE(lvh::windows::broker_validation::valid_request(request));
 }
 
@@ -273,7 +311,7 @@ TEST(WindowsBrokerValidationTest, RejectsInvalidLicenseHeadersAndRequestTypes) {
 
   for (const auto type : {
          status,
-         create_gamepad,
+         create_device,
          destroy_device,
        }) {
     request = valid_license_request(type);

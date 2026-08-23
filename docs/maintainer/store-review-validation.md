@@ -15,7 +15,7 @@ Paste this into the Partner Center certification notes field:
 ```text
 This package installs the libvirtualhid Windows user-mode UMDF/VHF virtual HID driver and local broker service. Applications consume it through the libvirtualhid client API, and the MSI includes a native diagnostic UI for local validation.
 
-Every virtual gamepad creation requires an active license. A currently granted review license key with an available device activation is supplied separately in the Partner Center certification credentials or notes. The key is not embedded in the package or this document.
+Every virtual gamepad or driver-backed Raw Input mouse creation requires an active license. A currently granted review license key with an available device activation is supplied separately in the Partner Center certification credentials or notes. The key is not embedded in the package or this document.
 
 Launch the validation tool below.
 
@@ -31,10 +31,10 @@ Required validation:
 $installRoot = Join-Path $env:ProgramFiles "libvirtualhid"
 Start-Process "$installRoot\tools\windows\virtualhid_control.exe"
 
-In the libvirtualhid control window, paste the supplied review key into the License key field and click Activate license. Confirm the status changes to Licensed. Then leave the default Xbox Series profile selected and click Create. Use the button and axis controls in the UI to submit input to the virtual controller.
+In the libvirtualhid control window, paste the supplied review key into the License key field and click Activate license. Confirm the status changes to Licensed. Then leave the default Xbox Series profile selected and click Create. Use the button and axis controls in the UI to submit input to the virtual controller. Next, change Device type to Mouse and click Create. Use Tab or the arrow keys to highlight the mouse controls and Space or Enter to activate relative movement, momentary button, and wheel input without using the physical mouse.
 
 Expected result:
-- The backend status reports windows-umdf with gamepad support available
+- The backend status reports windows-umdf with gamepad and mouse support available
 - The libvirtualhid_broker service is running
 - License validation succeeds and the license status reports Licensed
 - A virtual HID gamepad is created and appears in the device list
@@ -42,6 +42,9 @@ Expected result:
   HID\VID_045E&PID_0B12&IG_00
 - Button, axis, and Share values in the UI can be pressed or moved without
   errors
+- A driver-backed virtual HID mouse is created and appears in the device list
+- Keyboard activation of the mouse controls moves the pointer, changes button
+  state, and scrolls without errors
 
 Optional browser validation:
 $installRoot = Join-Path $env:ProgramFiles "libvirtualhid"
@@ -55,6 +58,12 @@ Use the libvirtualhid control window to press buttons or move axes while the bro
 Expected result:
 - The browser Gamepad API sees an Xbox-compatible controller
 - Button and axis values change while controls are used in the validation UI
+
+For a browser mouse-event tester, create a mouse in the validation UI and enable Delayed browser test. Leave the pointer over the browser test target, activate a movement, button, or wheel action with the keyboard, then switch to the browser before the displayed countdown expires.
+
+Expected result:
+- The browser receives the queued mouse action while it owns focus
+- A queued button action produces one press followed by one release
 ```
 
 ## Manual Review Steps
@@ -66,7 +75,8 @@ Expected result:
 4. Run the required validation tool from the submission notes.
 5. Activate the review key supplied through Partner Center.
 6. Create the default gamepad and exercise its controls.
-7. Optionally, run the browser validation steps.
+7. Create a mouse and exercise its controls with keyboard navigation.
+8. Optionally, run the browser validation steps.
 
 If the default install location was changed during MSI installation, replace
 `$env:ProgramFiles\libvirtualhid` with the selected install directory.
@@ -84,5 +94,5 @@ HID-only and intentionally does not emulate the Xbox 360 XUSB stack.
 
 The reviewer-visible success signal is the installed `ROOT\LIBVIRTUALHID`
 control device, the `\\.\LibVirtualHid` control path, the running
-`libvirtualhid_broker` service, and a started HID gamepad child device while
-`virtualhid_control.exe` has a gamepad created.
+`libvirtualhid_broker` service, and started HID child devices while
+`virtualhid_control.exe` has a gamepad and mouse created.

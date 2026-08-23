@@ -1,9 +1,10 @@
 # Windows Driver Package
 
-Windows gamepad support uses a user-mode UMDF2 control driver backed by Virtual
-HID Framework. The driver package is separate from the normal C++ library build:
-the library remains consumable from MSVC and MinGW/UCRT64, while the driver
-package is built with the Microsoft SDK/WDK toolchain.
+Windows virtual HID gamepad and Raw Input mouse support uses a user-mode UMDF2
+control driver backed by Virtual HID Framework. The driver package is separate
+from the normal C++ library build: the library remains consumable from MSVC and
+MinGW/UCRT64, while the driver package is built with the Microsoft SDK/WDK
+toolchain.
 
 Windows 11 version 21H2 and later is the supported driver target. The INF also
 provides a best-effort compatibility path for Windows 10 version 2004 and later
@@ -18,27 +19,28 @@ so Store listing copy should describe the installed driver component.
 ### Short Description
 
 ```text
-User-mode virtual HID driver package that enables compatible apps to create virtual gamepads on Windows.
+User-mode virtual HID driver package that enables compatible apps to create virtual gamepads and Raw Input mice on Windows.
 ```
 
 ### Description
 
 ```text
 Virtual HID Driver installs the user-mode driver component used by compatible
-applications to create virtual HID gamepads on Windows.
+applications to create virtual HID gamepads and mice on Windows.
 
 The package includes a local diagnostic UI for creating and testing virtual
-gamepads. Compatible applications can also request virtual HID gamepads, and
-Windows applications that understand standard HID gamepads can discover those
-devices.
+gamepads and mice. Compatible applications can also request virtual HID gamepads
+or mice, and Windows applications that understand standard HID devices can
+discover them.
 ```
 
 ## Architecture
 
-Windows gamepad creation is brokered by `libvirtualhid_broker`. The normal C++
-backend asks the broker service to create and destroy gamepads through a local
-named pipe, while input reports stay on the direct driver path after creation.
-This keeps license and active-device checks outside the input hot path.
+Windows driver-device creation is brokered by `libvirtualhid_broker`. The normal
+C++ backend asks the broker service to create and destroy virtual HID devices
+through a local named pipe, while input reports stay on the direct driver path
+after creation. This keeps license and active-device checks outside the input hot
+path.
 
 The UMDF service runs in a dedicated high-priority host process, as recommended
 for response-sensitive input drivers. This isolates its VHF input work from
@@ -53,8 +55,8 @@ while keeping broker ownership and privileged device operations in the Windows
 service.
 
 Status, current-license validation, activation, replacement, deactivation,
-gamepad creation, and owned-device destruction are available to authenticated
-local users without elevation. Before sending any request, clients compare the
+virtual HID device creation, and owned-device destruction are available to
+authenticated local users without elevation. Before sending any request, clients compare the
 named-pipe server PID to the SCM-registered, currently running
 `libvirtualhid_broker` service. This prevents another local process from
 impersonating an unavailable broker and collecting a license key. The service
@@ -79,15 +81,18 @@ and HID output writes are normalized back to the C++ output callback path.
 
 The driver owns the VHF input buffering policy instead of allowing VHF to build
 the default HID report backlog. VHF readiness notifications permit one report at
-a time; while a consumer is not ready, the driver replaces superseded axis,
-trigger, motion, battery, and touch-position states with the newest report.
+a time; while a gamepad consumer is not ready, the driver replaces superseded
+axis, trigger, motion, battery, and touch-position states with the newest report.
 Button, D-pad, trigger-threshold, report-ID, and touch-contact lifecycle changes
 remain ordered in a bounded transition queue. This keeps continuously moving
 controls close to the latest submitted state while preserving ordinary button
-press and release transitions. Profile initialization replies are prioritized
-over pending controller states so the Switch Pro handshake remains responsive.
+press and release transitions. Relative mouse motion and wheel values are
+accumulated by button state and emitted in descriptor-sized chunks, so VHF
+backpressure does not turn relative movement into a replaceable absolute state.
+Profile initialization replies are prioritized over pending controller states
+so the Switch Pro handshake remains responsive.
 
-The driver rejects gamepad create, destroy, and broker-instance reset IOCTLs
+The driver rejects virtual HID create, destroy, and broker-instance reset IOCTLs
 unless the requestor token contains the `NT SERVICE\libvirtualhid_broker`
 service SID. On the first boot after installation, before Windows applies a
 newly configured service SID to the process token, the driver instead requires
@@ -98,35 +103,37 @@ they are not a separate runtime bypass for creating or destroying virtual
 devices.
 
 The library and installed driver must use the same control-protocol version.
-Protocol version 2 expands the report-descriptor capacity to 2048 bytes for the
-complete DirectInput PID descriptor; a version mismatch is rejected rather
-than interpreting a differently sized request.
+Control protocol version 3 adds an explicit device type to the common create
+request while retaining the 2048-byte report-descriptor capacity needed by the
+complete DirectInput PID descriptor. A version mismatch is rejected rather than
+interpreting a differently sized request.
 
 Each backend runtime uses one control-file handle for commands and its pending
-output read. Broker protocol version 2 preserves that association by duplicating
-the handle only for the authorized create IOCTL. The driver associates output
-events with that file object, so feedback from a virtual gamepad is delivered
-only to the runtime that created it instead of being consumed by another
-libvirtualhid client. Because the shared handle is opened for overlapped I/O,
-command IOCTLs also supply a valid `OVERLAPPED` event and explicitly wait for
-pending completion instead of mixing synchronous calls with an asynchronous
-handle. Each caller thread reuses its event to avoid creating a kernel handle
-for every input report.
+output read. Broker protocol version 4 carries the generalized device create
+request while continuing to duplicate the handle only for the authorized create
+IOCTL. The driver associates output events with that file object, so feedback
+from a virtual gamepad is delivered only to the runtime that created it instead
+of being consumed by another libvirtualhid client. Because the shared handle is
+opened for overlapped I/O, command IOCTLs also supply a valid `OVERLAPPED` event
+and explicitly wait for pending completion instead of mixing synchronous calls
+with an asynchronous handle. Each caller thread reuses its event to avoid
+creating a kernel handle for every input report.
 
-The driver opens a separate VHF source target for each virtual gamepad and
+The driver opens a separate VHF source target for each virtual HID device and
 parents that target to the control-file handle that created it. If the creating
-process exits or crashes, Windows cleans up gamepads that were not explicitly
+process exits or crashes, Windows cleans up devices that were not explicitly
 destroyed. In brokered driver packages, the broker owns that control-file handle.
 The broker tracks the requesting client process for each created device and
 destroys broker-owned devices when that client process exits unexpectedly. A new
-broker process first asks the driver to remove every gamepad left by the previous
+broker process first asks the driver to remove every device left by the previous
 broker instance and refuses new creation until that reset succeeds. Clients must
-recreate their gamepads after the broker service restarts.
+recreate their devices after the broker service restarts.
 
 The backend reports `requires_installed_driver = true` and only advertises
 gamepad/output-report support when the broker is reachable and the control
-device can be opened. Keyboard and mouse support do not require the driver
-package.
+device can be opened. Keyboard injection and the mouse `SendInput` fallback do
+not require the driver package; a Raw Input-visible mouse does require the
+driver and the same broker license as a gamepad.
 
 ## Build
 
@@ -176,7 +183,7 @@ The WiX installer also places validation files under the default install root,
 The source-tree validation scripts remain developer and CI helpers. They are not
 packaged as reviewer-facing MSI validation scripts because the native
 `virtualhid_control.exe` tool can create, exercise, and inspect virtual
-gamepads interactively.
+gamepads and mice interactively.
 
 The install helper stages the INF with `pnputil`, updates an existing
 `ROOT\LIBVIRTUALHID` device when present, and creates that root-enumerated
@@ -222,18 +229,33 @@ For interactive local validation, run:
 tools\windows\virtualhid_control.exe
 ```
 
-The native UI can create, remove, control, and monitor gamepads that it owns.
-Buttons are momentary by default, with an explicit lock mode for held inputs.
-The UI also shows supported profile features, battery input state, device nodes,
-and normalized feedback reports such as rumble, RGB LED, adaptive trigger, and
-raw output events. Devices created by another process are not listed yet; that
-requires a future Windows control-protocol extension for cross-process
-diagnostics.
+The native UI can create, remove, control, and monitor gamepads and mice that it
+owns. Gamepad buttons are momentary by default, with an explicit lock mode for
+held inputs. Mouse controls provide relative movement, five momentary buttons,
+vertical scrolling, and horizontal panning. Use Tab or the arrow keys to
+highlight a mouse control and Space or Enter to activate it, avoiding use of the
+physical mouse while testing the virtual device. A mouse button remains pressed
+only while its activation key is held.
+
+For an external mouse-event tester, enable **Delayed browser test**, choose a
+delay, and activate the desired action. Switch to the browser before the
+countdown expires while leaving the pointer over its test target. Movement and
+wheel actions are submitted once the browser owns focus; a delayed button action
+submits one press-and-release click. The scheduler continues while the control
+window is unfocused or minimized.
+
+The UI identifies a driver-backed HID mouse separately from the `SendInput`
+fallback and also shows supported profile features, battery input state, device
+nodes, and normalized gamepad feedback reports such as rumble, RGB LED,
+adaptive trigger, and raw output events. Devices created by another process are
+not listed yet; that requires a future Windows control-protocol extension for
+cross-process diagnostics.
 
 On Windows, the UI also shows broker license status. It can activate a license
 key, refresh validation, deactivate the current machine, and open
-compiled purchase or account-management URLs. License management and normal
-virtual-gamepad use do not require elevation.
+compiled purchase or account-management URLs. The Create button is enabled for
+both gamepads and mice only while the broker reports a current machine license.
+License management and normal virtual HID device use do not require elevation.
 
 ## Installation Notes
 
@@ -308,18 +330,20 @@ opens the shared persistent Polar Checkout Link. Account management opens the
 [LizardByte LLC Polar customer portal](https://polar.sh/lizardbyte-llc/portal),
 where customers can manage their five allowed machine activations.
 
-Normal Windows UMDF gamepad creation requires a current machine authorization,
-but controller creation itself does not contact Polar. The broker validates the
+Normal Windows UMDF virtual HID device creation requires a current machine
+authorization, but device creation itself does not contact Polar. A mouse does
+not consume another Polar machine activation; it is another active device under
+the existing machine license. The broker validates the
 saved activation immediately after service startup and then once per day in the
 background. If validation cannot complete because of a temporary network or
-provider failure, the broker retries every 60 seconds. Controllers that already
+provider failure, the broker retries every 60 seconds. Devices that already
 exist are retained for one hour unless the broker service restarts, but no
-additional controller can be created while at least one licensed controller
+additional device can be created while at least one licensed device
 remains active. When the outage reaches one hour, the broker removes excess
-licensed controllers and retains at most one. A yearly subscription authorization
+licensed devices and retains at most one. A yearly subscription authorization
 is current for at most the daily validation interval plus that one-hour outage
 allowance; after 25 hours without successful validation, the remaining licensed
-controller is also removed. A lifetime license can retain the one-controller
+device is also removed. A lifetime license can retain the one-device
 fallback until online validation succeeds. Failed driver destruction requests
 remain tracked and are retried instead of being treated as successful revocations.
 
@@ -337,8 +361,8 @@ The broker advances Polar's trusted timestamp using Windows uptime and stores a
 random marker in a volatile registry key for the current boot session. This works
 across broker service restarts and includes sleep or hibernation, but never
 consults the user-adjustable Windows date. After Windows restarts, the marker
-changes, so a yearly subscription must reconnect to Polar before gamepad creation;
-a lifetime license can use the one-gamepad outage fallback. Explicit validation
+changes, so a yearly subscription must reconnect to Polar before virtual HID
+device creation; a lifetime license can use the one-device outage fallback. Explicit validation
 requests always contact the provider. The sole exception to normal licensing is
 for CI runners where the broker service itself has the `GITHUB_ACTIONS`
 environment marker. That environment receives one machine-scoped five-minute
@@ -354,15 +378,25 @@ same full local access when the provider reports the key status as `granted`.
 Polar revokes a subscription benefit when its entitlement ends. Licensed access
 has no local active-device cap after successful validation. A definitive missing
 activation, revoked or disabled key, activation mismatch, disallowed benefit, or
-explicit deactivation prevents new gamepads and causes the broker to destroy
-existing licensed gamepads. A timeout or other
-transient provider failure starts the one-hour retention period and one-gamepad
+explicit deactivation prevents new virtual HID devices and causes the broker to
+destroy existing licensed devices. A timeout or other transient provider failure
+starts the one-hour retention period and one-device
 creation limit instead of immediately revoking existing controllers. A yearly
 subscription that cannot validate for 25 hours is also denied until it reconnects.
 WinHTTP resolve, connect, send, and receive operations have explicit timeouts of
 5, 5, 5, and 10 seconds respectively.
 
 ## Profile Compatibility
+
+For a mouse, the Windows backend preserves the requested bus type, VID, PID,
+version, name, manufacturer, and stable ID. The Windows transport owns the HID
+framing: it uses a report-ID-free seven-byte descriptor with five buttons,
+16-bit relative X/Y, an 8-bit wheel, and an 8-bit AC Pan axis. Relative motion,
+buttons, and scrolling use the licensed VHF device so Raw Input clients can see
+them. Absolute positioning cannot be represented by that relative descriptor
+and continues through `SendInput`. If the driver, broker, or license is
+unavailable, mouse creation retains the existing `SendInput` fallback; malformed
+requests and unexpected driver failures are returned to the caller.
 
 The Windows backend publishes HID gamepads through VHF. DirectInput, SDL/HIDAPI,
 Windows.Gaming.Input/GameInput, and browser Gamepad API clients should see
@@ -409,10 +443,10 @@ label because VHF does not provide a product/manufacturer string callback.
   packages require a Microsoft dashboard signing path that is not part of the
   current Azure Trusted Signing workflow.
 - A temporary Polar outage limits a previously activated machine to one active
-  licensed gamepad. Yearly subscriptions must reconnect within 25 hours of their
-  last successful validation; lifetime licenses can retain one gamepad until
-  validation succeeds. Definitive invalidation prevents new gamepads and removes
-  active licensed gamepads.
+  licensed virtual HID device. Yearly subscriptions must reconnect within 25
+  hours of their last successful validation; lifetime licenses can retain one
+  device until validation succeeds. Definitive invalidation prevents new devices
+  and removes active licensed devices.
 
 ## Signing
 
