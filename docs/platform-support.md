@@ -25,8 +25,9 @@ Use capability queries for behavior such as:
 ## Windows
 
 The Windows backend keeps the normal C++ library buildable with MSVC and
-MinGW/UCRT64. Keyboard and mouse input use Win32 APIs. Gamepad creation uses a
-user-mode UMDF2 control driver and Windows Virtual HID Framework.
+MinGW/UCRT64. Gamepad creation and Raw Input-visible relative mouse input use a
+user-mode UMDF2 control driver and Windows Virtual HID Framework. Keyboard,
+absolute mouse input, and the mouse fallback use Win32 APIs.
 
 The C++ library communicates with the driver through fixed-size protocol
 structures and `DeviceIoControl`, not C++ STL types. This keeps the public API
@@ -198,6 +199,13 @@ and UI dependencies, including SDL3, `libevdev`, and any enabled X11/XTest
 libraries. Many distro toolchains intentionally omit some static archives, so
 release packaging should keep full static linking as a packaging-mode choice
 rather than an unconditional default.
+
+The UI can create and exercise both gamepads and mice. Its mouse movement,
+button, and wheel controls participate in Dear ImGui keyboard navigation; use
+Tab or the arrow keys to highlight them and Space or Enter to activate them.
+Mouse buttons are momentary. A delayed browser-test mode queues an action long
+enough to switch focus to an external event tester, sending button actions as a
+single press-and-release click.
 
 ### Permissions
 

@@ -29,8 +29,9 @@ Virtual HID Driver installs the user-mode driver component used by compatible
 applications to create virtual HID gamepads and mice on Windows.
 
 The package includes a local diagnostic UI for creating and testing virtual
-gamepads. Compatible applications can also request virtual HID gamepads or mice,
-and Windows applications that understand standard HID devices can discover them.
+gamepads and mice. Compatible applications can also request virtual HID gamepads
+or mice, and Windows applications that understand standard HID devices can
+discover them.
 ```
 
 ## Architecture
@@ -182,7 +183,7 @@ The WiX installer also places validation files under the default install root,
 The source-tree validation scripts remain developer and CI helpers. They are not
 packaged as reviewer-facing MSI validation scripts because the native
 `virtualhid_control.exe` tool can create, exercise, and inspect virtual
-gamepads interactively.
+gamepads and mice interactively.
 
 The install helper stages the INF with `pnputil`, updates an existing
 `ROOT\LIBVIRTUALHID` device when present, and creates that root-enumerated
@@ -228,18 +229,33 @@ For interactive local validation, run:
 tools\windows\virtualhid_control.exe
 ```
 
-The native UI can create, remove, control, and monitor gamepads that it owns.
-Buttons are momentary by default, with an explicit lock mode for held inputs.
-The UI also shows supported profile features, battery input state, device nodes,
-and normalized feedback reports such as rumble, RGB LED, adaptive trigger, and
-raw output events. Devices created by another process are not listed yet; that
-requires a future Windows control-protocol extension for cross-process
-diagnostics.
+The native UI can create, remove, control, and monitor gamepads and mice that it
+owns. Gamepad buttons are momentary by default, with an explicit lock mode for
+held inputs. Mouse controls provide relative movement, five momentary buttons,
+vertical scrolling, and horizontal panning. Use Tab or the arrow keys to
+highlight a mouse control and Space or Enter to activate it, avoiding use of the
+physical mouse while testing the virtual device. A mouse button remains pressed
+only while its activation key is held.
+
+For an external mouse-event tester, enable **Delayed browser test**, choose a
+delay, and activate the desired action. Switch to the browser before the
+countdown expires while leaving the pointer over its test target. Movement and
+wheel actions are submitted once the browser owns focus; a delayed button action
+submits one press-and-release click. The scheduler continues while the control
+window is unfocused or minimized.
+
+The UI identifies a driver-backed HID mouse separately from the `SendInput`
+fallback and also shows supported profile features, battery input state, device
+nodes, and normalized gamepad feedback reports such as rumble, RGB LED,
+adaptive trigger, and raw output events. Devices created by another process are
+not listed yet; that requires a future Windows control-protocol extension for
+cross-process diagnostics.
 
 On Windows, the UI also shows broker license status. It can activate a license
 key, refresh validation, deactivate the current machine, and open
-compiled purchase or account-management URLs. License management and normal
-virtual HID device use do not require elevation.
+compiled purchase or account-management URLs. The Create button is enabled for
+both gamepads and mice only while the broker reports a current machine license.
+License management and normal virtual HID device use do not require elevation.
 
 ## Installation Notes
 

@@ -19,7 +19,7 @@
 <div align="center">
   <h2>🎮 Windows Virtual HID Driver License</h2>
   <p>
-    <strong>A license is required to create virtual gamepads with the Windows driver.</strong><br>
+    <strong>A license is required to create virtual gamepads or Raw Input-visible mice with the Windows driver.</strong><br>
     This requirement is Windows-only; non-Windows backends do not currently require a license.<br>
     Yearly and lifetime options are available.
   </p>
@@ -48,12 +48,13 @@ behind backend implementations.
 - Descriptor-driven PlayStation gamepads through Linux `uhid`; Generic, Xbox,
   and Switch Pro gamepads plus keyboard, mouse, touchscreen, trackpad, and pen
   tablet devices through `uinput`.
-- Windows gamepads through a user-mode UMDF2 control driver backed by Virtual
-  HID Framework, with keyboard and mouse support through normal Win32 APIs.
+- Windows gamepads and Raw Input-visible mice through a user-mode UMDF2 control
+  driver backed by Virtual HID Framework, with keyboard and fallback mouse
+  support through normal Win32 APIs.
 - Output callbacks for profile-specific feedback such as rumble, LEDs,
   adaptive triggers, and raw HID output reports when available.
 - An optional `virtualhid_control` native UI tool for creating, removing,
-  controlling, and inspecting test gamepads through the public C++ API.
+  controlling, and inspecting test gamepads and mice through the public C++ API.
 - CMake consumption through installed packages, vendored source,
   `add_subdirectory`, or `FetchContent`.
 

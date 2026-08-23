@@ -143,6 +143,54 @@ namespace lvh::tools::virtualhid_control {
     return std::nullopt;
   }
 
+  MouseEvent mouse_event_for_action(
+    MouseControlAction action,
+    std::int32_t motion_step,
+    std::int32_t scroll_step
+  ) {
+    using enum MouseControlAction;
+
+    switch (action) {
+      case move_left:
+        return MouseEvent {.kind = MouseEventKind::relative_motion, .x = -motion_step};
+      case move_right:
+        return MouseEvent {.kind = MouseEventKind::relative_motion, .x = motion_step};
+      case move_up:
+        return MouseEvent {.kind = MouseEventKind::relative_motion, .y = -motion_step};
+      case move_down:
+        return MouseEvent {.kind = MouseEventKind::relative_motion, .y = motion_step};
+      case wheel_up:
+        return MouseEvent {
+          .kind = MouseEventKind::vertical_scroll,
+          .high_resolution_scroll = scroll_step,
+        };
+      case wheel_down:
+        return MouseEvent {
+          .kind = MouseEventKind::vertical_scroll,
+          .high_resolution_scroll = -scroll_step,
+        };
+      case pan_left:
+        return MouseEvent {
+          .kind = MouseEventKind::horizontal_scroll,
+          .high_resolution_scroll = -scroll_step,
+        };
+      case pan_right:
+        return MouseEvent {
+          .kind = MouseEventKind::horizontal_scroll,
+          .high_resolution_scroll = scroll_step,
+        };
+    }
+    return {};
+  }
+
+  MouseEvent mouse_button_event(MouseButton button, bool pressed) {
+    return MouseEvent {
+      .kind = MouseEventKind::button,
+      .button = button,
+      .pressed = pressed,
+    };
+  }
+
   int axis_to_slider(float value) {
     return static_cast<int>(std::lround(std::clamp(value, -1.0F, 1.0F) * static_cast<float>(slider_scale)));
   }
@@ -189,6 +237,13 @@ namespace lvh::tools::virtualhid_control {
     stream << L" | adaptive triggers " << yes_no(supports_gamepad_output(profile, adaptive_triggers));
     stream << L" | raw output " << yes_no(supports_gamepad_output(profile, raw_report));
     return stream.str();
+  }
+
+  std::wstring device_feature_summary(const DeviceProfile &profile) {
+    if (profile.device_type == DeviceType::mouse) {
+      return L"Features: relative motion | five buttons | vertical wheel | horizontal wheel";
+    }
+    return profile_feature_summary(profile);
   }
 
   bool append_latest_output_summary(std::wostringstream &stream, const OutputState &state) {
