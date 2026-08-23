@@ -575,8 +575,7 @@ namespace {
     void render_device_type_selector() {
       ImGui::TextUnformatted("Device type");
       const auto *choice = current_device_type_choice();
-      const auto preview = choice == nullptr ? std::string {"Select device type"} : to_utf8(choice->label);
-      if (!ImGui::BeginCombo("##device-type", preview.c_str())) {
+      if (const auto preview = choice == nullptr ? std::string {"Select device type"} : to_utf8(choice->label); !ImGui::BeginCombo("##device-type", preview.c_str())) {
         return;
       }
 
@@ -605,8 +604,7 @@ namespace {
       }
 
       const auto *choice = current_profile_choice();
-      const auto preview = choice == nullptr ? std::string {"Select profile"} : to_utf8(choice->label);
-      if (!ImGui::BeginCombo("##profile", preview.c_str())) {
+      if (const auto preview = choice == nullptr ? std::string {"Select profile"} : to_utf8(choice->label); !ImGui::BeginCombo("##profile", preview.c_str())) {
         return;
       }
 
@@ -1001,25 +999,30 @@ namespace {
       ImGui::TextWrapped("%s", backend.c_str());
       ImGui::Separator();
 
-      const auto render_devices = [this, &devices] {
+      const auto create_device = [this] {
+        create_selected_device();
+      };
+      const auto reset_device = [this] {
+        reset_selected_device();
+      };
+      const auto remove_device = [this] {
+        remove_selected_device();
+      };
+      const auto remove_all = [this] {
+        remove_all_devices();
+      };
+      const auto show_error = [this](std::string_view message) {
+        error_panel_.show(message);
+      };
+      const auto render_devices = [this, &devices, &create_device, &reset_device, &remove_device, &remove_all, &show_error] {
         device_panel_.render(
           devices,
           selected_id_,
-          [this] {
-            create_selected_device();
-          },
-          [this] {
-            reset_selected_device();
-          },
-          [this] {
-            remove_selected_device();
-          },
-          [this] {
-            remove_all_devices();
-          },
-          [this](std::string_view message) {
-            error_panel_.show(message);
-          }
+          create_device,
+          reset_device,
+          remove_device,
+          remove_all,
+          show_error
         );
       };
 
