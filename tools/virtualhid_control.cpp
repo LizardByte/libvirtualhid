@@ -101,6 +101,19 @@ namespace {
     std::string output_text;
   };
 
+  lvh::DeviceId first_device_id(
+    const std::map<lvh::DeviceId, ControlledGamepad> &gamepads,
+    const std::map<lvh::DeviceId, ControlledMouse> &mice
+  ) {
+    if (gamepads.empty()) {
+      return mice.empty() ? 0 : mice.begin()->first;
+    }
+    if (mice.empty()) {
+      return gamepads.begin()->first;
+    }
+    return std::min(gamepads.begin()->first, mice.begin()->first);
+  }
+
   class ScopedDisabled {
   public:
     explicit ScopedDisabled(bool disabled):
@@ -464,6 +477,464 @@ namespace {
     std::string manage_account_url_;
   };
 
+  class ErrorPanel {
+  public:
+    void show(std::string_view message) {
+      message_ = message.empty() ? "Operation failed." : std::string {message};
+      open_popup_ = true;
+    }
+
+    void render() {
+      if (open_popup_) {
+        ImGui::OpenPopup("Error");
+        open_popup_ = false;
+      }
+
+      if (ImGui::BeginPopupModal("Error", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextWrapped("%s", message_.c_str());
+        if (ImGui::Button("OK", {120.0F, 0.0F})) {
+          message_.clear();
+          ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+      }
+    }
+
+  private:
+    std::string message_;
+    bool open_popup_ = false;
+  };
+
+  class DevicePanel {
+  public:
+    void refresh_license() {
+      license_panel_.refresh();
+    }
+
+    lvh::DeviceType current_device_type() const {
+      const auto *choice = current_device_type_choice();
+      return choice == nullptr ? lvh::DeviceType::gamepad : choice->type;
+    }
+
+    std::optional<lvh::DeviceProfile> current_profile() const {
+      const auto *choice = current_profile_choice();
+      if (choice == nullptr) {
+        return std::nullopt;
+      }
+      return profile_for_choice(*choice);
+    }
+
+    const lvh::tools::virtualhid_control::ProfileChoice *selected_profile_choice() const {
+      return current_profile_choice();
+    }
+
+    std::optional<lvh::DeviceProfile> control_profile(const SelectedSnapshot &selected) const {
+      if (selected.has_device) {
+        return selected.profile;
+      }
+      if (current_device_type() == lvh::DeviceType::mouse) {
+        return lvh::profiles::mouse();
+      }
+      return current_profile();
+    }
+
+    template<typename CreateHandler, typename ResetHandler, typename RemoveHandler, typename RemoveAllHandler, typename ErrorHandler>
+    void render(
+      const std::vector<DeviceListItem> &devices,
+      lvh::DeviceId &selected_id,
+      CreateHandler create_device,
+      ResetHandler reset_device,
+      RemoveHandler remove_device,
+      RemoveAllHandler remove_all_devices,
+      ErrorHandler show_error
+    ) {
+      license_panel_.render(show_error);
+      ImGui::Separator();
+      render_device_type_selector();
+      render_profile_selector();
+      license_panel_.render_create_button(create_device);
+      render_device_list(devices, selected_id);
+      render_device_actions(devices.empty(), selected_id, reset_device, remove_device, remove_all_devices);
+    }
+
+  private:
+    const lvh::tools::virtualhid_control::DeviceTypeChoice *current_device_type_choice() const {
+      if (device_type_index_ >= device_type_choices.size()) {
+        return nullptr;
+      }
+      return &device_type_choices[device_type_index_];
+    }
+
+    const lvh::tools::virtualhid_control::ProfileChoice *current_profile_choice() const {
+      if (profile_index_ >= profile_choices.size()) {
+        return nullptr;
+      }
+      return &profile_choices[profile_index_];
+    }
+
+    void render_device_type_selector() {
+      ImGui::TextUnformatted("Device type");
+      const auto *choice = current_device_type_choice();
+      const auto preview = choice == nullptr ? std::string {"Select device type"} : to_utf8(choice->label);
+      if (!ImGui::BeginCombo("##device-type", preview.c_str())) {
+        return;
+      }
+
+      for (std::size_t index = 0; index < device_type_choices.size(); ++index) {
+        render_device_type_option(index);
+      }
+      ImGui::EndCombo();
+    }
+
+    void render_device_type_option(std::size_t index) {
+      const auto label = to_utf8(device_type_choices[index].label);
+      const auto selected = index == device_type_index_;
+      if (ImGui::Selectable(label.c_str(), selected)) {
+        device_type_index_ = index;
+      }
+      if (selected) {
+        ImGui::SetItemDefaultFocus();
+      }
+    }
+
+    void render_profile_selector() {
+      ImGui::TextUnformatted("Profile");
+      if (current_device_type() != lvh::DeviceType::gamepad) {
+        ImGui::TextUnformatted("Generic five-button mouse");
+        return;
+      }
+
+      const auto *choice = current_profile_choice();
+      const auto preview = choice == nullptr ? std::string {"Select profile"} : to_utf8(choice->label);
+      if (!ImGui::BeginCombo("##profile", preview.c_str())) {
+        return;
+      }
+
+      for (std::size_t index = 0; index < profile_choices.size(); ++index) {
+        render_profile_option(index);
+      }
+      ImGui::EndCombo();
+    }
+
+    void render_profile_option(std::size_t index) {
+      const auto label = to_utf8(profile_choices[index].label);
+      const auto selected = index == profile_index_;
+      if (ImGui::Selectable(label.c_str(), selected)) {
+        profile_index_ = index;
+      }
+      if (selected) {
+        ImGui::SetItemDefaultFocus();
+      }
+    }
+
+    void render_device_list(const std::vector<DeviceListItem> &devices, lvh::DeviceId &selected_id) const {
+      ImGui::Spacing();
+      ImGui::TextUnformatted("Devices");
+      if (!ImGui::BeginListBox("##devices", {-FLT_MIN, 150.0F})) {
+        return;
+      }
+
+      if (devices.empty()) {
+        ImGui::TextDisabled("No devices");
+      }
+      for (const auto &device : devices) {
+        if (ImGui::Selectable(device.label.c_str(), selected_id == device.id)) {
+          selected_id = device.id;
+        }
+      }
+      ImGui::EndListBox();
+    }
+
+    template<typename ResetHandler, typename RemoveHandler, typename RemoveAllHandler>
+    void render_device_actions(
+      bool devices_empty,
+      lvh::DeviceId selected_id,
+      ResetHandler reset_device,
+      RemoveHandler remove_device,
+      RemoveAllHandler remove_all_devices
+    ) const {
+      {
+        ScopedDisabled disabled {selected_id == 0};
+        if (ImGui::Button("Reset", {-FLT_MIN, 0.0F})) {
+          reset_device();
+        }
+        if (ImGui::Button("Remove selected", {-FLT_MIN, 0.0F})) {
+          remove_device();
+        }
+      }
+      {
+        ScopedDisabled disabled {devices_empty};
+        if (ImGui::Button("Remove all", {-FLT_MIN, 0.0F})) {
+          remove_all_devices();
+        }
+      }
+    }
+
+    LicensePanel license_panel_;
+    std::size_t device_type_index_ = 0;
+    std::size_t profile_index_ = 3;
+  };
+
+  class MouseControlPanel {
+  public:
+    template<typename SubmitHandler>
+    void tick(SubmitHandler submit_event) {
+      dispatch_due_events(submit_event);
+    }
+
+    template<typename SubmitHandler>
+    void render(const SelectedSnapshot &selected, SubmitHandler submit_event) {
+      using enum MouseControlAction;
+
+      ImGui::TextWrapped(
+        "Keyboard control: use Tab or arrow keys to highlight a control, then Space or Enter to activate it. "
+        "Mouse buttons remain pressed only while the activation key is held."
+      );
+
+      ImGui::SliderInt("Movement step", &motion_step_, 1, 500);
+      ImGui::SliderInt("Scroll step", &scroll_step_, 1, 1200);
+
+      ImGui::Checkbox("Delayed browser test", &delayed_test_);
+      if (ImGui::IsItemDeactivatedAfterEdit()) {
+        release_active_buttons(submit_event);
+        cancel_all_scheduled_events(submit_event);
+      }
+      if (delayed_test_) {
+        render_delayed_test_controls(submit_event);
+      }
+
+      ImGui::TextUnformatted("Relative movement");
+      if (ImGui::BeginTable("mouse-motion", 4, ImGuiTableFlags_SizingStretchSame)) {
+        render_action_button(selected, "Move left", move_left, submit_event);
+        render_action_button(selected, "Move up", move_up, submit_event);
+        render_action_button(selected, "Move down", move_down, submit_event);
+        render_action_button(selected, "Move right", move_right, submit_event);
+        ImGui::EndTable();
+      }
+
+      ImGui::TextUnformatted("Buttons (momentary)");
+      if (ImGui::BeginTable("mouse-buttons", 3, ImGuiTableFlags_SizingStretchSame)) {
+        for (std::size_t index = 0; index < mouse_button_choices.size(); ++index) {
+          render_button_control(selected, index, submit_event);
+        }
+        ImGui::EndTable();
+      }
+
+      ImGui::TextUnformatted("Wheel");
+      if (ImGui::BeginTable("mouse-wheel", 4, ImGuiTableFlags_SizingStretchSame)) {
+        render_action_button(selected, "Pan left", pan_left, submit_event);
+        render_action_button(selected, "Wheel up", wheel_up, submit_event);
+        render_action_button(selected, "Wheel down", wheel_down, submit_event);
+        render_action_button(selected, "Pan right", pan_right, submit_event);
+        ImGui::EndTable();
+      }
+    }
+
+    void forget_device(lvh::DeviceId id) {
+      std::erase_if(scheduled_events_, [id](const ScheduledMouseEvent &event) {
+        return event.device_id == id;
+      });
+      for (std::size_t index = 0; index < active_device_ids_.size(); ++index) {
+        if (active_device_ids_[index] == id) {
+          button_active_[index] = false;
+          active_device_ids_[index] = 0;
+        }
+      }
+    }
+
+    void reset() {
+      button_active_.fill(false);
+      active_device_ids_.fill(0);
+      scheduled_events_.clear();
+    }
+
+  private:
+    template<typename SubmitHandler>
+    void render_delayed_test_controls(SubmitHandler submit_event) {
+      ImGui::SliderInt("Delay (seconds)", &delay_seconds_, 1, 10);
+      ImGui::TextWrapped(
+        "Activate an action, then switch to the browser before the delay expires. Button actions send one "
+        "press-and-release click. Keep the pointer over the browser test target."
+      );
+      render_scheduled_status(submit_event);
+    }
+
+    template<typename SubmitHandler>
+    void render_scheduled_status(SubmitHandler submit_event) {
+      if (scheduled_events_.empty()) {
+        ImGui::TextDisabled("No browser-test action queued.");
+        return;
+      }
+
+      const auto next = std::ranges::min_element(scheduled_events_, {}, &ScheduledMouseEvent::due_at);
+      const auto remaining = std::max(
+        std::chrono::duration<float> {next->due_at - std::chrono::steady_clock::now()}.count(),
+        0.0F
+      );
+      ImGui::TextColored(
+        {1.0F, 0.8F, 0.2F, 1.0F},
+        "Browser-test input queued: switch windows now (%.1f s).",
+        remaining
+      );
+      if (ImGui::Button("Cancel queued input")) {
+        cancel_all_scheduled_events(submit_event);
+      }
+    }
+
+    template<typename SubmitHandler>
+    void render_action_button(
+      const SelectedSnapshot &selected,
+      const char *label,
+      MouseControlAction action,
+      SubmitHandler submit_event
+    ) {
+      ImGui::TableNextColumn();
+      ScopedDisabled disabled {!selected.has_device || selected.device_type != lvh::DeviceType::mouse};
+      if (!ImGui::Button(label, {-FLT_MIN, 30.0F})) {
+        return;
+      }
+
+      const auto event = mouse_event_for_action(action, motion_step_, scroll_step_);
+      if (delayed_test_) {
+        schedule_event(selected.id, event);
+      } else {
+        submit_event(selected.id, event);
+      }
+    }
+
+    template<typename SubmitHandler>
+    void render_button_control(const SelectedSnapshot &selected, std::size_t index, SubmitHandler submit_event) {
+      ImGui::TableNextColumn();
+      ImGui::PushID(static_cast<int>(index));
+
+      const auto pressed = selected.has_device && selected.device_type == lvh::DeviceType::mouse &&
+                           selected.mouse_buttons[index];
+      if (pressed) {
+        ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+      }
+
+      auto clicked = false;
+      auto active = false;
+      {
+        ScopedDisabled disabled {!selected.has_device || selected.device_type != lvh::DeviceType::mouse};
+        const auto label = to_utf8(mouse_button_choices[index].label);
+        clicked = ImGui::Button(label.c_str(), {-FLT_MIN, 30.0F});
+        active = ImGui::IsItemActive();
+      }
+
+      if (delayed_test_ && clicked) {
+        schedule_click(selected.id, mouse_button_choices[index].button);
+      } else if (!delayed_test_) {
+        update_active_button(selected.id, index, active, submit_event);
+      }
+
+      if (pressed) {
+        ImGui::PopStyleColor();
+      }
+      ImGui::PopID();
+    }
+
+    template<typename SubmitHandler>
+    void update_active_button(lvh::DeviceId selected_id, std::size_t index, bool active, SubmitHandler submit_event) {
+      if (button_active_[index] == active) {
+        return;
+      }
+
+      button_active_[index] = active;
+      if (active) {
+        active_device_ids_[index] = selected_id;
+        submit_event(selected_id, mouse_button_event(mouse_button_choices[index].button, true));
+        return;
+      }
+
+      const auto device_id = active_device_ids_[index];
+      active_device_ids_[index] = 0;
+      submit_event(device_id, mouse_button_event(mouse_button_choices[index].button, false));
+    }
+
+    void schedule_event(lvh::DeviceId id, const lvh::MouseEvent &event) {
+      if (id == 0) {
+        return;
+      }
+      scheduled_events_.push_back({
+        .device_id = id,
+        .event = event,
+        .due_at = std::chrono::steady_clock::now() + std::chrono::seconds {delay_seconds_},
+      });
+    }
+
+    void schedule_click(lvh::DeviceId id, lvh::MouseButton button) {
+      if (id == 0) {
+        return;
+      }
+
+      const auto press_at = std::chrono::steady_clock::now() + std::chrono::seconds {delay_seconds_};
+      scheduled_events_.push_back({
+        .device_id = id,
+        .event = mouse_button_event(button, true),
+        .due_at = press_at,
+      });
+      scheduled_events_.push_back({
+        .device_id = id,
+        .event = mouse_button_event(button, false),
+        .due_at = press_at + std::chrono::milliseconds {100},
+      });
+    }
+
+    template<typename SubmitHandler>
+    void dispatch_due_events(SubmitHandler submit_event) {
+      const auto now = std::chrono::steady_clock::now();
+      auto iter = scheduled_events_.begin();
+      while (iter != scheduled_events_.end()) {
+        if (iter->due_at > now) {
+          ++iter;
+          continue;
+        }
+
+        const auto event = *iter;
+        iter = scheduled_events_.erase(iter);
+        submit_event(event.device_id, event.event);
+      }
+    }
+
+    template<typename SubmitHandler>
+    void release_active_buttons(SubmitHandler submit_event) {
+      for (std::size_t index = 0; index < button_active_.size(); ++index) {
+        if (!button_active_[index]) {
+          continue;
+        }
+        submit_event(
+          active_device_ids_[index],
+          mouse_button_event(mouse_button_choices[index].button, false)
+        );
+        button_active_[index] = false;
+        active_device_ids_[index] = 0;
+      }
+    }
+
+    template<typename SubmitHandler>
+    void cancel_all_scheduled_events(SubmitHandler submit_event) {
+      std::vector<ScheduledMouseEvent> releases;
+      for (const auto &event : scheduled_events_) {
+        if (event.event.kind == lvh::MouseEventKind::button && !event.event.pressed) {
+          releases.push_back(event);
+        }
+      }
+      scheduled_events_.clear();
+      for (const auto &release : releases) {
+        submit_event(release.device_id, release.event);
+      }
+    }
+
+    std::array<bool, mouse_button_choices.size()> button_active_ {};
+    std::array<lvh::DeviceId, mouse_button_choices.size()> active_device_ids_ {};
+    int motion_step_ = 25;
+    int scroll_step_ = 120;
+    bool delayed_test_ = false;
+    int delay_seconds_ = 3;
+    std::vector<ScheduledMouseEvent> scheduled_events_;
+  };
+
   int axis_position(const SelectedSnapshot &selected, std::size_t index) {
     if (!selected.has_device) {
       return 0;
@@ -509,7 +980,9 @@ namespace {
     ControlApp &operator=(const ControlApp &) = delete;
 
     void tick() {
-      dispatch_due_mouse_events();
+      mouse_control_panel_.tick([this](lvh::DeviceId id, const lvh::MouseEvent &event) {
+        submit_mouse_event(id, event);
+      });
     }
 
     void render() {
@@ -528,8 +1001,30 @@ namespace {
       ImGui::TextWrapped("%s", backend.c_str());
       ImGui::Separator();
 
+      const auto render_devices = [this, &devices] {
+        device_panel_.render(
+          devices,
+          selected_id_,
+          [this] {
+            create_selected_device();
+          },
+          [this] {
+            reset_selected_device();
+          },
+          [this] {
+            remove_selected_device();
+          },
+          [this] {
+            remove_all_devices();
+          },
+          [this](std::string_view message) {
+            error_panel_.show(message);
+          }
+        );
+      };
+
       if (ImGui::GetContentRegionAvail().x < 760.0F) {
-        render_device_panel(devices);
+        render_devices();
         ImGui::Separator();
         render_control_panel(selected);
       } else if (ImGui::BeginTable("control-layout", 2, ImGuiTableFlags_Resizable | ImGuiTableFlags_BordersInnerV)) {
@@ -538,7 +1033,7 @@ namespace {
         ImGui::TableNextRow();
 
         ImGui::TableSetColumnIndex(0);
-        render_device_panel(devices);
+        render_devices();
 
         ImGui::TableSetColumnIndex(1);
         render_control_panel(selected);
@@ -546,7 +1041,7 @@ namespace {
         ImGui::EndTable();
       }
 
-      render_error_popup();
+      error_panel_.render();
       ImGui::End();
     }
 
@@ -626,123 +1121,8 @@ namespace {
       return snapshot;
     }
 
-    const lvh::tools::virtualhid_control::DeviceTypeChoice *current_device_type_choice() const {
-      if (device_type_index_ >= device_type_choices.size()) {
-        return nullptr;
-      }
-      return &device_type_choices[device_type_index_];
-    }
-
-    lvh::DeviceType current_device_type() const {
-      const auto *choice = current_device_type_choice();
-      return choice == nullptr ? lvh::DeviceType::gamepad : choice->type;
-    }
-
-    const lvh::tools::virtualhid_control::ProfileChoice *current_profile_choice() const {
-      if (profile_index_ >= profile_choices.size()) {
-        return nullptr;
-      }
-      return &profile_choices[profile_index_];
-    }
-
-    std::optional<lvh::DeviceProfile> current_profile() const {
-      const auto *choice = current_profile_choice();
-      if (choice == nullptr) {
-        return std::nullopt;
-      }
-      return profile_for_choice(*choice);
-    }
-
-    std::optional<lvh::DeviceProfile> control_profile(const SelectedSnapshot &selected) const {
-      if (selected.has_device) {
-        return selected.profile;
-      }
-      if (current_device_type() == lvh::DeviceType::mouse) {
-        return lvh::profiles::mouse();
-      }
-      return current_profile();
-    }
-
-    void render_device_panel(const std::vector<DeviceListItem> &devices) {
-      license_panel_.render([this](std::string_view message) {
-        show_error(message);
-      });
-      ImGui::Separator();
-
-      ImGui::TextUnformatted("Device type");
-      const auto *device_type_choice = current_device_type_choice();
-      if (const auto preview = device_type_choice == nullptr ? std::string {"Select device type"} : to_utf8(device_type_choice->label); ImGui::BeginCombo("##device-type", preview.c_str())) {
-        for (std::size_t index = 0; index < device_type_choices.size(); ++index) {
-          const auto label = to_utf8(device_type_choices[index].label);
-          const auto selected = index == device_type_index_;
-          if (ImGui::Selectable(label.c_str(), selected)) {
-            device_type_index_ = index;
-          }
-          if (selected) {
-            ImGui::SetItemDefaultFocus();
-          }
-        }
-        ImGui::EndCombo();
-      }
-
-      ImGui::TextUnformatted("Profile");
-      if (current_device_type() == lvh::DeviceType::gamepad) {
-        const auto *choice = current_profile_choice();
-        if (const auto preview = choice == nullptr ? std::string {"Select profile"} : to_utf8(choice->label); ImGui::BeginCombo("##profile", preview.c_str())) {
-          for (std::size_t index = 0; index < profile_choices.size(); ++index) {
-            const auto label = to_utf8(profile_choices[index].label);
-            const auto selected = index == profile_index_;
-            if (ImGui::Selectable(label.c_str(), selected)) {
-              profile_index_ = index;
-            }
-            if (selected) {
-              ImGui::SetItemDefaultFocus();
-            }
-          }
-          ImGui::EndCombo();
-        }
-      } else {
-        ImGui::TextUnformatted("Generic five-button mouse");
-      }
-
-      license_panel_.render_create_button([this] {
-        create_selected_device();
-      });
-
-      ImGui::Spacing();
-      ImGui::TextUnformatted("Devices");
-      if (ImGui::BeginListBox("##devices", {-FLT_MIN, 150.0F})) {
-        if (devices.empty()) {
-          ImGui::TextDisabled("No devices");
-        }
-        for (const auto &device : devices) {
-          const auto selected = selected_id_ == device.id;
-          if (ImGui::Selectable(device.label.c_str(), selected)) {
-            selected_id_ = device.id;
-          }
-        }
-        ImGui::EndListBox();
-      }
-
-      {
-        ScopedDisabled disabled {selected_id_ == 0};
-        if (ImGui::Button("Reset", {-FLT_MIN, 0.0F})) {
-          reset_selected_device();
-        }
-        if (ImGui::Button("Remove selected", {-FLT_MIN, 0.0F})) {
-          remove_selected_device();
-        }
-      }
-      {
-        ScopedDisabled disabled {devices.empty()};
-        if (ImGui::Button("Remove all", {-FLT_MIN, 0.0F})) {
-          remove_all_devices();
-        }
-      }
-    }
-
     void render_control_panel(const SelectedSnapshot &selected) {
-      const auto profile = control_profile(selected);
+      const auto profile = device_panel_.control_profile(selected);
       if (selected.has_device) {
         ImGui::TextWrapped("%s", selected.state_text.c_str());
       } else {
@@ -757,9 +1137,10 @@ namespace {
       }
 
       ImGui::Separator();
-      const auto device_type = selected.has_device ? selected.device_type : current_device_type();
-      if (device_type == lvh::DeviceType::mouse) {
-        render_mouse_controls(selected);
+      if (const auto device_type = selected.has_device ? selected.device_type : device_panel_.current_device_type(); device_type == lvh::DeviceType::mouse) {
+        mouse_control_panel_.render(selected, [this](lvh::DeviceId id, const lvh::MouseEvent &event) {
+          submit_mouse_event(id, event);
+        });
       } else {
         render_button_controls(selected, profile);
         ImGui::Separator();
@@ -769,127 +1150,6 @@ namespace {
       }
       ImGui::Separator();
       render_output_controls(selected);
-    }
-
-    void render_mouse_controls(const SelectedSnapshot &selected) {
-      ImGui::TextWrapped(
-        "Keyboard control: use Tab or arrow keys to highlight a control, then Space or Enter to activate it. "
-        "Mouse buttons remain pressed only while the activation key is held."
-      );
-
-      ImGui::SliderInt("Movement step", &mouse_motion_step_, 1, 500);
-      ImGui::SliderInt("Scroll step", &mouse_scroll_step_, 1, 1200);
-
-      if (ImGui::Checkbox("Delayed browser test", &mouse_delayed_test_); ImGui::IsItemDeactivatedAfterEdit()) {
-        mouse_button_active_.fill(false);
-        cancel_all_scheduled_mouse_events();
-      }
-      if (mouse_delayed_test_) {
-        ImGui::SliderInt("Delay (seconds)", &mouse_test_delay_seconds_, 1, 10);
-        ImGui::TextWrapped(
-          "Activate an action, then switch to the browser before the delay expires. Button actions send one "
-          "press-and-release click. Keep the pointer over the browser test target."
-        );
-        render_scheduled_mouse_status();
-      }
-
-      ImGui::TextUnformatted("Relative movement");
-      if (ImGui::BeginTable("mouse-motion", 4, ImGuiTableFlags_SizingStretchSame)) {
-        render_mouse_action_button(selected, "Move left", MouseControlAction::move_left);
-        render_mouse_action_button(selected, "Move up", MouseControlAction::move_up);
-        render_mouse_action_button(selected, "Move down", MouseControlAction::move_down);
-        render_mouse_action_button(selected, "Move right", MouseControlAction::move_right);
-        ImGui::EndTable();
-      }
-
-      ImGui::TextUnformatted("Buttons (momentary)");
-      if (ImGui::BeginTable("mouse-buttons", 3, ImGuiTableFlags_SizingStretchSame)) {
-        for (std::size_t index = 0; index < mouse_button_choices.size(); ++index) {
-          render_mouse_button_control(selected, index);
-        }
-        ImGui::EndTable();
-      }
-
-      ImGui::TextUnformatted("Wheel");
-      if (ImGui::BeginTable("mouse-wheel", 4, ImGuiTableFlags_SizingStretchSame)) {
-        render_mouse_action_button(selected, "Pan left", MouseControlAction::pan_left);
-        render_mouse_action_button(selected, "Wheel up", MouseControlAction::wheel_up);
-        render_mouse_action_button(selected, "Wheel down", MouseControlAction::wheel_down);
-        render_mouse_action_button(selected, "Pan right", MouseControlAction::pan_right);
-        ImGui::EndTable();
-      }
-    }
-
-    void render_scheduled_mouse_status() {
-      if (scheduled_mouse_events_.empty()) {
-        ImGui::TextDisabled("No browser-test action queued.");
-        return;
-      }
-
-      const auto next = std::ranges::min_element(scheduled_mouse_events_, {}, &ScheduledMouseEvent::due_at);
-      const auto remaining = std::max(
-        std::chrono::duration<float> {next->due_at - std::chrono::steady_clock::now()}.count(),
-        0.0F
-      );
-      ImGui::TextColored(
-        {1.0F, 0.8F, 0.2F, 1.0F},
-        "Browser-test input queued: switch windows now (%.1f s).",
-        remaining
-      );
-      if (ImGui::Button("Cancel queued input")) {
-        cancel_all_scheduled_mouse_events();
-      }
-    }
-
-    void render_mouse_action_button(
-      const SelectedSnapshot &selected,
-      const char *label,
-      MouseControlAction action
-    ) {
-      ImGui::TableNextColumn();
-      ScopedDisabled disabled {!selected.has_device || selected.device_type != lvh::DeviceType::mouse};
-      if (ImGui::Button(label, {-FLT_MIN, 30.0F})) {
-        const auto event = mouse_event_for_action(action, mouse_motion_step_, mouse_scroll_step_);
-        if (mouse_delayed_test_) {
-          schedule_mouse_event(selected.id, event);
-        } else {
-          submit_mouse_event(selected.id, event);
-        }
-      }
-    }
-
-    void render_mouse_button_control(const SelectedSnapshot &selected, std::size_t index) {
-      ImGui::TableNextColumn();
-      ImGui::PushID(static_cast<int>(index));
-
-      const auto pressed = selected.has_device && selected.device_type == lvh::DeviceType::mouse &&
-                           selected.mouse_buttons[index];
-      if (pressed) {
-        ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
-      }
-
-      auto clicked = false;
-      auto active = false;
-      {
-        ScopedDisabled disabled {!selected.has_device || selected.device_type != lvh::DeviceType::mouse};
-        const auto label = to_utf8(mouse_button_choices[index].label);
-        clicked = ImGui::Button(label.c_str(), {-FLT_MIN, 30.0F});
-        active = ImGui::IsItemActive();
-      }
-
-      if (mouse_delayed_test_) {
-        if (clicked) {
-          schedule_mouse_click(selected.id, mouse_button_choices[index].button);
-        }
-      } else if (mouse_button_active_[index] != active) {
-        mouse_button_active_[index] = active;
-        submit_mouse_event(selected.id, mouse_button_event(mouse_button_choices[index].button, active));
-      }
-
-      if (pressed) {
-        ImGui::PopStyleColor();
-      }
-      ImGui::PopID();
     }
 
     void render_button_controls(
@@ -1057,24 +1317,8 @@ namespace {
       }
     }
 
-    void render_error_popup() {
-      if (open_error_popup_) {
-        ImGui::OpenPopup("Error");
-        open_error_popup_ = false;
-      }
-
-      if (ImGui::BeginPopupModal("Error", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::TextWrapped("%s", error_message_.c_str());
-        if (ImGui::Button("OK", {120.0F, 0.0F})) {
-          error_message_.clear();
-          ImGui::CloseCurrentPopup();
-        }
-        ImGui::EndPopup();
-      }
-    }
-
     void create_selected_device() {
-      if (current_device_type() == lvh::DeviceType::mouse) {
+      if (device_panel_.current_device_type() == lvh::DeviceType::mouse) {
         create_mouse();
       } else {
         create_gamepad();
@@ -1082,15 +1326,15 @@ namespace {
     }
 
     void create_gamepad() {
-      const auto *choice = current_profile_choice();
+      const auto *choice = device_panel_.selected_profile_choice();
       if (choice == nullptr) {
-        show_error("Select a profile first.");
+        error_panel_.show("Select a profile first.");
         return;
       }
 
       const auto profile = profile_for_choice(*choice);
       if (!profile) {
-        show_error("Could not create the selected profile.");
+        error_panel_.show("Could not create the selected profile.");
         return;
       }
 
@@ -1107,13 +1351,13 @@ namespace {
 
       auto created = lvh::GamepadStateAdapter::create(*runtime_, options);
       if (!created) {
-        show_error(created.status.message());
+        error_panel_.show(created.status.message());
         return;
       }
 
       const auto *gamepad = created.adapter->gamepad();
       if (gamepad == nullptr) {
-        show_error("Created gamepad handle is missing.");
+        error_panel_.show("Created gamepad handle is missing.");
         return;
       }
 
@@ -1131,7 +1375,7 @@ namespace {
         devices_[id] = std::move(device);
       }
       selected_id_ = id;
-      license_panel_.refresh();
+      device_panel_.refresh_license();
     }
 
     void create_mouse() {
@@ -1141,7 +1385,7 @@ namespace {
 
       auto created = runtime_->create_mouse(options);
       if (!created) {
-        show_error(created.status.message());
+        error_panel_.show(created.status.message());
         return;
       }
 
@@ -1155,7 +1399,7 @@ namespace {
         mice_[id] = std::move(device);
       }
       selected_id_ = id;
-      license_panel_.refresh();
+      device_panel_.refresh_license();
     }
 
     void reset_selected_device() {
@@ -1184,10 +1428,9 @@ namespace {
         }
       }
       button_active_.fill(false);
-      mouse_button_active_.fill(false);
-      cancel_scheduled_mouse_events(reset_id);
+      mouse_control_panel_.forget_device(reset_id);
       if (!status.ok()) {
-        show_error(status.message());
+        error_panel_.show(status.message());
       }
     }
 
@@ -1212,11 +1455,10 @@ namespace {
           return;
         }
 
-        selected_id_ = first_device_id_locked();
+        selected_id_ = first_device_id(devices_, mice_);
       }
       button_active_.fill(false);
-      mouse_button_active_.fill(false);
-      cancel_scheduled_mouse_events(removed_id);
+      mouse_control_panel_.forget_device(removed_id);
 
       auto status = lvh::OperationStatus::success();
       if (adapter != nullptr) {
@@ -1225,18 +1467,17 @@ namespace {
         status = mouse->close();
       }
       if (!status.ok()) {
-        show_error(status.message());
+        error_panel_.show(status.message());
       }
-      license_panel_.refresh();
+      device_panel_.refresh_license();
     }
 
     void remove_all_devices() {
       const auto handles = take_all_devices();
       button_active_.fill(false);
-      mouse_button_active_.fill(false);
-      scheduled_mouse_events_.clear();
+      mouse_control_panel_.reset();
       close_devices(handles, true);
-      license_panel_.refresh();
+      device_panel_.refresh_license();
     }
 
     void submit_mouse_event(lvh::DeviceId id, const lvh::MouseEvent &event) {
@@ -1260,77 +1501,7 @@ namespace {
         }
       }
       if (!status.ok()) {
-        show_error(status.message());
-      }
-    }
-
-    void schedule_mouse_event(lvh::DeviceId id, const lvh::MouseEvent &event) {
-      if (id == 0) {
-        return;
-      }
-      scheduled_mouse_events_.push_back({
-        .device_id = id,
-        .event = event,
-        .due_at = std::chrono::steady_clock::now() + std::chrono::seconds {mouse_test_delay_seconds_},
-      });
-    }
-
-    void schedule_mouse_click(lvh::DeviceId id, lvh::MouseButton button) {
-      if (id == 0) {
-        return;
-      }
-
-      const auto press_at = std::chrono::steady_clock::now() + std::chrono::seconds {mouse_test_delay_seconds_};
-      scheduled_mouse_events_.push_back({
-        .device_id = id,
-        .event = mouse_button_event(button, true),
-        .due_at = press_at,
-      });
-      scheduled_mouse_events_.push_back({
-        .device_id = id,
-        .event = mouse_button_event(button, false),
-        .due_at = press_at + std::chrono::milliseconds {100},
-      });
-    }
-
-    void dispatch_due_mouse_events() {
-      const auto now = std::chrono::steady_clock::now();
-      auto iter = scheduled_mouse_events_.begin();
-      while (iter != scheduled_mouse_events_.end()) {
-        if (iter->due_at > now) {
-          ++iter;
-          continue;
-        }
-
-        const auto event = *iter;
-        iter = scheduled_mouse_events_.erase(iter);
-        submit_mouse_event(event.device_id, event.event);
-      }
-    }
-
-    void cancel_scheduled_mouse_events(lvh::DeviceId id) {
-      std::erase_if(scheduled_mouse_events_, [id](const ScheduledMouseEvent &event) {
-        return event.device_id == id;
-      });
-    }
-
-    void cancel_all_scheduled_mouse_events() {
-      scheduled_mouse_events_.clear();
-
-      std::vector<std::pair<lvh::DeviceId, lvh::MouseButton>> releases;
-      {
-        std::lock_guard lock {mutex_};
-        for (const auto &[id, device] : mice_) {
-          for (std::size_t index = 0; index < device.buttons.size(); ++index) {
-            if (device.buttons[index]) {
-              releases.emplace_back(id, mouse_button_choices[index].button);
-            }
-          }
-        }
-      }
-
-      for (const auto &[id, button] : releases) {
-        submit_mouse_event(id, mouse_button_event(button, false));
+        error_panel_.show(status.message());
       }
     }
 
@@ -1358,7 +1529,7 @@ namespace {
         status = device->adapter->set_button(button_choices[index].button, pressed);
       }
       if (!status.ok()) {
-        show_error(status.message());
+        error_panel_.show(status.message());
       }
     }
 
@@ -1381,7 +1552,7 @@ namespace {
         status = device->adapter->set_state(state);
       }
       if (!status.ok()) {
-        show_error(status.message());
+        error_panel_.show(status.message());
       }
     }
 
@@ -1424,7 +1595,7 @@ namespace {
         }
       }
       if (!status.ok()) {
-        show_error(status.message());
+        error_panel_.show(status.message());
       }
     }
 
@@ -1450,7 +1621,7 @@ namespace {
         status = device->adapter->set_battery(battery);
       }
       if (!status.ok()) {
-        show_error(status.message());
+        error_panel_.show(status.message());
       }
     }
 
@@ -1465,7 +1636,7 @@ namespace {
         status = device->adapter->clear_battery();
       }
       if (!status.ok()) {
-        show_error(status.message());
+        error_panel_.show(status.message());
       }
     }
 
@@ -1522,18 +1693,8 @@ namespace {
       }
 
       if (first_error) {
-        show_error(*first_error);
+        error_panel_.show(*first_error);
       }
-    }
-
-    lvh::DeviceId first_device_id_locked() const {
-      if (devices_.empty()) {
-        return mice_.empty() ? 0 : mice_.begin()->first;
-      }
-      if (mice_.empty()) {
-        return devices_.begin()->first;
-      }
-      return std::min(devices_.begin()->first, mice_.begin()->first);
     }
 
     ControlledGamepad *selected_device_locked() {
@@ -1580,33 +1741,20 @@ namespace {
       return &iter->second;
     }
 
-    void show_error(std::string_view message) {
-      error_message_ = message.empty() ? "Operation failed." : std::string {message};
-      open_error_popup_ = true;
-    }
-
     std::unique_ptr<lvh::Runtime> runtime_;
     mutable std::mutex mutex_;
     std::map<lvh::DeviceId, ControlledGamepad> devices_;
     std::map<lvh::DeviceId, ControlledMouse> mice_;
     lvh::DeviceId selected_id_ = 0;
-    std::size_t device_type_index_ = 0;
-    std::size_t profile_index_ = 3;
     bool lock_buttons_ = false;
     std::array<bool, button_choices.size()> button_active_ {};
-    std::array<bool, mouse_button_choices.size()> mouse_button_active_ {};
-    int mouse_motion_step_ = 25;
-    int mouse_scroll_step_ = 120;
-    bool mouse_delayed_test_ = false;
-    int mouse_test_delay_seconds_ = 3;
-    std::vector<ScheduledMouseEvent> scheduled_mouse_events_;
     int battery_state_index_ = battery_choice_index(lvh::GamepadBatteryState::full);
     int battery_percentage_ = 100;
-    std::string error_message_;
-    bool open_error_popup_ = false;
     std::uint64_t next_metadata_index_ = 0;
     std::uint64_t next_output_sequence_ = 1;
-    LicensePanel license_panel_;
+    DevicePanel device_panel_;
+    MouseControlPanel mouse_control_panel_;
+    ErrorPanel error_panel_;
     static constexpr std::size_t max_output_events_ = 50;
   };
 

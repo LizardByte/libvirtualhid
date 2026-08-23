@@ -149,34 +149,35 @@ namespace lvh::tools::virtualhid_control {
     std::int32_t scroll_step
   ) {
     using enum MouseControlAction;
+    using enum MouseEventKind;
 
     switch (action) {
       case move_left:
-        return MouseEvent {.kind = MouseEventKind::relative_motion, .x = -motion_step};
+        return MouseEvent {.kind = relative_motion, .x = -motion_step};
       case move_right:
-        return MouseEvent {.kind = MouseEventKind::relative_motion, .x = motion_step};
+        return MouseEvent {.kind = relative_motion, .x = motion_step};
       case move_up:
-        return MouseEvent {.kind = MouseEventKind::relative_motion, .y = -motion_step};
+        return MouseEvent {.kind = relative_motion, .y = -motion_step};
       case move_down:
-        return MouseEvent {.kind = MouseEventKind::relative_motion, .y = motion_step};
+        return MouseEvent {.kind = relative_motion, .y = motion_step};
       case wheel_up:
         return MouseEvent {
-          .kind = MouseEventKind::vertical_scroll,
+          .kind = vertical_scroll,
           .high_resolution_scroll = scroll_step,
         };
       case wheel_down:
         return MouseEvent {
-          .kind = MouseEventKind::vertical_scroll,
+          .kind = vertical_scroll,
           .high_resolution_scroll = -scroll_step,
         };
       case pan_left:
         return MouseEvent {
-          .kind = MouseEventKind::horizontal_scroll,
+          .kind = horizontal_scroll,
           .high_resolution_scroll = -scroll_step,
         };
       case pan_right:
         return MouseEvent {
-          .kind = MouseEventKind::horizontal_scroll,
+          .kind = horizontal_scroll,
           .high_resolution_scroll = scroll_step,
         };
     }
