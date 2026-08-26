@@ -17,6 +17,7 @@
 #include <utility>
 
 // local includes
+#include "keyboard_protocol.hpp"
 #include "lvh_windows_broker_protocol.h"
 #include "mouse_protocol.hpp"
 
@@ -79,14 +80,23 @@ namespace lvh::windows::broker_validation {
   inline bool valid_device_request(const LvhWindowsCreateDeviceRequest &request) {
     const auto &sizes = request.report_sizes;
     const auto known_device = request.device_type == LVH_WINDOWS_DEVICE_GAMEPAD ||
+                              request.device_type == LVH_WINDOWS_DEVICE_KEYBOARD ||
                               request.device_type == LVH_WINDOWS_DEVICE_MOUSE;
     const auto known_bus = request.bus_type == LVH_WINDOWS_BUS_UNKNOWN ||
                            request.bus_type == LVH_WINDOWS_BUS_USB ||
                            request.bus_type == LVH_WINDOWS_BUS_BLUETOOTH;
     const auto known_profile = request.gamepad_kind <= LVH_WINDOWS_GAMEPAD_DUALSHOCK4;
-    const auto valid_mouse_descriptor =
+    const auto valid_driver_descriptor =
       request.device_type == LVH_WINDOWS_DEVICE_GAMEPAD ||
-      (sizes.report_descriptor_size == lvh::detail::windows::mouse_report_descriptor.size() &&
+      (request.device_type == LVH_WINDOWS_DEVICE_KEYBOARD &&
+       sizes.report_descriptor_size == lvh::detail::windows::keyboard_report_descriptor.size() &&
+       std::equal(
+         lvh::detail::windows::keyboard_report_descriptor.begin(),
+         lvh::detail::windows::keyboard_report_descriptor.end(),
+         request.report_descriptor.begin()
+       )) ||
+      (request.device_type == LVH_WINDOWS_DEVICE_MOUSE &&
+       sizes.report_descriptor_size == lvh::detail::windows::mouse_report_descriptor.size() &&
        std::equal(
          lvh::detail::windows::mouse_report_descriptor.begin(),
          lvh::detail::windows::mouse_report_descriptor.end(),
@@ -96,8 +106,12 @@ namespace lvh::windows::broker_validation {
                                      (request.gamepad_kind == LVH_WINDOWS_GAMEPAD_GENERIC &&
                                       request.flags == 0U &&
                                       request.hardware_ids.report_id == 0U &&
-                                      sizes.input_report_size == LVH_WINDOWS_MOUSE_INPUT_REPORT_SIZE &&
-                                      sizes.output_report_size == 0U);
+                                      ((request.device_type == LVH_WINDOWS_DEVICE_KEYBOARD &&
+                                        sizes.input_report_size == LVH_WINDOWS_KEYBOARD_INPUT_REPORT_SIZE &&
+                                        sizes.output_report_size == LVH_WINDOWS_KEYBOARD_OUTPUT_REPORT_SIZE) ||
+                                       (request.device_type == LVH_WINDOWS_DEVICE_MOUSE &&
+                                        sizes.input_report_size == LVH_WINDOWS_MOUSE_INPUT_REPORT_SIZE &&
+                                        sizes.output_report_size == 0U)));
 
     return request.version == LVH_WINDOWS_CONTROL_PROTOCOL_VERSION &&
            request.size == sizeof(request) &&
@@ -106,7 +120,7 @@ namespace lvh::windows::broker_validation {
            known_bus &&
            known_profile &&
            valid_device_fields &&
-           valid_mouse_descriptor &&
+           valid_driver_descriptor &&
            (request.flags & ~known_gamepad_flags) == 0U &&
            all_zero(request.hardware_ids.reserved0) &&
            sizes.input_report_size > 0U &&

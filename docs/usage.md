@@ -77,8 +77,8 @@ unless they explicitly enable additional options.
 - `LIBVIRTUALHID_BUILD_WINDOWS_DRIVER`: build the Windows UMDF2 driver package
   with the Microsoft WDK/MSVC toolchain.
 - `LIBVIRTUALHID_BUILD_WINDOWS_BROKER`: build the Windows broker service used by
-  the driver package for gamepad creation, active-device limits, and license
-  state.
+  the driver package for licensed virtual HID device creation, active-device
+  limits, and license state.
 - `LIBVIRTUALHID_ENABLE_PACKAGING`: enable CPack package metadata.
 - `LIBVIRTUALHID_WARNINGS_AS_ERRORS`: treat project warnings as errors.
 
@@ -107,16 +107,16 @@ rumble, and raw report events delivered through the normal callback path. Button
 controls are momentary by default, so they behave like physical gamepad buttons;
 on Windows, the UI also displays broker license status and can activate,
 refresh, or deactivate a machine license without elevation. Windows UMDF
-gamepad creation requires a current machine authorization, but does not perform
-an online request per controller. The broker validates in the background at
-startup and once per day. If Polar cannot be reached, it retries every 60
-seconds. Existing gamepads are retained for one hour, but a new gamepad can be
-created only when no licensed gamepad is active. When the outage reaches one
-hour, the broker removes excess licensed gamepads and retains at most one. A
+virtual HID device creation requires a current machine authorization, but does
+not perform an online request per device. The broker validates in the
+background at startup and once per day. If Polar cannot be reached, it retries
+every 60 seconds. Existing devices are retained for one hour, but a new device
+can be created only when no licensed device is active. When the outage reaches one
+hour, the broker removes excess licensed devices and retains at most one. A
 yearly subscription must validate successfully within 25 hours of its previous
-validation, so the remaining gamepad is removed when that deadline passes. A
-lifetime license can retain the one-gamepad fallback until validation succeeds.
-If the broker service restarts, it removes gamepads left by the previous broker
+validation, so the remaining device is removed when that deadline passes. A
+lifetime license can retain the one-device fallback until validation succeeds.
+If the broker service restarts, it removes devices left by the previous broker
 instance before accepting new creation requests. Failed removals are retried.
 Both supported plans rely on Polar's entitlement status rather than a locally
 enforced calendar expiration. A granted yearly license follows its subscription
@@ -125,10 +125,10 @@ response does not include the subscription renewal date; the linked Polar accoun
 portal remains authoritative instead of the broker estimating a date. Polar
 server time, Windows uptime, and a per-boot marker track subscription validation
 age without relying on the user-adjustable Windows date. After Windows restarts,
-a yearly subscription must reconnect to Polar before gamepad creation; a lifetime
-license can use the one-gamepad outage fallback. A confirmed missing, revoked,
+a yearly subscription must reconnect to Polar before device creation; a lifetime
+license can use the one-device outage fallback. A confirmed missing, revoked,
 disabled, or mismatched entitlement invalidates the license and removes all
-licensed gamepads.
+licensed virtual HID devices.
 Purchase and account-management buttons use the compiled URLs in
 `src/platform/windows/shared/lvh_windows_broker_config.hpp`.
 Enable `Lock buttons` to click-to-toggle behavior for held inputs.

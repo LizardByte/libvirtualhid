@@ -1,10 +1,10 @@
 # Windows Driver Package
 
-Windows virtual HID gamepad and Raw Input mouse support uses a user-mode UMDF2
-control driver backed by Virtual HID Framework. The driver package is separate
-from the normal C++ library build: the library remains consumable from MSVC and
-MinGW/UCRT64, while the driver package is built with the Microsoft SDK/WDK
-toolchain.
+Windows virtual HID gamepad, keyboard, and Raw Input mouse support uses a
+user-mode UMDF2 control driver backed by Virtual HID Framework. The driver
+package is separate from the normal C++ library build: the library remains
+consumable from MSVC and MinGW/UCRT64, while the driver package is built with
+the Microsoft SDK/WDK toolchain.
 
 Windows 11 version 21H2 and later is the supported driver target. The INF also
 provides a best-effort compatibility path for Windows 10 version 2004 and later
@@ -19,19 +19,19 @@ so Store listing copy should describe the installed driver component.
 ### Short Description
 
 ```text
-User-mode virtual HID driver package that enables compatible apps to create virtual gamepads and Raw Input mice on Windows.
+User-mode virtual HID driver package that enables compatible apps to create virtual gamepads, keyboards, and Raw Input mice on Windows.
 ```
 
 ### Description
 
 ```text
 Virtual HID Driver installs the user-mode driver component used by compatible
-applications to create virtual HID gamepads and mice on Windows.
+applications to create virtual HID gamepads, keyboards, and mice on Windows.
 
 The package includes a local diagnostic UI for creating and testing virtual
 gamepads and mice. Compatible applications can also request virtual HID gamepads
-or mice, and Windows applications that understand standard HID devices can
-discover them.
+keyboards, or mice, and Windows applications that understand standard HID
+devices can discover them.
 ```
 
 ## Architecture
@@ -86,8 +86,9 @@ axis, trigger, motion, battery, and touch-position states with the newest report
 Button, D-pad, trigger-threshold, report-ID, and touch-contact lifecycle changes
 remain ordered in a bounded transition queue. This keeps continuously moving
 controls close to the latest submitted state while preserving ordinary button
-press and release transitions. Relative mouse motion and wheel values are
-accumulated by button state and emitted in descriptor-sized chunks, so VHF
+press and release transitions. Keyboard reports also remain ordered so short
+key transitions are not coalesced away. Relative mouse motion and wheel values
+are accumulated by button state and emitted in descriptor-sized chunks, so VHF
 backpressure does not turn relative movement into a replaceable absolute state.
 Profile initialization replies are prioritized over pending controller states
 so the Switch Pro handshake remains responsive.
@@ -103,10 +104,10 @@ they are not a separate runtime bypass for creating or destroying virtual
 devices.
 
 The library and installed driver must use the same control-protocol version.
-Control protocol version 3 adds an explicit device type to the common create
-request while retaining the 2048-byte report-descriptor capacity needed by the
-complete DirectInput PID descriptor. A version mismatch is rejected rather than
-interpreting a differently sized request.
+Control protocol version 4 adds the canonical keyboard device type and report
+contract to the common create request. It retains the explicit device type and
+2048-byte report-descriptor capacity introduced by version 3. A version mismatch
+is rejected rather than interpreting a request with different semantics.
 
 Each backend runtime uses one control-file handle for commands and its pending
 output read. Broker protocol version 4 carries the generalized device create
@@ -131,8 +132,8 @@ recreate their devices after the broker service restarts.
 
 The backend reports `requires_installed_driver = true` and only advertises
 gamepad/output-report support when the broker is reachable and the control
-device can be opened. Keyboard injection and the mouse `SendInput` fallback do
-not require the driver package; a Raw Input-visible mouse does require the
+device can be opened. The keyboard and mouse `SendInput` fallbacks do not
+require the driver package; a Raw Input-visible keyboard or mouse requires the
 driver and the same broker license as a gamepad.
 
 ## Build
@@ -331,9 +332,9 @@ opens the shared persistent Polar Checkout Link. Account management opens the
 where customers can manage their five allowed machine activations.
 
 Normal Windows UMDF virtual HID device creation requires a current machine
-authorization, but device creation itself does not contact Polar. A mouse does
-not consume another Polar machine activation; it is another active device under
-the existing machine license. The broker validates the
+authorization, but device creation itself does not contact Polar. A keyboard or
+mouse does not consume another Polar machine activation; each is another active
+device under the existing machine license. The broker validates the
 saved activation immediately after service startup and then once per day in the
 background. If validation cannot complete because of a temporary network or
 provider failure, the broker retries every 60 seconds. Devices that already
@@ -387,6 +388,18 @@ WinHTTP resolve, connect, send, and receive operations have explicit timeouts of
 5, 5, 5, and 10 seconds respectively.
 
 ## Profile Compatibility
+
+For a keyboard, the Windows backend preserves the requested bus type, VID, PID,
+version, name, manufacturer, and stable ID. The Windows transport owns the HID
+framing: it uses a report-ID-free standard keyboard descriptor with eight
+modifier bits, sixteen simultaneous keyboard-page usages, and a one-byte LED
+output report. Normal key transitions use the licensed VHF device so Raw Input
+clients enumerate a physical-style HID keyboard instead of receiving only
+`SendInput` injection. Unicode text input and keys outside the descriptor's
+keyboard-page range continue through `SendInput`. If the driver, broker, or
+license is unavailable, keyboard creation retains the existing `SendInput`
+fallback; malformed requests and unexpected driver failures are returned to the
+caller.
 
 For a mouse, the Windows backend preserves the requested bus type, VID, PID,
 version, name, manufacturer, and stable ID. The Windows transport owns the HID

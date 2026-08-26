@@ -19,7 +19,7 @@
 <div align="center">
   <h2>🎮 Windows Virtual HID Driver License</h2>
   <p>
-    <strong>A license is required to create virtual gamepads or Raw Input-visible mice with the Windows driver.</strong><br>
+    <strong>A license is required to create virtual gamepads, keyboards, or Raw Input-visible mice with the Windows driver.</strong><br>
     This requirement is Windows-only; non-Windows backends do not currently require a license.<br>
     Yearly and lifetime options are available.
   </p>
@@ -48,9 +48,9 @@ behind backend implementations.
 - Descriptor-driven PlayStation gamepads through Linux `uhid`; Generic, Xbox,
   and Switch Pro gamepads plus keyboard, mouse, touchscreen, trackpad, and pen
   tablet devices through `uinput`.
-- Windows gamepads and Raw Input-visible mice through a user-mode UMDF2 control
-  driver backed by Virtual HID Framework, with keyboard and fallback mouse
-  support through normal Win32 APIs.
+- Windows gamepads, keyboards, and Raw Input-visible mice through a user-mode
+  UMDF2 control driver backed by Virtual HID Framework, with Win32 keyboard and
+  mouse fallbacks when the licensed driver path is unavailable.
 - Output callbacks for profile-specific feedback such as rumble, LEDs,
   adaptive triggers, and raw HID output reports when available.
 - An optional `virtualhid_control` native UI tool for creating, removing,
@@ -107,7 +107,8 @@ devices from the OS, or ship a Windows kernel-mode driver.
 
 Linux and Windows provide virtual-device backends. Linux uses standard
 user-space kernel interfaces. Windows remains user-mode: the C++ library talks
-to a UMDF2 control driver, and the driver publishes HID gamepads through VHF.
+to a UMDF2 control driver, and the driver publishes HID gamepads, keyboards,
+and mice through VHF.
 macOS currently provides a limited CoreGraphics synthetic-input backend for
 keyboard and mouse only. It is not a virtual-HID backend and does not yet
 support gamepads; native macOS virtual-HID gamepad support is planned.

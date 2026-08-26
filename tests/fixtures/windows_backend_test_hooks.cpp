@@ -248,6 +248,30 @@ namespace lvh::detail {
       return state->last_created_driver_id();
     }
 
+    void capture_created_hid_device(
+      const std::shared_ptr<FakeWindowsControlChannelState> &state,
+      test::WindowsHidCreatedDevice &device
+    ) {
+      const auto requests = state->create_requests();
+      if (requests.empty()) {
+        return;
+      }
+
+      const auto &request = requests.front();
+      device.device_type = request.device_type;
+      device.bus_type = request.bus_type;
+      device.flags = request.flags;
+      device.vendor_id = request.hardware_ids.vendor_id;
+      device.product_id = request.hardware_ids.product_id;
+      device.version = request.hardware_ids.device_version;
+      device.report_id = request.hardware_ids.report_id;
+      device.input_report_size = request.report_sizes.input_report_size;
+      device.output_report_size = request.report_sizes.output_report_size;
+      device.name = request.name.data();
+      device.manufacturer = request.manufacturer.data();
+      device.stable_id = request.stable_id.data();
+    }
+
     void enqueue_output_report(
       const std::shared_ptr<FakeWindowsControlChannelState> &state,
       std::uint64_t driver_id,
@@ -544,21 +568,7 @@ namespace lvh::detail {
         result.operations.close_status = created.mouse->close();
       }
 
-      if (const auto requests = command_state->create_requests(); !requests.empty()) {
-        const auto &request = requests.front();
-        result.device.device_type = request.device_type;
-        result.device.bus_type = request.bus_type;
-        result.device.flags = request.flags;
-        result.device.vendor_id = request.hardware_ids.vendor_id;
-        result.device.product_id = request.hardware_ids.product_id;
-        result.device.version = request.hardware_ids.device_version;
-        result.device.report_id = request.hardware_ids.report_id;
-        result.device.input_report_size = request.report_sizes.input_report_size;
-        result.device.output_report_size = request.report_sizes.output_report_size;
-        result.device.name = request.name.data();
-        result.device.manufacturer = request.manufacturer.data();
-        result.device.stable_id = request.stable_id.data();
-      }
+      capture_created_hid_device(command_state, result.device);
       result.observations.reports = command_state->submit_reports();
       result.observations.destroy_requests = command_state->destroy_request_count();
 
@@ -591,6 +601,90 @@ namespace lvh::detail {
             .x = 1,
             .y = 2,
           });
+        }
+        result.observations.license_create_requests = license_state->create_request_count();
+        result.observations.license_fallback_send_inputs = send_input_state.sent_inputs.size();
+      }
+
+      return result;
+    }
+
+    WindowsHidKeyboardResult windows_backend_hid_keyboard() {
+      WindowsHidKeyboardResult result;
+      CreateKeyboardOptions options;
+      options.profile = profiles::keyboard();
+      options.profile.bus_type = BusType::usb;
+      options.profile.vendor_id = 0x1234;
+      options.profile.product_id = 0x5678;
+      options.profile.version = 0x4321;
+      options.profile.name = "Configured keyboard";
+      options.profile.manufacturer = "Configured manufacturer";
+      options.stable_id = "configured-keyboard";
+
+      {
+        FakeSendInputState send_input_state;
+        ScopedFakeSendInput fake_send_input {send_input_state};
+        auto command_state = std::make_shared<FakeWindowsControlChannelState>();
+        auto backend = make_fake_windows_backend(
+          command_state,
+          std::make_shared<FakeWindowsControlChannelState>()
+        );
+
+        auto created = backend->create_keyboard(18U, options);
+        result.operations.create_status = created.status;
+        if (created) {
+          result.operations.letter_press_status = created.keyboard->submit({
+            .key_code = 'A',
+            .pressed = true,
+            .uses_normalized_key_code = true,
+            .prefer_native_scan_code = true,
+          });
+          result.operations.modifier_press_status =
+            created.keyboard->submit({.key_code = VK_LSHIFT, .pressed = true});
+          result.operations.extended_press_status = created.keyboard->submit({
+            .key_code = VK_RIGHT,
+            .pressed = true,
+            .scan_code = 0x4DU,
+          });
+          result.operations.letter_release_status = created.keyboard->submit({.key_code = 'A', .pressed = false});
+          result.operations.unmapped_submit_status =
+            created.keyboard->submit({.key_code = VK_BROWSER_BACK, .pressed = true});
+          result.operations.text_status = created.keyboard->type_text({.text = "A"});
+          result.operations.close_status = created.keyboard->close();
+        }
+
+        capture_created_hid_device(command_state, result.device);
+        result.observations.reports = command_state->submit_reports();
+        result.observations.destroy_requests = command_state->destroy_request_count();
+        result.observations.fallback_send_inputs = send_input_state.sent_inputs.size();
+      }
+
+      {
+        auto failure_state = std::make_shared<FakeWindowsControlChannelState>();
+        failure_state->set_create_protocol_status(LVH_WINDOWS_STATUS_BACKEND_FAILURE);
+        auto failure_backend = make_fake_windows_backend(
+          failure_state,
+          std::make_shared<FakeWindowsControlChannelState>()
+        );
+        result.operations.protocol_failure_status = failure_backend->create_keyboard(19U, options).status;
+      }
+
+      {
+        FakeSendInputState send_input_state;
+        ScopedFakeSendInput fake_send_input {send_input_state};
+        auto license_state = std::make_shared<FakeWindowsControlChannelState>();
+        license_state->set_create_transport_status(
+          OperationStatus::failure(ErrorCode::license_required, "license required")
+        );
+        auto license_backend = make_fake_windows_backend(
+          license_state,
+          std::make_shared<FakeWindowsControlChannelState>()
+        );
+        auto fallback = license_backend->create_keyboard(20U, options);
+        result.operations.license_fallback_create_status = fallback.status;
+        if (fallback) {
+          result.operations.license_fallback_submit_status =
+            fallback.keyboard->submit({.key_code = 'B', .pressed = true});
         }
         result.observations.license_create_requests = license_state->create_request_count();
         result.observations.license_fallback_send_inputs = send_input_state.sent_inputs.size();

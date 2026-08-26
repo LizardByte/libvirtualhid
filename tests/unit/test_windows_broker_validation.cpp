@@ -5,6 +5,7 @@
 
 // local includes
 #include "broker_request_validation.hpp"
+#include "keyboard_protocol.hpp"
 #include "mouse_protocol.hpp"
 #include "platform/windows/control_protocol.hpp"
 
@@ -231,6 +232,39 @@ TEST(WindowsBrokerValidationTest, ValidatesMouseCreateFields) {
   request.device.report_sizes.output_report_size = 1U;
   EXPECT_FALSE(lvh::windows::broker_validation::valid_request(request));
   request.device.report_sizes.output_report_size = 0U;
+  request.device.report_descriptor[0] = 0U;
+  EXPECT_FALSE(lvh::windows::broker_validation::valid_request(request));
+}
+
+TEST(WindowsBrokerValidationTest, ValidatesKeyboardCreateFields) {
+  auto request = valid_create_request();
+  request.device.device_type = LVH_WINDOWS_DEVICE_KEYBOARD;
+  request.device.gamepad_kind = LVH_WINDOWS_GAMEPAD_GENERIC;
+  request.device.flags = 0U;
+  request.device.hardware_ids.report_id = 0U;
+  request.device.report_sizes.input_report_size = LVH_WINDOWS_KEYBOARD_INPUT_REPORT_SIZE;
+  request.device.report_sizes.output_report_size = LVH_WINDOWS_KEYBOARD_OUTPUT_REPORT_SIZE;
+  std::ranges::fill(request.device.report_descriptor, std::uint8_t {});
+  std::ranges::copy(
+    lvh::detail::windows::keyboard_report_descriptor,
+    request.device.report_descriptor.begin()
+  );
+  request.device.report_sizes.report_descriptor_size =
+    static_cast<std::uint32_t>(lvh::detail::windows::keyboard_report_descriptor.size());
+  EXPECT_TRUE(lvh::windows::broker_validation::valid_request(request));
+
+  request.device.flags = LVH_WINDOWS_GAMEPAD_FLAG_SUPPORTS_RUMBLE;
+  EXPECT_FALSE(lvh::windows::broker_validation::valid_request(request));
+  request.device.flags = 0U;
+  request.device.hardware_ids.report_id = 1U;
+  EXPECT_FALSE(lvh::windows::broker_validation::valid_request(request));
+  request.device.hardware_ids.report_id = 0U;
+  request.device.report_sizes.input_report_size = LVH_WINDOWS_KEYBOARD_INPUT_REPORT_SIZE - 1U;
+  EXPECT_FALSE(lvh::windows::broker_validation::valid_request(request));
+  request.device.report_sizes.input_report_size = LVH_WINDOWS_KEYBOARD_INPUT_REPORT_SIZE;
+  request.device.report_sizes.output_report_size = 0U;
+  EXPECT_FALSE(lvh::windows::broker_validation::valid_request(request));
+  request.device.report_sizes.output_report_size = LVH_WINDOWS_KEYBOARD_OUTPUT_REPORT_SIZE;
   request.device.report_descriptor[0] = 0U;
   EXPECT_FALSE(lvh::windows::broker_validation::valid_request(request));
 }

@@ -15,7 +15,7 @@ Paste this into the Partner Center certification notes field:
 ```text
 This package installs the libvirtualhid Windows user-mode UMDF/VHF virtual HID driver and local broker service. Applications consume it through the libvirtualhid client API, and the MSI includes a native diagnostic UI for local validation.
 
-Every virtual gamepad or driver-backed Raw Input mouse creation requires an active license. A currently granted review license key with an available device activation is supplied separately in the Partner Center certification credentials or notes. The key is not embedded in the package or this document.
+Every virtual gamepad, driver-backed keyboard, or driver-backed Raw Input mouse creation requires an active license. A currently granted review license key with an available device activation is supplied separately in the Partner Center certification credentials or notes. The key is not embedded in the package or this document.
 
 Launch the validation tool below.
 
@@ -34,7 +34,7 @@ Start-Process "$installRoot\tools\windows\virtualhid_control.exe"
 In the libvirtualhid control window, paste the supplied review key into the License key field and click Activate license. Confirm the status changes to Licensed. Then leave the default Xbox Series profile selected and click Create. Use the button and axis controls in the UI to submit input to the virtual controller. Next, change Device type to Mouse and click Create. Use Tab or the arrow keys to highlight the mouse controls and Space or Enter to activate relative movement, momentary button, and wheel input without using the physical mouse.
 
 Expected result:
-- The backend status reports windows-umdf with gamepad and mouse support available
+- The backend status reports windows-umdf with gamepad, keyboard, and mouse support available
 - The libvirtualhid_broker service is running
 - License validation succeeds and the license status reports Licensed
 - A virtual HID gamepad is created and appears in the device list

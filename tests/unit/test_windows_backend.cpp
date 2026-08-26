@@ -167,6 +167,53 @@ TEST_F(WindowsBackendTest, HidMousePreservesIdentityChunksInputAndUsesNarrowFall
   EXPECT_EQ(result.observations.license_fallback_send_inputs, 1U);
 }
 
+TEST_F(WindowsBackendTest, HidKeyboardPreservesIdentityTracksStateAndUsesNarrowFallback) {
+  const auto result = lvh::detail::test::windows_backend_hid_keyboard();
+
+  expect_ok(result.operations.create_status);
+  EXPECT_EQ(result.device.device_type, LVH_WINDOWS_DEVICE_KEYBOARD);
+  EXPECT_EQ(result.device.bus_type, LVH_WINDOWS_BUS_USB);
+  EXPECT_EQ(result.device.flags, 0U);
+  EXPECT_EQ(result.device.vendor_id, 0x1234U);
+  EXPECT_EQ(result.device.product_id, 0x5678U);
+  EXPECT_EQ(result.device.version, 0x4321U);
+  EXPECT_EQ(result.device.report_id, 0U);
+  EXPECT_EQ(result.device.input_report_size, LVH_WINDOWS_KEYBOARD_INPUT_REPORT_SIZE);
+  EXPECT_EQ(result.device.output_report_size, LVH_WINDOWS_KEYBOARD_OUTPUT_REPORT_SIZE);
+  EXPECT_EQ(result.device.name, "Configured keyboard");
+  EXPECT_EQ(result.device.manufacturer, "Configured manufacturer");
+  EXPECT_EQ(result.device.stable_id, "configured-keyboard");
+
+  expect_ok(result.operations.letter_press_status);
+  expect_ok(result.operations.modifier_press_status);
+  expect_ok(result.operations.extended_press_status);
+  expect_ok(result.operations.letter_release_status);
+  expect_ok(result.operations.unmapped_submit_status);
+  expect_ok(result.operations.text_status);
+  expect_ok(result.operations.close_status);
+  ASSERT_EQ(result.observations.reports.size(), 4U);
+  for (const auto &report : result.observations.reports) {
+    EXPECT_EQ(report.size(), LVH_WINDOWS_KEYBOARD_INPUT_REPORT_SIZE);
+  }
+  EXPECT_EQ(result.observations.reports[0][0], 0U);
+  EXPECT_EQ(result.observations.reports[0][2], 0x04U);
+  EXPECT_EQ(result.observations.reports[1][0], 0x02U);
+  EXPECT_EQ(result.observations.reports[1][2], 0x04U);
+  EXPECT_EQ(result.observations.reports[2][0], 0x02U);
+  EXPECT_EQ(result.observations.reports[2][2], 0x04U);
+  EXPECT_EQ(result.observations.reports[2][3], 0x4FU);
+  EXPECT_EQ(result.observations.reports[3][0], 0x02U);
+  EXPECT_EQ(result.observations.reports[3][2], 0x4FU);
+  EXPECT_EQ(result.observations.destroy_requests, 1U);
+  EXPECT_EQ(result.observations.fallback_send_inputs, 3U);
+
+  EXPECT_EQ(result.operations.protocol_failure_status.code(), lvh::ErrorCode::backend_failure);
+  expect_ok(result.operations.license_fallback_create_status);
+  expect_ok(result.operations.license_fallback_submit_status);
+  EXPECT_EQ(result.observations.license_create_requests, 1U);
+  EXPECT_EQ(result.observations.license_fallback_send_inputs, 1U);
+}
+
 TEST_F(WindowsBackendTest, GenericPidTimerCannotDeliverStaleStopAfterNewStart) {
   const auto result = lvh::detail::test::windows_backend_generic_pid_callback_ordering();
 

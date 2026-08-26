@@ -30,6 +30,7 @@
 #include "platform/windows/control_protocol.hpp"
 #include "platform/windows/keylayout.hpp"
 #include "platform/windows/shared/generic_pid_rumble.hpp"
+#include "platform/windows/shared/keyboard_protocol.hpp"
 #include "platform/windows/shared/mouse_protocol.hpp"
 #include "platform/windows/windows_broker_client.hpp"
 
@@ -56,6 +57,7 @@
 #include <mutex>
 #include <numbers>
 #include <optional>
+#include <set>
 #include <span>
 #include <sstream>
 #include <string>
@@ -529,7 +531,7 @@ namespace lvh::detail {
       return OperationStatus::success();
     }
 
-    bool mouse_driver_fallback_allowed(ErrorCode code) {
+    bool driver_input_fallback_allowed(ErrorCode code) {
       switch (code) {
         using enum ErrorCode;
 
@@ -940,6 +942,7 @@ namespace lvh::detail {
     private:
       friend class WindowsBackendContext;
       friend class WindowsGamepad;
+      friend class WindowsHidKeyboard;
       friend class WindowsHidMouse;
 
       std::mutex output_dispatch_mutex_;
@@ -1056,6 +1059,35 @@ namespace lvh::detail {
         return {OperationStatus::success(), std::move(gamepad)};
       }
 
+      std::pair<OperationStatus, std::shared_ptr<WindowsVhfDeviceState>> create_hid_input_state(
+        DeviceId id,
+        const DeviceProfile &profile,
+        std::string_view stable_id
+      ) {
+        auto request = windows::make_create_device_request(id, profile, stable_id);
+        LvhWindowsCreateDeviceResponse response {};
+        response.version = LVH_WINDOWS_CONTROL_PROTOCOL_VERSION;
+        response.size = sizeof(response);
+
+        if (const auto status = command_channel_->create_device(request, response); !status.ok()) {
+          return {status, nullptr};
+        }
+
+        auto state = std::make_shared<WindowsVhfDeviceState>(
+          id,
+          response.driver_device_id,
+          response.session_token,
+          profile,
+          response.device_path[0] == '\0' ? command_channel_->path() : std::string {response.device_path.data()}
+        );
+        {
+          std::lock_guard lock {devices_mutex_};
+          devices_[state->driver_id] = state;
+        }
+        notify_pid_timer();
+        return {OperationStatus::success(), std::move(state)};
+      }
+
       /**
        * @brief Create a driver-backed HID mouse.
        *
@@ -1067,6 +1099,21 @@ namespace lvh::detail {
        * @return Creation result; the device is null when the driver declines.
        */
       BackendMouseCreationResult create_hid_mouse(DeviceId id, const CreateMouseOptions &options);
+
+      /**
+       * @brief Create a licensed driver-backed HID keyboard.
+       *
+       * Defined out of line because it constructs `WindowsHidKeyboard`, which
+       * is declared after this class.
+       *
+       * @param id Client device identity.
+       * @param options Keyboard creation options.
+       * @return Creation result; the device is null when the driver declines.
+       */
+      BackendKeyboardCreationResult create_hid_keyboard(
+        DeviceId id,
+        const CreateKeyboardOptions &options
+      );
 
       OperationStatus submit_device_report(
         const std::shared_ptr<WindowsVhfDeviceState> &state,
@@ -1391,6 +1438,424 @@ namespace lvh::detail {
       bool open_ = true;
     };
 
+    /**
+     * @brief Report descriptor for the driver-backed keyboard.
+     *
+     * The report has no report ID. It carries the eight standard modifier bits,
+     * a reserved byte, and sixteen keyboard-page usages. A one-byte LED output
+     * report provides the standard physical-keyboard indicator contract.
+     *
+     * @return Report descriptor bytes.
+     */
+    std::vector<std::uint8_t> make_keyboard_report_descriptor() {
+      return {windows::keyboard_report_descriptor.begin(), windows::keyboard_report_descriptor.end()};
+    }
+
+    /**
+     * @brief Device profile describing the driver-backed keyboard.
+     *
+     * @param requested Caller-supplied profile whose public identity is kept.
+     * @return Effective keyboard device profile.
+     */
+    DeviceProfile make_hid_keyboard_profile(const DeviceProfile &requested) {
+      auto profile = requested;
+      profile.device_type = DeviceType::keyboard;
+      profile.gamepad_kind = GamepadProfileKind::generic;
+      profile.report_id = 0;
+      profile.report_descriptor = make_keyboard_report_descriptor();
+      profile.input_report_size = LVH_WINDOWS_KEYBOARD_INPUT_REPORT_SIZE;
+      profile.output_report_size = LVH_WINDOWS_KEYBOARD_OUTPUT_REPORT_SIZE;
+      profile.capabilities = {};
+      return profile;
+    }
+
+    bool hid_scan_code_is_extended(std::uint16_t scan_code, KeyboardKeyCode key_code) {
+      const auto prefix = scan_code & 0xFF00U;
+      return prefix == 0xE000U || prefix == 0xE100U || extended_key(key_code);
+    }
+
+    std::optional<unsigned> hid_modifier_bit_from_scan_code(
+      std::uint16_t scan_code,
+      KeyboardKeyCode key_code
+    ) {
+      const auto extended = hid_scan_code_is_extended(scan_code, key_code);
+      switch (scan_code & 0xFFU) {
+        case 0x1DU:
+          return extended ? 4U : 0U;
+        case 0x2AU:
+          return 1U;
+        case 0x36U:
+          return 5U;
+        case 0x38U:
+          return extended ? 6U : 2U;
+        case 0x5BU:
+          return 3U;
+        case 0x5CU:
+          return 7U;
+        default:
+          return std::nullopt;
+      }
+    }
+
+    std::optional<unsigned> hid_modifier_bit_from_virtual_key(KeyboardKeyCode key_code) {
+      switch (key_code) {
+        case VK_CONTROL:
+        case VK_LCONTROL:
+          return 0U;
+        case VK_SHIFT:
+        case VK_LSHIFT:
+          return 1U;
+        case VK_MENU:
+        case VK_LMENU:
+          return 2U;
+        case VK_LWIN:
+          return 3U;
+        case VK_RCONTROL:
+          return 4U;
+        case VK_RSHIFT:
+          return 5U;
+        case VK_RMENU:
+          return 6U;
+        case VK_RWIN:
+          return 7U;
+        default:
+          return std::nullopt;
+      }
+    }
+
+    template<typename Source>
+    struct HidUsageMapping {
+      Source code;
+      std::uint8_t usage;
+    };
+
+    template<typename Source, std::size_t Size>
+    std::optional<std::uint8_t> mapped_hid_usage(
+      Source code,
+      const std::array<HidUsageMapping<Source>, Size> &mappings
+    ) {
+      const auto mapping = std::ranges::find_if(mappings, [code](const auto &candidate) {
+        return candidate.code == code;
+      });
+      return mapping == mappings.end() ? std::nullopt : std::optional {mapping->usage};
+    }
+
+    std::optional<std::uint8_t> hid_usage_from_scan_code(
+      std::uint16_t scan_code,
+      KeyboardKeyCode key_code
+    ) {
+      static constexpr auto extended_usages = std::to_array<HidUsageMapping<std::uint8_t>>({
+        {0x1CU, 0x58U},  // Keypad Enter
+        {0x20U, 0x7FU},  // Keyboard Mute
+        {0x2EU, 0x81U},  // Keyboard Volume Down
+        {0x30U, 0x80U},  // Keyboard Volume Up
+        {0x35U, 0x54U},  // Keypad /
+        {0x37U, 0x46U},  // Print Screen
+        {0x45U, 0x48U},  // Pause
+        {0x46U, 0x48U},  // Pause
+        {0x47U, 0x4AU},  // Home
+        {0x48U, 0x52U},  // Up
+        {0x49U, 0x4BU},  // Page Up
+        {0x4BU, 0x50U},  // Left
+        {0x4DU, 0x4FU},  // Right
+        {0x4FU, 0x4DU},  // End
+        {0x50U, 0x51U},  // Down
+        {0x51U, 0x4EU},  // Page Down
+        {0x52U, 0x49U},  // Insert
+        {0x53U, 0x4CU},  // Delete
+        {0x5DU, 0x65U},  // Application
+        {0x5EU, 0x66U},  // Power
+      });
+      static constexpr auto standard_usages = std::to_array<HidUsageMapping<std::uint8_t>>({
+        {0x01U, 0x29U},
+        {0x02U, 0x1EU},
+        {0x03U, 0x1FU},
+        {0x04U, 0x20U},
+        {0x05U, 0x21U},
+        {0x06U, 0x22U},
+        {0x07U, 0x23U},
+        {0x08U, 0x24U},
+        {0x09U, 0x25U},
+        {0x0AU, 0x26U},
+        {0x0BU, 0x27U},
+        {0x0CU, 0x2DU},
+        {0x0DU, 0x2EU},
+        {0x0EU, 0x2AU},
+        {0x0FU, 0x2BU},
+        {0x10U, 0x14U},
+        {0x11U, 0x1AU},
+        {0x12U, 0x08U},
+        {0x13U, 0x15U},
+        {0x14U, 0x17U},
+        {0x15U, 0x1CU},
+        {0x16U, 0x18U},
+        {0x17U, 0x0CU},
+        {0x18U, 0x12U},
+        {0x19U, 0x13U},
+        {0x1AU, 0x2FU},
+        {0x1BU, 0x30U},
+        {0x1CU, 0x28U},
+        {0x1EU, 0x04U},
+        {0x1FU, 0x16U},
+        {0x20U, 0x07U},
+        {0x21U, 0x09U},
+        {0x22U, 0x0AU},
+        {0x23U, 0x0BU},
+        {0x24U, 0x0DU},
+        {0x25U, 0x0EU},
+        {0x26U, 0x0FU},
+        {0x27U, 0x33U},
+        {0x28U, 0x34U},
+        {0x29U, 0x35U},
+        {0x2BU, 0x31U},
+        {0x2CU, 0x1DU},
+        {0x2DU, 0x1BU},
+        {0x2EU, 0x06U},
+        {0x2FU, 0x19U},
+        {0x30U, 0x05U},
+        {0x31U, 0x11U},
+        {0x32U, 0x10U},
+        {0x33U, 0x36U},
+        {0x34U, 0x37U},
+        {0x35U, 0x38U},
+        {0x37U, 0x55U},
+        {0x39U, 0x2CU},
+        {0x3AU, 0x39U},
+        {0x46U, 0x47U},
+        {0x47U, 0x5FU},
+        {0x48U, 0x60U},
+        {0x49U, 0x61U},
+        {0x4AU, 0x56U},
+        {0x4BU, 0x5CU},
+        {0x4CU, 0x5DU},
+        {0x4DU, 0x5EU},
+        {0x4EU, 0x57U},
+        {0x4FU, 0x59U},
+        {0x50U, 0x5AU},
+        {0x51U, 0x5BU},
+        {0x52U, 0x62U},
+        {0x53U, 0x63U},
+        {0x56U, 0x64U},
+        {0x57U, 0x44U},
+        {0x58U, 0x45U},
+      });
+
+      const auto code = static_cast<std::uint8_t>(scan_code & 0xFFU);
+      if (hid_scan_code_is_extended(scan_code, key_code)) {
+        return mapped_hid_usage(code, extended_usages);
+      }
+      if (code >= 0x3BU && code <= 0x44U) {
+        return static_cast<std::uint8_t>(0x3AU + (code - 0x3BU));
+      }
+      if (code == 0x45U) {
+        return static_cast<std::uint8_t>(key_code == VK_PAUSE ? 0x48U : 0x53U);
+      }
+      if (code >= 0x64U && code <= 0x6FU) {
+        return static_cast<std::uint8_t>(0x68U + (code - 0x64U));
+      }
+      return mapped_hid_usage(code, standard_usages);
+    }
+
+    std::optional<std::uint8_t> hid_usage_from_virtual_key(KeyboardKeyCode key_code) {
+      if (key_code >= 'A' && key_code <= 'Z') {
+        return static_cast<std::uint8_t>(0x04U + (key_code - 'A'));
+      }
+      if (key_code >= '1' && key_code <= '9') {
+        return static_cast<std::uint8_t>(0x1EU + (key_code - '1'));
+      }
+      if (key_code >= VK_F1 && key_code <= VK_F12) {
+        return static_cast<std::uint8_t>(0x3AU + (key_code - VK_F1));
+      }
+      if (key_code >= VK_F13 && key_code <= VK_F24) {
+        return static_cast<std::uint8_t>(0x68U + (key_code - VK_F13));
+      }
+      if (key_code >= VK_NUMPAD1 && key_code <= VK_NUMPAD9) {
+        return static_cast<std::uint8_t>(0x59U + (key_code - VK_NUMPAD1));
+      }
+
+      static constexpr auto special_usages = std::to_array<HidUsageMapping<KeyboardKeyCode>>({
+        {'0', 0x27U},
+        {VK_RETURN, 0x28U},
+        {VK_ESCAPE, 0x29U},
+        {VK_BACK, 0x2AU},
+        {VK_TAB, 0x2BU},
+        {VK_SPACE, 0x2CU},
+        {VK_OEM_MINUS, 0x2DU},
+        {VK_OEM_PLUS, 0x2EU},
+        {VK_OEM_4, 0x2FU},
+        {VK_OEM_6, 0x30U},
+        {VK_OEM_5, 0x31U},
+        {VK_OEM_1, 0x33U},
+        {VK_OEM_7, 0x34U},
+        {VK_OEM_3, 0x35U},
+        {VK_OEM_COMMA, 0x36U},
+        {VK_OEM_PERIOD, 0x37U},
+        {VK_OEM_2, 0x38U},
+        {VK_CAPITAL, 0x39U},
+        {VK_SNAPSHOT, 0x46U},
+        {VK_SCROLL, 0x47U},
+        {VK_PAUSE, 0x48U},
+        {VK_INSERT, 0x49U},
+        {VK_HOME, 0x4AU},
+        {VK_PRIOR, 0x4BU},
+        {VK_DELETE, 0x4CU},
+        {VK_END, 0x4DU},
+        {VK_NEXT, 0x4EU},
+        {VK_RIGHT, 0x4FU},
+        {VK_LEFT, 0x50U},
+        {VK_DOWN, 0x51U},
+        {VK_UP, 0x52U},
+        {VK_NUMLOCK, 0x53U},
+        {VK_DIVIDE, 0x54U},
+        {VK_MULTIPLY, 0x55U},
+        {VK_SUBTRACT, 0x56U},
+        {VK_ADD, 0x57U},
+        {VK_NUMPAD0, 0x62U},
+        {VK_DECIMAL, 0x63U},
+        {VK_OEM_102, 0x64U},
+        {VK_APPS, 0x65U},
+        {VK_EXECUTE, 0x74U},
+        {VK_HELP, 0x75U},
+        {VK_SELECT, 0x77U},
+        {VK_VOLUME_MUTE, 0x7FU},
+        {VK_VOLUME_UP, 0x80U},
+        {VK_VOLUME_DOWN, 0x81U},
+      });
+      return mapped_hid_usage(key_code, special_usages);
+    }
+
+    std::uint16_t hid_keyboard_scan_code(const KeyboardEvent &event) {
+      if (event.scan_code != 0U) {
+        return event.scan_code;
+      }
+      if (event.uses_normalized_key_code) {
+        return windows_us_english_scan_code(event.key_code);
+      }
+      if (event.prefer_native_scan_code && can_map_virtual_key_to_scan_code(event.key_code)) {
+        return static_cast<std::uint16_t>(::MapVirtualKeyW(event.key_code, MAPVK_VK_TO_VSC));
+      }
+      return 0U;
+    }
+
+    std::optional<unsigned> hid_keyboard_modifier_bit(const KeyboardEvent &event) {
+      if (const auto scan_code = hid_keyboard_scan_code(event); scan_code != 0U) {
+        return hid_modifier_bit_from_scan_code(scan_code, event.key_code);
+      }
+      return hid_modifier_bit_from_virtual_key(event.key_code);
+    }
+
+    std::optional<std::uint8_t> hid_keyboard_usage(const KeyboardEvent &event) {
+      if (const auto scan_code = hid_keyboard_scan_code(event); scan_code != 0U) {
+        return hid_usage_from_scan_code(scan_code, event.key_code);
+      }
+      return hid_usage_from_virtual_key(event.key_code);
+    }
+
+    /**
+     * @brief Keyboard backed by a real HID device created through the UMDF driver.
+     *
+     * Key transitions are delivered as HID input reports so Raw Input clients
+     * observe a physical-style keyboard. Unicode text injection and keys that
+     * do not have a keyboard-page HID usage retain the Win32 injection path.
+     */
+    class WindowsHidKeyboard final: public BackendKeyboard {
+    public:
+      WindowsHidKeyboard(
+        std::shared_ptr<WindowsBackendContext> context,
+        std::shared_ptr<WindowsVhfDeviceState> state
+      ):
+          context_ {std::move(context)},
+          state_ {std::move(state)} {}
+
+      OperationStatus submit(const KeyboardEvent &event) override {
+        using enum ErrorCode;
+
+        if (!open_) {
+          return OperationStatus::failure(device_closed, "Windows HID keyboard is closed");
+        }
+
+        if (const auto modifier_bit = hid_keyboard_modifier_bit(event); modifier_bit.has_value()) {
+          const auto mask = std::byte {static_cast<std::uint8_t>(1U << *modifier_bit)};
+          modifiers_ = event.pressed ? modifiers_ | mask : modifiers_ & ~mask;
+          return emit();
+        }
+
+        const auto usage = hid_keyboard_usage(event);
+        if (!usage.has_value()) {
+          return fallback_.submit(event);
+        }
+
+        if (event.pressed) {
+          pressed_usages_.insert(*usage);
+        } else {
+          pressed_usages_.erase(*usage);
+        }
+        return emit();
+      }
+
+      OperationStatus type_text(const KeyboardTextEvent &event) override {
+        using enum ErrorCode;
+
+        if (!open_) {
+          return OperationStatus::failure(device_closed, "Windows HID keyboard is closed");
+        }
+        return fallback_.type_text(event);
+      }
+
+      std::vector<DeviceNode> device_nodes() const override {
+        return {DeviceNode {.path = state_->path}};
+      }
+
+      OperationStatus close() override {
+        if (!open_) {
+          return OperationStatus::success();
+        }
+
+        open_ = false;
+        return context_->close_device(state_);
+      }
+
+    private:
+      OperationStatus emit() {
+        constexpr auto usage_offset = 2U;
+        constexpr auto usage_capacity = LVH_WINDOWS_KEYBOARD_INPUT_REPORT_SIZE - usage_offset;
+        constexpr auto error_rollover_usage = std::uint8_t {0x01U};
+
+        std::vector<std::uint8_t> report(LVH_WINDOWS_KEYBOARD_INPUT_REPORT_SIZE, 0U);
+        report[0] = std::to_integer<std::uint8_t>(modifiers_);
+        if (pressed_usages_.size() > usage_capacity) {
+          std::fill(report.begin() + usage_offset, report.end(), error_rollover_usage);
+        } else {
+          std::ranges::copy(pressed_usages_, report.begin() + usage_offset);
+        }
+        return context_->submit_device_report(state_, report);
+      }
+
+      std::shared_ptr<WindowsBackendContext> context_;
+      std::shared_ptr<WindowsVhfDeviceState> state_;
+      WindowsKeyboard fallback_;
+      std::set<std::uint8_t> pressed_usages_;
+      std::byte modifiers_ {};
+      bool open_ = true;
+    };
+
+    BackendKeyboardCreationResult WindowsBackendContext::create_hid_keyboard(
+      DeviceId id,
+      const CreateKeyboardOptions &options
+    ) {
+      auto effective_options = options;
+      effective_options.profile = make_hid_keyboard_profile(options.profile);
+      auto [status, state] = create_hid_input_state(id, effective_options.profile, effective_options.stable_id);
+      if (!status.ok()) {
+        return {status, nullptr};
+      }
+
+      return {
+        std::move(status),
+        std::make_unique<WindowsHidKeyboard>(shared_from_this(), std::move(state)),
+      };
+    }
+
     class WindowsMouse final: public BackendMouse {
     public:
       OperationStatus submit(const MouseEvent &event) override {
@@ -1682,31 +2147,11 @@ namespace lvh::detail {
     ) {
       auto effective_options = options;
       effective_options.profile = make_hid_mouse_profile(options.profile);
-
-      auto request = windows::make_create_device_request(id, effective_options);
-      LvhWindowsCreateDeviceResponse response {};
-      response.version = LVH_WINDOWS_CONTROL_PROTOCOL_VERSION;
-      response.size = sizeof(response);
-
-      if (const auto status = command_channel_->create_device(request, response); !status.ok()) {
+      auto [status, state] = create_hid_input_state(id, effective_options.profile, effective_options.stable_id);
+      if (!status.ok()) {
         return {status, nullptr};
       }
-
-      auto state = std::make_shared<WindowsVhfDeviceState>(
-        id,
-        response.driver_device_id,
-        response.session_token,
-        effective_options.profile,
-        response.device_path[0] == '\0' ? command_channel_->path() : std::string {response.device_path.data()}
-      );
-
-      {
-        std::lock_guard lock {devices_mutex_};
-        devices_[state->driver_id] = state;
-      }
-      notify_pid_timer();
-
-      return {OperationStatus::success(), std::make_unique<WindowsHidMouse>(shared_from_this(), std::move(state))};
+      return {std::move(status), std::make_unique<WindowsHidMouse>(shared_from_this(), std::move(state))};
     }
 
     /**
@@ -2312,11 +2757,25 @@ namespace lvh::detail {
       }
 
       BackendKeyboardCreationResult create_keyboard(
-        DeviceId /*id*/,
+        DeviceId id,
         const CreateKeyboardOptions &options
       ) override {
         if (options.profile.device_type != DeviceType::keyboard) {
           return {unsupported_profile_status("Windows keyboard backend requires a keyboard profile"), nullptr};
+        }
+
+        // A driver-backed HID keyboard is visible to Raw Input and requires
+        // the same machine license as every broker-created driver device.
+        // Preserve SendInput only when that licensed path is unavailable;
+        // protocol and driver failures must remain visible to the caller.
+        if (context_) {
+          auto hid = context_->create_hid_keyboard(id, options);
+          if (hid.keyboard) {
+            return hid;
+          }
+          if (!driver_input_fallback_allowed(hid.status.code())) {
+            return hid;
+          }
         }
 
         return {OperationStatus::success(), std::make_unique<WindowsKeyboard>()};
@@ -2336,7 +2795,7 @@ namespace lvh::detail {
           if (hid.mouse) {
             return hid;
           }
-          if (!mouse_driver_fallback_allowed(hid.status.code())) {
+          if (!driver_input_fallback_allowed(hid.status.code())) {
             return hid;
           }
         }
