@@ -87,6 +87,8 @@ More complete examples live in `examples/`, including the streaming-host-oriente
 
 ## 📚 Documentation
 
+- [End-user gamepad guide](docs/end-user-gamepad-guide.md): Sunshine and Moonlight setup, feature caveats,
+  troubleshooting, and controller support references.
 - [Usage and API](docs/usage.md): CMake consumption, build options, public API overview, profiles, and examples.
 - [Platform support](docs/platform-support.md): backend capability model, Windows, Linux, macOS,
   and Linux permission setup.
@@ -119,12 +121,6 @@ same API where the backend exposes them.
 
 ## ⚠️ Known Windows Limitations
 
-- Steam does not expose the Xbox Series Share button from the VHF child through
-  the same Xbox HIDAPI path used by physical controllers. That path requires a
-  non-VHF Xbox HIDAPI/GIP transport.
-- PlayStation and Nintendo rumble parsing is covered by protocol and installed
-  driver tests but has not yet completed broad validation with real client
-  applications.
 - The published Windows driver installer is AMD64-only. Windows ARM64 release
   packages require a different Microsoft driver-signing path.
 

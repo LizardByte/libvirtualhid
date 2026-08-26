@@ -68,19 +68,14 @@ Xbox One uses the native eight-byte PID payload exposed by the Windows Xbox HID
 stack. Xbox Series keeps the `0x045E:0x0B12` identity, release `0x0509`, and the
 `0x045E:0x0B12&IG_00` XInputHID match ID observed from physical Xbox Series USB
 and Xbox Wireless Adapter connections. The VHF device preserves the native
-17-byte GIP-shaped input report, including Share/Misc as button bit 12, and the
-native eight-byte four-motor rumble payload. Steam maps physical Xbox Series
-USB, Bluetooth, and Wireless Adapter transports through its Xbox HIDAPI path
-with Share as `misc1:b11`; the Windows VHF Xbox Series child does not follow that
-same consumer path or guarantee registration as an XInput slot. A Steam-visible
-Xbox Series Share button on Windows requires a non-VHF Xbox HIDAPI/GIP
-transport. The public Xbox Series profile remains `0x045E:0x0B12`; the Windows
-transport applies the captured release at device creation. Xbox One accepts
-native HID rumble writes. The Xbox Series report parser accepts the native
-eight-byte four-motor payload when a consumer delivers it, applies its
-actuator-enable mask and duration field, and reports the body motors as
-normalized low/high-frequency rumble and the independent trigger motors as
-trigger-rumble output.
+17-byte GIP-shaped input report and native eight-byte four-motor rumble payload.
+The public Xbox Series profile remains `0x045E:0x0B12`; the Windows transport
+applies the captured release at device creation. Xbox One accepts native HID
+rumble writes. The Xbox Series report parser accepts the native eight-byte
+four-motor payload when a consumer delivers it, applies its actuator-enable
+mask and duration field, and reports the body motors as normalized
+low/high-frequency rumble and the independent trigger motors as trigger-rumble
+output.
 
 The VHF driver answers the calibration, pairing, and firmware feature reports
 used to initialize DualShock 4 and DualSense HIDAPI output. It also answers the

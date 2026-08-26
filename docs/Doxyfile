@@ -37,6 +37,7 @@ WARN_IF_UNDOCUMENTED = YES
 # files and directories to process
 USE_MDFILE_AS_MAINPAGE = ../README.md
 INPUT = ../README.md \
+        end-user-gamepad-guide.md \
         usage.md \
         platform-support.md \
         windows-driver.md \
