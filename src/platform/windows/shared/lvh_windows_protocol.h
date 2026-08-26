@@ -8,7 +8,7 @@
 #include <array>
 #include <stdint.h>
 
-inline constexpr uint32_t LVH_WINDOWS_CONTROL_PROTOCOL_VERSION = 3u;
+inline constexpr uint32_t LVH_WINDOWS_CONTROL_PROTOCOL_VERSION = 4u;
 inline constexpr char LVH_WINDOWS_CONTROL_DEVICE_PATH[] = R"(\\.\LibVirtualHid)";
 inline constexpr char LVH_WINDOWS_GLOBAL_CONTROL_DEVICE_PATH[] = R"(\\.\Global\LibVirtualHid)";
 
@@ -90,6 +90,7 @@ enum class LvhWindowsBusType : uint32_t {
 enum class LvhWindowsDeviceType : uint32_t {
   gamepad = 1,
   mouse = 2,
+  keyboard = 3,
 };
 
 enum class LvhWindowsGamepadProfileKind : uint32_t {
@@ -122,6 +123,7 @@ namespace lvh_windows_protocol_detail {
   using enum LvhWindowsDeviceType;
   inline constexpr uint32_t device_gamepad = to_uint32(gamepad);
   inline constexpr uint32_t device_mouse = to_uint32(mouse);
+  inline constexpr uint32_t device_keyboard = to_uint32(keyboard);
 
   using enum LvhWindowsGamepadProfileKind;
   inline constexpr uint32_t gamepad_generic = to_uint32(generic);
@@ -147,8 +149,11 @@ inline constexpr uint32_t LVH_WINDOWS_BUS_BLUETOOTH = lvh_windows_protocol_detai
 
 inline constexpr uint32_t LVH_WINDOWS_DEVICE_GAMEPAD = lvh_windows_protocol_detail::device_gamepad;
 inline constexpr uint32_t LVH_WINDOWS_DEVICE_MOUSE = lvh_windows_protocol_detail::device_mouse;
+inline constexpr uint32_t LVH_WINDOWS_DEVICE_KEYBOARD = lvh_windows_protocol_detail::device_keyboard;
 
 inline constexpr uint32_t LVH_WINDOWS_MOUSE_INPUT_REPORT_SIZE = 7u;
+inline constexpr uint32_t LVH_WINDOWS_KEYBOARD_INPUT_REPORT_SIZE = 18u;
+inline constexpr uint32_t LVH_WINDOWS_KEYBOARD_OUTPUT_REPORT_SIZE = 1u;
 
 inline constexpr uint32_t LVH_WINDOWS_GAMEPAD_GENERIC = lvh_windows_protocol_detail::gamepad_generic;
 inline constexpr uint32_t LVH_WINDOWS_GAMEPAD_XBOX_360 = lvh_windows_protocol_detail::gamepad_xbox_360;

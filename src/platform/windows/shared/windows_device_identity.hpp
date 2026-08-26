@@ -1,6 +1,6 @@
 /**
  * @file src/platform/windows/shared/windows_device_identity.hpp
- * @brief Windows virtual gamepad hardware-ID helpers shared by the driver and tests.
+ * @brief Windows virtual HID device hardware-ID helpers shared by the driver and tests.
  */
 #pragma once
 

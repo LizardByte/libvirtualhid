@@ -51,6 +51,49 @@ namespace lvh::detail::test {
     std::vector<std::uint16_t> strengths;
   };
 
+  struct WindowsHidCreatedDevice {
+    std::uint32_t device_type = 0;
+    std::uint32_t bus_type = 0;
+    std::uint32_t flags = 0;
+    std::uint16_t vendor_id = 0;
+    std::uint16_t product_id = 0;
+    std::uint16_t version = 0;
+    std::uint8_t report_id = 0;
+    std::uint32_t input_report_size = 0;
+    std::uint32_t output_report_size = 0;
+    std::string name;
+    std::string manufacturer;
+    std::string stable_id;
+  };
+
+  struct WindowsHidKeyboardResult {
+    struct OperationResults {
+      OperationStatus create_status;
+      OperationStatus letter_press_status;
+      OperationStatus modifier_press_status;
+      OperationStatus extended_press_status;
+      OperationStatus letter_release_status;
+      OperationStatus unmapped_submit_status;
+      OperationStatus text_status;
+      OperationStatus close_status;
+      OperationStatus protocol_failure_status;
+      OperationStatus license_fallback_create_status;
+      OperationStatus license_fallback_submit_status;
+    };
+
+    struct RequestObservations {
+      std::vector<std::vector<std::uint8_t>> reports;
+      std::size_t destroy_requests = 0;
+      std::size_t fallback_send_inputs = 0;
+      std::size_t license_create_requests = 0;
+      std::size_t license_fallback_send_inputs = 0;
+    };
+
+    OperationResults operations;
+    WindowsHidCreatedDevice device;
+    RequestObservations observations;
+  };
+
   struct WindowsHidMouseResult {
     struct OperationResults {
       OperationStatus create_status;
@@ -64,21 +107,6 @@ namespace lvh::detail::test {
       OperationStatus license_fallback_submit_status;
     };
 
-    struct CreatedDevice {
-      std::uint32_t device_type = 0;
-      std::uint32_t bus_type = 0;
-      std::uint32_t flags = 0;
-      std::uint16_t vendor_id = 0;
-      std::uint16_t product_id = 0;
-      std::uint16_t version = 0;
-      std::uint8_t report_id = 0;
-      std::uint32_t input_report_size = 0;
-      std::uint32_t output_report_size = 0;
-      std::string name;
-      std::string manufacturer;
-      std::string stable_id;
-    };
-
     struct RequestObservations {
       std::vector<std::vector<std::uint8_t>> reports;
       std::size_t destroy_requests = 0;
@@ -87,7 +115,7 @@ namespace lvh::detail::test {
     };
 
     OperationResults operations;
-    CreatedDevice device;
+    WindowsHidCreatedDevice device;
     RequestObservations observations;
   };
 
@@ -213,6 +241,7 @@ namespace lvh::detail::test {
   WindowsBackendLifecycleResult windows_backend_fake_channel_lifecycle();
   WindowsPlayStationTransportResult windows_backend_playstation_transport();
   WindowsGenericPidOrderingResult windows_backend_generic_pid_callback_ordering();
+  WindowsHidKeyboardResult windows_backend_hid_keyboard();
   WindowsHidMouseResult windows_backend_hid_mouse();
   WindowsBackendFailureResult windows_backend_fake_channel_failures();
   WindowsBackendUtilityResult windows_backend_fake_channel_utilities();

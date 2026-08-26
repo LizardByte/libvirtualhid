@@ -281,6 +281,32 @@ namespace {
     EXPECT_TRUE(queue.empty());
   }
 
+  TEST(WindowsVhfInputReportQueueTest, PreservesKeyboardTransitions) {
+    VhfInputReportQueue queue {
+      LVH_WINDOWS_DEVICE_KEYBOARD,
+      LVH_WINDOWS_GAMEPAD_GENERIC,
+      LVH_WINDOWS_BUS_USB,
+      0U,
+    };
+    auto neutral = make_report(LVH_WINDOWS_KEYBOARD_INPUT_REPORT_SIZE, 0U);
+    auto pressed = neutral;
+    pressed[2] = 0x04U;
+    auto shifted = pressed;
+    shifted[0] = 0x02U;
+
+    queue.push(neutral);
+    queue.push(pressed);
+    queue.push(shifted);
+    queue.push(neutral);
+
+    ASSERT_EQ(queue.size(), 4U);
+    EXPECT_EQ(queue.pop(), neutral);
+    EXPECT_EQ(queue.pop(), pressed);
+    EXPECT_EQ(queue.pop(), shifted);
+    EXPECT_EQ(queue.pop(), neutral);
+    EXPECT_TRUE(queue.empty());
+  }
+
   TEST(WindowsVhfInputReportQueueTest, PreservesMouseButtonTransitions) {
     VhfInputReportQueue queue {
       LVH_WINDOWS_DEVICE_MOUSE,

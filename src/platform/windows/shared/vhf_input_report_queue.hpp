@@ -29,14 +29,15 @@ namespace lvh::detail::windows {
   inline constexpr std::size_t vhf_max_pending_input_reports = 32U;
 
   /**
-   * @brief A bounded queue for state-based gamepads and relative mouse input.
+   * @brief A bounded queue for gamepad, keyboard, and relative mouse input.
    *
    * Axis, trigger, motion, battery, and touch-position changes can safely replace
    * the newest pending report when the report's discrete state is unchanged.
    * Button, D-pad, trigger-threshold, report-ID, and touch-contact lifecycle
    * transitions remain ordered so short presses and contacts are not silently
-   * coalesced away. Relative mouse reports are accumulated while their button
-   * state is unchanged so motion and scrolling are not discarded.
+   * coalesced away. Every keyboard transition remains ordered. Relative mouse
+   * reports are accumulated while their button state is unchanged so motion
+   * and scrolling are not discarded.
    */
   class VhfInputReportQueue {
   public:

@@ -79,9 +79,10 @@ namespace lvh::detail::windows {
 
       case gamepad:
         return LVH_WINDOWS_DEVICE_GAMEPAD;
+      case keyboard:
+        return LVH_WINDOWS_DEVICE_KEYBOARD;
       case mouse:
         return LVH_WINDOWS_DEVICE_MOUSE;
-      case keyboard:
       case touchscreen:
       case trackpad:
       case pen_tablet:
@@ -225,6 +226,13 @@ namespace lvh::detail::windows {
     const CreateGamepadOptions &options
   ) {
     return make_create_device_request(device_id, options.profile, options.metadata.stable_id);
+  }
+
+  inline LvhWindowsCreateDeviceRequest make_create_device_request(
+    DeviceId device_id,
+    const CreateKeyboardOptions &options
+  ) {
+    return make_create_device_request(device_id, options.profile, options.stable_id);
   }
 
   inline LvhWindowsCreateDeviceRequest make_create_device_request(
