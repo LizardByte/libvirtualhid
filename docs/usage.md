@@ -3,6 +3,9 @@
 This page covers how consumers bring `libvirtualhid` into a CMake project and
 which public API concepts they should build around.
 
+If you use Sunshine or another application that already embeds the library,
+see the [end-user gamepad guide](end-user-gamepad-guide.md) instead.
+
 ## CMake Consumption
 
 The library exports `libvirtualhid::libvirtualhid`.

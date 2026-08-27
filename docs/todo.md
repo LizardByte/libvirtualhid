@@ -4,47 +4,6 @@ This page tracks known compatibility work that is larger than a small report
 packing fix. Keep entries here until the repo has a validated implementation
 path and consumer tests or manual validation prove the behavior.
 
-## Windows Xbox Series Share Button in Steam
-
-Status: unresolved for the Windows VHF backend.
-
-The Windows Xbox Series profile currently preserves the native 17-byte
-GIP-shaped input report, including Share/Misc as button bit 12, and uses the
-captured `VID_045E&PID_0B12` release `0x0509` identity. Browser HID testers can
-see the virtual HID device, but Steam's controller tester still does not expose
-the Share button.
-
-The blocking issue is Steam's input path selection. Physical Xbox Series USB,
-Bluetooth, and Xbox Wireless Adapter controllers enter Steam's Xbox HIDAPI path
-and map Share as `misc1:b11`. The VHF-created Windows HID child is consumed
-through the Windows XInput path instead. XInput exposes the standard Xbox button
-set only and has no Share/Misc button. SDL's Xbox HIDAPI driver also rejects the
-Windows `\\?\HID#` fake endpoints used for XGIP controllers, so changing only
-the VHF HID descriptor cannot force Steam into the same path used by physical
-Xbox Series transports.
-
-Proposed solution:
-
-1. Add a separate Windows Xbox transport that is not a VHF HID child and can be
-   accepted by Steam's Xbox HIDAPI/GIP path.
-2. Model the transport on captured physical Xbox Series USB, Bluetooth, and
-   Xbox Wireless Adapter device trees, including the parent transport identity,
-   interface class, compatible IDs, report initialization behavior, and output
-   report routing.
-3. Keep the existing VHF Xbox Series path as the user-mode compatibility path
-   until the new transport is implemented and validated.
-4. Validate with Steam controller logs and the Steam controller tester before
-   claiming Share support. Required proof is a Steam mapping containing
-   `misc1:b11` for the virtual device and working normal buttons, triggers,
-   D-pad, Guide, and rumble.
-
-Non-goals for this item:
-
-- Do not add a kernel-mode driver to the normal C++ library.
-- Do not keep trying descriptor-only VHF remaps for Steam Share support.
-- Do not change the public platform-neutral profile API for a Windows-specific
-  transport limitation.
-
 ## Controller Capture Tooling
 
 Status: proposed.
