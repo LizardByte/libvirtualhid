@@ -67,6 +67,7 @@ namespace {
     int minimum_buttons = 1;
     int minimum_axes = 2;
     bool require_sdl_rumble = false;
+    bool require_motion = false;
     bool expect_live_input = true;
   };
 
@@ -335,7 +336,7 @@ namespace {
     }
   }
 
-  int wait_for_sdl_joystick(const lvh::DeviceProfile &profile, bool require_rumble) {
+  int wait_for_sdl_game_controller(const lvh::DeviceProfile &profile, bool require_rumble) {
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds {3};
 
     while (std::chrono::steady_clock::now() < deadline) {
@@ -345,6 +346,7 @@ namespace {
       for (int index = 0; index < joystick_count; ++index) {
         if (
           sdl_joystick_matches_profile(index, profile) &&
+          SDL_IsGameController(index) == SDL_TRUE &&
           (!require_rumble || sdl_joystick_supports_rumble(index))
         ) {
           return index;
@@ -479,6 +481,7 @@ namespace {
     SDL_SetHint("SDL_JOYSTICK_HIDAPI_PS4_RUMBLE", "1");
     SDL_SetHint("SDL_JOYSTICK_HIDAPI_PS5", "1");
     SDL_SetHint("SDL_JOYSTICK_HIDAPI_PS5_RUMBLE", "1");
+    SDL_SetHint("SDL_JOYSTICK_HIDAPI_SWITCH", "1");
   }
 
   lvh::GamepadCreationResult create_sdl_gamepad(lvh::Runtime &runtime, const SdlGamepadConsumerCase &test_case) {
@@ -520,7 +523,25 @@ namespace {
     auto created = create_sdl_gamepad(*runtime, test_case);
     ASSERT_TRUE(created) << created.status.message();
 
-    const auto joystick_index = wait_for_sdl_joystick(expected_profile, test_case.require_sdl_rumble);
+    if (test_case.require_sdl_rumble) {
+      const auto hidraw_node = wait_for_hidraw_node(*created.gamepad);
+      ASSERT_TRUE(hidraw_node.has_value())
+        << "No hidraw node was discovered. Reported device nodes: "
+        << describe_device_nodes(created.gamepad->device_nodes());
+
+      const auto access_error = wait_for_write_access(*hidraw_node);
+      ASSERT_EQ(access_error, 0)
+        << "hidraw node is not writable: " << errno_message(access_error)
+        << " (errno=" << access_error << "); " << describe_node_permissions(*hidraw_node);
+      errno = 0;
+      const auto read_result = ::access(hidraw_node->c_str(), R_OK);
+      const auto read_error = errno;
+      ASSERT_EQ(read_result, 0)
+        << "hidraw node is not readable: " << errno_message(read_error)
+        << " (errno=" << read_error << "); " << describe_node_permissions(*hidraw_node);
+    }
+
+    const auto joystick_index = wait_for_sdl_game_controller(expected_profile, test_case.require_sdl_rumble);
     ASSERT_GE(joystick_index, 0);
 
     test_body(expected_profile, joystick_index, *created.gamepad);
@@ -548,6 +569,41 @@ namespace {
     EXPECT_TRUE(wait_for_rumble(rumble, true));
     EXPECT_GT(rumble->low_frequency.load(), 0);
     EXPECT_GT(rumble->high_frequency.load(), 0);
+  }
+
+  void expect_sdl_motion_input(SDL_GameController *controller, lvh::Gamepad &gamepad) {
+    ASSERT_EQ(SDL_GameControllerHasSensor(controller, SDL_SENSOR_ACCEL), SDL_TRUE);
+    ASSERT_EQ(SDL_GameControllerHasSensor(controller, SDL_SENSOR_GYRO), SDL_TRUE);
+    ASSERT_EQ(SDL_GameControllerSetSensorEnabled(controller, SDL_SENSOR_ACCEL, SDL_TRUE), 0) << SDL_GetError();
+    ASSERT_EQ(SDL_GameControllerSetSensorEnabled(controller, SDL_SENSOR_GYRO, SDL_TRUE), 0) << SDL_GetError();
+
+    lvh::GamepadState state;
+    state.acceleration = lvh::Vector3 {.x = 9.80665F, .y = 19.6133F, .z = -9.80665F};
+    state.gyroscope = lvh::Vector3 {.x = 10.0F, .y = 20.0F, .z = -30.0F};
+    ASSERT_TRUE(gamepad.submit(state).ok());
+
+    std::array<float, 3> acceleration {};
+    std::array<float, 3> gyroscope {};
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds {3};
+    while (std::chrono::steady_clock::now() < deadline) {
+      SDL_GameControllerUpdate();
+      pump_sdl_events();
+      ASSERT_EQ(
+        SDL_GameControllerGetSensorData(controller, SDL_SENSOR_ACCEL, acceleration.data(), acceleration.size()),
+        0
+      ) << SDL_GetError();
+      ASSERT_EQ(
+        SDL_GameControllerGetSensorData(controller, SDL_SENSOR_GYRO, gyroscope.data(), gyroscope.size()),
+        0
+      ) << SDL_GetError();
+      if (std::abs(acceleration[1]) > 15.0F && std::abs(gyroscope[2]) > 0.25F) {
+        return;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds {20});
+    }
+
+    ADD_FAILURE() << "SDL motion remained static: accel=" << acceleration[0] << "," << acceleration[1] << ","
+                  << acceleration[2] << " gyro=" << gyroscope[0] << "," << gyroscope[1] << "," << gyroscope[2];
   }
 
   void expect_hidraw_rumble_callback(const lvh::DeviceProfile &profile, lvh::Gamepad &gamepad) {
@@ -713,6 +769,9 @@ namespace {
     }
     EXPECT_GT(SDL_GameControllerGetAxis(controller.get(), SDL_CONTROLLER_AXIS_TRIGGERLEFT), 0);
     EXPECT_GT(SDL_GameControllerGetAxis(controller.get(), SDL_CONTROLLER_AXIS_TRIGGERRIGHT), 16000);
+    if (test_case.require_motion) {
+      expect_sdl_motion_input(controller.get(), gamepad);
+    }
     expect_sdl_rumble_callback(controller.get(), gamepad);
   }
 
@@ -851,14 +910,16 @@ TEST_F(LinuxConsumerTest, SdlSeesXboxSeriesCanonicalButtons) {
 }
 
 TEST_F(LinuxConsumerTest, SdlSeesSwitchProCanonicalButtons) {
-  ASSERT_TRUE(HasReadableWritableDeviceNode("/dev/uinput"));
+  ASSERT_TRUE(HasReadableWritableDeviceNode("/dev/uhid"));
 
   run_sdl_canonical_gamepad_test({
     .profile = lvh::profiles::switch_pro(),
     .name_suffix = "SDL Switch Pro",
-    .stable_id = "libvirtualhid-sdl-switch-pro-test",
+    .stable_id = "02:00:00:00:00:05",
     .minimum_buttons = 14,
     .minimum_axes = 4,
+    .require_sdl_rumble = true,
+    .require_motion = true,
   });
 }
 

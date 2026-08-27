@@ -77,6 +77,8 @@ namespace lvh::tools::virtualhid_control {
         return L"raw report";
       case trigger_rumble:
         return L"trigger rumble";
+      case player_leds:
+        return L"player leds";
     }
     return L"raw report";
   }
@@ -223,7 +225,8 @@ namespace lvh::tools::virtualhid_control {
     return supports_gamepad_output(profile, rumble) ||
            supports_gamepad_output(profile, rgb_led) ||
            supports_gamepad_output(profile, adaptive_triggers) ||
-           supports_gamepad_output(profile, trigger_rumble);
+           supports_gamepad_output(profile, trigger_rumble) ||
+           supports_gamepad_output(profile, player_leds);
   }
 
   std::wstring profile_feature_summary(const DeviceProfile &profile) {
@@ -235,6 +238,7 @@ namespace lvh::tools::virtualhid_control {
     stream << L" | rumble " << yes_no(supports_gamepad_output(profile, rumble));
     stream << L" | trigger rumble " << yes_no(supports_gamepad_output(profile, trigger_rumble));
     stream << L" | RGB LED " << yes_no(supports_gamepad_output(profile, rgb_led));
+    stream << L" | player LEDs " << yes_no(supports_gamepad_output(profile, player_leds));
     stream << L" | adaptive triggers " << yes_no(supports_gamepad_output(profile, adaptive_triggers));
     stream << L" | raw output " << yes_no(supports_gamepad_output(profile, raw_report));
     return stream.str();
@@ -270,6 +274,18 @@ namespace lvh::tools::virtualhid_control {
     if (state.latest_adaptive_triggers) {
       append_summary_separator(stream, wrote);
       stream << L"adaptive flags=" << static_cast<unsigned>(state.latest_adaptive_triggers->adaptive_trigger_flags);
+      wrote = true;
+    }
+    if (state.latest_player_leds) {
+      append_summary_separator(stream, wrote);
+      stream << L"player LEDs solid=";
+      for (const auto active : state.latest_player_leds->player_leds) {
+        stream << (active ? L'1' : L'0');
+      }
+      stream << L" flashing=";
+      for (const auto active : state.latest_player_leds->flashing_player_leds) {
+        stream << (active ? L'1' : L'0');
+      }
       wrote = true;
     }
     if (!wrote && state.latest_raw_report) {
@@ -338,6 +354,9 @@ namespace lvh::tools::virtualhid_control {
         break;
       case adaptive_triggers:
         state.latest_adaptive_triggers = output;
+        break;
+      case player_leds:
+        state.latest_player_leds = output;
         break;
       case raw_report:
         state.latest_raw_report = output;

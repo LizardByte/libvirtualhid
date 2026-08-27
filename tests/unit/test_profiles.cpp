@@ -240,6 +240,7 @@ TEST(ProfileTest, StreamingControllerProfilesArePresent) {
   EXPECT_EQ(switch_pro.output_report_size, 64U);
   EXPECT_TRUE(switch_pro.capabilities.supports_rumble);
   EXPECT_TRUE(switch_pro.capabilities.supports_motion);
+  EXPECT_TRUE(switch_pro.capabilities.supports_rgb_led);
   EXPECT_TRUE(switch_pro.capabilities.supports_battery);
 
   const auto generic = lvh::profiles::generic_gamepad();

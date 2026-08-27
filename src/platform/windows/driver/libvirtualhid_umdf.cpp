@@ -57,7 +57,7 @@
 #include "mouse_protocol.hpp"
 #include "playstation_feature_protocol.hpp"
 #include "rotating_trace_log.hpp"
-#include "switch_pro_protocol.hpp"
+#include "shared/switch_pro_protocol.hpp"
 #include "unique_win32_handle.hpp"
 #include "vhf_input_report_queue.hpp"
 #include "windows_device_identity.hpp"
@@ -871,7 +871,7 @@ namespace {
       return;
     }
 
-    auto reply = lvh::detail::windows::make_switch_pro_reply({event.report.data(), event.report_size});
+    auto reply = lvh::detail::switch_pro_protocol::make_switch_pro_reply({event.report.data(), event.report_size});
     if (!reply.has_value()) {
       return;
     }

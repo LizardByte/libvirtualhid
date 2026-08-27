@@ -2031,7 +2031,13 @@ namespace lvh::profiles {
       profile.output_report_size = switch_pro_output_report_size;
       profile.name = "(libvirtualhid) Nintendo Pro Controller";
       profile.manufacturer = "Nintendo Co., Ltd.";
-      profile.capabilities = {.supports_rumble = true, .supports_motion = true, .supports_battery = true};
+      profile.capabilities = {
+        .supports_rumble = true,
+        .supports_motion = true,
+        .supports_rgb_led = true,
+        .supports_battery = true,
+        .supports_player_leds = true,
+      };
       profile.report_descriptor = make_switch_pro_report_descriptor();
       return profile;
     }

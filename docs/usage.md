@@ -105,8 +105,8 @@ default when a static target is available.
 The UI can create and remove gamepads from the built-in profiles, submit
 buttons, sticks, triggers, and battery state, show backend and profile
 capabilities, list device nodes reported for UI-created devices, and display
-normalized gamepad output such as rumble, RGB LED, adaptive trigger, trigger
-rumble, and raw report events delivered through the normal callback path. Button
+normalized gamepad output such as rumble, RGB LED, player LED, adaptive trigger,
+trigger rumble, and raw report events delivered through the normal callback path. Button
 controls are momentary by default, so they behave like physical gamepad buttons;
 on Windows, the UI also displays broker license status and can activate,
 refresh, or deactivate a machine license without elevation. Windows UMDF
@@ -229,10 +229,11 @@ through 16 in the input report. Linux may still route that profile through
 `uinput`, where the backend exposes those same logical directions through the
 standard `ABS_HAT0X` and `ABS_HAT0Y` axes.
 
-Profiles advertise support for features such as rumble, trigger rumble, RGB
-LEDs, adaptive triggers, motion sensors, touchpads, battery state,
-profile-specific buttons, and raw output reports. Consumers should query profile and
-backend capabilities before warning users about unsupported client features.
+Profiles advertise support for features such as rumble, trigger rumble, RGB and
+player LEDs, adaptive triggers, motion sensors, touchpads, battery state,
+profile-specific buttons, and raw output reports. Consumers should query
+profile and backend capabilities before warning users about unsupported client
+features.
 The `misc1` button represents Share/Capture/Mic Mute-style controls and is
 available on the generic, Xbox Series, DualSense, and Switch Pro profiles; Xbox
 360 and Xbox One do not advertise that extra button.

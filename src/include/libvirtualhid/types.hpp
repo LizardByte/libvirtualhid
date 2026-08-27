@@ -270,6 +270,11 @@ namespace lvh {
      * @brief Whether the profile supports adaptive trigger output.
      */
     bool supports_adaptive_triggers = false;
+
+    /**
+     * @brief Whether the profile supports player indicator LED output.
+     */
+    bool supports_player_leds = false;
   };
 
   /**
@@ -998,6 +1003,7 @@ namespace lvh {
     adaptive_triggers,  ///< Adaptive trigger output.
     raw_report,  ///< Raw output report bytes.
     trigger_rumble,  ///< Independent trigger rumble output.
+    player_leds,  ///< Player indicator LED output.
   };
 
   /**
@@ -1073,6 +1079,16 @@ namespace lvh {
      * @brief Raw output report payload.
      */
     std::vector<std::uint8_t> raw_report;
+
+    /**
+     * @brief Solid player indicator LED states, ordered from player one through four.
+     */
+    std::array<bool, 4> player_leds {};
+
+    /**
+     * @brief Flashing player indicator LED states, ordered from player one through four.
+     */
+    std::array<bool, 4> flashing_player_leds {};
   };
 
   /**

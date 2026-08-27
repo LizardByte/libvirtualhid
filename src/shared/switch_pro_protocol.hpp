@@ -1,6 +1,6 @@
 /**
- * @file src/platform/windows/shared/switch_pro_protocol.hpp
- * @brief Nintendo Switch Pro initialization replies used by the Windows VHF driver.
+ * @file src/shared/switch_pro_protocol.hpp
+ * @brief Nintendo Switch Pro initialization replies shared by native HID backends.
  */
 #pragma once
 
@@ -12,7 +12,7 @@
 #include <optional>
 #include <span>
 
-namespace lvh::detail::windows {
+namespace lvh::detail::switch_pro_protocol {
 
   inline constexpr std::size_t switch_pro_report_size = 64U;
   using SwitchProReport = std::array<std::uint8_t, switch_pro_report_size>;
@@ -201,4 +201,4 @@ namespace lvh::detail::windows {
     return reply;
   }
 
-}  // namespace lvh::detail::windows
+}  // namespace lvh::detail::switch_pro_protocol

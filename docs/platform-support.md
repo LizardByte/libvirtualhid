@@ -101,26 +101,23 @@ and signing details.
 
 The Linux backend uses standard user-space kernel interfaces:
 
-- `uhid` for descriptor-driven HID gamepads.
-- `uinput` for Generic, Xbox 360, Xbox One, Xbox Series, and Switch Pro
-  gamepads, plus keyboard, mouse, touchscreen, trackpad, and pen tablet
-  devices.
+- `uhid` for descriptor-driven PlayStation and Switch Pro gamepads.
+- `uinput` for Generic, Xbox 360, Xbox One, and Xbox Series gamepads, plus
+  keyboard, mouse, touchscreen, trackpad, and pen tablet devices.
 - `libevdev` internally for uinput device construction.
 - X11/XTest only as a keyboard and mouse fallback when `uinput` cannot be used
   and an X11 session is available.
 
 Gamepad support normally prefers `uhid` because descriptors, raw HID identity,
 feature reports, and output reports matter for controller compatibility.
-Generic, Xbox-family, and Switch Pro profiles instead use `uinput` so SDL,
+Generic and Xbox-family profiles instead use `uinput` so SDL,
 Steam, browser Gamepad API implementations, and other evdev consumers receive
 canonical Linux gamepad events. Face buttons, shoulders, menu buttons, stick
 clicks, and Guide use their native evdev codes; sticks use absolute axes. Every
 uinput gamepad exposes its directional pad through `ABS_HAT0X` and `ABS_HAT0Y`.
 Generic and Xbox triggers remain independent analog `ABS_Z` and `ABS_RZ` axes.
-Switch Pro uses the Nintendo face-button
-positions, button events for ZL/ZR, and `BTN_Z` for Capture. Profiles with rumble
-support normalize rumble, constant, periodic, and ramp uinput force-feedback
-effects back into the public callback. Each requested playback repetition
+Profiles with rumble support normalize rumble, constant, periodic, and ramp
+uinput force-feedback effects back into the public callback. Each requested playback repetition
 restarts the effect's ramp and envelope timing. A zero-length effect remains
 active until its explicit stop event, matching the infinite-effect contract used
 by SDL and Steam. The Linux backend lets a new uinput device settle before
@@ -182,10 +179,15 @@ descriptor, and report framing remain unchanged. This transport-only name is
 confined to the Linux backend; public profile names, Windows names, and VHF
 behavior are unchanged.
 
-Switch Pro keeps its Nintendo identity on the Linux uinput path. This follows
-the evdev layout used by Linux-native virtual-controller implementations and
-allows standard `FF_RUMBLE` effects without emulating the physical controller's
-proprietary initialization handshake.
+Switch Pro uses Linux `uhid` with its native Nintendo descriptor and identity.
+Its backend-only UHID identity advertises Bluetooth transport because SDL2's
+Linux HIDAPI rejects virtual `BUS_USB` HIDRAW devices without a physical USB
+parent in sysfs. The public profile and report framing remain unchanged. The
+backend answers Nintendo subcommand initialization reports, and native `0x30`
+input reports carry buttons, sticks, battery state, and three live IMU samples.
+The public acceleration and gyroscope units remain meters per second squared
+and degrees per second; the packer converts them to Nintendo's coordinate
+system and sensor scales.
 
 Linux touchscreen and trackpad contacts use the lowest available multitouch
 slot while they are active. A newly placed contact receives a new tracking ID,
@@ -194,7 +196,11 @@ finger cannot overwrite another active finger in standard evdev consumers.
 
 On descriptor-driven backends, native Switch Pro output reports `0x01` and
 `0x10` are decoded into the normalized low- and high-frequency rumble callback.
-The original native report remains available in `GamepadOutput::raw_report`.
+Set Player Lights subcommand `0x30` additionally produces a `player_leds`
+callback with separate solid and flashing states for the four indicators. The
+Set HOME Light subcommand `0x38` produces a grayscale `rgb_led` callback whose
+equal channels preserve the requested monochrome intensity. The original native
+report remains available in `GamepadOutput::raw_report`.
 
 The optional `virtualhid_control` diagnostic UI uses SDL3 and Dear ImGui through
 the repository CPM lockfile. It is intended to stay on the same UI framework for

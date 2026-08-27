@@ -6,7 +6,7 @@
 // local includes
 #include "fixtures/fixtures.hpp"
 #include "playstation_feature_protocol.hpp"
-#include "switch_pro_protocol.hpp"
+#include "shared/switch_pro_protocol.hpp"
 #include "windows_device_identity.hpp"
 
 // standard includes
@@ -58,11 +58,11 @@ namespace {
     return request;
   }
 
-  std::array<std::uint8_t, lvh::detail::windows::switch_pro_report_size> switch_output_report(
+  std::array<std::uint8_t, lvh::detail::switch_pro_protocol::switch_pro_report_size> switch_output_report(
     std::uint8_t report_id,
     std::uint8_t command
   ) {
-    std::array<std::uint8_t, lvh::detail::windows::switch_pro_report_size> report {};
+    std::array<std::uint8_t, lvh::detail::switch_pro_protocol::switch_pro_report_size> report {};
     report[0] = report_id;
     if (report_id == 0x80U) {
       report[1] = command;
@@ -116,7 +116,7 @@ TEST_F(WindowsDriverProtocolTest, NonSeriesXboxUsesItsPublicIdentityForMatching)
 
 TEST_F(WindowsDriverProtocolTest, SwitchProRepliesToUsbStatusAndHandshakeCommands) {
   auto status_report = switch_output_report(0x80, 0x01);
-  const auto status_reply = lvh::detail::windows::make_switch_pro_reply(status_report);
+  const auto status_reply = lvh::detail::switch_pro_protocol::make_switch_pro_reply(status_report);
   ASSERT_TRUE(status_reply.has_value());
   EXPECT_EQ(status_reply->at(0), 0x81);
   EXPECT_EQ(status_reply->at(1), 0x01);
@@ -127,20 +127,20 @@ TEST_F(WindowsDriverProtocolTest, SwitchProRepliesToUsbStatusAndHandshakeCommand
 
   for (const auto command : {0x02U, 0x03U}) {
     const auto report = switch_output_report(0x80, static_cast<std::uint8_t>(command));
-    const auto reply = lvh::detail::windows::make_switch_pro_reply(report);
+    const auto reply = lvh::detail::switch_pro_protocol::make_switch_pro_reply(report);
     ASSERT_TRUE(reply.has_value());
     EXPECT_EQ(reply->at(0), 0x81);
     EXPECT_EQ(reply->at(1), command);
   }
 
   const auto force_usb = switch_output_report(0x80, 0x04);
-  EXPECT_FALSE(lvh::detail::windows::make_switch_pro_reply(force_usb).has_value());
+  EXPECT_FALSE(lvh::detail::switch_pro_protocol::make_switch_pro_reply(force_usb).has_value());
 }
 
 TEST_F(WindowsDriverProtocolTest, SwitchProAcknowledgesInitializationSubcommands) {
   for (const auto subcommand : {0x03U, 0x30U, 0x38U, 0x40U, 0x41U, 0x48U}) {
     const auto report = switch_output_report(0x01, static_cast<std::uint8_t>(subcommand));
-    const auto reply = lvh::detail::windows::make_switch_pro_reply(report);
+    const auto reply = lvh::detail::switch_pro_protocol::make_switch_pro_reply(report);
     ASSERT_TRUE(reply.has_value());
     EXPECT_EQ(reply->at(0), 0x21);
     EXPECT_EQ(reply->at(1), 0x07);
@@ -156,12 +156,12 @@ TEST_F(WindowsDriverProtocolTest, SwitchProAcknowledgesInitializationSubcommands
   }
 
   const auto rumble_only = switch_output_report(0x10, 0x00);
-  EXPECT_FALSE(lvh::detail::windows::make_switch_pro_reply(rumble_only).has_value());
+  EXPECT_FALSE(lvh::detail::switch_pro_protocol::make_switch_pro_reply(rumble_only).has_value());
 }
 
 TEST_F(WindowsDriverProtocolTest, SwitchProReturnsDeviceInfoAndFactoryCalibration) {
   auto device_info = switch_output_report(0x01, 0x02);
-  const auto device_reply = lvh::detail::windows::make_switch_pro_reply(device_info);
+  const auto device_reply = lvh::detail::switch_pro_protocol::make_switch_pro_reply(device_info);
   ASSERT_TRUE(device_reply.has_value());
   EXPECT_EQ(device_reply->at(13), 0x82);
   EXPECT_EQ(device_reply->at(14), 0x02);
@@ -170,7 +170,7 @@ TEST_F(WindowsDriverProtocolTest, SwitchProReturnsDeviceInfoAndFactoryCalibratio
   auto stick_read = switch_output_report(0x01, 0x10);
   write_u32(stick_read, 11U, 0x603D);
   stick_read[15] = 18U;
-  const auto stick_reply = lvh::detail::windows::make_switch_pro_reply(stick_read);
+  const auto stick_reply = lvh::detail::switch_pro_protocol::make_switch_pro_reply(stick_read);
   ASSERT_TRUE(stick_reply.has_value());
   EXPECT_EQ(stick_reply->at(13), 0x90);
   EXPECT_EQ(stick_reply->at(14), 0x10);
@@ -200,7 +200,7 @@ TEST_F(WindowsDriverProtocolTest, SwitchProReturnsDeviceInfoAndFactoryCalibratio
   auto imu_read = switch_output_report(0x01, 0x10);
   write_u32(imu_read, 11U, 0x6020);
   imu_read[15] = 24U;
-  const auto imu_reply = lvh::detail::windows::make_switch_pro_reply(imu_read);
+  const auto imu_reply = lvh::detail::switch_pro_protocol::make_switch_pro_reply(imu_read);
   ASSERT_TRUE(imu_reply.has_value());
   EXPECT_TRUE(std::ranges::any_of(imu_reply->begin() + 20, imu_reply->begin() + 44, [](auto value) {
     return value != 0U;
@@ -209,7 +209,7 @@ TEST_F(WindowsDriverProtocolTest, SwitchProReturnsDeviceInfoAndFactoryCalibratio
   auto user_read = switch_output_report(0x01, 0x10);
   write_u32(user_read, 11U, 0x8010);
   user_read[15] = 22U;
-  const auto user_reply = lvh::detail::windows::make_switch_pro_reply(user_read);
+  const auto user_reply = lvh::detail::switch_pro_protocol::make_switch_pro_reply(user_read);
   ASSERT_TRUE(user_reply.has_value());
   EXPECT_TRUE(std::ranges::all_of(user_reply->begin() + 20, user_reply->begin() + 42, [](auto value) {
     return value == 0U;

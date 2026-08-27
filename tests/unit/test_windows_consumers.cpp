@@ -29,6 +29,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
@@ -355,6 +356,16 @@ namespace {
       });
     }
 
+    std::optional<lvh::GamepadOutput> wait_for_player_leds(
+      const std::array<bool, 4> &solid,
+      const std::array<bool, 4> &flashing
+    ) {
+      return wait_for([&solid, &flashing](const lvh::GamepadOutput &output) {
+        return output.kind == lvh::GamepadOutputKind::player_leds && output.player_leds == solid &&
+               output.flashing_player_leds == flashing;
+      });
+    }
+
   private:
     template<typename Predicate>
     std::optional<lvh::GamepadOutput> wait_for(Predicate matches) {
@@ -450,6 +461,25 @@ namespace {
     }
     return {nullptr, &SDL_CloseGamepad};
   }
+
+  bool wait_for_switch_pro_motion(SDL_Gamepad *gamepad) {
+    std::array<float, 3> acceleration {};
+    std::array<float, 3> gyroscope {};
+    const auto deadline = std::chrono::steady_clock::now() + 5s;
+    while (std::chrono::steady_clock::now() < deadline) {
+      SDL_UpdateGamepads();
+      SDL_PumpEvents();
+      if (
+        SDL_GetGamepadSensorData(gamepad, SDL_SENSOR_ACCEL, acceleration.data(), acceleration.size()) &&
+        SDL_GetGamepadSensorData(gamepad, SDL_SENSOR_GYRO, gyroscope.data(), gyroscope.size()) &&
+        std::abs(acceleration[1]) > 15.0F && std::abs(gyroscope[2]) > 0.25F
+      ) {
+        return true;
+      }
+      std::this_thread::sleep_for(20ms);
+    }
+    return false;
+  }
 #endif
 
 }  // namespace
@@ -504,6 +534,30 @@ TEST_F(WindowsConsumerTest, SdlHidapiOutputReachesDefaultPlayStationAndSwitchCal
       ASSERT_TRUE(SDL_SetGamepadLED(gamepad.get(), 0x12U, 0x34U, 0x56U)) << SDL_GetError();
       const auto rgb_led = output_capture.wait_for_rgb_led(0x12U, 0x34U, 0x56U);
       ASSERT_TRUE(rgb_led.has_value()) << "No normalized RGB LED callback followed SDL HIDAPI LED output";
+    }
+    if (profile.gamepad_kind == lvh::GamepadProfileKind::switch_pro) {
+      ASSERT_TRUE(SDL_GetBooleanProperty(properties, SDL_PROP_GAMEPAD_CAP_MONO_LED_BOOLEAN, false)) << SDL_GetError();
+      ASSERT_TRUE(SDL_SetGamepadLED(gamepad.get(), 0xFFU, 0xFFU, 0xFFU)) << SDL_GetError();
+      const auto home_led = output_capture.wait_for_rgb_led(0xFFU, 0xFFU, 0xFFU);
+      ASSERT_TRUE(home_led.has_value()) << "No normalized HOME LED callback followed SDL HIDAPI LED output";
+
+      ASSERT_TRUE(SDL_GamepadHasSensor(gamepad.get(), SDL_SENSOR_ACCEL)) << SDL_GetError();
+      ASSERT_TRUE(SDL_GamepadHasSensor(gamepad.get(), SDL_SENSOR_GYRO)) << SDL_GetError();
+      ASSERT_TRUE(SDL_SetGamepadSensorEnabled(gamepad.get(), SDL_SENSOR_ACCEL, true)) << SDL_GetError();
+      ASSERT_TRUE(SDL_SetGamepadSensorEnabled(gamepad.get(), SDL_SENSOR_GYRO, true)) << SDL_GetError();
+      ASSERT_TRUE(created.adapter->set_motion(
+                                   lvh::Vector3 {.x = 9.80665F, .y = 19.6133F, .z = -9.80665F},
+                                   lvh::Vector3 {.x = 10.0F, .y = 20.0F, .z = -30.0F}
+      )
+                    .ok());
+      ASSERT_TRUE(wait_for_switch_pro_motion(gamepad.get())) << "SDL HIDAPI did not receive live Switch Pro motion";
+
+      ASSERT_TRUE(SDL_SetGamepadPlayerIndex(gamepad.get(), 2)) << SDL_GetError();
+      const auto player_leds = output_capture.wait_for_player_leds(
+        std::array {true, true, true, false},
+        std::array {false, false, false, false}
+      );
+      ASSERT_TRUE(player_leds.has_value()) << "No normalized player LED callback followed SDL HIDAPI player-index output";
     }
     ASSERT_TRUE(SDL_GetBooleanProperty(properties, SDL_PROP_GAMEPAD_CAP_RUMBLE_BOOLEAN, false)) << SDL_GetError();
     ASSERT_TRUE(SDL_RumbleGamepad(gamepad.get(), 0x5678U, 0x1234U, 1000U)) << SDL_GetError();
@@ -677,6 +731,7 @@ TEST_F(WindowsConsumerTest, NativeSwitchHandshakeAndInputReportReachHidClient) {
 
   lvh::CreateGamepadOptions options;
   options.profile = profile;
+  options.metadata.stable_id = "02:00:00:00:00:05";
   auto created = lvh::GamepadStateAdapter::create(*runtime, options);
   ASSERT_TRUE(created) << created.status.message();
   GamepadOutputCapture output_capture;
@@ -769,6 +824,49 @@ TEST_F(WindowsConsumerTest, NativeSwitchHandshakeAndInputReportReachHidClient) {
   EXPECT_EQ(rumble->high_frequency_rumble, 5213U);
   EXPECT_EQ(rumble->raw_report, rumble_report);
 
+  std::vector<std::uint8_t> player_lights_report(hid_interface->output_report_size, 0);
+  player_lights_report[0] = 0x01;
+  player_lights_report[1] = 0x08;
+  constexpr std::array neutral_rumble {
+    std::uint8_t {0x00},
+    std::uint8_t {0x01},
+    std::uint8_t {0x40},
+    std::uint8_t {0x40},
+    std::uint8_t {0x00},
+    std::uint8_t {0x01},
+    std::uint8_t {0x40},
+    std::uint8_t {0x40},
+  };
+  std::ranges::copy(neutral_rumble, player_lights_report.begin() + 2);
+  player_lights_report[10] = 0x30;
+  player_lights_report[11] = 0xA5;
+  bytes_written = 0;
+  ASSERT_TRUE(WriteFile(
+    writer.get(),
+    player_lights_report.data(),
+    static_cast<DWORD>(player_lights_report.size()),
+    &bytes_written,
+    nullptr
+  )) << "Switch player-light WriteFile failed: "
+     << GetLastError();
+  ASSERT_EQ(bytes_written, player_lights_report.size());
+
+  const auto player_lights_reply = read_hid_report_with_timeout(reader.get(), hid_interface->input_report_size, 5s);
+  ASSERT_TRUE(player_lights_reply.has_value()) << "No Switch player-light acknowledgement reached the HID client";
+  ASSERT_GE(player_lights_reply->size(), 15U);
+  EXPECT_EQ(player_lights_reply->at(0), 0x21U);
+  EXPECT_EQ(player_lights_reply->at(1), 0x08U);
+  EXPECT_EQ(player_lights_reply->at(13), 0x80U);
+  EXPECT_EQ(player_lights_reply->at(14), 0x30U);
+
+  const auto player_lights = output_capture.wait_for_player_leds(
+    {true, false, true, false},
+    {false, true, false, true}
+  );
+  ASSERT_TRUE(player_lights.has_value())
+    << "No normalized player-light callback followed the native Switch 0x30 output write";
+  EXPECT_EQ(player_lights->raw_report, player_lights_report);
+
   lvh::GamepadState state;
   state.buttons.set(lvh::GamepadButton::a);
   state.buttons.set(lvh::GamepadButton::guide);
@@ -776,6 +874,8 @@ TEST_F(WindowsConsumerTest, NativeSwitchHandshakeAndInputReportReachHidClient) {
   state.buttons.set(lvh::GamepadButton::right_stick);
   state.left_stick = {.x = 1.0F, .y = 0.0F};
   state.right_stick = {.x = 0.0F, .y = -1.0F};
+  state.acceleration = lvh::Vector3 {.x = 9.80665F, .y = 19.6133F, .z = -9.80665F};
+  state.gyroscope = lvh::Vector3 {.x = 1.0F, .y = 2.0F, .z = -3.0F};
   ASSERT_TRUE(created.adapter->set_state(state).ok());
 
   const auto input = read_hid_report_with_timeout(reader.get(), hid_interface->input_report_size, 5s);
@@ -791,6 +891,20 @@ TEST_F(WindowsConsumerTest, NativeSwitchHandshakeAndInputReportReachHidClient) {
   EXPECT_EQ(input->at(9), 0x00U);
   EXPECT_EQ(input->at(10), 0x08U);
   EXPECT_EQ(input->at(11), 0x00U);
+  const auto read_i16 = [&input](std::size_t offset) {
+    return static_cast<std::int16_t>(
+      static_cast<std::uint16_t>(input->at(offset)) |
+      (static_cast<std::uint16_t>(input->at(offset + 1U)) << 8U)
+    );
+  };
+  for (const auto offset : {13U, 25U, 37U}) {
+    EXPECT_EQ(read_i16(offset), 4096);
+    EXPECT_EQ(read_i16(offset + 2U), -4096);
+    EXPECT_EQ(read_i16(offset + 4U), 8192);
+    EXPECT_EQ(read_i16(offset + 6U), 43);
+    EXPECT_EQ(read_i16(offset + 8U), -14);
+    EXPECT_EQ(read_i16(offset + 10U), 29);
+  }
   ASSERT_TRUE(created.adapter->close().ok());
 }
 

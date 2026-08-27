@@ -13,8 +13,9 @@ A streaming host should be able to:
   indexes.
 - Submit incremental button, axis, trigger, touchpad, motion, and battery
   updates without recreating a device.
-- Receive output callbacks for rumble, LEDs, adaptive triggers, trigger rumble,
-  and raw output reports where the selected profile supports them.
+- Receive output callbacks for rumble, RGB and player LEDs, adaptive triggers,
+  trigger rumble, and raw output reports where the selected profile supports
+  them.
 - Query profile and backend capabilities before warning users about unsupported
   client features.
 - Read device nodes and platform paths when a downstream consumer or diagnostic
@@ -51,8 +52,10 @@ The core API and adapter shape cover the major streaming-host requirements:
 - Rich controller metadata.
 - Gamepad output callbacks.
 - Keyboard and mouse input paths.
-- Linux PlayStation gamepads through `uhid`, Generic/Xbox/Switch Pro gamepads
-  through `uinput`, and `uinput` keyboard/pointer devices.
+- Linux PlayStation and Switch Pro gamepads through `uhid`, Generic/Xbox
+  gamepads through `uinput`, and `uinput` keyboard/pointer devices.
+- Native Switch Pro motion, initialization replies, rumble, HOME-light, and
+  player-light output handling on Linux and Windows descriptor-driven backends.
 - Linux DualSense and DualShock 4 USB/Bluetooth report handling.
 - Linux touchscreen, trackpad, and pen tablet device types.
 - FreeBSD uinput gamepads and pointer devices, with basic PlayStation input and
