@@ -86,6 +86,10 @@ uses the `0x0210` hardware revision reported by a physical Nintendo controller,
 and the Windows VHF device exposes that revision to HID consumers. Full-state
 and subcommand-reply reports use the same per-device packet counter on Windows,
 matching the counter that a native controller advances for every input report.
+The Windows client backend caches the newest complete Switch Pro state and
+streams native `0x30` reports every 15 milliseconds. This coalesces separate
+acceleration and gyroscope API updates into the three-sample report cadence used
+by a physical USB controller.
 
 Windows VHF devices do not expose a Bluetooth transport identity to HIDAPI.
 The Windows backend therefore reports DualShock 4 and DualSense requests as

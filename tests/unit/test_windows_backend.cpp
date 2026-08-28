@@ -105,6 +105,19 @@ TEST_F(WindowsBackendTest, FakeChannelExercisesLifecycleSubmitCloseAndOutput) {
   EXPECT_EQ(result.last_output.raw_report[0], 0x03U);
 }
 
+TEST_F(WindowsBackendTest, SwitchReportsStreamAtTheNativeCadence) {
+  const auto result = lvh::detail::test::windows_backend_switch_report_stream();
+
+  expect_ok(result.create_status);
+  expect_ok(result.submit_status);
+  ASSERT_TRUE(result.repeated_report);
+  expect_ok(result.close_status);
+  ASSERT_GE(result.submitted_reports.size(), 2U);
+  EXPECT_TRUE(std::ranges::all_of(result.submitted_reports, [&result](const auto &report) {
+    return report == result.expected_report;
+  }));
+}
+
 TEST_F(WindowsBackendTest, PlayStationDefaultsUseEffectiveUsbProfiles) {
   const auto result = lvh::detail::test::windows_backend_playstation_transport();
   const auto dualshock4_usb = lvh::profiles::dualshock4_usb();

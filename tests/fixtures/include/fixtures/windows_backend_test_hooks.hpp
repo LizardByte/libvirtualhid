@@ -30,6 +30,15 @@ namespace lvh::detail::test {
     std::size_t destroy_requests = 0;
   };
 
+  struct WindowsSwitchReportStreamResult {
+    OperationStatus create_status;
+    OperationStatus submit_status;
+    OperationStatus close_status;
+    bool repeated_report = false;
+    std::vector<std::uint8_t> expected_report;
+    std::vector<std::vector<std::uint8_t>> submitted_reports;
+  };
+
   struct WindowsBackendFailureResult {
     OperationStatus invalid_argument_status;
     OperationStatus unsupported_profile_status;
@@ -239,6 +248,7 @@ namespace lvh::detail::test {
   };
 
   WindowsBackendLifecycleResult windows_backend_fake_channel_lifecycle();
+  WindowsSwitchReportStreamResult windows_backend_switch_report_stream();
   WindowsPlayStationTransportResult windows_backend_playstation_transport();
   WindowsGenericPidOrderingResult windows_backend_generic_pid_callback_ordering();
   WindowsHidKeyboardResult windows_backend_hid_keyboard();

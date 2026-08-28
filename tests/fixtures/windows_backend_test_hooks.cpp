@@ -528,6 +528,29 @@ namespace lvh::detail {
       return result;
     }
 
+    WindowsSwitchReportStreamResult windows_backend_switch_report_stream() {
+      WindowsSwitchReportStreamResult result;
+      auto command_state = std::make_shared<FakeWindowsControlChannelState>();
+      auto backend = make_fake_windows_backend(command_state, std::make_shared<FakeWindowsControlChannelState>());
+
+      CreateGamepadOptions options;
+      options.profile = profiles::switch_pro();
+      auto created = backend->create_gamepad(8, options);
+      result.create_status = created.status;
+      if (created) {
+        result.expected_report.assign(options.profile.input_report_size, 0x5AU);
+        result.expected_report[0] = 0x30U;
+        result.submit_status = created.gamepad->submit({}, result.expected_report);
+        result.repeated_report = wait_until([&command_state] {
+          return command_state->submit_report_count() >= 2U;
+        });
+        result.close_status = created.gamepad->close();
+        result.submitted_reports = command_state->submit_reports();
+      }
+
+      return result;
+    }
+
     WindowsHidMouseResult windows_backend_hid_mouse() {
       using enum MouseEventKind;
 

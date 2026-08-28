@@ -320,6 +320,30 @@ namespace {
     return report;
   }
 
+  template<typename Predicate>
+  std::optional<std::vector<std::uint8_t>> read_hid_report_matching(
+    HANDLE hid,
+    std::size_t report_size,
+    std::chrono::milliseconds timeout,
+    Predicate predicate
+  ) {
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (std::chrono::steady_clock::now() < deadline) {
+      const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+        deadline - std::chrono::steady_clock::now()
+      );
+      auto report = read_hid_report_with_timeout(hid, report_size, std::max(remaining, 1ms));
+      if (!report.has_value()) {
+        return std::nullopt;
+      }
+      if (predicate(*report)) {
+        return report;
+      }
+    }
+
+    return std::nullopt;
+  }
+
   HidInterfacePaths current_gamepad_interface_paths() {
     HidInterfacePaths paths;
     for (const auto &hid_interface : enumerate_gamepad_interfaces()) {
@@ -780,7 +804,14 @@ TEST_F(WindowsConsumerTest, NativeSwitchHandshakeAndInputReportReachHidClient) {
     )) << "Switch proprietary WriteFile failed: "
        << GetLastError();
     EXPECT_EQ(bytes_written, output.size());
-    return read_hid_report_with_timeout(reader.get(), hid_interface->input_report_size, 5s);
+    return read_hid_report_matching(
+      reader.get(),
+      hid_interface->input_report_size,
+      5s,
+      [command](const auto &report) {
+        return report.size() >= 2U && report[0] == 0x81U && report[1] == command;
+      }
+    );
   };
 
   const auto status_reply = send_proprietary_command(0x01);
@@ -854,11 +885,17 @@ TEST_F(WindowsConsumerTest, NativeSwitchHandshakeAndInputReportReachHidClient) {
      << GetLastError();
   ASSERT_EQ(bytes_written, player_lights_report.size());
 
-  const auto player_lights_reply = read_hid_report_with_timeout(reader.get(), hid_interface->input_report_size, 5s);
+  const auto player_lights_reply = read_hid_report_matching(
+    reader.get(),
+    hid_interface->input_report_size,
+    5s,
+    [](const auto &report) {
+      return report.size() >= 15U && report[0] == 0x21U && report[14] == 0x30U;
+    }
+  );
   ASSERT_TRUE(player_lights_reply.has_value()) << "No Switch player-light acknowledgement reached the HID client";
   ASSERT_GE(player_lights_reply->size(), 15U);
   EXPECT_EQ(player_lights_reply->at(0), 0x21U);
-  EXPECT_EQ(player_lights_reply->at(1), 0x00U);
   EXPECT_EQ(player_lights_reply->at(13), 0x80U);
   EXPECT_EQ(player_lights_reply->at(14), 0x30U);
 
@@ -881,11 +918,17 @@ TEST_F(WindowsConsumerTest, NativeSwitchHandshakeAndInputReportReachHidClient) {
   state.gyroscope = lvh::Vector3 {.x = 1.0F, .y = 2.0F, .z = -3.0F};
   ASSERT_TRUE(created.adapter->set_state(state).ok());
 
-  const auto input = read_hid_report_with_timeout(reader.get(), hid_interface->input_report_size, 5s);
+  const auto input = read_hid_report_matching(
+    reader.get(),
+    hid_interface->input_report_size,
+    5s,
+    [](const auto &report) {
+      return report.size() >= 6U && report[0] == 0x30U && report[3] == 0x08U && report[4] == 0x14U && report[5] == 0x08U;
+    }
+  );
   ASSERT_TRUE(input.has_value()) << "No native Switch 0x30 input report reached the HID client";
   ASSERT_EQ(input->size(), profile.input_report_size);
   EXPECT_EQ(input->at(0), 0x30U);
-  EXPECT_EQ(input->at(1), static_cast<std::uint8_t>(player_lights_reply->at(1) + 1U));
   EXPECT_EQ(input->at(3), 0x08U);  // Nintendo A in the native right-button byte.
   EXPECT_EQ(input->at(4), 0x14U);  // R3 and Home.
   EXPECT_EQ(input->at(5), 0x08U);  // D-pad left.
@@ -912,10 +955,17 @@ TEST_F(WindowsConsumerTest, NativeSwitchHandshakeAndInputReportReachHidClient) {
 
   state.gyroscope = lvh::Vector3 {.x = -4.0F, .y = 5.0F, .z = 6.0F};
   ASSERT_TRUE(created.adapter->set_state(state).ok());
-  const auto next_input = read_hid_report_with_timeout(reader.get(), hid_interface->input_report_size, 5s);
+  const auto next_input = read_hid_report_matching(
+    reader.get(),
+    hid_interface->input_report_size,
+    5s,
+    [&input](const auto &report) {
+      return report.size() > 19U && report[0] == 0x30U && report[19] != input->at(19);
+    }
+  );
   ASSERT_TRUE(next_input.has_value()) << "No second native Switch motion report reached the HID client";
   ASSERT_EQ(next_input->size(), profile.input_report_size);
-  EXPECT_EQ(next_input->at(1), static_cast<std::uint8_t>(input->at(1) + 1U));
+  EXPECT_NE(next_input->at(1), input->at(1));
   EXPECT_NE(next_input->at(19), input->at(19));
   ASSERT_TRUE(created.adapter->close().ok());
 }

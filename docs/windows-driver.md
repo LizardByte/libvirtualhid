@@ -428,10 +428,13 @@ gamepad.
 DualShock 4 and DualSense answer the calibration, pairing, and firmware feature
 requests used by their Windows HIDAPI initialization paths. Switch Pro answers
 the native USB and subcommand handshake and submits native `0x30` input reports
-with three live IMU samples. Its Set Player Lights subcommand is normalized into
-solid and flashing player-indicator output states for the creating runtime, and
-its monochrome HOME light is normalized as equal RGB channels so existing
-streaming LED feedback paths can preserve its intensity.
+with three live IMU samples. The client backend caches the newest complete
+Switch state and submits it every 15 milliseconds, matching a physical USB
+controller's report cadence while coalescing separate acceleration and
+gyroscope updates. Its Set Player Lights subcommand is normalized into solid
+and flashing player-indicator output states for the creating runtime, and its
+monochrome HOME light is normalized as equal RGB channels so existing streaming
+LED feedback paths can preserve its intensity.
 The built-in Generic profile is presented to Windows as a DirectInput PID
 Joystick with the complete output-report set required for DirectInput
 enumeration. Constant Force and Sine output is normalized to the portable
