@@ -79,7 +79,9 @@ TEST(FreeBsdBackendTest, CreatesEveryGamepadWithTheExpectedPlayStationSubset) {
     EXPECT_FALSE(support.supports_battery);
     EXPECT_FALSE(support.supports_rgb_led);
     EXPECT_FALSE(support.supports_adaptive_triggers);
+    EXPECT_FALSE(support.supports_player_leds);
     EXPECT_EQ(effective_profile.output_report_size, 0U);
+    EXPECT_FALSE(lvh::supports_gamepad_output(effective_profile, lvh::GamepadOutputKind::player_leds));
     EXPECT_FALSE(lvh::supports_gamepad_output(effective_profile, lvh::GamepadOutputKind::raw_report));
 
     if (

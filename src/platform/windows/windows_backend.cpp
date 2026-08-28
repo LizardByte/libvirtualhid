@@ -88,6 +88,8 @@ namespace lvh::detail {
     using SendInputFunction = std::function<UINT(std::span<INPUT>)>;
     using SyncThreadDesktopFunction = std::function<HDESK()>;
 
+    constexpr auto switch_pro_report_interval = std::chrono::milliseconds {15};
+
     /**
      * @brief Thread-local desktop identity used for SendInput retry decisions.
      */
@@ -956,13 +958,13 @@ namespace lvh::detail {
       OutputCallback output_callback;
       bool uses_generic_pid = false;
       windows::GenericPidRumbleState generic_pid_rumble;
+      std::vector<std::uint8_t> switch_pro_input_report;
     };
 
     class WindowsGamepad final: public BackendGamepad {
     public:
-      WindowsGamepad(std::shared_ptr<WindowsBackendContext> context, std::shared_ptr<WindowsVhfDeviceState> state):
-          context_ {std::move(context)},
-          state_ {std::move(state)} {}
+      WindowsGamepad(std::shared_ptr<WindowsBackendContext> context, std::shared_ptr<WindowsVhfDeviceState> state);
+      ~WindowsGamepad() override;
 
       OperationStatus submit(
         const GamepadState &state,
@@ -973,8 +975,14 @@ namespace lvh::detail {
       OperationStatus close() override;
 
     private:
+      void stream_switch_pro_reports(std::stop_token stop_token);
+      void stop_switch_pro_report_stream();
+
       std::shared_ptr<WindowsBackendContext> context_;
       std::shared_ptr<WindowsVhfDeviceState> state_;
+      std::condition_variable switch_pro_report_ready_;
+      std::mutex switch_pro_report_mutex_;
+      std::jthread switch_pro_report_thread_;
     };
 
     class WindowsBackendContext: public std::enable_shared_from_this<WindowsBackendContext> {
@@ -1294,6 +1302,66 @@ namespace lvh::detail {
       std::map<std::uint64_t, std::weak_ptr<WindowsVhfDeviceState>> devices_;
     };
 
+    WindowsGamepad::WindowsGamepad(
+      std::shared_ptr<WindowsBackendContext> context,
+      std::shared_ptr<WindowsVhfDeviceState> state
+    ):
+        context_ {std::move(context)},
+        state_ {std::move(state)} {
+      if (state_->profile.gamepad_kind == GamepadProfileKind::switch_pro) {
+        switch_pro_report_thread_ = std::jthread {[this](std::stop_token stop_token) {
+          stream_switch_pro_reports(stop_token);
+        }};
+      }
+    }
+
+    WindowsGamepad::~WindowsGamepad() {
+      stop_switch_pro_report_stream();
+    }
+
+    void WindowsGamepad::stream_switch_pro_reports(std::stop_token stop_token) {
+      auto next_report = std::chrono::steady_clock::now() + switch_pro_report_interval;
+      std::unique_lock report_lock {switch_pro_report_mutex_};
+      while (!stop_token.stop_requested()) {
+        static_cast<void>(switch_pro_report_ready_.wait_until(report_lock, next_report, [&stop_token] {
+          return stop_token.stop_requested();
+        }));
+        if (stop_token.stop_requested()) {
+          break;
+        }
+
+        report_lock.unlock();
+        std::vector<std::uint8_t> report;
+        {
+          std::lock_guard state_lock {state_->mutex_};
+          if (!state_->open) {
+            return;
+          }
+          report = state_->switch_pro_input_report;
+        }
+        if (!report.empty()) {
+          static_cast<void>(context_->submit_device_report(state_, report));
+        }
+        report_lock.lock();
+
+        next_report += switch_pro_report_interval;
+        const auto now = std::chrono::steady_clock::now();
+        if (next_report <= now) {
+          next_report = now + switch_pro_report_interval;
+        }
+      }
+    }
+
+    void WindowsGamepad::stop_switch_pro_report_stream() {
+      if (!switch_pro_report_thread_.joinable()) {
+        return;
+      }
+
+      switch_pro_report_thread_.request_stop();
+      switch_pro_report_ready_.notify_all();
+      switch_pro_report_thread_.join();
+    }
+
     OperationStatus WindowsGamepad::submit(
       const GamepadState & /*state*/,
       const std::vector<std::uint8_t> &report
@@ -1308,6 +1376,11 @@ namespace lvh::detail {
 
         if (report.size() > LVH_WINDOWS_MAX_INPUT_REPORT_SIZE) {
           return OperationStatus::failure(invalid_argument, "Windows gamepad input report exceeds protocol limit");
+        }
+
+        if (state_->profile.gamepad_kind == GamepadProfileKind::switch_pro) {
+          state_->switch_pro_input_report = report;
+          return OperationStatus::success();
         }
 
         if (state_->uses_generic_pid) {
@@ -1333,6 +1406,7 @@ namespace lvh::detail {
     }
 
     OperationStatus WindowsGamepad::close() {
+      stop_switch_pro_report_stream();
       return context_->close_device(state_);
     }
 

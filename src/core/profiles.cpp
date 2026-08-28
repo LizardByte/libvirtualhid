@@ -2025,13 +2025,19 @@ namespace lvh::profiles {
       profile.bus_type = BusType::usb;
       profile.vendor_id = 0x057E;
       profile.product_id = 0x2009;
-      profile.version = 0x8111;
+      profile.version = 0x0210;
       profile.report_id = switch_pro_report_id;
       profile.input_report_size = switch_pro_input_report_size;
       profile.output_report_size = switch_pro_output_report_size;
       profile.name = "(libvirtualhid) Nintendo Pro Controller";
       profile.manufacturer = "Nintendo Co., Ltd.";
-      profile.capabilities = {.supports_rumble = true, .supports_motion = true, .supports_battery = true};
+      profile.capabilities = {
+        .supports_rumble = true,
+        .supports_motion = true,
+        .supports_rgb_led = true,
+        .supports_battery = true,
+        .supports_player_leds = true,
+      };
       profile.report_descriptor = make_switch_pro_report_descriptor();
       return profile;
     }

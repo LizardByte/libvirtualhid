@@ -1586,6 +1586,79 @@ namespace lvh::detail::test {
     return result;
   }
 
+  LinuxUhidRoundTripResult linux_switch_pro_uhid_socketpair_reports() {
+    LinuxUhidRoundTripResult result;
+    std::array<int, 2> descriptors {-1, -1};
+    if (::socketpair(AF_UNIX, SOCK_STREAM, 0, descriptors.data()) != 0) {
+      result.create_status = system_error_status(ErrorCode::backend_failure, "failed to create socketpair", errno);
+      result.submit_status = result.create_status;
+      result.close_status = result.create_status;
+      return result;
+    }
+
+    CreateGamepadOptions options;
+    options.profile = profiles::switch_pro();
+    options.metadata.stable_id = "libvirtualhid-switch-pro-roundtrip";
+
+    UhidGamepad gamepad {descriptors[0]};
+    auto event = create_started_profile_uhid_gamepad(gamepad, 12, options, descriptors[1], BUS_BLUETOOTH, result);
+    result.creation.saw_create = result.creation.saw_create &&
+                                 event.u.create2.rd_size == options.profile.report_descriptor.size();
+
+    gamepad.set_output_callback([&result](const GamepadOutput &output) {
+      ++result.output.callback_count;
+      result.output.last = output;
+      if (
+        output.kind == GamepadOutputKind::player_leds &&
+        output.player_leds == std::array {true, false, true, false} &&
+        output.flashing_player_leds == std::array {false, true, false, true}
+      ) {
+        result.switch_pro.saw_player_leds = true;
+      }
+    });
+
+    event = {};
+    event.type = UHID_OUTPUT;
+    event.u.output.rtype = UHID_OUTPUT_REPORT;
+    event.u.output.size = static_cast<__u16>(options.profile.output_report_size);
+    event.u.output.data[0] = 0x01;
+    event.u.output.data[1] = 0x07;
+    const std::array<std::uint8_t, 8> neutral_rumble {0x00, 0x01, 0x40, 0x40, 0x00, 0x01, 0x40, 0x40};
+    std::ranges::copy(neutral_rumble, event.u.output.data + 2U);
+    event.u.output.data[10] = 0x30;
+    event.u.output.data[11] = 0xA5;
+    static_cast<void>(write_uhid_event(descriptors[1], event));
+    if (read_uhid_event_type(descriptors[1], UHID_INPUT2, event)) {
+      if (event.u.input2.size > 1U) {
+        result.switch_pro.subcommand_reply_packet_timer = static_cast<std::uint8_t>(event.u.input2.data[1]);
+      }
+      result.switch_pro.saw_subcommand_reply = event.u.input2.size == options.profile.input_report_size &&
+                                               event.u.input2.data[0] == 0x21 &&
+                                               event.u.input2.data[13] == 0x80 &&
+                                               event.u.input2.data[14] == 0x30;
+    }
+
+    GamepadState state;
+    state.buttons.set(GamepadButton::a);
+    state.acceleration = Vector3 {.x = 9.80665F, .y = 19.6133F, .z = -9.80665F};
+    state.gyroscope = Vector3 {.x = 1.0F, .y = 2.0F, .z = -3.0F};
+    const auto report = reports::pack_input_report(options.profile, state);
+    result.submit_status = gamepad.submit(state, report);
+    if (read_uhid_event_type(descriptors[1], UHID_INPUT2, event)) {
+      if (event.u.input2.size > 1U) {
+        result.switch_pro.motion_input_packet_timer = static_cast<std::uint8_t>(event.u.input2.data[1]);
+      }
+      result.switch_pro.saw_motion_input = event.u.input2.size == report.size() &&
+                                           event.u.input2.data[0] == 0x30 &&
+                                           (event.u.input2.data[3] & 0x08U) != 0U &&
+                                           std::equal(report.begin() + 13, report.begin() + 49, event.u.input2.data + 13U);
+    }
+
+    result.close_status = gamepad.close();
+    static_cast<void>(::close(descriptors[1]));
+    return result;
+  }
+
   LinuxUhidRoundTripResult linux_dualsense_uhid_socketpair_reports() {
     LinuxUhidRoundTripResult result;
     std::array<int, 2> descriptors {-1, -1};
@@ -1641,7 +1714,7 @@ namespace lvh::detail::test {
     event.u.get_report.rnum = 0x05;
     static_cast<void>(write_uhid_event(descriptors[1], event));
     if (read_uhid_event_type(descriptors[1], UHID_GET_REPORT_REPLY, event)) {
-      result.saw_dualsense_calibration = event.u.get_report_reply.err == 0 && event.u.get_report_reply.size == 41U &&
+      result.dualsense.saw_calibration = event.u.get_report_reply.err == 0 && event.u.get_report_reply.size == 41U &&
                                          event.u.get_report_reply.data[0] == 0x05;
     }
 
@@ -1651,7 +1724,7 @@ namespace lvh::detail::test {
     event.u.get_report.rnum = 0x09;
     static_cast<void>(write_uhid_event(descriptors[1], event));
     if (read_uhid_event_type(descriptors[1], UHID_GET_REPORT_REPLY, event)) {
-      result.saw_dualsense_pairing = event.u.get_report_reply.err == 0 && event.u.get_report_reply.size > 7 &&
+      result.dualsense.saw_pairing = event.u.get_report_reply.err == 0 && event.u.get_report_reply.size > 7 &&
                                      event.u.get_report_reply.data[0] == 0x09 &&
                                      event.u.get_report_reply.data[1] == 0x07 &&
                                      event.u.get_report_reply.data[6] == 0x02;
@@ -1663,7 +1736,7 @@ namespace lvh::detail::test {
     event.u.get_report.rnum = 0x20;
     static_cast<void>(write_uhid_event(descriptors[1], event));
     if (read_uhid_event_type(descriptors[1], UHID_GET_REPORT_REPLY, event)) {
-      result.saw_dualsense_firmware = event.u.get_report_reply.err == 0 && event.u.get_report_reply.size > 0 &&
+      result.dualsense.saw_firmware = event.u.get_report_reply.err == 0 && event.u.get_report_reply.size > 0 &&
                                       event.u.get_report_reply.data[0] == 0x20;
     }
 
@@ -1731,7 +1804,7 @@ namespace lvh::detail::test {
         const auto crc_offset = report_size - 4U;
         const auto expected_crc = crc32(std::span<const std::uint8_t> {event.u.input2.data, crc_offset}, playstation_crc_seed(0xA1));
         const auto actual_crc = read_u32_le(event.u.input2.data + crc_offset);
-        result.saw_dualsense_bluetooth_input_with_live_sensor_metadata =
+        result.dualsense.saw_bluetooth_input_with_live_sensor_metadata =
           first_input_report_valid && expected_crc == actual_crc && event.u.input2.data[8] != first_sequence &&
           read_u32_le(event.u.input2.data + 29U) != first_sensor_timestamp && std::equal(first_sensor_values.begin(), first_sensor_values.end(), event.u.input2.data + 17U);
       }
@@ -1744,7 +1817,7 @@ namespace lvh::detail::test {
     static_cast<void>(write_uhid_event(descriptors[1], event));
     if (read_uhid_event_type(descriptors[1], UHID_GET_REPORT_REPLY, event)) {
       const auto report_size = static_cast<std::size_t>(event.u.get_report_reply.size);
-      result.saw_dualsense_pairing = event.u.get_report_reply.err == 0 && report_size > 7U &&
+      result.dualsense.saw_pairing = event.u.get_report_reply.err == 0 && report_size > 7U &&
                                      event.u.get_report_reply.data[0] == 0x09 &&
                                      event.u.get_report_reply.data[1] == 0x07 &&
                                      event.u.get_report_reply.data[6] == 0x02;
@@ -1755,7 +1828,7 @@ namespace lvh::detail::test {
           playstation_crc_seed(playstation_feature_reports::playstation_feature_crc_seed)
         );
         const auto actual_crc = read_u32_le(event.u.get_report_reply.data + crc_offset);
-        result.saw_dualsense_feature_crc = expected_crc == actual_crc;
+        result.dualsense.saw_feature_crc = expected_crc == actual_crc;
       }
     }
 
@@ -1785,7 +1858,7 @@ namespace lvh::detail::test {
                                  event.u.create2.rd_size == options.profile.report_descriptor.size();
 
     if (read_uhid_event_type(descriptors[1], UHID_INPUT2, event)) {
-      result.saw_dualshock4_usb_input =
+      result.dualshock4.saw_usb_input =
         event.u.input2.size == options.profile.input_report_size && event.u.input2.data[0] == options.profile.report_id;
     }
 
@@ -1816,7 +1889,7 @@ namespace lvh::detail::test {
     event.u.get_report.rnum = 0x02;
     static_cast<void>(write_uhid_event(descriptors[1], event));
     if (read_uhid_event_type(descriptors[1], UHID_GET_REPORT_REPLY, event)) {
-      result.saw_dualshock4_calibration = event.u.get_report_reply.err == 0 && event.u.get_report_reply.size == 37 &&
+      result.dualshock4.saw_calibration = event.u.get_report_reply.err == 0 && event.u.get_report_reply.size == 37 &&
                                           event.u.get_report_reply.data[0] == 0x02;
     }
 
@@ -1826,7 +1899,7 @@ namespace lvh::detail::test {
     event.u.get_report.rnum = 0x12;
     static_cast<void>(write_uhid_event(descriptors[1], event));
     if (read_uhid_event_type(descriptors[1], UHID_GET_REPORT_REPLY, event)) {
-      result.saw_dualshock4_pairing = event.u.get_report_reply.err == 0 && event.u.get_report_reply.size == 16 &&
+      result.dualshock4.saw_pairing = event.u.get_report_reply.err == 0 && event.u.get_report_reply.size == 16 &&
                                       event.u.get_report_reply.data[0] == 0x12 &&
                                       event.u.get_report_reply.data[1] == 0x07 &&
                                       event.u.get_report_reply.data[6] == 0x02;
@@ -1838,7 +1911,7 @@ namespace lvh::detail::test {
     event.u.get_report.rnum = 0xA3;
     static_cast<void>(write_uhid_event(descriptors[1], event));
     if (read_uhid_event_type(descriptors[1], UHID_GET_REPORT_REPLY, event)) {
-      result.saw_dualshock4_firmware = event.u.get_report_reply.err == 0 && event.u.get_report_reply.size == 49 &&
+      result.dualshock4.saw_firmware = event.u.get_report_reply.err == 0 && event.u.get_report_reply.size == 49 &&
                                        event.u.get_report_reply.data[0] == 0xA3;
     }
 
@@ -1876,7 +1949,7 @@ namespace lvh::detail::test {
         const auto crc_offset = report_size - 4U;
         const auto expected_crc = crc32(std::span<const std::uint8_t> {event.u.input2.data, crc_offset}, playstation_crc_seed(0xA1));
         const auto actual_crc = read_u32_le(event.u.input2.data + crc_offset);
-        result.saw_dualshock4_bluetooth_input = expected_crc == actual_crc;
+        result.dualshock4.saw_bluetooth_input = expected_crc == actual_crc;
       }
     }
 
@@ -1887,7 +1960,7 @@ namespace lvh::detail::test {
     static_cast<void>(write_uhid_event(descriptors[1], event));
     if (read_uhid_event_type(descriptors[1], UHID_GET_REPORT_REPLY, event)) {
       const auto report_size = static_cast<std::size_t>(event.u.get_report_reply.size);
-      result.saw_dualshock4_calibration = event.u.get_report_reply.err == 0 && report_size == 41U &&
+      result.dualshock4.saw_calibration = event.u.get_report_reply.err == 0 && report_size == 41U &&
                                           event.u.get_report_reply.data[0] == 0x05;
       if (report_size >= 4U) {
         const auto crc_offset = report_size - 4U;
@@ -1896,7 +1969,7 @@ namespace lvh::detail::test {
           playstation_crc_seed(playstation_feature_reports::playstation_feature_crc_seed)
         );
         const auto actual_crc = read_u32_le(event.u.get_report_reply.data + crc_offset);
-        result.saw_dualshock4_feature_crc = expected_crc == actual_crc;
+        result.dualshock4.saw_feature_crc = expected_crc == actual_crc;
       }
     }
 
@@ -1906,7 +1979,7 @@ namespace lvh::detail::test {
     event.u.get_report.rnum = 0x12;
     static_cast<void>(write_uhid_event(descriptors[1], event));
     if (read_uhid_event_type(descriptors[1], UHID_GET_REPORT_REPLY, event)) {
-      result.saw_dualshock4_pairing = event.u.get_report_reply.err == 0 && event.u.get_report_reply.size == 16 &&
+      result.dualshock4.saw_pairing = event.u.get_report_reply.err == 0 && event.u.get_report_reply.size == 16 &&
                                       event.u.get_report_reply.data[0] == 0x12 &&
                                       event.u.get_report_reply.data[1] == 0x07 &&
                                       event.u.get_report_reply.data[6] == 0x02;

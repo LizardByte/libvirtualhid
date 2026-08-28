@@ -65,6 +65,7 @@
 #include "core/backend.hpp"
 #if defined(__linux__)
   #include "shared/playstation_feature_reports.hpp"
+  #include "shared/switch_pro_protocol.hpp"
 #endif
 
 #include <libvirtualhid/profiles.hpp>
@@ -248,8 +249,8 @@ namespace lvh::detail {
         case xbox_360:
         case xbox_one:
         case xbox_series:
-        case switch_pro:
           return true;
+        case switch_pro:
         case dualshock4:
         case dualsense:
 #if defined(__FreeBSD__)
@@ -301,8 +302,11 @@ namespace lvh::detail {
 
 #if defined(__linux__)
     std::uint16_t to_uhid_bus(const DeviceProfile &profile) {
+      // Linux SDL2 HIDAPI requires BUS_USB hidraw devices to have a physical USB
+      // parent in sysfs. UHID devices do not, so expose Switch Pro through the
+      // Bluetooth HID path that accepts descriptor-driven virtual devices.
       if (profile.gamepad_kind == GamepadProfileKind::switch_pro) {
-        return BUS_VIRTUAL;
+        return BUS_BLUETOOTH;
       }
       return to_uhid_bus(profile.bus_type);
     }
@@ -3057,7 +3061,18 @@ namespace lvh::detail {
       void dispatch_output_report(const __u8 *data, std::size_t report_size) {
         const auto size = std::min<std::size_t>(report_size, UHID_DATA_MAX);
         std::vector<std::uint8_t> report(data, data + size);
+        send_switch_pro_reply(report);
         dispatch_output_report(report);
+      }
+
+      void send_switch_pro_reply(const std::vector<std::uint8_t> &report) {
+        if (profile_.gamepad_kind != GamepadProfileKind::switch_pro) {
+          return;
+        }
+
+        if (const auto reply = switch_pro_protocol::make_switch_pro_reply(report); reply.has_value()) {
+          static_cast<void>(write_input_report({reply->begin(), reply->end()}));
+        }
       }
 
       void dispatch_set_report(std::uint8_t report_number, const __u8 *data, std::size_t report_size) {
@@ -3199,6 +3214,7 @@ namespace lvh::detail {
       effective_profile.capabilities.supports_rgb_led = false;
       effective_profile.capabilities.supports_battery = false;
       effective_profile.capabilities.supports_adaptive_triggers = false;
+      effective_profile.capabilities.supports_player_leds = false;
       return effective_profile;
 #else
       static_cast<void>(requested_profile);

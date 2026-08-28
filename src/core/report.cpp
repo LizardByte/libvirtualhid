@@ -18,6 +18,8 @@
 #include <utility>
 
 // local includes
+#include "shared/switch_pro_protocol.hpp"
+
 #include <libvirtualhid/report.hpp>
 
 namespace lvh::reports {
@@ -74,6 +76,30 @@ namespace lvh::reports {
     constexpr std::uint8_t switch_rumble_only_output_report_id = 0x10;
 
     constexpr std::size_t switch_rumble_output_report_size = 10;
+
+    constexpr std::uint8_t switch_set_player_lights_subcommand = 0x30;
+
+    constexpr std::uint8_t switch_set_home_light_subcommand = 0x38;
+
+    constexpr float switch_acceleration_scale = 4096.0F / 9.80665F;
+
+    constexpr float switch_gyroscope_scale = 14.2842F;
+
+    std::uint8_t decode_switch_home_light_intensity(std::byte encoded_intensity) {
+      const auto intensity = std::to_integer<std::uint8_t>(encoded_intensity >> 4U);
+      if (intensity == 0U) {
+        return 0U;
+      }
+      if (intensity <= 6U) {
+        return static_cast<std::uint8_t>(std::lround(static_cast<float>(intensity) * 25.5F));
+      }
+      if (intensity == 15U) {
+        return 255U;
+      }
+
+      const auto normalized = (static_cast<float>(intensity) - 0.5F) / 15.0F;
+      return static_cast<std::uint8_t>(std::lround(std::pow(normalized, 1.0F / 2.13F) * 255.0F));
+    }
 
     // SDL maps 16-bit rumble strengths to Nintendo's shared 101-step amplitude
     // scale. This is the inverse table for the packed high- and low-band values:
@@ -950,6 +976,47 @@ namespace lvh::reports {
       }
     }
 
+    void append_switch_pro_outputs(
+      const std::vector<std::uint8_t> &report,
+      std::vector<GamepadOutput> &outputs
+    ) {
+      if (const auto rumble = decode_switch_rumble_report(report); rumble.has_value()) {
+        GamepadOutput output;
+        output.kind = GamepadOutputKind::rumble;
+        output.low_frequency_rumble = rumble->low_frequency;
+        output.high_frequency_rumble = rumble->high_frequency;
+        output.raw_report = report;
+        outputs.push_back(std::move(output));
+      }
+      if (
+        report.size() >= 12U && report[0] == switch_rumble_and_subcommand_output_report_id &&
+        report[10] == switch_set_player_lights_subcommand
+      ) {
+        GamepadOutput output;
+        output.kind = GamepadOutputKind::player_leds;
+        const auto player_lights = std::byte {report[11]};
+        for (std::size_t index = 0; index < output.player_leds.size(); ++index) {
+          output.player_leds[index] = (player_lights & (std::byte {1} << index)) != zero_byte;
+          output.flashing_player_leds[index] =
+            (player_lights & (std::byte {1} << (index + 4U))) != zero_byte;
+        }
+        output.raw_report = report;
+        outputs.push_back(std::move(output));
+      }
+      if (
+        report.size() >= 15U && report[0] == switch_rumble_and_subcommand_output_report_id &&
+        report[10] == switch_set_home_light_subcommand
+      ) {
+        GamepadOutput output;
+        output.kind = GamepadOutputKind::rgb_led;
+        output.red = decode_switch_home_light_intensity(std::byte {report[12]});
+        output.green = output.red;
+        output.blue = output.red;
+        output.raw_report = report;
+        outputs.push_back(std::move(output));
+      }
+    }
+
   }  // namespace
 
   float clamp_axis(float value) {
@@ -1061,6 +1128,22 @@ namespace lvh::reports {
     report[offset + 2U] = to_byte((y >> 4U) & 0xFFU);
   }
 
+  void write_switch_imu_sample(
+    ByteReport &report,
+    std::size_t offset,
+    const Vector3 &acceleration,
+    const Vector3 &gyroscope
+  ) {
+    // Nintendo's native coordinate system differs from the portable
+    // PlayStation-style coordinate system exposed by GamepadState.
+    write_i16(report, offset, scale_i16(-acceleration.z, switch_acceleration_scale));
+    write_i16(report, offset + 2U, scale_i16(-acceleration.x, switch_acceleration_scale));
+    write_i16(report, offset + 4U, scale_i16(acceleration.y, switch_acceleration_scale));
+    write_i16(report, offset + 6U, scale_i16(-gyroscope.z, switch_gyroscope_scale));
+    write_i16(report, offset + 8U, scale_i16(-gyroscope.x, switch_gyroscope_scale));
+    write_i16(report, offset + 10U, scale_i16(gyroscope.y, switch_gyroscope_scale));
+  }
+
   std::byte switch_battery_and_connection(const std::optional<GamepadBattery> &battery) {
     constexpr auto usb_connection = std::byte {0x01};
     if (!battery.has_value()) {
@@ -1151,6 +1234,7 @@ namespace lvh::reports {
 
     ByteReport report(profile.input_report_size, zero_byte);
     report[0] = to_byte(profile.report_id);
+    report[1] = to_byte(detail::switch_pro_protocol::next_switch_pro_packet_timer());
     report[2] = switch_battery_and_connection(normalized.battery);
 
     if (normalized.buttons.test(x)) {
@@ -1222,6 +1306,11 @@ namespace lvh::reports {
       normalize_switch_stick_axis(normalized.right_stick.x),
       normalize_switch_stick_axis(normalized.right_stick.y)
     );
+    const auto acceleration = normalized.acceleration.value_or(Vector3 {.y = 9.80665F});
+    const auto gyroscope = normalized.gyroscope.value_or(Vector3 {});
+    for (const auto offset : {13U, 25U, 37U}) {
+      write_switch_imu_sample(report, offset, acceleration, gyroscope);
+    }
     return to_uint8_report(report);
   }
 
@@ -1302,13 +1391,8 @@ namespace lvh::reports {
     }
 
     if (profile.gamepad_kind == GamepadProfileKind::switch_pro) {
-      if (const auto rumble = decode_switch_rumble_report(report); rumble.has_value()) {
-        GamepadOutput output;
-        output.kind = GamepadOutputKind::rumble;
-        output.low_frequency_rumble = rumble->low_frequency;
-        output.high_frequency_rumble = rumble->high_frequency;
-        output.raw_report = report;
-        outputs.push_back(std::move(output));
+      append_switch_pro_outputs(report, outputs);
+      if (!outputs.empty()) {
         return outputs;
       }
     }

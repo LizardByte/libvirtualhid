@@ -58,6 +58,7 @@ TEST(VirtualHidControlModelTest, NamesKnownAndFallbackEnumValues) {
   EXPECT_EQ(control::output_kind_name(lvh::GamepadOutputKind::adaptive_triggers), L"adaptive triggers");
   EXPECT_EQ(control::output_kind_name(lvh::GamepadOutputKind::raw_report), L"raw report");
   EXPECT_EQ(control::output_kind_name(lvh::GamepadOutputKind::trigger_rumble), L"trigger rumble");
+  EXPECT_EQ(control::output_kind_name(lvh::GamepadOutputKind::player_leds), L"player leds");
   EXPECT_EQ(control::output_kind_name(static_cast<lvh::GamepadOutputKind>(255)), L"raw report");
 
   EXPECT_EQ(control::battery_state_name(lvh::GamepadBatteryState::unknown), L"unknown");
@@ -191,11 +192,11 @@ TEST(VirtualHidControlModelTest, SummarizesProfileFeatures) {
 
   EXPECT_EQ(
     control::profile_feature_summary(generic),
-    L"Features: battery no | rumble yes | trigger rumble no | RGB LED no | adaptive triggers no | raw output yes"
+    L"Features: battery no | rumble yes | trigger rumble no | RGB LED no | player LEDs no | adaptive triggers no | raw output yes"
   );
   EXPECT_EQ(
     control::profile_feature_summary(dualsense),
-    L"Features: battery yes | rumble yes | trigger rumble no | RGB LED yes | adaptive triggers yes | raw output yes"
+    L"Features: battery yes | rumble yes | trigger rumble no | RGB LED yes | player LEDs no | adaptive triggers yes | raw output yes"
   );
   EXPECT_EQ(
     control::device_feature_summary(mouse),
@@ -256,10 +257,13 @@ TEST(VirtualHidControlModelTest, SummarizesOutputState) {
   state.latest_rgb_led->blue = 3;
   state.latest_adaptive_triggers = output(adaptive_triggers);
   state.latest_adaptive_triggers->adaptive_trigger_flags = 4;
+  state.latest_player_leds = output(player_leds);
+  state.latest_player_leds->player_leds = {true, false, true, false};
+  state.latest_player_leds->flashing_player_leds = {false, true, false, true};
 
   EXPECT_EQ(
     control::output_summary(state, dualsense),
-    L"Output: rumble low=10 high=20 | trigger rumble L=30 R=40 | RGB 1,2,3 | adaptive flags=4"
+    L"Output: rumble low=10 high=20 | trigger rumble L=30 R=40 | RGB 1,2,3 | adaptive flags=4 | player LEDs solid=1010 flashing=0101"
   );
 }
 
@@ -287,14 +291,18 @@ TEST(VirtualHidControlModelTest, RecordsOutputsAndMaintainsLatestSummaryFields) 
   adaptive.adaptive_trigger_flags = 8;
   control::record_output(state, adaptive, next_sequence, 3);
 
+  auto player_leds = output(lvh::GamepadOutputKind::player_leds);
+  player_leds.player_leds = {true, false, true, false};
+  control::record_output(state, player_leds, next_sequence, 3);
+
   auto raw = output(lvh::GamepadOutputKind::raw_report);
   raw.raw_report = {0x12, 0x34};
   control::record_output(state, raw, next_sequence, 3);
 
   ASSERT_EQ(state.outputs.size(), 3U);
-  EXPECT_EQ(state.outputs.front().sequence, 9U);
-  EXPECT_EQ(state.outputs.back().sequence, 11U);
-  EXPECT_EQ(next_sequence, 12U);
+  EXPECT_EQ(state.outputs.front().sequence, 10U);
+  EXPECT_EQ(state.outputs.back().sequence, 12U);
+  EXPECT_EQ(next_sequence, 13U);
 
   ASSERT_TRUE(state.latest_rumble.has_value());
   EXPECT_EQ(state.latest_rumble->low_frequency_rumble, 100);
@@ -304,6 +312,8 @@ TEST(VirtualHidControlModelTest, RecordsOutputsAndMaintainsLatestSummaryFields) 
   EXPECT_EQ(state.latest_rgb_led->blue, 7);
   ASSERT_TRUE(state.latest_adaptive_triggers.has_value());
   EXPECT_EQ(state.latest_adaptive_triggers->adaptive_trigger_flags, 8);
+  ASSERT_TRUE(state.latest_player_leds.has_value());
+  EXPECT_EQ(state.latest_player_leds->player_leds, (std::array {true, false, true, false}));
   ASSERT_TRUE(state.latest_raw_report.has_value());
   EXPECT_EQ(state.latest_raw_report->raw_report, (std::vector<std::uint8_t> {0x12, 0x34}));
 }

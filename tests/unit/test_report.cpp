@@ -180,7 +180,6 @@ TEST(ReportTest, PacksSwitchProReport) {
 
   ASSERT_EQ(report.size(), profile.input_report_size);
   EXPECT_EQ(report[0], 0x30U);
-  EXPECT_EQ(report[1], 0x00U);  // Packet timer.
   EXPECT_EQ(report[2], 0x81U);  // Full battery and USB connection when battery state is unknown.
   EXPECT_EQ(report[3], 0x0CU);  // B and A.
   EXPECT_EQ(report[4], 0x32U);  // Plus, Home, and Capture.
@@ -193,6 +192,48 @@ TEST(ReportTest, PacksSwitchProReport) {
   EXPECT_EQ(report[9], 0xFFU);
   EXPECT_EQ(report[10], 0x0BU);
   EXPECT_EQ(report[11], 0x40U);
+
+  // Each full report carries three native IMU samples. A missing sensor value
+  // represents a stationary controller under one g of gravity.
+  for (const auto offset : {13U, 25U, 37U}) {
+    EXPECT_EQ(read_i16_le(report, offset), 0);
+    EXPECT_EQ(read_i16_le(report, offset + 2U), 0);
+    EXPECT_EQ(read_i16_le(report, offset + 4U), 4096);
+    EXPECT_EQ(read_i16_le(report, offset + 6U), 0);
+    EXPECT_EQ(read_i16_le(report, offset + 8U), 0);
+    EXPECT_EQ(read_i16_le(report, offset + 10U), 0);
+  }
+}
+
+TEST(ReportTest, AdvancesSwitchProPacketTimerForEachInputReport) {
+  const auto profile = lvh::profiles::switch_pro();
+
+  const auto first = lvh::reports::pack_input_report(profile, {});
+  const auto second = lvh::reports::pack_input_report(profile, {});
+
+  ASSERT_EQ(first.size(), profile.input_report_size);
+  ASSERT_EQ(second.size(), profile.input_report_size);
+  EXPECT_EQ(second[1], static_cast<std::uint8_t>(first[1] + 1U));
+}
+
+TEST(ReportTest, PacksSwitchProMotionInEveryImuSample) {
+  const auto profile = lvh::profiles::switch_pro();
+
+  lvh::GamepadState state;
+  state.acceleration = lvh::Vector3 {.x = 9.80665F, .y = 19.6133F, .z = -9.80665F};
+  state.gyroscope = lvh::Vector3 {.x = 1.0F, .y = 2.0F, .z = -3.0F};
+
+  const auto report = lvh::reports::pack_input_report(profile, state);
+
+  ASSERT_EQ(report.size(), profile.input_report_size);
+  for (const auto offset : {13U, 25U, 37U}) {
+    EXPECT_EQ(read_i16_le(report, offset), 4096);
+    EXPECT_EQ(read_i16_le(report, offset + 2U), -4096);
+    EXPECT_EQ(read_i16_le(report, offset + 4U), 8192);
+    EXPECT_EQ(read_i16_le(report, offset + 6U), 43);
+    EXPECT_EQ(read_i16_le(report, offset + 8U), -14);
+    EXPECT_EQ(read_i16_le(report, offset + 10U), 29);
+  }
 }
 
 TEST(ReportTest, PacksXboxGipNeutralReport) {
@@ -663,6 +704,158 @@ TEST(ReportTest, ParsesSwitchProRumbleFromSubcommandReport) {
   EXPECT_EQ(output.low_frequency_rumble, 64315U);
   EXPECT_EQ(output.high_frequency_rumble, 65535U);
   EXPECT_EQ(output.raw_report, report);
+}
+
+TEST(ReportTest, ParsesSwitchProPlayerLightsAlongsideRumble) {
+  const auto profile = lvh::profiles::switch_pro();
+  const std::vector<std::uint8_t> report {
+    0x01,
+    0x07,
+    0x00,
+    0x01,
+    0x40,
+    0x40,
+    0x00,
+    0x01,
+    0x40,
+    0x40,
+    0x30,
+    0xA5,
+  };
+
+  const auto outputs = lvh::reports::parse_output_reports(profile, report);
+
+  ASSERT_EQ(outputs.size(), 2U);
+  EXPECT_EQ(outputs[0].kind, lvh::GamepadOutputKind::rumble);
+  EXPECT_EQ(outputs[0].low_frequency_rumble, 0U);
+  EXPECT_EQ(outputs[0].high_frequency_rumble, 0U);
+  EXPECT_EQ(outputs[1].kind, lvh::GamepadOutputKind::player_leds);
+  EXPECT_EQ(outputs[1].player_leds, (std::array {true, false, true, false}));
+  EXPECT_EQ(outputs[1].flashing_player_leds, (std::array {false, true, false, true}));
+  EXPECT_EQ(outputs[1].raw_report, report);
+}
+
+TEST(ReportTest, ParsesSwitchProPlayerLightsWithMalformedRumbleData) {
+  const auto profile = lvh::profiles::switch_pro();
+  const std::vector<std::uint8_t> report {
+    0x01,
+    0x00,
+    0x74,
+    0x1A,
+    0x3D,
+    0x20,
+    0x74,
+    0x1A,
+    0x3D,
+    0x59,
+    0x30,
+    0x03,
+  };
+
+  const auto outputs = lvh::reports::parse_output_reports(profile, report);
+
+  ASSERT_EQ(outputs.size(), 1U);
+  EXPECT_EQ(outputs[0].kind, lvh::GamepadOutputKind::player_leds);
+  EXPECT_EQ(outputs[0].player_leds, (std::array {true, true, false, false}));
+  EXPECT_EQ(outputs[0].flashing_player_leds, (std::array {false, false, false, false}));
+}
+
+TEST(ReportTest, ParsesSwitchProHomeLightAlongsideRumble) {
+  const auto profile = lvh::profiles::switch_pro();
+  const std::vector<std::uint8_t> report {
+    0x01,
+    0x09,
+    0x00,
+    0x01,
+    0x40,
+    0x40,
+    0x00,
+    0x01,
+    0x40,
+    0x40,
+    0x38,
+    0x01,
+    0xF0,
+    0xF0,
+    0x00,
+  };
+
+  const auto outputs = lvh::reports::parse_output_reports(profile, report);
+
+  ASSERT_EQ(outputs.size(), 2U);
+  EXPECT_EQ(outputs[0].kind, lvh::GamepadOutputKind::rumble);
+  EXPECT_EQ(outputs[1].kind, lvh::GamepadOutputKind::rgb_led);
+  EXPECT_EQ(outputs[1].red, 255U);
+  EXPECT_EQ(outputs[1].green, 255U);
+  EXPECT_EQ(outputs[1].blue, 255U);
+  EXPECT_EQ(outputs[1].raw_report, report);
+}
+
+TEST(ReportTest, ParsesSwitchProHomeLightWithMalformedRumbleData) {
+  const auto profile = lvh::profiles::switch_pro();
+  const std::vector<std::uint8_t> report {
+    0x01,
+    0x00,
+    0x74,
+    0x1A,
+    0x3D,
+    0x20,
+    0x74,
+    0x1A,
+    0x3D,
+    0x59,
+    0x38,
+    0x01,
+    0x30,
+    0x30,
+    0x00,
+  };
+
+  const auto outputs = lvh::reports::parse_output_reports(profile, report);
+
+  ASSERT_EQ(outputs.size(), 1U);
+  EXPECT_EQ(outputs[0].kind, lvh::GamepadOutputKind::rgb_led);
+  EXPECT_EQ(outputs[0].red, 77U);
+  EXPECT_EQ(outputs[0].green, 77U);
+  EXPECT_EQ(outputs[0].blue, 77U);
+}
+
+TEST(ReportTest, ParsesSwitchProHomeLightIntensityCurve) {
+  const auto profile = lvh::profiles::switch_pro();
+  std::vector<std::uint8_t> report {
+    0x01,
+    0x00,
+    0x74,
+    0x1A,
+    0x3D,
+    0x20,
+    0x74,
+    0x1A,
+    0x3D,
+    0x59,
+    0x38,
+    0x01,
+    0x00,
+    0x00,
+    0x00,
+  };
+  const std::array intensity_cases {
+    std::array<std::uint8_t, 2> {0x00, 0},
+    std::array<std::uint8_t, 2> {0x80, 184},
+  };
+
+  for (const auto &[encoded_intensity, expected_intensity] : intensity_cases) {
+    report[12] = encoded_intensity;
+    report[13] = encoded_intensity;
+
+    const auto outputs = lvh::reports::parse_output_reports(profile, report);
+
+    ASSERT_EQ(outputs.size(), 1U);
+    EXPECT_EQ(outputs[0].kind, lvh::GamepadOutputKind::rgb_led);
+    EXPECT_EQ(outputs[0].red, expected_intensity);
+    EXPECT_EQ(outputs[0].green, expected_intensity);
+    EXPECT_EQ(outputs[0].blue, expected_intensity);
+  }
 }
 
 TEST(ReportTest, ParsesSwitchProNeutralRumbleReport) {

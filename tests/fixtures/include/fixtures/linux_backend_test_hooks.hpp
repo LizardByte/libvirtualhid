@@ -138,6 +138,101 @@ namespace lvh::detail::test {
   };
 
   /**
+   * @brief DualSense observations from a socketpair-backed UHID test.
+   */
+  struct LinuxUhidDualSenseObservation {
+    /**
+     * @brief Whether the peer observed a calibration reply.
+     */
+    bool saw_calibration = false;
+
+    /**
+     * @brief Whether the peer observed a pairing reply.
+     */
+    bool saw_pairing = false;
+
+    /**
+     * @brief Whether the peer observed a firmware reply.
+     */
+    bool saw_firmware = false;
+
+    /**
+     * @brief Whether the peer observed a signed Bluetooth feature reply.
+     */
+    bool saw_feature_crc = false;
+
+    /**
+     * @brief Whether periodic Bluetooth reports preserved motion and advanced sensor metadata.
+     */
+    bool saw_bluetooth_input_with_live_sensor_metadata = false;
+  };
+
+  /**
+   * @brief DualShock 4 observations from a socketpair-backed UHID test.
+   */
+  struct LinuxUhidDualShock4Observation {
+    /**
+     * @brief Whether the peer observed a calibration reply.
+     */
+    bool saw_calibration = false;
+
+    /**
+     * @brief Whether the peer observed a pairing reply.
+     */
+    bool saw_pairing = false;
+
+    /**
+     * @brief Whether the peer observed a firmware reply.
+     */
+    bool saw_firmware = false;
+
+    /**
+     * @brief Whether the peer observed a signed Bluetooth feature reply.
+     */
+    bool saw_feature_crc = false;
+
+    /**
+     * @brief Whether the peer observed a Bluetooth-framed input report.
+     */
+    bool saw_bluetooth_input = false;
+
+    /**
+     * @brief Whether the peer observed a USB-framed input report.
+     */
+    bool saw_usb_input = false;
+  };
+
+  /**
+   * @brief Switch Pro observations from a socketpair-backed UHID test.
+   */
+  struct LinuxUhidSwitchProObservation {
+    /**
+     * @brief Whether the peer observed a subcommand acknowledgement input report.
+     */
+    bool saw_subcommand_reply = false;
+
+    /**
+     * @brief Packet timer carried by the observed subcommand reply.
+     */
+    std::optional<std::uint8_t> subcommand_reply_packet_timer;
+
+    /**
+     * @brief Whether the peer observed live IMU samples in a submitted input report.
+     */
+    bool saw_motion_input = false;
+
+    /**
+     * @brief Packet timer carried by the observed motion input report.
+     */
+    std::optional<std::uint8_t> motion_input_packet_timer;
+
+    /**
+     * @brief Whether the output callback exposed player indicator LEDs.
+     */
+    bool saw_player_leds = false;
+  };
+
+  /**
    * @brief Result from a socketpair-backed UHID lifecycle test.
    */
   struct LinuxUhidRoundTripResult {
@@ -172,59 +267,19 @@ namespace lvh::detail::test {
     bool saw_get_report_reply = false;
 
     /**
-     * @brief Whether the peer observed a DualSense calibration reply.
+     * @brief DualSense protocol observations.
      */
-    bool saw_dualsense_calibration = false;
+    LinuxUhidDualSenseObservation dualsense;
 
     /**
-     * @brief Whether the peer observed a DualShock 4 calibration reply.
+     * @brief DualShock 4 protocol observations.
      */
-    bool saw_dualshock4_calibration = false;
+    LinuxUhidDualShock4Observation dualshock4;
 
     /**
-     * @brief Whether the peer observed a DualSense pairing reply.
+     * @brief Switch Pro protocol observations.
      */
-    bool saw_dualsense_pairing = false;
-
-    /**
-     * @brief Whether the peer observed a DualShock 4 pairing reply.
-     */
-    bool saw_dualshock4_pairing = false;
-
-    /**
-     * @brief Whether the peer observed a DualSense firmware reply.
-     */
-    bool saw_dualsense_firmware = false;
-
-    /**
-     * @brief Whether the peer observed a DualShock 4 firmware reply.
-     */
-    bool saw_dualshock4_firmware = false;
-
-    /**
-     * @brief Whether the peer observed a signed Bluetooth DualSense feature reply.
-     */
-    bool saw_dualsense_feature_crc = false;
-
-    /**
-     * @brief Whether the peer observed a signed Bluetooth DualShock 4 feature reply.
-     */
-    bool saw_dualshock4_feature_crc = false;
-
-    /**
-     * @brief Whether periodic Bluetooth DualSense reports preserved motion and advanced sensor metadata.
-     */
-    bool saw_dualsense_bluetooth_input_with_live_sensor_metadata = false;
-
-    /**
-     * @brief Whether the peer observed a Bluetooth-framed DualShock 4 input report.
-     */
-    bool saw_dualshock4_bluetooth_input = false;
-
-    /**
-     * @brief Whether the peer observed a USB-framed DualShock 4 input report.
-     */
-    bool saw_dualshock4_usb_input = false;
+    LinuxUhidSwitchProObservation switch_pro;
 
     /**
      * @brief Whether the peer observed a set-report reply.
@@ -823,6 +878,13 @@ namespace lvh::detail::test {
    * @return Round-trip result.
    */
   LinuxUhidRoundTripResult linux_uhid_socketpair_roundtrip();
+
+  /**
+   * @brief Exercise Switch Pro UHID input, output, and subcommand replies over a socketpair.
+   *
+   * @return Round-trip result with motion and player-light observations.
+   */
+  LinuxUhidRoundTripResult linux_switch_pro_uhid_socketpair_reports();
 
   /**
    * @brief Exercise DualSense UHID feature-report replies over a socketpair.

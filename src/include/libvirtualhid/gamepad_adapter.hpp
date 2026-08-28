@@ -69,6 +69,11 @@ namespace lvh {
      * @brief Number of rear paddle buttons exposed by the profile.
      */
     std::uint8_t supported_rear_paddle_count = 0;
+
+    /**
+     * @brief Whether the profile supports player indicator LED output.
+     */
+    bool supports_player_leds = false;
   };
 
   /**
