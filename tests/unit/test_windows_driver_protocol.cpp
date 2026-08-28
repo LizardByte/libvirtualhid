@@ -140,10 +140,10 @@ TEST_F(WindowsDriverProtocolTest, SwitchProRepliesToUsbStatusAndHandshakeCommand
 TEST_F(WindowsDriverProtocolTest, SwitchProAcknowledgesInitializationSubcommands) {
   for (const auto subcommand : {0x03U, 0x30U, 0x38U, 0x40U, 0x41U, 0x48U}) {
     const auto report = switch_output_report(0x01, static_cast<std::uint8_t>(subcommand));
-    const auto reply = lvh::detail::switch_pro_protocol::make_switch_pro_reply(report);
+    const auto reply = lvh::detail::switch_pro_protocol::make_switch_pro_reply(report, 0x42U);
     ASSERT_TRUE(reply.has_value());
     EXPECT_EQ(reply->at(0), 0x21);
-    EXPECT_EQ(reply->at(1), 0x07);
+    EXPECT_EQ(reply->at(1), 0x42);
     EXPECT_EQ(reply->at(2), 0x81);
     EXPECT_EQ(reply->at(13), 0x80);
     EXPECT_EQ(reply->at(14), subcommand);

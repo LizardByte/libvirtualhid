@@ -7,6 +7,7 @@
 // standard includes
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -16,6 +17,11 @@ namespace lvh::detail::switch_pro_protocol {
 
   inline constexpr std::size_t switch_pro_report_size = 64U;
   using SwitchProReport = std::array<std::uint8_t, switch_pro_report_size>;
+
+  inline std::uint8_t next_switch_pro_packet_timer() {
+    static std::atomic_uint32_t packet_timer {0};
+    return static_cast<std::uint8_t>(packet_timer.fetch_add(1U, std::memory_order_relaxed));
+  }
 
   namespace switch_pro_protocol_detail {
 
@@ -149,7 +155,10 @@ namespace lvh::detail::switch_pro_protocol {
 
   }  // namespace switch_pro_protocol_detail
 
-  inline std::optional<SwitchProReport> make_switch_pro_reply(std::span<const std::uint8_t> output_report) {
+  inline std::optional<SwitchProReport> make_switch_pro_reply(
+    std::span<const std::uint8_t> output_report,
+    std::optional<std::uint8_t> packet_timer = std::nullopt
+  ) {
     if (output_report.empty()) {
       return std::nullopt;
     }
@@ -184,7 +193,10 @@ namespace lvh::detail::switch_pro_protocol {
 
     SwitchProReport reply {};
     reply[0] = 0x21;
-    switch_pro_protocol_detail::set_neutral_controller_state(reply, output_report[1]);
+    switch_pro_protocol_detail::set_neutral_controller_state(
+      reply,
+      packet_timer.has_value() ? *packet_timer : next_switch_pro_packet_timer()
+    );
     auto acknowledgement = std::uint8_t {0x80};
     if (subcommand == 0x10U) {
       acknowledgement = 0x90;

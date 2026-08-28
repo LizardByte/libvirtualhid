@@ -858,7 +858,7 @@ TEST_F(WindowsConsumerTest, NativeSwitchHandshakeAndInputReportReachHidClient) {
   ASSERT_TRUE(player_lights_reply.has_value()) << "No Switch player-light acknowledgement reached the HID client";
   ASSERT_GE(player_lights_reply->size(), 15U);
   EXPECT_EQ(player_lights_reply->at(0), 0x21U);
-  EXPECT_EQ(player_lights_reply->at(1), 0x08U);
+  EXPECT_EQ(player_lights_reply->at(1), 0x00U);
   EXPECT_EQ(player_lights_reply->at(13), 0x80U);
   EXPECT_EQ(player_lights_reply->at(14), 0x30U);
 
@@ -885,6 +885,7 @@ TEST_F(WindowsConsumerTest, NativeSwitchHandshakeAndInputReportReachHidClient) {
   ASSERT_TRUE(input.has_value()) << "No native Switch 0x30 input report reached the HID client";
   ASSERT_EQ(input->size(), profile.input_report_size);
   EXPECT_EQ(input->at(0), 0x30U);
+  EXPECT_EQ(input->at(1), static_cast<std::uint8_t>(player_lights_reply->at(1) + 1U));
   EXPECT_EQ(input->at(3), 0x08U);  // Nintendo A in the native right-button byte.
   EXPECT_EQ(input->at(4), 0x14U);  // R3 and Home.
   EXPECT_EQ(input->at(5), 0x08U);  // D-pad left.
@@ -914,7 +915,7 @@ TEST_F(WindowsConsumerTest, NativeSwitchHandshakeAndInputReportReachHidClient) {
   const auto next_input = read_hid_report_with_timeout(reader.get(), hid_interface->input_report_size, 5s);
   ASSERT_TRUE(next_input.has_value()) << "No second native Switch motion report reached the HID client";
   ASSERT_EQ(next_input->size(), profile.input_report_size);
-  EXPECT_EQ(next_input->at(1), static_cast<std::uint8_t>(input->at(1) + 3U));
+  EXPECT_EQ(next_input->at(1), static_cast<std::uint8_t>(input->at(1) + 1U));
   EXPECT_NE(next_input->at(19), input->at(19));
   ASSERT_TRUE(created.adapter->close().ok());
 }

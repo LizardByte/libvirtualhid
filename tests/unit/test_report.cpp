@@ -205,7 +205,7 @@ TEST(ReportTest, PacksSwitchProReport) {
   }
 }
 
-TEST(ReportTest, AdvancesSwitchProPacketTimerForEachImuBatch) {
+TEST(ReportTest, AdvancesSwitchProPacketTimerForEachInputReport) {
   const auto profile = lvh::profiles::switch_pro();
 
   const auto first = lvh::reports::pack_input_report(profile, {});
@@ -213,7 +213,7 @@ TEST(ReportTest, AdvancesSwitchProPacketTimerForEachImuBatch) {
 
   ASSERT_EQ(first.size(), profile.input_report_size);
   ASSERT_EQ(second.size(), profile.input_report_size);
-  EXPECT_EQ(second[1], static_cast<std::uint8_t>(first[1] + 3U));
+  EXPECT_EQ(second[1], static_cast<std::uint8_t>(first[1] + 1U));
 }
 
 TEST(ReportTest, PacksSwitchProMotionInEveryImuSample) {

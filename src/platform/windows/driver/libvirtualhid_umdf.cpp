@@ -122,6 +122,7 @@ namespace {
     lvh::detail::windows::VhfInputReportQueue pending_input_reports;
     std::shared_ptr<std::vector<std::uint8_t>> in_flight_input_report;
     std::size_t active_input_submissions {};
+    std::uint8_t switch_pro_packet_timer {};
     bool vhf_ready_for_input_report {};
     bool shutting_down {};
   };
@@ -254,6 +255,12 @@ namespace {
     }
 
     auto report = std::make_shared<std::vector<std::uint8_t>>(std::move(*pending));
+    if (
+      record.request.gamepad_kind == LVH_WINDOWS_GAMEPAD_SWITCH_PRO && report->size() > 1U &&
+      (report->at(0) == 0x21U || report->at(0) == 0x30U)
+    ) {
+      report->at(1) = record.switch_pro_packet_timer++;
+    }
     const auto configured_report_id = record.request.hardware_ids.report_id;
     const auto report_id = configured_report_id == 0U || report->empty() ? configured_report_id : report->front();
 
