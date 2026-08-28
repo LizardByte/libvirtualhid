@@ -180,7 +180,6 @@ TEST(ReportTest, PacksSwitchProReport) {
 
   ASSERT_EQ(report.size(), profile.input_report_size);
   EXPECT_EQ(report[0], 0x30U);
-  EXPECT_EQ(report[1], 0x00U);  // Packet timer.
   EXPECT_EQ(report[2], 0x81U);  // Full battery and USB connection when battery state is unknown.
   EXPECT_EQ(report[3], 0x0CU);  // B and A.
   EXPECT_EQ(report[4], 0x32U);  // Plus, Home, and Capture.
@@ -204,6 +203,17 @@ TEST(ReportTest, PacksSwitchProReport) {
     EXPECT_EQ(read_i16_le(report, offset + 8U), 0);
     EXPECT_EQ(read_i16_le(report, offset + 10U), 0);
   }
+}
+
+TEST(ReportTest, AdvancesSwitchProPacketTimerForEachImuBatch) {
+  const auto profile = lvh::profiles::switch_pro();
+
+  const auto first = lvh::reports::pack_input_report(profile, {});
+  const auto second = lvh::reports::pack_input_report(profile, {});
+
+  ASSERT_EQ(first.size(), profile.input_report_size);
+  ASSERT_EQ(second.size(), profile.input_report_size);
+  EXPECT_EQ(second[1], static_cast<std::uint8_t>(first[1] + 3U));
 }
 
 TEST(ReportTest, PacksSwitchProMotionInEveryImuSample) {

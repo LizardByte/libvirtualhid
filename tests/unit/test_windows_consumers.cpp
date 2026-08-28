@@ -908,6 +908,14 @@ TEST_F(WindowsConsumerTest, NativeSwitchHandshakeAndInputReportReachHidClient) {
     EXPECT_EQ(read_i16(offset + 8U), -14);
     EXPECT_EQ(read_i16(offset + 10U), 29);
   }
+
+  state.gyroscope = lvh::Vector3 {.x = -4.0F, .y = 5.0F, .z = 6.0F};
+  ASSERT_TRUE(created.adapter->set_state(state).ok());
+  const auto next_input = read_hid_report_with_timeout(reader.get(), hid_interface->input_report_size, 5s);
+  ASSERT_TRUE(next_input.has_value()) << "No second native Switch motion report reached the HID client";
+  ASSERT_EQ(next_input->size(), profile.input_report_size);
+  EXPECT_EQ(next_input->at(1), static_cast<std::uint8_t>(input->at(1) + 3U));
+  EXPECT_NE(next_input->at(19), input->at(19));
   ASSERT_TRUE(created.adapter->close().ok());
 }
 

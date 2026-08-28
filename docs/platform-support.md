@@ -83,7 +83,9 @@ Switch Pro USB and subcommand initialization sequence and accepts the native
 `0x30` input layout, so descriptor-aware consumers can initialize those
 controllers before sending their native output reports. The Switch Pro profile
 uses the `0x0210` hardware revision reported by a physical Nintendo controller,
-and the Windows VHF device exposes that revision to HID consumers.
+and the Windows VHF device exposes that revision to HID consumers. Consecutive
+full-state reports also advance Nintendo's packet timer by their three packed
+IMU samples so consumers can distinguish new sensor batches.
 
 Windows VHF devices do not expose a Bluetooth transport identity to HIDAPI.
 The Windows backend therefore reports DualShock 4 and DualSense requests as

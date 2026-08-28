@@ -83,6 +83,13 @@ namespace lvh::reports {
 
     constexpr float switch_gyroscope_scale = 14.2842F;
 
+    std::uint8_t switch_pro_packet_timer() {
+      // Native full-state reports carry three IMU samples spaced five
+      // milliseconds apart, so the controller timer advances by three.
+      static std::atomic_uint32_t packet_timer = 0;
+      return static_cast<std::uint8_t>(packet_timer.fetch_add(3U, std::memory_order_relaxed));
+    }
+
     std::uint8_t decode_switch_home_light_intensity(std::byte encoded_intensity) {
       const auto intensity = std::to_integer<std::uint8_t>(encoded_intensity >> 4U);
       if (intensity == 0U) {
@@ -1232,6 +1239,7 @@ namespace lvh::reports {
 
     ByteReport report(profile.input_report_size, zero_byte);
     report[0] = to_byte(profile.report_id);
+    report[1] = to_byte(switch_pro_packet_timer());
     report[2] = switch_battery_and_connection(normalized.battery);
 
     if (normalized.buttons.test(x)) {
