@@ -212,9 +212,19 @@ namespace lvh::detail::test {
     bool saw_subcommand_reply = false;
 
     /**
+     * @brief Packet timer carried by the observed subcommand reply.
+     */
+    std::optional<std::uint8_t> subcommand_reply_packet_timer;
+
+    /**
      * @brief Whether the peer observed live IMU samples in a submitted input report.
      */
     bool saw_motion_input = false;
+
+    /**
+     * @brief Packet timer carried by the observed motion input report.
+     */
+    std::optional<std::uint8_t> motion_input_packet_timer;
 
     /**
      * @brief Whether the output callback exposed player indicator LEDs.

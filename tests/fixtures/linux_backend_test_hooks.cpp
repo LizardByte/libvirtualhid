@@ -1629,9 +1629,11 @@ namespace lvh::detail::test {
     event.u.output.data[11] = 0xA5;
     static_cast<void>(write_uhid_event(descriptors[1], event));
     if (read_uhid_event_type(descriptors[1], UHID_INPUT2, event)) {
+      if (event.u.input2.size > 1U) {
+        result.switch_pro.subcommand_reply_packet_timer = event.u.input2.data[1];
+      }
       result.switch_pro.saw_subcommand_reply = event.u.input2.size == options.profile.input_report_size &&
                                                event.u.input2.data[0] == 0x21 &&
-                                               event.u.input2.data[1] == 0x07 &&
                                                event.u.input2.data[13] == 0x80 &&
                                                event.u.input2.data[14] == 0x30;
     }
@@ -1643,6 +1645,9 @@ namespace lvh::detail::test {
     const auto report = reports::pack_input_report(options.profile, state);
     result.submit_status = gamepad.submit(state, report);
     if (read_uhid_event_type(descriptors[1], UHID_INPUT2, event)) {
+      if (event.u.input2.size > 1U) {
+        result.switch_pro.motion_input_packet_timer = event.u.input2.data[1];
+      }
       result.switch_pro.saw_motion_input = event.u.input2.size == report.size() &&
                                            event.u.input2.data[0] == 0x30 &&
                                            (event.u.input2.data[3] & 0x08U) != 0U &&

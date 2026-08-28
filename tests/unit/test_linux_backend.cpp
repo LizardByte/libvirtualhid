@@ -792,6 +792,12 @@ TEST_F(LinuxBackendTest, SocketpairBackedSwitchProUsesNativeUhidProtocol) {
   EXPECT_EQ(result.creation.name, lvh::profiles::switch_pro().name);
   EXPECT_TRUE(result.switch_pro.saw_subcommand_reply);
   EXPECT_TRUE(result.switch_pro.saw_motion_input);
+  ASSERT_TRUE(result.switch_pro.subcommand_reply_packet_timer.has_value());
+  ASSERT_TRUE(result.switch_pro.motion_input_packet_timer.has_value());
+  EXPECT_EQ(
+    *result.switch_pro.motion_input_packet_timer,
+    static_cast<std::uint8_t>(*result.switch_pro.subcommand_reply_packet_timer + 1U)
+  );
   EXPECT_TRUE(result.switch_pro.saw_player_leds);
   ASSERT_EQ(result.output.callback_count, 2U);
   EXPECT_EQ(result.output.last.kind, lvh::GamepadOutputKind::player_leds);
