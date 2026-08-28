@@ -117,9 +117,39 @@ namespace lvh::detail::test {
     bool waited_for_start = false;
 
     /**
+     * @brief Linux bus type carried by the observed create event.
+     */
+    std::uint16_t bus = 0;
+
+    /**
+     * @brief USB vendor id carried by the observed create event.
+     */
+    std::uint16_t vendor_id = 0;
+
+    /**
+     * @brief USB product id carried by the observed create event.
+     */
+    std::uint16_t product_id = 0;
+
+    /**
+     * @brief Device version carried by the observed create event.
+     */
+    std::uint16_t version = 0;
+
+    /**
      * @brief Product name carried by the observed create event.
      */
     std::string name;
+
+    /**
+     * @brief Physical path carried by the observed create event.
+     */
+    std::string physical_id;
+
+    /**
+     * @brief Unique identity carried by the observed create event.
+     */
+    std::string unique_id;
   };
 
   /**
@@ -135,6 +165,56 @@ namespace lvh::detail::test {
      * @brief Last output callback payload.
      */
     GamepadOutput last;
+
+    /**
+     * @brief Ordinary-rumble output observed during the round trip.
+     */
+    std::optional<GamepadOutput> rumble;
+
+    /**
+     * @brief Independent trigger-rumble output observed during the round trip.
+     */
+    std::optional<GamepadOutput> trigger_rumble;
+  };
+
+  /**
+   * @brief Xbox Bluetooth transport observations from a socketpair-backed UHID test.
+   */
+  struct LinuxUhidXboxObservation {
+    /**
+     * @brief Whether UHID creation used the 283-byte Linux Xbox BLE transport descriptor.
+     */
+    bool saw_transport_descriptor = false;
+
+    /**
+     * @brief Whether the descriptor maps sticks and triggers to canonical evdev axes.
+     */
+    bool saw_canonical_evdev_axes = false;
+
+    /**
+     * @brief Whether the transport advertises a HIDAPI-visible Game Pad application usage.
+     */
+    bool saw_gamepad_application_usage = false;
+
+    /**
+     * @brief Whether the UHID identity uses the canonical Bluetooth product and version.
+     */
+    bool saw_bluetooth_identity = false;
+
+    /**
+     * @brief Whether submitted normalized state was carried in a native Bluetooth input report.
+     */
+    bool saw_input = false;
+
+    /**
+     * @brief Whether the Guide button was carried in the native button bitmap.
+     */
+    bool saw_guide = false;
+
+    /**
+     * @brief Whether the profile-specific Consumer field matched the submitted Share state.
+     */
+    bool saw_profile_consumer_button = false;
   };
 
   /**
@@ -280,6 +360,11 @@ namespace lvh::detail::test {
      * @brief Switch Pro protocol observations.
      */
     LinuxUhidSwitchProObservation switch_pro;
+
+    /**
+     * @brief Xbox Bluetooth protocol observations.
+     */
+    LinuxUhidXboxObservation xbox;
 
     /**
      * @brief Whether the peer observed a set-report reply.
@@ -878,6 +963,38 @@ namespace lvh::detail::test {
    * @return Round-trip result.
    */
   LinuxUhidRoundTripResult linux_uhid_socketpair_roundtrip();
+
+  /**
+   * @brief Exercise an Xbox profile's Bluetooth input and four-motor output through a socketpair.
+   *
+   * @param kind Xbox One or Xbox Series profile kind.
+   * @return Captured lifecycle and protocol observations.
+   */
+  LinuxUhidRoundTripResult linux_xbox_bluetooth_uhid_socketpair_reports(GamepadProfileKind kind);
+
+  /**
+   * @brief Check whether the Linux backend prefers UHID for a gamepad profile.
+   *
+   * @param kind Gamepad profile kind.
+   * @return `true` when Linux attempts UHID before any fallback.
+   */
+  bool linux_gamepad_prefers_uhid(GamepadProfileKind kind);
+
+  /**
+   * @brief Check whether the Linux backend supports a gamepad profile through uinput.
+   *
+   * @param kind Gamepad profile kind.
+   * @return `true` when the profile can be created through uinput.
+   */
+  bool linux_gamepad_uses_uinput(GamepadProfileKind kind);
+
+  /**
+   * @brief Get the effective profile exposed by a Linux uinput fallback.
+   *
+   * @param kind Gamepad profile kind.
+   * @return Effective uinput profile.
+   */
+  DeviceProfile linux_uinput_effective_gamepad_profile(GamepadProfileKind kind);
 
   /**
    * @brief Exercise Switch Pro UHID input, output, and subcommand replies over a socketpair.

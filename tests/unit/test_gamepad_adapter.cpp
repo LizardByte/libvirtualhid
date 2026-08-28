@@ -29,6 +29,7 @@ TEST(GamepadAdapterTest, ReportsProfileSupport) {
 
   EXPECT_FALSE(lvh::gamepad_profile_support(xbox_360).supports_misc1_button);
   EXPECT_FALSE(lvh::gamepad_profile_support(xbox_one).supports_misc1_button);
+  EXPECT_TRUE(lvh::gamepad_profile_support(xbox_one).supports_trigger_rumble);
 
   const auto dualshock4_support = lvh::gamepad_profile_support(dualshock4);
   EXPECT_TRUE(dualshock4_support.supports_rumble);
@@ -80,6 +81,7 @@ TEST(GamepadAdapterTest, ChecksButtonsAndOutputsByProfile) {
 
   EXPECT_TRUE(lvh::supports_gamepad_button(xbox, lvh::GamepadButton::guide));
   EXPECT_TRUE(lvh::supports_gamepad_button(xbox, lvh::GamepadButton::misc1));
+  EXPECT_TRUE(lvh::supports_gamepad_output(xbox, lvh::GamepadOutputKind::trigger_rumble));
   EXPECT_FALSE(lvh::supports_gamepad_button(xbox, lvh::GamepadButton::touchpad));
   EXPECT_FALSE(lvh::supports_gamepad_button(xbox, lvh::GamepadButton::paddle1));
   EXPECT_FALSE(lvh::supports_gamepad_button(xbox, lvh::GamepadButton::paddle2));

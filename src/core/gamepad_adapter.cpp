@@ -81,6 +81,7 @@ namespace lvh {
     }
 
     support.supports_rumble = profile.capabilities.supports_rumble;
+    support.supports_trigger_rumble = profile.capabilities.supports_trigger_rumble;
     support.supports_rgb_led = profile.capabilities.supports_rgb_led;
     support.supports_adaptive_triggers = profile.capabilities.supports_adaptive_triggers;
     support.supports_player_leds = profile.capabilities.supports_player_leds;

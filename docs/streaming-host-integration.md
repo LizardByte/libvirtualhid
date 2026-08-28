@@ -52,8 +52,10 @@ The core API and adapter shape cover the major streaming-host requirements:
 - Rich controller metadata.
 - Gamepad output callbacks.
 - Keyboard and mouse input paths.
-- Linux PlayStation and Switch Pro gamepads through `uhid`, Generic/Xbox
-  gamepads through `uinput`, and `uinput` keyboard/pointer devices.
+- Linux PlayStation, Switch Pro, Xbox One, and Xbox Series gamepads through
+  descriptor-driven `uhid`, Generic and Xbox 360 gamepads through `uinput`,
+  Xbox One and Xbox Series uinput fallbacks, and `uinput` keyboard/pointer
+  devices.
 - Native Switch Pro motion, initialization replies, rumble, HOME-light, and
   player-light output handling on Linux and Windows descriptor-driven backends.
 - Linux DualSense and DualShock 4 USB/Bluetooth report handling.
