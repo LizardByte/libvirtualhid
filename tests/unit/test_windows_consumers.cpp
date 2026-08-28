@@ -344,6 +344,35 @@ namespace {
     return std::nullopt;
   }
 
+  std::optional<std::vector<std::uint8_t>> send_switch_proprietary_command(
+    const HidGamepadInterface &hid_interface,
+    HANDLE reader,
+    HANDLE writer,
+    std::uint8_t command
+  ) {
+    std::vector<std::uint8_t> output(hid_interface.output_report_size, 0);
+    output[0] = 0x80;
+    output[1] = command;
+    DWORD bytes_written = 0;
+    EXPECT_TRUE(WriteFile(
+      writer,
+      output.data(),
+      static_cast<DWORD>(output.size()),
+      &bytes_written,
+      nullptr
+    )) << "Switch proprietary WriteFile failed: "
+       << GetLastError();
+    EXPECT_EQ(bytes_written, output.size());
+    return read_hid_report_matching(
+      reader,
+      hid_interface.input_report_size,
+      5s,
+      [command](const auto &report) {
+        return report.size() >= 2U && report[0] == 0x81U && report[1] == command;
+      }
+    );
+  }
+
   HidInterfacePaths current_gamepad_interface_paths() {
     HidInterfacePaths paths;
     for (const auto &hid_interface : enumerate_gamepad_interfaces()) {
@@ -790,38 +819,14 @@ TEST_F(WindowsConsumerTest, NativeSwitchHandshakeAndInputReportReachHidClient) {
   )};
   ASSERT_TRUE(reader) << "Unable to open the VHF Switch Pro HID interface for reads: " << GetLastError();
 
-  const auto send_proprietary_command = [&hid_interface, &reader, &writer](std::uint8_t command) {
-    std::vector<std::uint8_t> output(hid_interface->output_report_size, 0);
-    output[0] = 0x80;
-    output[1] = command;
-    DWORD bytes_written = 0;
-    EXPECT_TRUE(WriteFile(
-      writer.get(),
-      output.data(),
-      static_cast<DWORD>(output.size()),
-      &bytes_written,
-      nullptr
-    )) << "Switch proprietary WriteFile failed: "
-       << GetLastError();
-    EXPECT_EQ(bytes_written, output.size());
-    return read_hid_report_matching(
-      reader.get(),
-      hid_interface->input_report_size,
-      5s,
-      [command](const auto &report) {
-        return report.size() >= 2U && report[0] == 0x81U && report[1] == command;
-      }
-    );
-  };
-
-  const auto status_reply = send_proprietary_command(0x01);
+  const auto status_reply = send_switch_proprietary_command(*hid_interface, reader.get(), writer.get(), 0x01);
   ASSERT_TRUE(status_reply.has_value()) << "No 0x81 Switch status reply reached the HID client";
   ASSERT_GE(status_reply->size(), 10U);
   EXPECT_EQ(status_reply->at(0), 0x81U);
   EXPECT_EQ(status_reply->at(1), 0x01U);
   EXPECT_EQ(status_reply->at(3), 0x03U);  // Pro Controller.
 
-  const auto handshake_reply = send_proprietary_command(0x02);
+  const auto handshake_reply = send_switch_proprietary_command(*hid_interface, reader.get(), writer.get(), 0x02);
   ASSERT_TRUE(handshake_reply.has_value()) << "No 0x81 Switch handshake reply reached the HID client";
   ASSERT_GE(handshake_reply->size(), 2U);
   EXPECT_EQ(handshake_reply->at(0), 0x81U);
