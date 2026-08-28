@@ -81,7 +81,9 @@ The VHF driver answers the calibration, pairing, and firmware feature reports
 used to initialize DualShock 4 and DualSense HIDAPI output. It also answers the
 Switch Pro USB and subcommand initialization sequence and accepts the native
 `0x30` input layout, so descriptor-aware consumers can initialize those
-controllers before sending their native output reports.
+controllers before sending their native output reports. The Switch Pro profile
+uses the `0x0210` hardware revision reported by a physical Nintendo controller,
+and the Windows VHF device exposes that revision to HID consumers.
 
 Windows VHF devices do not expose a Bluetooth transport identity to HIDAPI.
 The Windows backend therefore reports DualShock 4 and DualSense requests as
@@ -182,9 +184,10 @@ behavior are unchanged.
 Switch Pro uses Linux `uhid` with its native Nintendo descriptor and identity.
 Its backend-only UHID identity advertises Bluetooth transport because SDL2's
 Linux HIDAPI rejects virtual `BUS_USB` HIDRAW devices without a physical USB
-parent in sysfs. The public profile and report framing remain unchanged. The
-backend answers Nintendo subcommand initialization reports, and native `0x30`
-input reports carry buttons, sticks, battery state, and three live IMU samples.
+parent in sysfs. The public profile remains USB and its report framing is
+unchanged. The backend answers Nintendo subcommand initialization reports, and
+native `0x30` input reports carry buttons, sticks, battery state, and three live
+IMU samples.
 The public acceleration and gyroscope units remain meters per second squared
 and degrees per second; the packer converts them to Nintendo's coordinate
 system and sensor scales.

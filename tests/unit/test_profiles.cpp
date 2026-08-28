@@ -234,6 +234,7 @@ TEST(ProfileTest, StreamingControllerProfilesArePresent) {
 
   EXPECT_EQ(switch_pro.vendor_id, 0x057E);
   EXPECT_EQ(switch_pro.product_id, 0x2009);
+  EXPECT_EQ(switch_pro.version, 0x0210);
   EXPECT_EQ(switch_pro.manufacturer, "Nintendo Co., Ltd.");
   EXPECT_EQ(switch_pro.report_id, 0x30);
   EXPECT_EQ(switch_pro.input_report_size, 64U);

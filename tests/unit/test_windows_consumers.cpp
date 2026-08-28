@@ -60,6 +60,7 @@ namespace {
     std::wstring path;
     std::uint16_t vendor_id = 0;
     std::uint16_t product_id = 0;
+    std::uint16_t version_number = 0;
     std::uint16_t usage = 0;
     std::uint16_t input_report_size = 0;
     std::uint16_t output_report_size = 0;
@@ -257,6 +258,7 @@ namespace {
         .path = detail->DevicePath,
         .vendor_id = attributes.VendorID,
         .product_id = attributes.ProductID,
+        .version_number = attributes.VersionNumber,
         .usage = capabilities.Usage,
         .input_report_size = capabilities.InputReportByteLength,
         .output_report_size = capabilities.OutputReportByteLength,
@@ -738,6 +740,7 @@ TEST_F(WindowsConsumerTest, NativeSwitchHandshakeAndInputReportReachHidClient) {
   output_capture.attach(*created.adapter);
   const auto hid_interface = wait_for_new_interface(previous_paths, profile.vendor_id, profile.product_id);
   ASSERT_TRUE(hid_interface.has_value()) << "The VHF Switch Pro HID interface was not enumerated";
+  ASSERT_EQ(hid_interface->version_number, profile.version);
   ASSERT_EQ(hid_interface->input_report_size, profile.input_report_size);
   ASSERT_EQ(hid_interface->output_report_size, profile.output_report_size);
 
