@@ -61,7 +61,9 @@ namespace lvh::reports {
 
     constexpr auto dualsense_flag0_left_trigger = std::byte {0x08};
 
+    constexpr auto dualsense_flag1_mic_mute_led = std::byte {0x01};
     constexpr auto dualsense_flag1_lightbar = std::byte {0x04};
+    constexpr auto dualsense_flag1_player_indicator = std::byte {0x10};
 
     constexpr auto dualsense_flag2_compatible_vibration = std::byte {0x04};
 
@@ -932,6 +934,22 @@ namespace lvh::reports {
         output.red = raw_report[offset + 44U];
         output.green = raw_report[offset + 45U];
         output.blue = raw_report[offset + 46U];
+        output.raw_report = raw_report;
+        outputs.push_back(std::move(output));
+      }
+
+      if (has_flag(valid_flag1, dualsense_flag1_player_indicator)) {
+        GamepadOutput output;
+        output.kind = GamepadOutputKind::player_led;
+        output.player_led = raw_report[offset + 43U];
+        output.raw_report = raw_report;
+        outputs.push_back(std::move(output));
+      }
+
+      if (has_flag(valid_flag1, dualsense_flag1_mic_mute_led)) {
+        GamepadOutput output;
+        output.kind = GamepadOutputKind::mic_led;
+        output.mic_led = raw_report[offset + 8U];
         output.raw_report = raw_report;
         outputs.push_back(std::move(output));
       }

@@ -76,6 +76,8 @@ namespace lvh::tools::virtualhid_control {
     std::optional<GamepadOutput> latest_rumble;
     std::optional<GamepadOutput> latest_trigger_rumble;
     std::optional<GamepadOutput> latest_rgb_led;
+    std::optional<GamepadOutput> latest_player_led;
+    std::optional<GamepadOutput> latest_mic_led;
     std::optional<GamepadOutput> latest_adaptive_triggers;
     std::optional<GamepadOutput> latest_raw_report;
   };

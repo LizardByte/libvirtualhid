@@ -83,6 +83,8 @@ namespace lvh {
     support.supports_rumble = profile.capabilities.supports_rumble;
     support.supports_rgb_led = profile.capabilities.supports_rgb_led;
     support.supports_adaptive_triggers = profile.capabilities.supports_adaptive_triggers;
+    support.supports_player_led = profile.capabilities.supports_player_led;
+    support.supports_mic_led = profile.capabilities.supports_mic_led;
     support.supports_motion = profile.capabilities.supports_motion;
     support.supports_touchpad = profile.capabilities.supports_touchpad;
     support.supports_battery = profile.capabilities.supports_battery;
@@ -144,6 +146,10 @@ namespace lvh {
         return support.supports_adaptive_triggers;
       case raw_report:
         return profile.output_report_size > 0U;
+      case player_led:
+        return support.supports_player_led;
+      case mic_led:
+        return support.supports_mic_led;
     }
 
     return false;

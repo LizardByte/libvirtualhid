@@ -525,6 +525,45 @@ TEST(ReportTest, ParsesDualSenseBluetoothOutputReportEvents) {
   EXPECT_EQ(outputs[2].kind, lvh::GamepadOutputKind::adaptive_triggers);
 }
 
+TEST(ReportTest, ParsesDualSensePlayerAndMicLedOutputReportEvents) {
+  const auto profile = lvh::profiles::dualsense_usb();
+  std::vector<std::uint8_t> report(profile.output_report_size, 0);
+  report[0] = 0x02;
+  report[2] = 0x11;  // valid_flag1: player-indicator (0x10) | mic-mute LED (0x01)
+  report[9] = 0x02;  // mic-mute LED state (offset + 8): pulse
+  report[44] = 0x1F;  // player-indicator LEDs (offset + 43): all five lit
+
+  const auto outputs = lvh::reports::parse_output_reports(profile, report);
+
+  ASSERT_EQ(outputs.size(), 2U);
+  EXPECT_EQ(outputs[0].kind, lvh::GamepadOutputKind::player_led);
+  EXPECT_EQ(outputs[0].player_led, 0x1F);
+  EXPECT_EQ(outputs[1].kind, lvh::GamepadOutputKind::mic_led);
+  EXPECT_EQ(outputs[1].mic_led, 0x02);
+}
+
+TEST(ReportTest, OmitsDualSensePlayerAndMicLedWhenFlagsClear) {
+  const auto profile = lvh::profiles::dualsense_usb();
+  std::vector<std::uint8_t> report(profile.output_report_size, 0);
+  report[0] = 0x02;
+  report[1] = 0x01;  // valid_flag0: rumble only
+  report[2] = 0x04;  // valid_flag1: lightbar only (player/mic flags clear)
+  report[3] = 0x80;
+  report[4] = 0x40;
+  report[9] = 0x02;  // mic-mute LED byte populated, but its valid flag is clear
+  report[44] = 0x1F;  // player-indicator byte populated, but its valid flag is clear
+  report[45] = 0x11;
+  report[46] = 0x22;
+  report[47] = 0x33;
+
+  const auto outputs = lvh::reports::parse_output_reports(profile, report);
+
+  for (const auto &output : outputs) {
+    EXPECT_NE(output.kind, lvh::GamepadOutputKind::player_led);
+    EXPECT_NE(output.kind, lvh::GamepadOutputKind::mic_led);
+  }
+}
+
 TEST(ReportTest, ParsesDualShock4OutputReportEvents) {
   const auto profile = lvh::profiles::dualshock4_usb();
   std::vector<std::uint8_t> report(profile.output_report_size, 0);
