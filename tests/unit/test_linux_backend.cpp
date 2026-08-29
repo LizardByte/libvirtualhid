@@ -122,7 +122,8 @@ TEST_F(LinuxBackendTest, TranslatesMouseButtonsAndBusTypes) {
   EXPECT_EQ(lvh::detail::test::linux_uhid_bus(lvh::BusType::unknown), BUS_USB);
   EXPECT_EQ(lvh::detail::test::linux_uhid_bus(lvh::BusType::usb), BUS_USB);
   EXPECT_EQ(lvh::detail::test::linux_uhid_bus(lvh::BusType::bluetooth), BUS_BLUETOOTH);
-  EXPECT_EQ(lvh::detail::test::linux_gamepad_uhid_bus(lvh::GamepadProfileKind::xbox_series), BUS_USB);
+  EXPECT_EQ(lvh::detail::test::linux_gamepad_uhid_bus(lvh::GamepadProfileKind::xbox_one), BUS_BLUETOOTH);
+  EXPECT_EQ(lvh::detail::test::linux_gamepad_uhid_bus(lvh::GamepadProfileKind::xbox_series), BUS_BLUETOOTH);
   EXPECT_EQ(lvh::detail::test::linux_gamepad_uhid_bus(lvh::GamepadProfileKind::switch_pro), BUS_BLUETOOTH);
   EXPECT_EQ(lvh::detail::test::linux_uinput_bus(lvh::BusType::bluetooth), BUS_BLUETOOTH);
 
@@ -782,6 +783,46 @@ TEST_F(LinuxBackendTest, SocketpairBackedUhidGamepadRoundTripsEvents) {
   EXPECT_EQ(result.output.last.high_frequency_rumble, 0x1234);
 }
 
+TEST_F(LinuxBackendTest, XboxOneAndSeriesPreferBluetoothUhidWithUinputFallback) {
+  using enum lvh::GamepadProfileKind;
+
+  EXPECT_FALSE(lvh::detail::test::linux_gamepad_prefers_uhid(generic));
+  EXPECT_FALSE(lvh::detail::test::linux_gamepad_prefers_uhid(xbox_360));
+  EXPECT_TRUE(lvh::detail::test::linux_gamepad_prefers_uhid(switch_pro));
+  EXPECT_TRUE(lvh::detail::test::linux_gamepad_prefers_uhid(dualshock4));
+  EXPECT_TRUE(lvh::detail::test::linux_gamepad_prefers_uhid(dualsense));
+
+  for (const auto kind : {xbox_one, xbox_series}) {
+    EXPECT_TRUE(lvh::detail::test::linux_gamepad_prefers_uhid(kind));
+    EXPECT_TRUE(lvh::detail::test::linux_gamepad_uses_uinput(kind));
+
+    const auto effective_profile = lvh::detail::test::linux_uinput_effective_gamepad_profile(kind);
+    EXPECT_TRUE(effective_profile.capabilities.supports_rumble);
+    EXPECT_FALSE(effective_profile.capabilities.supports_trigger_rumble);
+
+    const auto result = lvh::detail::test::linux_xbox_bluetooth_uhid_socketpair_reports(kind);
+    EXPECT_TRUE(result.create_status.ok()) << result.create_status.message();
+    EXPECT_TRUE(result.submit_status.ok()) << result.submit_status.message();
+    EXPECT_TRUE(result.close_status.ok()) << result.close_status.message();
+    EXPECT_TRUE(result.creation.saw_create);
+    EXPECT_TRUE(result.creation.waited_for_start);
+    EXPECT_TRUE(result.xbox.saw_transport_descriptor);
+    EXPECT_TRUE(result.xbox.saw_canonical_evdev_axes);
+    EXPECT_TRUE(result.xbox.saw_gamepad_application_usage);
+    EXPECT_TRUE(result.xbox.saw_bluetooth_identity);
+    EXPECT_TRUE(result.xbox.saw_input);
+    EXPECT_TRUE(result.xbox.saw_guide);
+    EXPECT_TRUE(result.xbox.saw_profile_consumer_button);
+    EXPECT_TRUE(result.saw_destroy);
+    ASSERT_TRUE(result.output.rumble.has_value());
+    EXPECT_EQ(result.output.rumble->low_frequency_rumble, 49151U);
+    EXPECT_EQ(result.output.rumble->high_frequency_rumble, 65535U);
+    ASSERT_TRUE(result.output.trigger_rumble.has_value());
+    EXPECT_EQ(result.output.trigger_rumble->left_trigger_rumble, 16384U);
+    EXPECT_EQ(result.output.trigger_rumble->right_trigger_rumble, 32768U);
+  }
+}
+
 TEST_F(LinuxBackendTest, SocketpairBackedSwitchProUsesNativeUhidProtocol) {
   const auto result = lvh::detail::test::linux_switch_pro_uhid_socketpair_reports();
   EXPECT_TRUE(result.create_status.ok()) << result.create_status.message();
@@ -790,6 +831,8 @@ TEST_F(LinuxBackendTest, SocketpairBackedSwitchProUsesNativeUhidProtocol) {
   EXPECT_TRUE(result.creation.saw_create);
   EXPECT_TRUE(result.creation.waited_for_start);
   EXPECT_EQ(result.creation.name, lvh::profiles::switch_pro().name);
+  EXPECT_EQ(result.creation.physical_id, "libvirtualhid/uhid/057e:2009/12");
+  EXPECT_EQ(result.creation.unique_id, "057e:2009/streaming-host-gamepad-0");
   EXPECT_TRUE(result.switch_pro.saw_subcommand_reply);
   EXPECT_TRUE(result.switch_pro.saw_motion_input);
   ASSERT_TRUE(result.switch_pro.subcommand_reply_packet_timer.has_value());

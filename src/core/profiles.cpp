@@ -1958,7 +1958,11 @@ namespace lvh::profiles {
       profile.output_report_size = pid_rumble_payload_size;
       profile.name = std::move(name);
       profile.manufacturer = "Microsoft";
-      profile.capabilities = {.supports_rumble = true, .supports_battery = include_share_button};
+      profile.capabilities = {
+        .supports_rumble = true,
+        .supports_trigger_rumble = true,
+        .supports_battery = include_share_button,
+      };
       profile.report_descriptor = make_xbox_gip_report_descriptor(include_share_button);
       return profile;
     }

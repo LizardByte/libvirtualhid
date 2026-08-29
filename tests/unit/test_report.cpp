@@ -443,9 +443,10 @@ TEST(ReportTest, ParsesPidRumbleReports) {
     expect_outputs(profile, prefixed_report);
   }
 
-  const auto series = lvh::profiles::xbox_series();
-  const std::vector<std::uint8_t> series_bluetooth_report {0x03, 0x0F, 25, 50, 75, 100, 10, 0, 0};
-  expect_outputs(series, series_bluetooth_report);
+  const std::vector<std::uint8_t> bluetooth_report {0x03, 0x0F, 25, 50, 75, 100, 10, 0, 0};
+  for (const auto &profile : {lvh::profiles::xbox_one(), lvh::profiles::xbox_series()}) {
+    expect_outputs(profile, bluetooth_report);
+  }
 }
 
 TEST(ReportTest, PidRumbleHonorsEnableMaskAndDuration) {

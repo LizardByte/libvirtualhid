@@ -44,6 +44,11 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     pkg_check_modules(LIBEVDEV REQUIRED IMPORTED_TARGET libevdev)
     pkg_check_modules(LIBINPUT REQUIRED IMPORTED_TARGET libinput)
     pkg_check_modules(SDL2 REQUIRED IMPORTED_TARGET sdl2)
+    if(NOT TARGET SDL3::SDL3 AND NOT TARGET SDL3::SDL3-static)
+        include("${PROJECT_SOURCE_DIR}/cmake/cpm/CPM.cmake")
+        CPMUsePackageLock("${PROJECT_SOURCE_DIR}/package-lock.cmake")
+        CPMGetPackage(SDL3)
+    endif()
 
     list(APPEND LIBVIRTUALHID_TEST_SOURCES
          "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/linux_backend_test_hooks.cpp"
@@ -108,6 +113,21 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
       PkgConfig::LIBEVDEV
       PkgConfig::LIBINPUT
       PkgConfig::SDL2)
+
+    set(LIBVIRTUALHID_TEST_SDL3_TARGET SDL3::SDL3)
+    if(TARGET SDL3::SDL3-static)
+        set(LIBVIRTUALHID_TEST_SDL3_TARGET SDL3::SDL3-static)
+    endif()
+    add_executable(test_linux_sdl3_xbox_consumer
+      "${CMAKE_CURRENT_SOURCE_DIR}/consumers/linux_sdl3_xbox_consumer.cpp")
+    target_link_libraries(test_linux_sdl3_xbox_consumer
+      PRIVATE
+      libvirtualhid::libvirtualhid
+      ${LIBVIRTUALHID_TEST_SDL3_TARGET})
+    add_dependencies(${TEST_BINARY} test_linux_sdl3_xbox_consumer)
+    target_compile_definitions(${TEST_BINARY}
+      PRIVATE
+      LIBVIRTUALHID_TEST_SDL3_XBOX_CONSUMER_PATH="$<TARGET_FILE:test_linux_sdl3_xbox_consumer>")
 elseif(APPLE)
     target_link_libraries(${TEST_BINARY}
       PRIVATE

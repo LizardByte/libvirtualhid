@@ -247,6 +247,11 @@ namespace lvh {
     bool supports_rumble = false;
 
     /**
+     * @brief Whether the profile supports independent trigger rumble output.
+     */
+    bool supports_trigger_rumble = false;
+
+    /**
      * @brief Whether the profile exposes motion sensors.
      */
     bool supports_motion = false;

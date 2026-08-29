@@ -367,9 +367,9 @@ namespace lvh::reports {
         return std::nullopt;
       }
 
-      // Some native Xbox Series transports use report ID 3 followed by the
-      // same eight-byte four-motor rumble payload.
-      if (profile.gamepad_kind == xbox_series && report.size() >= pid_rumble_report_size && report[0] == 0x03U) {
+      // Native Xbox Bluetooth transports use report ID 3 followed by the same
+      // eight-byte four-motor rumble payload for both Xbox One and Series.
+      if (report.size() >= pid_rumble_report_size && report[0] == 0x03U) {
         return 1U;
       }
 

@@ -45,14 +45,16 @@ behind backend implementations.
 
 - Gamepad profiles for generic HID, Xbox 360, Xbox One, Xbox Series,
   DualShock 4, DualSense, and Nintendo Switch Pro-style controllers.
-- Descriptor-driven PlayStation and Switch Pro gamepads through Linux `uhid`;
-  Generic and Xbox gamepads plus keyboard, mouse, touchscreen, trackpad, and
-  pen tablet devices through `uinput`.
+- Descriptor-driven PlayStation, Switch Pro, Xbox One, and Xbox Series gamepads
+  through Linux `uhid`; Generic and Xbox 360 gamepads plus keyboard, mouse,
+  touchscreen, trackpad, and pen tablet devices through `uinput`. Xbox One and
+  Xbox Series fall back to `uinput` when `uhid` is unavailable.
 - Windows gamepads, keyboards, and Raw Input-visible mice through a user-mode
   UMDF2 control driver backed by Virtual HID Framework, with Win32 keyboard and
   mouse fallbacks when the licensed driver path is unavailable.
-- Output callbacks for profile-specific feedback such as rumble, RGB and player
-  LEDs, adaptive triggers, and raw HID output reports when available.
+- Output callbacks for profile-specific feedback such as ordinary and trigger
+  rumble, RGB and player LEDs, adaptive triggers, and raw HID output reports
+  when available.
 - An optional `virtualhid_control` native UI tool for creating, removing,
   controlling, and inspecting test gamepads and mice through the public C++ API.
 - CMake consumption through installed packages, vendored source,

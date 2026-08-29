@@ -103,6 +103,305 @@ namespace lvh::detail {
     namespace ps = playstation_feature_reports;
     constexpr auto playstation_periodic_report_ms = 10;
     constexpr auto uhid_start_timeout = std::chrono::seconds {5};
+
+    constexpr std::uint16_t xbox_bluetooth_version = 0x0513;
+    constexpr std::uint8_t xbox_bluetooth_input_report_id = 0x01;
+    constexpr std::size_t xbox_bluetooth_input_report_size = 17;
+    constexpr std::uint8_t xbox_bluetooth_rumble_report_id = 0x03;
+    constexpr std::size_t xbox_bluetooth_rumble_report_size = 9;
+
+    std::vector<std::uint8_t> make_xbox_bluetooth_report_descriptor() {
+      // Preserve the native 283-byte Xbox BLE report layout while advertising
+      // the conventional Linux evdev usages for the right stick and triggers.
+      // HIDAPI consumes the same byte offsets directly, while the kernel maps
+      // these usages to ABS_RX/ABS_RY and ABS_Z/ABS_RZ for Steam.
+      constexpr std::array<std::uint8_t, 283> descriptor {
+        0x05,
+        0x01,  // Usage Page (Generic Desktop)
+        0x09,
+        0x05,  // Usage (Game Pad)
+        0xA1,
+        0x01,  // Collection (Application)
+        0x85,
+        xbox_bluetooth_input_report_id,  // Report ID (1)
+        0x09,
+        0x01,  // Usage (Pointer)
+        0xA1,
+        0x00,  // Collection (Physical)
+        0x09,
+        0x30,  // Usage (X)
+        0x09,
+        0x31,  // Usage (Y)
+        0x15,
+        0x00,  // Logical Minimum (0)
+        0x27,
+        0xFF,
+        0xFF,
+        0x00,
+        0x00,  // Logical Maximum (65534)
+        0x95,
+        0x02,  // Report Count (2)
+        0x75,
+        0x10,  // Report Size (16)
+        0x81,
+        0x02,  // Input (Data, Variable, Absolute)
+        0xC0,  // End Collection
+        0x09,
+        0x01,  // Usage (Pointer)
+        0xA1,
+        0x00,  // Collection (Physical)
+        0x09,
+        0x33,  // Usage (Rx)
+        0x09,
+        0x34,  // Usage (Ry)
+        0x15,
+        0x00,  // Logical Minimum (0)
+        0x27,
+        0xFF,
+        0xFF,
+        0x00,
+        0x00,  // Logical Maximum (65534)
+        0x95,
+        0x02,  // Report Count (2)
+        0x75,
+        0x10,  // Report Size (16)
+        0x81,
+        0x02,  // Input (Data, Variable, Absolute)
+        0xC0,  // End Collection
+        0x05,
+        0x01,  // Usage Page (Generic Desktop)
+        0x09,
+        0x32,  // Usage (Z)
+        0x15,
+        0x00,  // Logical Minimum (0)
+        0x26,
+        0xFF,
+        0x03,  // Logical Maximum (1023)
+        0x95,
+        0x01,  // Report Count (1)
+        0x75,
+        0x0A,  // Report Size (10)
+        0x81,
+        0x02,  // Input (Data, Variable, Absolute)
+        0x15,
+        0x00,  // Logical Minimum (0)
+        0x25,
+        0x00,  // Logical Maximum (0)
+        0x75,
+        0x06,  // Report Size (6)
+        0x95,
+        0x01,  // Report Count (1)
+        0x81,
+        0x03,  // Input (Constant, Variable, Absolute)
+        0x05,
+        0x01,  // Usage Page (Generic Desktop)
+        0x09,
+        0x35,  // Usage (Rz)
+        0x15,
+        0x00,  // Logical Minimum (0)
+        0x26,
+        0xFF,
+        0x03,  // Logical Maximum (1023)
+        0x95,
+        0x01,  // Report Count (1)
+        0x75,
+        0x0A,  // Report Size (10)
+        0x81,
+        0x02,  // Input (Data, Variable, Absolute)
+        0x15,
+        0x00,  // Logical Minimum (0)
+        0x25,
+        0x00,  // Logical Maximum (0)
+        0x75,
+        0x06,  // Report Size (6)
+        0x95,
+        0x01,  // Report Count (1)
+        0x81,
+        0x03,  // Input (Constant, Variable, Absolute)
+        0x05,
+        0x01,  // Usage Page (Generic Desktop)
+        0x09,
+        0x39,  // Usage (Hat Switch)
+        0x15,
+        0x01,  // Logical Minimum (1)
+        0x25,
+        0x08,  // Logical Maximum (8)
+        0x35,
+        0x00,  // Physical Minimum (0)
+        0x46,
+        0x3B,
+        0x01,  // Physical Maximum (315)
+        0x66,
+        0x14,
+        0x00,  // Unit (Degrees)
+        0x75,
+        0x04,  // Report Size (4)
+        0x95,
+        0x01,  // Report Count (1)
+        0x81,
+        0x42,  // Input (Data, Variable, Absolute, Null State)
+        0x75,
+        0x04,  // Report Size (4)
+        0x95,
+        0x01,  // Report Count (1)
+        0x15,
+        0x00,  // Logical Minimum (0)
+        0x25,
+        0x00,  // Logical Maximum (0)
+        0x35,
+        0x00,  // Physical Minimum (0)
+        0x45,
+        0x00,  // Physical Maximum (0)
+        0x65,
+        0x00,  // Unit (None)
+        0x81,
+        0x03,  // Input (Constant, Variable, Absolute)
+        0x05,
+        0x09,  // Usage Page (Button)
+        0x19,
+        0x01,  // Usage Minimum (Button 1)
+        0x29,
+        0x0F,  // Usage Maximum (Button 15)
+        0x15,
+        0x00,  // Logical Minimum (0)
+        0x25,
+        0x01,  // Logical Maximum (1)
+        0x75,
+        0x01,  // Report Size (1)
+        0x95,
+        0x0F,  // Report Count (15)
+        0x81,
+        0x02,  // Input (Data, Variable, Absolute)
+        0x15,
+        0x00,  // Logical Minimum (0)
+        0x25,
+        0x00,  // Logical Maximum (0)
+        0x75,
+        0x01,  // Report Size (1)
+        0x95,
+        0x01,  // Report Count (1)
+        0x81,
+        0x03,  // Input (Constant, Variable, Absolute)
+        0x05,
+        0x0C,  // Usage Page (Consumer)
+        0x0A,
+        0xB2,
+        0x00,  // Usage (Record)
+        0x15,
+        0x00,  // Logical Minimum (0)
+        0x25,
+        0x01,  // Logical Maximum (1)
+        0x95,
+        0x01,  // Report Count (1)
+        0x75,
+        0x01,  // Report Size (1)
+        0x81,
+        0x02,  // Input (Data, Variable, Absolute)
+        0x15,
+        0x00,  // Logical Minimum (0)
+        0x25,
+        0x00,  // Logical Maximum (0)
+        0x75,
+        0x07,  // Report Size (7)
+        0x95,
+        0x01,  // Report Count (1)
+        0x81,
+        0x03,  // Input (Constant, Variable, Absolute)
+        0x05,
+        0x0F,  // Usage Page (Physical Interface Device)
+        0x09,
+        0x21,  // Usage (Set Effect Report)
+        0x85,
+        xbox_bluetooth_rumble_report_id,  // Report ID (3)
+        0xA1,
+        0x02,  // Collection (Logical)
+        0x09,
+        0x97,  // Usage (DC Enable Actuators)
+        0x15,
+        0x00,  // Logical Minimum (0)
+        0x25,
+        0x01,  // Logical Maximum (1)
+        0x75,
+        0x04,  // Report Size (4)
+        0x95,
+        0x01,  // Report Count (1)
+        0x91,
+        0x02,  // Output (Data, Variable, Absolute)
+        0x15,
+        0x00,  // Logical Minimum (0)
+        0x25,
+        0x00,  // Logical Maximum (0)
+        0x75,
+        0x04,  // Report Size (4)
+        0x95,
+        0x01,  // Report Count (1)
+        0x91,
+        0x03,  // Output (Constant, Variable, Absolute)
+        0x09,
+        0x70,  // Usage (Magnitude)
+        0x15,
+        0x00,  // Logical Minimum (0)
+        0x25,
+        0x64,  // Logical Maximum (100)
+        0x75,
+        0x08,  // Report Size (8)
+        0x95,
+        0x04,  // Report Count (4)
+        0x91,
+        0x02,  // Output (Data, Variable, Absolute)
+        0x09,
+        0x50,  // Usage (Duration)
+        0x66,
+        0x01,
+        0x10,  // Unit (Seconds)
+        0x55,
+        0x0E,  // Unit Exponent (-2)
+        0x15,
+        0x00,  // Logical Minimum (0)
+        0x26,
+        0xFF,
+        0x00,  // Logical Maximum (255)
+        0x75,
+        0x08,  // Report Size (8)
+        0x95,
+        0x01,  // Report Count (1)
+        0x91,
+        0x02,  // Output (Data, Variable, Absolute)
+        0x09,
+        0xA7,  // Usage (Start Delay)
+        0x15,
+        0x00,  // Logical Minimum (0)
+        0x26,
+        0xFF,
+        0x00,  // Logical Maximum (255)
+        0x75,
+        0x08,  // Report Size (8)
+        0x95,
+        0x01,  // Report Count (1)
+        0x91,
+        0x02,  // Output (Data, Variable, Absolute)
+        0x65,
+        0x00,  // Unit (None)
+        0x55,
+        0x00,  // Unit Exponent (0)
+        0x09,
+        0x7C,  // Usage (Loop Count)
+        0x15,
+        0x00,  // Logical Minimum (0)
+        0x26,
+        0xFF,
+        0x00,  // Logical Maximum (255)
+        0x75,
+        0x08,  // Report Size (8)
+        0x95,
+        0x01,  // Report Count (1)
+        0x91,
+        0x02,  // Output (Data, Variable, Absolute)
+        0xC0,  // End Collection
+        0xC0,  // End Collection
+      };
+      return {descriptor.begin(), descriptor.end()};
+    }
 #endif
 
     int system_access(const char *path, int mode) {
@@ -239,6 +538,10 @@ namespace lvh::detail {
     bool is_playstation_profile(GamepadProfileKind kind) {
       return kind == GamepadProfileKind::dualshock4 || kind == GamepadProfileKind::dualsense;
     }
+
+    bool is_xbox_uhid_profile(GamepadProfileKind kind) {
+      return kind == GamepadProfileKind::xbox_one || kind == GamepadProfileKind::xbox_series;
+    }
 #endif
 
     bool uses_uinput_gamepad_profile(GamepadProfileKind kind) {
@@ -262,6 +565,84 @@ namespace lvh::detail {
 
       return false;
     }
+
+#if defined(__linux__)
+    bool prefers_uhid_gamepad_profile(GamepadProfileKind kind) {
+      switch (kind) {
+        using enum GamepadProfileKind;
+
+        case switch_pro:
+        case dualshock4:
+        case dualsense:
+        case xbox_one:
+        case xbox_series:
+          return true;
+        case generic:
+        case xbox_360:
+          return false;
+      }
+
+      return false;
+    }
+
+    DeviceProfile uhid_transport_profile(const DeviceProfile &requested_profile) {
+      auto transport_profile = requested_profile;
+      if (is_xbox_uhid_profile(requested_profile.gamepad_kind)) {
+        const auto series = requested_profile.gamepad_kind == GamepadProfileKind::xbox_series;
+        transport_profile.bus_type = BusType::bluetooth;
+        transport_profile.product_id = series ? xbox_series_uinput_product_id : xbox_wireless_uinput_product_id;
+        transport_profile.version = xbox_bluetooth_version;
+        transport_profile.report_id = xbox_bluetooth_input_report_id;
+        transport_profile.input_report_size = xbox_bluetooth_input_report_size;
+        transport_profile.output_report_size = xbox_bluetooth_rumble_report_size;
+        transport_profile.report_descriptor = make_xbox_bluetooth_report_descriptor();
+      }
+      return transport_profile;
+    }
+
+    std::uint16_t read_u16_le(std::span<const std::uint8_t> report, std::size_t offset) {
+      return static_cast<std::uint16_t>(report[offset]) |
+             static_cast<std::uint16_t>(static_cast<std::uint16_t>(report[offset + 1U]) << 8U);
+    }
+
+    void write_u16_le(std::vector<std::uint8_t> &report, std::size_t offset, std::uint16_t value) {
+      report[offset] = static_cast<std::uint8_t>(value & 0xFFU);
+      report[offset + 1U] = static_cast<std::uint8_t>((value >> 8U) & 0xFFU);
+    }
+
+    std::vector<std::uint8_t> make_xbox_bluetooth_input_report(
+      const GamepadState &state,
+      std::span<const std::uint8_t> packed_report,
+      bool include_share_button
+    ) {
+      if (packed_report.size() < 17U) {
+        return {};
+      }
+
+      using enum GamepadButton;
+      std::vector<std::uint8_t> report(xbox_bluetooth_input_report_size, 0);
+      report[0] = xbox_bluetooth_input_report_id;
+      std::copy_n(packed_report.begin(), 8U, report.begin() + 1U);
+      write_u16_le(report, 9U, read_u16_le(packed_report, 8U));
+      write_u16_le(report, 11U, read_u16_le(packed_report, 10U));
+      report[13] = packed_report[14];
+      report[14] = static_cast<std::uint8_t>(
+        (state.buttons.test(a) ? 0x01U : 0U) | (state.buttons.test(b) ? 0x02U : 0U) |
+        (state.buttons.test(x) ? 0x08U : 0U) | (state.buttons.test(y) ? 0x10U : 0U) |
+        (state.buttons.test(left_shoulder) ? 0x40U : 0U) | (state.buttons.test(right_shoulder) ? 0x80U : 0U)
+      );
+      report[15] = static_cast<std::uint8_t>(
+        (state.buttons.test(back) ? 0x04U : 0U) | (state.buttons.test(start) ? 0x08U : 0U) |
+        (state.buttons.test(guide) ? 0x10U : 0U) | (state.buttons.test(left_stick) ? 0x20U : 0U) |
+        (state.buttons.test(right_stick) ? 0x40U : 0U)
+      );
+      if (include_share_button && state.buttons.test(misc1)) {
+        report[16] = 0x01;
+      }
+      return report;
+    }
+
+#endif
 
     std::optional<int> uinput_misc1_button(GamepadProfileKind kind) {
       switch (kind) {
@@ -303,9 +684,10 @@ namespace lvh::detail {
 #if defined(__linux__)
     std::uint16_t to_uhid_bus(const DeviceProfile &profile) {
       // Linux SDL2 HIDAPI requires BUS_USB hidraw devices to have a physical USB
-      // parent in sysfs. UHID devices do not, so expose Switch Pro through the
-      // Bluetooth HID path that accepts descriptor-driven virtual devices.
-      if (profile.gamepad_kind == GamepadProfileKind::switch_pro) {
+      // parent in sysfs. UHID devices do not, so expose transports handled by
+      // HIDAPI through the Bluetooth HID enumeration path. Xbox transport
+      // profiles use the corresponding native Bluetooth identity and framing.
+      if (profile.gamepad_kind == GamepadProfileKind::switch_pro || is_xbox_uhid_profile(profile.gamepad_kind)) {
         return BUS_BLUETOOTH;
       }
       return to_uhid_bus(profile.bus_type);
@@ -319,6 +701,13 @@ namespace lvh::detail {
         return "Wireless Controller";
       }
       return profile.name;
+    }
+
+    std::string uhid_profile_scoped_id(
+      const DeviceProfile &profile,
+      std::string_view stable_id
+    ) {
+      return std::format("{:04x}:{:04x}/{}", profile.vendor_id, profile.product_id, stable_id);
     }
 #endif
 
@@ -2794,29 +3183,40 @@ namespace lvh::detail {
       OperationStatus create(DeviceId id, const CreateGamepadOptions &options) {
         uhid_event event {};
         auto &request = event.u.create2;
+        const auto transport_profile = uhid_transport_profile(options.profile);
 
-        if (options.profile.report_descriptor.size() > sizeof(request.rd_data)) {
+        if (transport_profile.report_descriptor.size() > sizeof(request.rd_data)) {
           return OperationStatus::failure(ErrorCode::unsupported_profile, "HID report descriptor is too large for UHID");
         }
 
         event.type = UHID_CREATE2;
-        unique_id_ = options.metadata.stable_id.empty() ? std::to_string(id) : options.metadata.stable_id;
-        if (is_playstation_profile(options.profile.gamepad_kind)) {
+        const auto stable_id = options.metadata.stable_id.empty() ? std::to_string(id) : options.metadata.stable_id;
+        unique_id_ = uhid_profile_scoped_id(transport_profile, stable_id);
+        if (is_playstation_profile(transport_profile.gamepad_kind)) {
           playstation_mac_address_ = parse_mac_address(options.metadata.stable_id).value_or(generated_mac_address(id));
           unique_id_ = format_mac_address(playstation_mac_address_);
         }
-        physical_id_ = std::format("libvirtualhid/uhid/{}", id);
+        physical_id_ = std::format(
+          "libvirtualhid/uhid/{:04x}:{:04x}/{}",
+          transport_profile.vendor_id,
+          transport_profile.product_id,
+          id
+        );
 
-        device_name_ = uhid_gamepad_name(options.profile);
+        device_name_ = uhid_gamepad_name(transport_profile);
         copy_string(request.name, device_name_);
         copy_string(request.phys, physical_id_);
         copy_string(request.uniq, unique_id_);
-        request.rd_size = static_cast<std::uint16_t>(options.profile.report_descriptor.size());
-        request.bus = to_uhid_bus(options.profile);
-        request.vendor = options.profile.vendor_id;
-        request.product = options.profile.product_id;
-        request.version = options.profile.version;
-        std::memcpy(request.rd_data, options.profile.report_descriptor.data(), options.profile.report_descriptor.size());
+        request.rd_size = static_cast<std::uint16_t>(transport_profile.report_descriptor.size());
+        request.bus = to_uhid_bus(transport_profile);
+        request.vendor = transport_profile.vendor_id;
+        request.product = transport_profile.product_id;
+        request.version = transport_profile.version;
+        std::memcpy(
+          request.rd_data,
+          transport_profile.report_descriptor.data(),
+          transport_profile.report_descriptor.size()
+        );
         profile_ = options.profile;
         {
           std::lock_guard lock {state_mutex_};
@@ -2856,7 +3256,14 @@ namespace lvh::detail {
         const std::vector<std::uint8_t> &report
       ) override {
         std::lock_guard lock {state_mutex_};
-        auto status = write_input_report(report);
+        const auto transport_report = is_xbox_uhid_profile(profile_.gamepad_kind) ?
+                                        make_xbox_bluetooth_input_report(
+                                          state,
+                                          report,
+                                          profile_.gamepad_kind == GamepadProfileKind::xbox_series
+                                        ) :
+                                        report;
+        auto status = write_input_report(transport_report);
         if (status.ok()) {
           last_state_ = state;
         }
@@ -3008,6 +3415,8 @@ namespace lvh::detail {
               started_ = true;
             }
             lifecycle_condition_.notify_all();
+            break;
+          case UHID_OPEN:
             break;
           case UHID_OUTPUT:
             dispatch_output_report(event.u.output.data, event.u.output.size);
@@ -3206,9 +3615,10 @@ namespace lvh::detail {
 #endif
 
     std::optional<DeviceProfile> effective_uinput_profile(const DeviceProfile &requested_profile) {
-#if defined(__FreeBSD__)
       auto effective_profile = requested_profile;
+#if defined(__FreeBSD__)
       effective_profile.output_report_size = 0;
+      effective_profile.capabilities.supports_trigger_rumble = false;
       effective_profile.capabilities.supports_motion = false;
       effective_profile.capabilities.supports_touchpad = false;
       effective_profile.capabilities.supports_rgb_led = false;
@@ -3217,8 +3627,11 @@ namespace lvh::detail {
       effective_profile.capabilities.supports_player_leds = false;
       return effective_profile;
 #else
-      static_cast<void>(requested_profile);
-      return std::nullopt;
+      if (!effective_profile.capabilities.supports_trigger_rumble) {
+        return std::nullopt;
+      }
+      effective_profile.capabilities.supports_trigger_rumble = false;
+      return effective_profile;
 #endif
     }
 
@@ -3252,6 +3665,24 @@ namespace lvh::detail {
       }
 
       BackendGamepadCreationResult create_gamepad(DeviceId id, const CreateGamepadOptions &options) override {
+#if defined(__linux__)
+        if (prefers_uhid_gamepad_profile(options.profile.gamepad_kind)) {
+          const auto fd = system_open(uhid_path, O_RDWR | O_CLOEXEC | O_NONBLOCK);
+          if (fd >= 0) {
+            auto gamepad = std::make_unique<UhidGamepad>(fd);
+            if (const auto status = gamepad->create(id, options); status.ok()) {
+              return {OperationStatus::success(), std::move(gamepad)};
+            } else if (!uses_uinput_gamepad_profile(options.profile.gamepad_kind)) {
+              static_cast<void>(gamepad->close());
+              return {status, nullptr};
+            }
+            static_cast<void>(gamepad->close());
+          } else if (!uses_uinput_gamepad_profile(options.profile.gamepad_kind)) {
+            return {system_error_status(ErrorCode::backend_unavailable, "failed to open /dev/uhid", errno), nullptr};
+          }
+        }
+#endif
+
         if (uses_uinput_gamepad_profile(options.profile.gamepad_kind)) {
           const auto fd = open_uinput(O_RDWR | O_CLOEXEC | O_NONBLOCK);
           if (fd < 0) {
@@ -3270,24 +3701,13 @@ namespace lvh::detail {
           };
         }
 
-#if defined(__linux__)
-        const auto fd = system_open(uhid_path, O_RDWR | O_CLOEXEC | O_NONBLOCK);
-        if (fd < 0) {
-          return {system_error_status(ErrorCode::backend_unavailable, "failed to open /dev/uhid", errno), nullptr};
-        }
-
-        auto gamepad = std::make_unique<UhidGamepad>(fd);
-        if (const auto status = gamepad->create(id, options); !status.ok()) {
-          static_cast<void>(gamepad->close());
-          return {status, nullptr};
-        }
-
-        return {OperationStatus::success(), std::move(gamepad)};
-#else
+#if defined(__FreeBSD__)
         return {
           OperationStatus::failure(ErrorCode::unsupported_profile, "gamepad profile requires Linux UHID"),
           nullptr,
         };
+#else
+        return {OperationStatus::failure(ErrorCode::unsupported_profile, "unsupported gamepad profile"), nullptr};
 #endif
       }
 

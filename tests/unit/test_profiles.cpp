@@ -98,6 +98,7 @@ TEST(ProfileTest, StreamingControllerProfilesArePresent) {
   EXPECT_EQ(xbox_one.bus_type, lvh::BusType::usb);
   EXPECT_EQ(xbox_one.manufacturer, "Microsoft");
   EXPECT_TRUE(xbox_one.capabilities.supports_rumble);
+  EXPECT_TRUE(xbox_one.capabilities.supports_trigger_rumble);
   EXPECT_EQ(xbox_one.report_id, 0);
   EXPECT_EQ(xbox_one.input_report_size, 17U);
   EXPECT_EQ(xbox_one.output_report_size, 8U);
@@ -110,6 +111,7 @@ TEST(ProfileTest, StreamingControllerProfilesArePresent) {
   EXPECT_EQ(xbox_series.report_id, 0);
   EXPECT_EQ(xbox_series.input_report_size, 17U);
   EXPECT_EQ(xbox_series.output_report_size, 8U);
+  EXPECT_TRUE(xbox_series.capabilities.supports_trigger_rumble);
 
   const std::array<std::uint8_t, 11> xbox_gip_stick_axis_descriptor {
     0x15,
