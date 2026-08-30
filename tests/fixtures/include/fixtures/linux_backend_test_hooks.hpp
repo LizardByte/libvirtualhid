@@ -898,6 +898,14 @@ namespace lvh::detail::test {
   LinuxInputSubmissionResult linux_uinput_mouse_submit_pipe(const MouseEvent &event);
 
   /**
+   * @brief Submit mouse events to one pipe-backed uinput mouse.
+   *
+   * @param events Mouse events to submit in order.
+   * @return Submission status and captured input events.
+   */
+  LinuxInputSubmissionResult linux_uinput_mouse_submit_pipe_sequence(const std::vector<MouseEvent> &events);
+
+  /**
    * @brief Place and release a contact through a pipe-backed uinput touchscreen.
    *
    * @param contact Touch contact to place.

@@ -91,6 +91,17 @@ namespace lvh::detail {
     constexpr auto tablet_pressure_max = 4096;
     constexpr auto tablet_distance_max = 1024;
     constexpr auto tablet_resolution = 28;
+    constexpr std::int32_t mouse_scroll_units_per_detent = 120;
+#if defined(REL_WHEEL_HI_RES)
+    constexpr std::optional<std::uint16_t> vertical_high_resolution_scroll_code = REL_WHEEL_HI_RES;
+#else
+    constexpr std::optional<std::uint16_t> vertical_high_resolution_scroll_code = std::nullopt;
+#endif
+#if defined(REL_HWHEEL_HI_RES)
+    constexpr std::optional<std::uint16_t> horizontal_high_resolution_scroll_code = REL_HWHEEL_HI_RES;
+#else
+    constexpr std::optional<std::uint16_t> horizontal_high_resolution_scroll_code = std::nullopt;
+#endif
     constexpr auto poll_timeout_ms = 100;
     constexpr auto uinput_feedback_startup_delay = std::chrono::milliseconds {100};
     constexpr auto xbox_trigger_max = 255;
@@ -1236,10 +1247,23 @@ namespace lvh::detail {
         return 0;
       }
 
-      if (const auto steps = distance / 120; steps != 0) {
+      if (const auto steps = distance / mouse_scroll_units_per_detent; steps != 0) {
         return steps;
       }
       return distance > 0 ? 1 : -1;
+    }
+
+    struct LegacyScrollConversion {
+      std::int32_t detents = 0;
+      std::int32_t remainder = 0;
+    };
+
+    LegacyScrollConversion accumulated_legacy_scroll(std::int32_t remainder, std::int32_t distance) {
+      const auto total = static_cast<std::int64_t>(remainder) + distance;
+      return {
+        .detents = static_cast<std::int32_t>(total / mouse_scroll_units_per_detent),
+        .remainder = static_cast<std::int32_t>(total % mouse_scroll_units_per_detent),
+      };
     }
 
     /**
@@ -1429,22 +1453,20 @@ namespace lvh::detail {
         }
       }
 
+      if (const auto status = enable_evdev_code(device, EV_REL, REL_WHEEL, "vertical scroll"); !status.ok()) {
+        return status;
+      }
 #if defined(REL_WHEEL_HI_RES)
       if (const auto status = enable_evdev_code(device, EV_REL, REL_WHEEL_HI_RES, "high-resolution vertical scroll"); !status.ok()) {
         return status;
       }
-#else
-      if (const auto status = enable_evdev_code(device, EV_REL, REL_WHEEL, "vertical scroll"); !status.ok()) {
-        return status;
-      }
 #endif
 
-#if defined(REL_HWHEEL_HI_RES)
-      if (const auto status = enable_evdev_code(device, EV_REL, REL_HWHEEL_HI_RES, "high-resolution horizontal scroll"); !status.ok()) {
+      if (const auto status = enable_evdev_code(device, EV_REL, REL_HWHEEL, "horizontal scroll"); !status.ok()) {
         return status;
       }
-#else
-      if (const auto status = enable_evdev_code(device, EV_REL, REL_HWHEEL, "horizontal scroll"); !status.ok()) {
+#if defined(REL_HWHEEL_HI_RES)
+      if (const auto status = enable_evdev_code(device, EV_REL, REL_HWHEEL_HI_RES, "high-resolution horizontal scroll"); !status.ok()) {
         return status;
       }
 #endif
@@ -1944,6 +1966,8 @@ namespace lvh::detail {
 
     private:
       std::string device_name_;
+      std::int32_t vertical_scroll_remainder_ = 0;
+      std::int32_t horizontal_scroll_remainder_ = 0;
 
       OperationStatus submit_relative_motion(const MouseEvent &event) {
         if (event.x != 0) {
@@ -1977,29 +2001,35 @@ namespace lvh::detail {
       }
 
       OperationStatus submit_vertical_scroll(std::int32_t distance) {
-#if defined(REL_WHEEL_HI_RES)
-        if (const auto status = emit_event(EV_REL, REL_WHEEL_HI_RES, distance); !status.ok()) {
-          return status;
-        }
-#else
-        if (const auto status = emit_event(EV_REL, REL_WHEEL, legacy_scroll_steps(distance)); !status.ok()) {
-          return status;
-        }
-#endif
-        return sync();
+        return submit_scroll(distance, vertical_scroll_remainder_, REL_WHEEL, vertical_high_resolution_scroll_code);
       }
 
       OperationStatus submit_horizontal_scroll(std::int32_t distance) {
-#if defined(REL_HWHEEL_HI_RES)
-        if (const auto status = emit_event(EV_REL, REL_HWHEEL_HI_RES, distance); !status.ok()) {
+        return submit_scroll(distance, horizontal_scroll_remainder_, REL_HWHEEL, horizontal_high_resolution_scroll_code);
+      }
+
+      OperationStatus submit_scroll(
+        std::int32_t distance,
+        std::int32_t &remainder,
+        std::uint16_t legacy_code,
+        std::optional<std::uint16_t> high_resolution_code
+      ) {
+        const auto converted = accumulated_legacy_scroll(remainder, distance);
+        if (converted.detents != 0) {
+          if (const auto status = emit_event(EV_REL, legacy_code, converted.detents); !status.ok()) {
+            return status;
+          }
+        }
+        if (high_resolution_code.has_value()) {
+          if (const auto status = emit_event(EV_REL, *high_resolution_code, distance); !status.ok()) {
+            return status;
+          }
+        }
+        if (const auto status = sync(); !status.ok()) {
           return status;
         }
-#else
-        if (const auto status = emit_event(EV_REL, REL_HWHEEL, legacy_scroll_steps(distance)); !status.ok()) {
-          return status;
-        }
-#endif
-        return sync();
+        remainder = converted.remainder;
+        return OperationStatus::success();
       }
     };
 

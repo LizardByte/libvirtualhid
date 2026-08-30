@@ -609,32 +609,78 @@ TEST_F(LinuxBackendTest, PipeBackedUinputMouseEmitsEvents) {
   event.high_resolution_scroll = 120;
   result = lvh::detail::test::linux_uinput_mouse_submit_pipe(event);
   ASSERT_TRUE(result.status.ok()) << result.status.message();
-  ASSERT_EQ(result.events.size(), 2U);
-  EXPECT_EQ(result.events[0].type, EV_REL);
 #if defined(REL_WHEEL_HI_RES)
-  EXPECT_EQ(result.events[0].code, REL_WHEEL_HI_RES);
-  EXPECT_EQ(result.events[0].value, 120);
+  constexpr auto expected_vertical_scroll_event_count = 3U;
 #else
+  constexpr auto expected_vertical_scroll_event_count = 2U;
+#endif
+  ASSERT_EQ(result.events.size(), expected_vertical_scroll_event_count);
+  EXPECT_EQ(result.events[0].type, EV_REL);
   EXPECT_EQ(result.events[0].code, REL_WHEEL);
   EXPECT_EQ(result.events[0].value, 1);
+#if defined(REL_WHEEL_HI_RES)
+  EXPECT_EQ(result.events[1].type, EV_REL);
+  EXPECT_EQ(result.events[1].code, REL_WHEEL_HI_RES);
+  EXPECT_EQ(result.events[1].value, 120);
 #endif
-  EXPECT_EQ(result.events[1].type, EV_SYN);
+  EXPECT_EQ(result.events.back().type, EV_SYN);
 
   event = {};
   event.kind = lvh::MouseEventKind::horizontal_scroll;
   event.high_resolution_scroll = -120;
   result = lvh::detail::test::linux_uinput_mouse_submit_pipe(event);
   ASSERT_TRUE(result.status.ok()) << result.status.message();
-  ASSERT_EQ(result.events.size(), 2U);
-  EXPECT_EQ(result.events[0].type, EV_REL);
 #if defined(REL_HWHEEL_HI_RES)
-  EXPECT_EQ(result.events[0].code, REL_HWHEEL_HI_RES);
-  EXPECT_EQ(result.events[0].value, -120);
+  constexpr auto expected_horizontal_scroll_event_count = 3U;
 #else
+  constexpr auto expected_horizontal_scroll_event_count = 2U;
+#endif
+  ASSERT_EQ(result.events.size(), expected_horizontal_scroll_event_count);
+  EXPECT_EQ(result.events[0].type, EV_REL);
   EXPECT_EQ(result.events[0].code, REL_HWHEEL);
   EXPECT_EQ(result.events[0].value, -1);
+#if defined(REL_HWHEEL_HI_RES)
+  EXPECT_EQ(result.events[1].type, EV_REL);
+  EXPECT_EQ(result.events[1].code, REL_HWHEEL_HI_RES);
+  EXPECT_EQ(result.events[1].value, -120);
 #endif
-  EXPECT_EQ(result.events[1].type, EV_SYN);
+  EXPECT_EQ(result.events.back().type, EV_SYN);
+}
+
+TEST_F(LinuxBackendTest, PipeBackedUinputMouseAccumulatesLegacyScrollDetentsPerAxis) {
+  const std::vector<lvh::MouseEvent> events {
+    {.kind = lvh::MouseEventKind::vertical_scroll, .high_resolution_scroll = 60},
+    {.kind = lvh::MouseEventKind::horizontal_scroll, .high_resolution_scroll = -60},
+    {.kind = lvh::MouseEventKind::vertical_scroll, .high_resolution_scroll = 60},
+    {.kind = lvh::MouseEventKind::horizontal_scroll, .high_resolution_scroll = -60},
+  };
+  const auto result = lvh::detail::test::linux_uinput_mouse_submit_pipe_sequence(events);
+  ASSERT_TRUE(result.status.ok()) << result.status.message();
+
+  const auto event_values = [&result](std::uint16_t code) {
+    std::vector<std::int32_t> values;
+    for (const auto &event : result.events) {
+      if (event.type == EV_REL && event.code == code) {
+        values.push_back(event.value);
+      }
+    }
+    return values;
+  };
+
+  EXPECT_EQ(event_values(REL_WHEEL), (std::vector<std::int32_t> {1}));
+  EXPECT_EQ(event_values(REL_HWHEEL), (std::vector<std::int32_t> {-1}));
+#if defined(REL_WHEEL_HI_RES)
+  EXPECT_EQ(event_values(REL_WHEEL_HI_RES), (std::vector<std::int32_t> {60, 60}));
+#endif
+#if defined(REL_HWHEEL_HI_RES)
+  EXPECT_EQ(event_values(REL_HWHEEL_HI_RES), (std::vector<std::int32_t> {-60, -60}));
+#endif
+  EXPECT_EQ(
+    std::ranges::count_if(result.events, [](const auto &event) {
+      return event.type == EV_SYN && event.code == SYN_REPORT;
+    }),
+    4
+  );
 }
 
 TEST_F(LinuxBackendTest, PipeBackedUinputTouchDevicesEmitEvents) {
@@ -1129,6 +1175,14 @@ TEST_F(LinuxBackendTest, FakeUinputConstructionCoversCapabilitiesAndFailureBranc
   EXPECT_TRUE(has_type(mouse, EV_ABS));
   EXPECT_NE(find_code(mouse, EV_KEY, BTN_LEFT), nullptr);
   EXPECT_NE(find_code(mouse, EV_REL, REL_X), nullptr);
+  EXPECT_NE(find_code(mouse, EV_REL, REL_WHEEL), nullptr);
+  EXPECT_NE(find_code(mouse, EV_REL, REL_HWHEEL), nullptr);
+#if defined(REL_WHEEL_HI_RES)
+  EXPECT_NE(find_code(mouse, EV_REL, REL_WHEEL_HI_RES), nullptr);
+#endif
+#if defined(REL_HWHEEL_HI_RES)
+  EXPECT_NE(find_code(mouse, EV_REL, REL_HWHEEL_HI_RES), nullptr);
+#endif
   const auto *mouse_x = find_code(mouse, EV_ABS, ABS_X);
   ASSERT_NE(mouse_x, nullptr);
   EXPECT_TRUE(mouse_x->has_absinfo);

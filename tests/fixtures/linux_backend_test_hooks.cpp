@@ -1333,13 +1333,23 @@ namespace lvh::detail::test {
   }
 
   LinuxInputSubmissionResult linux_uinput_mouse_submit_pipe(const MouseEvent &event) {
+    return linux_uinput_mouse_submit_pipe_sequence(std::vector<MouseEvent> {event});
+  }
+
+  LinuxInputSubmissionResult linux_uinput_mouse_submit_pipe_sequence(const std::vector<MouseEvent> &events) {
     std::array<int, 2> descriptors {-1, -1};
     if (::pipe(descriptors.data()) != 0) {
       return {system_error_status(ErrorCode::backend_failure, "failed to create pipe", errno), {}};
     }
 
     UinputMouse mouse {descriptors[1]};
-    auto status = mouse.submit(event);
+    auto status = OperationStatus::success();
+    for (const auto &event : events) {
+      status = mouse.submit(event);
+      if (!status.ok()) {
+        break;
+      }
+    }
     static_cast<void>(mouse.close());
     auto records = read_input_events_until_eof(descriptors[0]);
     static_cast<void>(::close(descriptors[0]));
