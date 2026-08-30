@@ -845,6 +845,7 @@ TEST_F(LinuxBackendTest, XboxOneAndSeriesPreferBluetoothUhidWithUinputFallback) 
     const auto effective_profile = lvh::detail::test::linux_uinput_effective_gamepad_profile(kind);
     EXPECT_TRUE(effective_profile.capabilities.supports_rumble);
     EXPECT_FALSE(effective_profile.capabilities.supports_trigger_rumble);
+    EXPECT_FALSE(effective_profile.capabilities.supports_battery);
 
     const auto result = lvh::detail::test::linux_xbox_bluetooth_uhid_socketpair_reports(kind);
     EXPECT_TRUE(result.create_status.ok()) << result.create_status.message();
@@ -857,6 +858,7 @@ TEST_F(LinuxBackendTest, XboxOneAndSeriesPreferBluetoothUhidWithUinputFallback) 
     EXPECT_TRUE(result.xbox.saw_gamepad_application_usage);
     EXPECT_TRUE(result.xbox.saw_bluetooth_identity);
     EXPECT_TRUE(result.xbox.saw_input);
+    EXPECT_TRUE(result.xbox.saw_battery_input);
     EXPECT_TRUE(result.xbox.saw_guide);
     EXPECT_TRUE(result.xbox.saw_profile_consumer_button);
     EXPECT_TRUE(result.saw_destroy);

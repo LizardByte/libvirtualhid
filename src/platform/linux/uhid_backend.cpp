@@ -120,13 +120,17 @@ namespace lvh::detail {
     constexpr std::size_t xbox_bluetooth_input_report_size = 17;
     constexpr std::uint8_t xbox_bluetooth_rumble_report_id = 0x03;
     constexpr std::size_t xbox_bluetooth_rumble_report_size = 9;
+    constexpr std::uint8_t xbox_bluetooth_battery_report_id = 0x04;
+    constexpr std::size_t xbox_bluetooth_battery_report_size = 2;
 
     std::vector<std::uint8_t> make_xbox_bluetooth_report_descriptor() {
-      // Preserve the native 283-byte Xbox BLE report layout while advertising
-      // the conventional Linux evdev usages for the right stick and triggers.
+      // Preserve the native Xbox BLE report layout while advertising the
+      // conventional Linux evdev usages for the right stick and triggers.
       // HIDAPI consumes the same byte offsets directly, while the kernel maps
-      // these usages to ABS_RX/ABS_RY and ABS_Z/ABS_RZ for Steam.
-      constexpr std::array<std::uint8_t, 283> descriptor {
+      // these usages to ABS_RX/ABS_RY and ABS_Z/ABS_RZ for Steam. Report 4 is
+      // the native two-byte Xbox Bluetooth battery notification, advertised
+      // through the standard Battery Strength usage recognized by HIDAPI.
+      constexpr std::array<std::uint8_t, 300> descriptor {
         0x05,
         0x01,  // Usage Page (Generic Desktop)
         0x09,
@@ -409,6 +413,23 @@ namespace lvh::detail {
         0x91,
         0x02,  // Output (Data, Variable, Absolute)
         0xC0,  // End Collection
+        0x05,
+        0x06,  // Usage Page (Generic Device Controls)
+        0x09,
+        0x20,  // Usage (Battery Strength)
+        0x85,
+        xbox_bluetooth_battery_report_id,  // Report ID (4)
+        0x15,
+        0x00,  // Logical Minimum (0)
+        0x26,
+        0xFF,
+        0x00,  // Logical Maximum (255)
+        0x75,
+        0x08,  // Report Size (8)
+        0x95,
+        0x01,  // Report Count (1)
+        0x81,
+        0x02,  // Input (Data, Variable, Absolute)
         0xC0,  // End Collection
       };
       return {descriptor.begin(), descriptor.end()};
@@ -650,6 +671,33 @@ namespace lvh::detail {
       if (include_share_button && state.buttons.test(misc1)) {
         report[16] = 0x01;
       }
+      return report;
+    }
+
+    std::vector<std::uint8_t> make_xbox_bluetooth_battery_report(const GamepadState &state) {
+      constexpr auto wireless_battery_source = std::byte {0x04};
+      constexpr std::uint8_t ten_percent_battery_level = 0;
+      constexpr std::uint8_t forty_percent_battery_level = 1;
+      constexpr std::uint8_t seventy_percent_battery_level = 2;
+      constexpr std::uint8_t full_battery_level = 3;
+
+      auto level = full_battery_level;
+      if (state.battery) {
+        const auto percentage = std::min<std::uint8_t>(state.battery->percentage, 100U);
+        if (percentage <= 25U) {
+          level = ten_percent_battery_level;
+        } else if (percentage <= 55U) {
+          level = forty_percent_battery_level;
+        } else if (percentage <= 85U) {
+          level = seventy_percent_battery_level;
+        } else {
+          level = full_battery_level;
+        }
+      }
+
+      std::vector<std::uint8_t> report(xbox_bluetooth_battery_report_size);
+      report[0] = xbox_bluetooth_battery_report_id;
+      report[1] = std::to_integer<std::uint8_t>(wireless_battery_source | static_cast<std::byte>(level));
       return report;
     }
 
@@ -3294,6 +3342,9 @@ namespace lvh::detail {
                                         ) :
                                         report;
         auto status = write_input_report(transport_report);
+        if (status.ok() && is_xbox_uhid_profile(profile_.gamepad_kind)) {
+          status = write_input_report(make_xbox_bluetooth_battery_report(state));
+        }
         if (status.ok()) {
           last_state_ = state;
         }
@@ -3661,6 +3712,7 @@ namespace lvh::detail {
         return std::nullopt;
       }
       effective_profile.capabilities.supports_trigger_rumble = false;
+      effective_profile.capabilities.supports_battery = false;
       return effective_profile;
 #endif
     }

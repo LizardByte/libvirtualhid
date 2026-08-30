@@ -16,6 +16,7 @@ TEST(GamepadAdapterTest, ReportsProfileSupport) {
   const auto generic = lvh::profiles::generic_gamepad();
   const auto xbox_360 = lvh::profiles::xbox_360();
   const auto xbox_one = lvh::profiles::xbox_one();
+  const auto xbox_series = lvh::profiles::xbox_series();
   const auto dualshock4 = lvh::profiles::dualshock4();
   const auto dualsense = lvh::profiles::dualsense();
   const auto switch_pro = lvh::profiles::switch_pro();
@@ -30,6 +31,8 @@ TEST(GamepadAdapterTest, ReportsProfileSupport) {
   EXPECT_FALSE(lvh::gamepad_profile_support(xbox_360).supports_misc1_button);
   EXPECT_FALSE(lvh::gamepad_profile_support(xbox_one).supports_misc1_button);
   EXPECT_TRUE(lvh::gamepad_profile_support(xbox_one).supports_trigger_rumble);
+  EXPECT_TRUE(lvh::gamepad_profile_support(xbox_one).supports_battery);
+  EXPECT_TRUE(lvh::gamepad_profile_support(xbox_series).supports_battery);
 
   const auto dualshock4_support = lvh::gamepad_profile_support(dualshock4);
   EXPECT_TRUE(dualshock4_support.supports_rumble);
@@ -108,6 +111,34 @@ TEST(GamepadAdapterTest, ChecksButtonsAndOutputsByProfile) {
   EXPECT_TRUE(lvh::supports_gamepad_output(generic, lvh::GamepadOutputKind::raw_report));
   EXPECT_FALSE(lvh::supports_gamepad_output(keyboard, lvh::GamepadOutputKind::rumble));
   EXPECT_FALSE(lvh::supports_gamepad_output(generic, static_cast<lvh::GamepadOutputKind>(255)));
+}
+
+TEST(GamepadAdapterTest, XboxProfilesAcceptAndClearBatteryUpdates) {
+  auto runtime = lvh::Runtime::create();
+  ASSERT_NE(runtime, nullptr);
+
+  for (const auto &profile : {lvh::profiles::xbox_one(), lvh::profiles::xbox_series()}) {
+    SCOPED_TRACE(profile.name);
+    lvh::CreateGamepadOptions options;
+    options.profile = profile;
+    options.metadata.has_battery = true;
+    options.metadata.stable_id = profile.name;
+
+    auto created = lvh::GamepadStateAdapter::create(*runtime, options);
+    ASSERT_TRUE(created) << created.status.message();
+    ASSERT_TRUE(created.adapter->set_battery({
+                                               .state = lvh::GamepadBatteryState::discharging,
+                                               .percentage = 50,
+                                             })
+                  .ok());
+    ASSERT_EQ(created.adapter->gamepad()->last_input_report().size(), 17U);
+    EXPECT_EQ(created.adapter->gamepad()->last_input_report()[16], 128U);
+
+    ASSERT_TRUE(created.adapter->clear_battery().ok());
+    ASSERT_EQ(created.adapter->gamepad()->last_input_report().size(), 17U);
+    EXPECT_EQ(created.adapter->gamepad()->last_input_report()[16], 0xFFU);
+    EXPECT_TRUE(created.adapter->close().ok());
+  }
 }
 
 TEST(GamepadAdapterTest, CachesAndSubmitsPartialUpdates) {

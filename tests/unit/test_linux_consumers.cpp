@@ -69,6 +69,7 @@ namespace {
     int minimum_axes = 2;
     bool require_sdl_rumble = false;
     bool require_trigger_rumble = false;
+    bool require_battery = false;
     bool require_motion = false;
     bool expect_live_input = true;
   };
@@ -505,6 +506,7 @@ namespace {
     lvh::CreateGamepadOptions options;
     options.profile = test_case.profile;
     options.profile.name = unique_device_name(test_case.name_suffix);
+    options.metadata.has_battery = test_case.require_battery;
     options.metadata.stable_id = std::string {test_case.stable_id};
 
     return runtime.create_gamepad(options);
@@ -636,6 +638,25 @@ namespace {
 
     ADD_FAILURE() << "SDL motion remained static: accel=" << acceleration[0] << "," << acceleration[1] << ","
                   << acceleration[2] << " gyro=" << gyroscope[0] << "," << gyroscope[1] << "," << gyroscope[2];
+  }
+
+  void expect_sdl_battery_input(SDL_Joystick *joystick, lvh::Gamepad &gamepad) {
+    lvh::GamepadState state;
+    state.battery = lvh::GamepadBattery {
+      .state = lvh::GamepadBatteryState::discharging,
+      .percentage = 50,
+    };
+    ASSERT_TRUE(gamepad.submit(state).ok());
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds {3};
+    while (
+      std::chrono::steady_clock::now() < deadline &&
+      SDL_JoystickCurrentPowerLevel(joystick) != SDL_JOYSTICK_POWER_MEDIUM) {
+      SDL_GameControllerUpdate();
+      pump_sdl_events();
+      std::this_thread::sleep_for(std::chrono::milliseconds {20});
+    }
+    EXPECT_EQ(SDL_JoystickCurrentPowerLevel(joystick), SDL_JOYSTICK_POWER_MEDIUM);
   }
 
   void expect_hidraw_rumble_callback(const lvh::DeviceProfile &profile, lvh::Gamepad &gamepad) {
@@ -803,6 +824,9 @@ namespace {
     EXPECT_GT(SDL_GameControllerGetAxis(controller.get(), SDL_CONTROLLER_AXIS_TRIGGERRIGHT), 16000);
     if (test_case.require_motion) {
       expect_sdl_motion_input(controller.get(), gamepad);
+    }
+    if (test_case.require_battery) {
+      expect_sdl_battery_input(joystick, gamepad);
     }
     expect_sdl_rumble_callback(controller.get(), gamepad, test_case.require_trigger_rumble);
   }
@@ -983,6 +1007,7 @@ TEST_F(LinuxConsumerTest, SdlSeesXboxOneCanonicalButtons) {
     .minimum_axes = 6,
     .require_sdl_rumble = true,
     .require_trigger_rumble = true,
+    .require_battery = true,
   });
 }
 
@@ -998,6 +1023,7 @@ TEST_F(LinuxConsumerTest, SdlSeesXboxSeriesCanonicalButtons) {
     .minimum_axes = 6,
     .require_sdl_rumble = true,
     .require_trigger_rumble = true,
+    .require_battery = true,
   };
   run_sdl_canonical_gamepad_test(test_case);
 }

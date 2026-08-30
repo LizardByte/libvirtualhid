@@ -1030,6 +1030,87 @@ TEST_F(WindowsConsumerTest, NativeXboxPidRumbleWritesAreNormalized) {
   ASSERT_TRUE(created.adapter->close().ok());
 }
 
+TEST_F(WindowsConsumerTest, BatteryStateIsAvailableThroughGetInputReport) {
+  const std::array profiles {
+    lvh::profiles::xbox_one(),
+    lvh::profiles::xbox_series(),
+    lvh::profiles::dualshock4(),
+    lvh::profiles::dualsense(),
+    lvh::profiles::switch_pro(),
+  };
+
+  lvh::RuntimeOptions runtime_options;
+  runtime_options.backend = lvh::BackendKind::platform_default;
+  auto runtime = lvh::Runtime::create(runtime_options);
+  ASSERT_NE(runtime, nullptr);
+  ASSERT_TRUE(runtime->capabilities().supports_gamepad)
+    << "The installed libvirtualhid Windows driver is required for this integration test";
+
+  for (const auto &profile : profiles) {
+    SCOPED_TRACE(profile.name);
+    const auto previous_paths = current_gamepad_interface_paths();
+
+    lvh::CreateGamepadOptions options;
+    options.profile = profile;
+    options.metadata.has_battery = true;
+    options.metadata.stable_id = profile.name;
+    auto created = lvh::GamepadStateAdapter::create(*runtime, options);
+    ASSERT_TRUE(created) << created.status.message();
+    ASSERT_TRUE(created.adapter->set_battery({
+                                               .state = lvh::GamepadBatteryState::discharging,
+                                               .percentage = 50,
+                                             })
+                  .ok());
+
+    const auto &effective_profile = created.adapter->gamepad()->profile();
+    const auto hid_interface =
+      wait_for_new_interface(previous_paths, effective_profile.vendor_id, effective_profile.product_id);
+    ASSERT_TRUE(hid_interface.has_value()) << "The VHF " << profile.name << " HID interface was not enumerated";
+
+    Handle hid {CreateFileW(
+      hid_interface->path.c_str(),
+      GENERIC_READ | GENERIC_WRITE,
+      FILE_SHARE_READ | FILE_SHARE_WRITE,
+      nullptr,
+      OPEN_EXISTING,
+      FILE_ATTRIBUTE_NORMAL,
+      nullptr
+    )};
+    ASSERT_TRUE(hid) << "Unable to open the VHF " << profile.name << " HID interface: " << GetLastError();
+
+    auto expected_report = created.adapter->gamepad()->last_input_report();
+    if (effective_profile.report_id == 0U) {
+      expected_report.insert(expected_report.begin(), 0U);
+    }
+
+    std::vector<std::uint8_t> queried_report(hid_interface->input_report_size, 0);
+    DWORD last_get_input_report_error = ERROR_SUCCESS;
+    auto received_expected_report = false;
+    const auto deadline = std::chrono::steady_clock::now() + 3s;
+    while (std::chrono::steady_clock::now() < deadline) {
+      std::ranges::fill(queried_report, std::uint8_t {});
+      queried_report[0] = effective_profile.report_id;
+      if (HidD_GetInputReport(hid.get(), queried_report.data(), static_cast<ULONG>(queried_report.size())) == FALSE) {
+        last_get_input_report_error = GetLastError();
+        std::this_thread::sleep_for(10ms);
+        continue;
+      }
+
+      last_get_input_report_error = ERROR_SUCCESS;
+      if (queried_report == expected_report) {
+        received_expected_report = true;
+        break;
+      }
+      std::this_thread::sleep_for(10ms);
+    }
+
+    ASSERT_TRUE(received_expected_report)
+      << profile.name << " did not return the current input report before the deadline; last error: "
+      << last_get_input_report_error;
+    EXPECT_TRUE(created.adapter->close().ok());
+  }
+}
+
 TEST_F(WindowsConsumerTest, XboxSeriesNativeInputCarriesShareButton) {
   lvh::RuntimeOptions runtime_options;
   runtime_options.backend = lvh::BackendKind::platform_default;

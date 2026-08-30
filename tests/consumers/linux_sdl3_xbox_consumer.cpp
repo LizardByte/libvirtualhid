@@ -281,6 +281,32 @@ namespace {
     return false;
   }
 
+  bool validate_battery(lvh::Gamepad &virtual_gamepad, SDL_Gamepad *gamepad) {
+    lvh::GamepadState state;
+    state.battery = lvh::GamepadBattery {
+      .state = lvh::GamepadBatteryState::discharging,
+      .percentage = 50,
+    };
+    if (!virtual_gamepad.submit(state).ok()) {
+      return false;
+    }
+
+    const auto deadline = std::chrono::steady_clock::now() + 3s;
+    while (std::chrono::steady_clock::now() < deadline) {
+      SDL_UpdateGamepads();
+      SDL_PumpEvents();
+      if (
+        auto percentage = -1;
+        SDL_GetGamepadPowerInfo(gamepad, &percentage) == SDL_POWERSTATE_ON_BATTERY &&
+        percentage == 40
+      ) {
+        return true;
+      }
+      std::this_thread::sleep_for(20ms);
+    }
+    return false;
+  }
+
   void capture_output(const std::shared_ptr<OutputCapture> &output, const lvh::GamepadOutput &gamepad_output) {
     std::lock_guard lock {output->mutex};
     if (
@@ -422,6 +448,9 @@ namespace {
     if (validate_trigger_inputs(virtual_gamepad, gamepad.get()) != EXIT_SUCCESS) {
       return EXIT_FAILURE;
     }
+    if (!validate_battery(virtual_gamepad, gamepad.get())) {
+      return fail("SDL3 did not expose the Xbox battery state");
+    }
     return validate_rumble(gamepad.get(), output);
   }
 
@@ -450,6 +479,7 @@ namespace {
     lvh::CreateGamepadOptions options;
     options.profile = test_case.profile;
     options.profile.name = std::format("libvirtualhid SDL3 {} {}", test_case.identity_token, ::getpid());
+    options.metadata.has_battery = true;
     options.metadata.stable_id = std::format("libvirtualhid-sdl3-xbox-{:04x}-{}", test_case.product_id, ::getpid());
     auto created = runtime->create_gamepad(options);
     if (!created) {
@@ -457,6 +487,9 @@ namespace {
     }
     if (!created.gamepad->profile().capabilities.supports_trigger_rumble) {
       return fail("Xbox creation did not select the trigger-rumble-capable UHID backend");
+    }
+    if (!created.gamepad->profile().capabilities.supports_battery) {
+      return fail("Xbox creation did not select the battery-capable UHID backend");
     }
     if (!wait_for_accessible_hidraw_node(*created.gamepad)) {
       log_device_nodes(*created.gamepad);

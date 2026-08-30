@@ -93,6 +93,12 @@ backpressure does not turn relative movement into a replaceable absolute state.
 Profile initialization replies are prioritized over pending controller states
 so the Switch Pro handshake remains responsive.
 
+The driver also caches the newest complete input report for each report ID and
+answers VHF `GetInputReport` requests from that cache. Synchronous HID consumers
+can therefore query the current controller and battery state even when they do
+not consume the streaming read queue. Unnumbered reports are returned with the
+leading zero report-ID byte expected by Windows HID APIs.
+
 The driver rejects virtual HID create, destroy, and broker-instance reset IOCTLs
 unless the requestor token contains the `NT SERVICE\libvirtualhid_broker`
 service SID. On the first boot after installation, before Windows applies a
@@ -420,10 +426,10 @@ Xbox Series profile remains `VID_045E&PID_0B12`; the Windows transport presents
 it with release `0x0509` and the `VID_045E&PID_0B12&IG_00` XInputHID match ID
 observed from physical Xbox Series USB and Xbox Wireless Adapter connections.
 The VHF child preserves the native 17-byte GIP-shaped input report, and the
-report parser accepts the native eight-byte four-motor Xbox payload when a
-consumer delivers it. The Xbox 360 profile is rejected by the UMDF/VHF backend
-because a real Xbox 360 controller is an XUSB device rather than a VHF HID
-gamepad.
+last byte carries battery strength for both Xbox One and Xbox Series. The report
+parser accepts the native eight-byte four-motor Xbox payload when a consumer
+delivers it. The Xbox 360 profile is rejected by the UMDF/VHF backend because a
+real Xbox 360 controller is an XUSB device rather than a VHF HID gamepad.
 
 DualShock 4 and DualSense answer the calibration, pairing, and firmware feature
 requests used by their Windows HIDAPI initialization paths. Switch Pro answers

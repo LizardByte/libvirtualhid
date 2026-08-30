@@ -1961,7 +1961,7 @@ namespace lvh::profiles {
       profile.capabilities = {
         .supports_rumble = true,
         .supports_trigger_rumble = true,
-        .supports_battery = include_share_button,
+        .supports_battery = true,
       };
       profile.report_descriptor = make_xbox_gip_report_descriptor(include_share_button);
       return profile;

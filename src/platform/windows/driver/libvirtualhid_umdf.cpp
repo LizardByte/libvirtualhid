@@ -73,6 +73,7 @@ EVT_WDF_IO_QUEUE_IO_DEVICE_CONTROL LvhEvtIoDeviceControl;
 EVT_WDF_OBJECT_CONTEXT_CLEANUP LvhEvtDeviceCleanup;
 EVT_WDF_REQUEST_CANCEL LvhEvtOutputReadCanceled;
 EVT_VHF_ASYNC_OPERATION LvhEvtVhfGetFeature;
+EVT_VHF_ASYNC_OPERATION LvhEvtVhfGetInputReport;
 EVT_VHF_READY_FOR_NEXT_READ_REPORT LvhEvtVhfReadyForNextReadReport;
 EVT_VHF_ASYNC_OPERATION LvhEvtVhfSetFeature;
 EVT_VHF_ASYNC_OPERATION LvhEvtVhfWriteReport;
@@ -120,6 +121,7 @@ namespace {
     std::wstring hardware_ids;
     lvh::detail::windows::GenericPidFeatureState generic_pid_feature_state;
     lvh::detail::windows::VhfInputReportQueue pending_input_reports;
+    std::map<std::uint8_t, std::vector<std::uint8_t>> latest_input_reports;
     std::shared_ptr<std::vector<std::uint8_t>> in_flight_input_report;
     std::size_t active_input_submissions {};
     std::uint8_t switch_pro_packet_timer {};
@@ -307,6 +309,9 @@ namespace {
       if (record.shutting_down || record.vhf_handle == nullptr) {
         return STATUS_OBJECT_NAME_NOT_FOUND;
       }
+      const auto configured_report_id = record.request.hardware_ids.report_id;
+      const auto report_id = configured_report_id == 0U || report.empty() ? configured_report_id : report.front();
+      record.latest_input_reports.insert_or_assign(report_id, report);
       record.pending_input_reports.push(std::move(report));
     }
 
@@ -421,6 +426,7 @@ namespace {
       record->vhf_handle = nullptr;
       record->vhf_ready_for_input_report = false;
       record->pending_input_reports.clear();
+      record->latest_input_reports.clear();
       record->submissions_drained.wait(lock, [record] {
         return record->active_input_submissions == 0U;
       });
@@ -561,6 +567,7 @@ namespace {
     vhf_config.HardwareIDs = record->hardware_ids.data();
     vhf_config.EvtVhfReadyForNextReadReport = LvhEvtVhfReadyForNextReadReport;
     vhf_config.EvtVhfAsyncOperationGetFeature = LvhEvtVhfGetFeature;
+    vhf_config.EvtVhfAsyncOperationGetInputReport = LvhEvtVhfGetInputReport;
     vhf_config.EvtVhfAsyncOperationSetFeature = LvhEvtVhfSetFeature;
     vhf_config.EvtVhfAsyncOperationWriteReport = LvhEvtVhfWriteReport;
 
@@ -920,6 +927,36 @@ namespace {
 
     std::fill_n(packet.reportBuffer, packet.reportBufferLen, UCHAR {});
     std::copy(report->begin(), report->end(), packet.reportBuffer);
+    return STATUS_SUCCESS;
+  }
+
+  NTSTATUS copy_vhf_input_report(DeviceRecord &record, HID_XFER_PACKET &packet) {
+    auto report_number = packet.reportId;
+    if (
+      report_number == 0U && record.request.hardware_ids.report_id != 0U &&
+      packet.reportBufferLen > 0U
+    ) {
+      report_number = packet.reportBuffer[0];
+    }
+
+    auto report = std::vector<std::uint8_t> {};
+    {
+      std::lock_guard lock {record.mutex};
+      const auto iter = record.latest_input_reports.find(report_number);
+      if (iter == record.latest_input_reports.end()) {
+        return STATUS_NOT_SUPPORTED;
+      }
+      report = iter->second;
+    }
+
+    const auto unnumbered_report = report_number == 0U;
+    const auto leading_report_id_size = unnumbered_report && packet.reportBufferLen > report.size() ? 1U : 0U;
+    if (packet.reportBufferLen < report.size() + leading_report_id_size) {
+      return STATUS_BUFFER_TOO_SMALL;
+    }
+
+    std::fill_n(packet.reportBuffer, packet.reportBufferLen, UCHAR {});
+    std::copy(report.begin(), report.end(), packet.reportBuffer + leading_report_id_size);
     return STATUS_SUCCESS;
   }
 
@@ -1322,6 +1359,27 @@ void LvhEvtVhfGetFeature(
   const auto status = copy_vhf_feature_report(*record, *hid_transfer_packet);
   if (!NT_SUCCESS(status)) {
     trace_status("EvtVhfGetFeature complete", status);
+  }
+  static_cast<void>(VhfAsyncOperationComplete(vhf_operation_handle, status));
+}
+
+void LvhEvtVhfGetInputReport(
+  VhfContext vhf_client_context,
+  VHFOPERATIONHANDLE vhf_operation_handle,
+  VhfContext vhf_operation_context,
+  PHID_XFER_PACKET hid_transfer_packet
+) {
+  UNREFERENCED_PARAMETER(vhf_operation_context);
+
+  auto *record = static_cast<DeviceRecord *>(vhf_client_context);
+  if (record == nullptr || hid_transfer_packet == nullptr || hid_transfer_packet->reportBuffer == nullptr) {
+    static_cast<void>(VhfAsyncOperationComplete(vhf_operation_handle, STATUS_INVALID_PARAMETER));
+    return;
+  }
+
+  const auto status = copy_vhf_input_report(*record, *hid_transfer_packet);
+  if (!NT_SUCCESS(status)) {
+    trace_status("EvtVhfGetInputReport complete", status);
   }
   static_cast<void>(VhfAsyncOperationComplete(vhf_operation_handle, status));
 }

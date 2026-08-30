@@ -182,7 +182,7 @@ namespace lvh::detail::test {
    */
   struct LinuxUhidXboxObservation {
     /**
-     * @brief Whether UHID creation used the 283-byte Linux Xbox BLE transport descriptor.
+     * @brief Whether UHID creation used the Linux Xbox BLE transport descriptor.
      */
     bool saw_transport_descriptor = false;
 
@@ -205,6 +205,11 @@ namespace lvh::detail::test {
      * @brief Whether submitted normalized state was carried in a native Bluetooth input report.
      */
     bool saw_input = false;
+
+    /**
+     * @brief Whether submitted battery state was carried in a native Bluetooth battery report.
+     */
+    bool saw_battery_input = false;
 
     /**
      * @brief Whether the Guide button was carried in the native button bitmap.
