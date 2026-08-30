@@ -118,6 +118,13 @@ The Linux backend uses standard user-space kernel interfaces:
 - X11/XTest only as a keyboard and mouse fallback when `uinput` cannot be used
   and an X11 session is available.
 
+The uinput mouse advertises the legacy `REL_WHEEL` and `REL_HWHEEL` axes together
+with their high-resolution counterparts when the platform provides them. It
+accumulates high-resolution input independently for each axis and emits a legacy
+detent for every 120 accumulated units. This follows the Linux input protocol,
+lets libinput recognize the device as wheel-capable, and prevents libinput from
+reserving the physical middle button for button scrolling.
+
 Gamepad support normally prefers `uhid` because descriptors, raw HID identity,
 feature reports, and output reports matter for controller compatibility. Xbox
 One and Xbox Series use backend-only Bluetooth identities with a 283-byte BLE
