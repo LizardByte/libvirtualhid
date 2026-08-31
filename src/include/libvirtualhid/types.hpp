@@ -714,11 +714,28 @@ namespace lvh {
   /**
    * @brief Keyboard key code accepted by the keyboard event model.
    *
-   * The initial Linux backend treats this as a Windows virtual-key code so
-   * streaming hosts can pass common client key codes without exposing platform
-   * backends. Backends translate this value to their native key representation.
+   * Values in the low byte (0x00-0xFF) are interpreted as Windows virtual-key
+   * codes so streaming hosts can pass common client key codes without exposing
+   * platform backends. Values at or above 0x0100 are semantic keycodes defined
+   * in @ref keyboard_key_codes that have no Windows virtual-key equivalent.
+   * Backends translate the value to their native key representation.
    */
   using KeyboardKeyCode = std::uint16_t;
+
+  /**
+   * @brief Semantic keyboard keycodes that have no Windows virtual-key equivalent.
+   *
+   * Windows virtual-key codes occupy the low byte (0x00-0xFF), so these reserved
+   * values start at 0x0100. They request a platform's native editing action key;
+   * backends translate them to the appropriate native key (for example the Linux
+   * `KEY_COPY` evdev code or the X11 `XF86Copy` keysym).
+   */
+  namespace keyboard_key_codes {
+    inline constexpr KeyboardKeyCode undo = 0x0100;  ///< Undo editing action.
+    inline constexpr KeyboardKeyCode cut = 0x0101;  ///< Cut editing action.
+    inline constexpr KeyboardKeyCode copy = 0x0102;  ///< Copy editing action.
+    inline constexpr KeyboardKeyCode paste = 0x0103;  ///< Paste editing action.
+  }  // namespace keyboard_key_codes
 
   /**
    * @brief Keyboard key transition.
