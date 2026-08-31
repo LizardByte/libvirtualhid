@@ -20,6 +20,7 @@
 #include <dinput.h>
 #include <hidsdi.h>
 #include <SetupAPI.h>
+#include <Xinput.h>
 
 #if defined(LIBVIRTUALHID_TEST_HAS_SDL3)
   #include <SDL3/SDL.h>
@@ -28,6 +29,7 @@
 // standard includes
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <chrono>
 #include <cmath>
 #include <condition_variable>
@@ -114,6 +116,79 @@ namespace {
   private:
     HANDLE value_;
   };
+
+  class XInputApi {
+  public:
+    using GetState = DWORD(WINAPI *)(DWORD, XINPUT_STATE *);
+    using GetBatteryInformation = DWORD(WINAPI *)(DWORD, BYTE, XINPUT_BATTERY_INFORMATION *);
+
+    XInputApi():
+        module_ {LoadLibraryW(L"xinput1_4.dll")} {
+      if (module_ != nullptr) {
+        get_state_ = std::bit_cast<GetState>(GetProcAddress(module_, "XInputGetState"));
+        get_battery_information_ = std::bit_cast<GetBatteryInformation>(
+          GetProcAddress(module_, "XInputGetBatteryInformation")
+        );
+      }
+    }
+
+    XInputApi(const XInputApi &) = delete;
+    XInputApi &operator=(const XInputApi &) = delete;
+
+    ~XInputApi() {
+      if (module_ != nullptr) {
+        static_cast<void>(FreeLibrary(module_));
+      }
+    }
+
+    explicit operator bool() const {
+      return get_state_ != nullptr && get_battery_information_ != nullptr;
+    }
+
+    DWORD state(DWORD slot, XINPUT_STATE *state) const {
+      return get_state_(slot, state);
+    }
+
+    DWORD battery_information(
+      DWORD slot,
+      BYTE device_type,
+      XINPUT_BATTERY_INFORMATION *battery
+    ) const {
+      return get_battery_information_(slot, device_type, battery);
+    }
+
+  private:
+    HMODULE module_ = nullptr;
+    GetState get_state_ = nullptr;
+    GetBatteryInformation get_battery_information_ = nullptr;
+  };
+
+  std::set<DWORD> current_xinput_slots(const XInputApi &xinput) {
+    std::set<DWORD> result;
+    for (auto slot = DWORD {0}; slot < XUSER_MAX_COUNT; ++slot) {
+      XINPUT_STATE state {};
+      if (xinput.state(slot, &state) == ERROR_SUCCESS) {
+        result.insert(slot);
+      }
+    }
+    return result;
+  }
+
+  std::optional<DWORD> wait_for_new_xinput_slot(
+    const XInputApi &xinput,
+    const std::set<DWORD> &previous_slots
+  ) {
+    const auto deadline = std::chrono::steady_clock::now() + 10s;
+    while (std::chrono::steady_clock::now() < deadline) {
+      for (const auto slot : current_xinput_slots(xinput)) {
+        if (!previous_slots.contains(slot)) {
+          return slot;
+        }
+      }
+      std::this_thread::sleep_for(20ms);
+    }
+    return std::nullopt;
+  }
 
   template<typename Interface>
   struct ComReleaser {
@@ -517,6 +592,19 @@ namespace {
     return {nullptr, &SDL_CloseGamepad};
   }
 
+  bool wait_for_sdl_gamepad_removal(SDL_JoystickID gamepad_id) {
+    const auto deadline = std::chrono::steady_clock::now() + 10s;
+    while (std::chrono::steady_clock::now() < deadline) {
+      SDL_UpdateGamepads();
+      SDL_PumpEvents();
+      if (!current_sdl_gamepads().contains(gamepad_id)) {
+        return true;
+      }
+      std::this_thread::sleep_for(20ms);
+    }
+    return false;
+  }
+
   bool wait_for_switch_pro_motion(SDL_Gamepad *gamepad) {
     std::array<float, 3> acceleration {};
     std::array<float, 3> gyroscope {};
@@ -626,7 +714,106 @@ TEST_F(WindowsConsumerTest, SdlHidapiOutputReachesDefaultPlayStationAndSwitchCal
     ASSERT_TRUE(created.adapter->close().ok());
   }
 }
+
+TEST_F(WindowsConsumerTest, SdlExposesSubmittedBatteryStateForNonXboxProfiles) {
+  SdlGamepadSubsystem sdl;
+  ASSERT_TRUE(sdl.initialized()) << SDL_GetError();
+
+  lvh::RuntimeOptions runtime_options;
+  runtime_options.backend = lvh::BackendKind::platform_default;
+  auto runtime = lvh::Runtime::create(runtime_options);
+  ASSERT_NE(runtime, nullptr);
+  ASSERT_TRUE(runtime->capabilities().supports_gamepad)
+    << "The installed libvirtualhid Windows driver is required for this integration test";
+
+  struct BatteryTestCase {
+    lvh::DeviceProfile profile;
+    int expected_percentage;
+  };
+
+  const std::array test_cases {
+    BatteryTestCase {lvh::profiles::dualshock4(), 55},
+    BatteryTestCase {lvh::profiles::dualsense(), 55},
+    BatteryTestCase {lvh::profiles::switch_pro(), 50},
+  };
+  for (const auto &[profile, expected_percentage] : test_cases) {
+    SCOPED_TRACE(profile.name);
+    const auto previous_gamepads = current_sdl_gamepads();
+
+    lvh::CreateGamepadOptions options;
+    options.profile = profile;
+    options.metadata.stable_id = "02:11:22:33:44:55";
+    options.metadata.has_battery = true;
+    auto created = lvh::GamepadStateAdapter::create(*runtime, options);
+    ASSERT_TRUE(created) << created.status.message();
+    ASSERT_NE(created.adapter->gamepad(), nullptr);
+
+    auto gamepad = wait_for_new_sdl_gamepad(previous_gamepads, profile.vendor_id, profile.product_id);
+    ASSERT_NE(gamepad.get(), nullptr) << SDL_GetError();
+    ASSERT_TRUE(created.adapter->set_battery({
+                                               .state = lvh::GamepadBatteryState::discharging,
+                                               .percentage = 50,
+                                             })
+                  .ok());
+
+    auto power_state = SDL_POWERSTATE_UNKNOWN;
+    auto percentage = -1;
+    const auto deadline = std::chrono::steady_clock::now() + 3s;
+    while (std::chrono::steady_clock::now() < deadline) {
+      SDL_UpdateGamepads();
+      SDL_PumpEvents();
+      power_state = SDL_GetGamepadPowerInfo(gamepad.get(), &percentage);
+      if (power_state != SDL_POWERSTATE_UNKNOWN && percentage >= 0) {
+        break;
+      }
+      std::this_thread::sleep_for(20ms);
+    }
+
+    EXPECT_EQ(power_state, SDL_POWERSTATE_ON_BATTERY) << "percentage=" << percentage;
+    EXPECT_EQ(percentage, expected_percentage);
+    const auto gamepad_id = SDL_GetGamepadID(gamepad.get());
+    gamepad.reset();
+    ASSERT_TRUE(created.adapter->close().ok());
+    ASSERT_TRUE(wait_for_sdl_gamepad_removal(gamepad_id));
+  }
+}
 #endif
+
+TEST_F(WindowsConsumerTest, XInputDoesNotExposeSubmittedXboxBattery) {
+  XInputApi xinput;
+  ASSERT_TRUE(xinput);
+  const auto previous_slots = current_xinput_slots(xinput);
+
+  lvh::RuntimeOptions runtime_options;
+  runtime_options.backend = lvh::BackendKind::platform_default;
+  auto runtime = lvh::Runtime::create(runtime_options);
+  ASSERT_NE(runtime, nullptr);
+  ASSERT_TRUE(runtime->capabilities().supports_gamepad)
+    << "The installed libvirtualhid Windows driver is required for this integration test";
+
+  lvh::CreateGamepadOptions options;
+  options.profile = lvh::profiles::xbox_series();
+  options.metadata.stable_id = "xinput-battery-test";
+  options.metadata.has_battery = true;
+  auto created = lvh::GamepadStateAdapter::create(*runtime, options);
+  ASSERT_TRUE(created) << created.status.message();
+  ASSERT_TRUE(created.adapter->set_battery({
+                                             .state = lvh::GamepadBatteryState::discharging,
+                                             .percentage = 50,
+                                           })
+                .ok());
+  ASSERT_TRUE(created.adapter->set_button(lvh::GamepadButton::a, true).ok());
+
+  const auto slot = wait_for_new_xinput_slot(xinput, previous_slots);
+  ASSERT_TRUE(slot.has_value());
+
+  XINPUT_BATTERY_INFORMATION battery {};
+  ASSERT_EQ(xinput.battery_information(*slot, BATTERY_DEVTYPE_GAMEPAD, &battery), ERROR_SUCCESS);
+  EXPECT_EQ(battery.BatteryType, BATTERY_TYPE_DISCONNECTED);
+  EXPECT_EQ(battery.BatteryLevel, BATTERY_LEVEL_EMPTY);
+
+  ASSERT_TRUE(created.adapter->close().ok());
+}
 
 TEST_F(WindowsConsumerTest, NativePlayStationFeatureAndOutputReportsReachOwningRuntime) {
   struct NativePlayStationCase {

@@ -97,6 +97,19 @@ lets Windows HID consumers retrieve the current battery state for Xbox One,
 Xbox Series, DualShock 4, DualSense, and Switch Pro instead of relying only on
 the asynchronous input stream.
 
+That HID report does not change the XInput battery classification of the VHF
+device. `XInputGetBatteryInformation` returns `BATTERY_TYPE_DISCONNECTED` and
+`BATTERY_LEVEL_EMPTY` for the virtual Xbox controller even while its input is
+available through `XInputGetState`. Consumers that prefer XInput, including
+SDL's correlated Windows Xbox path and Windows Game Bar, therefore do not
+receive the remote Xbox battery value. DualShock 4, DualSense, and Switch Pro
+battery state is independently covered through SDL's HID path.
+
+The current Steam client displays its controller battery indicator only when it
+classifies the device as Bluetooth or wireless. Because VHF exposes a wired
+virtual transport, Steam can hide the battery indicator for every Windows
+profile even when another HID consumer can retrieve the submitted value.
+
 Windows VHF devices do not expose a Bluetooth transport identity to HIDAPI.
 The Windows backend therefore reports DualShock 4 and DualSense requests as
 effective USB profiles through `Gamepad::profile()` and uses the matching USB

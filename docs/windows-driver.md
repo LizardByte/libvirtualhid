@@ -99,6 +99,20 @@ can therefore query the current controller and battery state even when they do
 not consume the streaming read queue. Unnumbered reports are returned with the
 leading zero report-ID byte expected by Windows HID APIs.
 
+For Xbox profiles, this HID input value is separate from the battery result
+returned by XInput. `XInputGetBatteryInformation` returns
+`BATTERY_TYPE_DISCONNECTED` and `BATTERY_LEVEL_EMPTY` for the VHF Xbox device,
+even while `XInputGetState` receives its input and `GetInputReport` contains the
+submitted value. SDL's Windows Xbox path and Windows Game Bar therefore have no
+XInput battery value to display. VHF does not expose a wireless-transport or
+XInput battery-type setting in `VHF_CONFIG`.
+
+The current Steam client also renders its controller battery indicator only for
+devices it classifies as Bluetooth or wireless. All Windows VHF profiles use a
+wired virtual transport, so this UI policy can hide battery values that remain
+available to HID consumers. SDL's HID path independently receives battery state
+for the Windows DualShock 4, DualSense, and Switch Pro profiles.
+
 The driver rejects virtual HID create, destroy, and broker-instance reset IOCTLs
 unless the requestor token contains the `NT SERVICE\libvirtualhid_broker`
 service SID. On the first boot after installation, before Windows applies a
