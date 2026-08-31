@@ -100,19 +100,6 @@ namespace lvh::detail::test {
       return opaque_test_handle<const FakeLibevdevDevice *>(device);
     }
 
-    std::uint16_t xbox_descriptor_crc16(std::span<const std::uint8_t> descriptor) {
-      std::uint16_t crc = 0;
-      for (const auto byte : descriptor) {
-        crc = static_cast<std::uint16_t>(crc ^ byte);
-        for (auto bit = 0; bit < 8; ++bit) {
-          crc = static_cast<std::uint16_t>(
-            (crc & 1U) != 0U ? (crc >> 1U) ^ 0xA001U : crc >> 1U
-          );
-        }
-      }
-      return crc;
-    }
-
     libevdev_uinput *libevdev_uinput_handle(FakeLibevdevUinput *device) noexcept {
       return opaque_test_handle<libevdev_uinput *>(device);
     }
@@ -747,7 +734,7 @@ namespace lvh::detail::test {
         result.creation.waited_for_start
       );
       if (result.creation.saw_create) {
-        const auto transport_profile = uhid_transport_profile(options.profile);
+        const auto transport_profile = uhid_transport_profile(options.profile, options.metadata.has_battery);
         result.creation.saw_create = event.u.create2.vendor == transport_profile.vendor_id &&
                                      event.u.create2.product == transport_profile.product_id &&
                                      event.u.create2.version == transport_profile.version &&
@@ -1617,7 +1604,11 @@ namespace lvh::detail::test {
     return result;
   }
 
-  LinuxUhidRoundTripResult linux_xbox_bluetooth_uhid_socketpair_reports(GamepadProfileKind kind) {
+  LinuxUhidRoundTripResult linux_xbox_bluetooth_uhid_socketpair_reports(
+    GamepadProfileKind kind,
+    bool advertises_battery,
+    bool submits_battery
+  ) {
     LinuxUhidRoundTripResult result;
     std::array<int, 2> descriptors {-1, -1};
     if (::socketpair(AF_UNIX, SOCK_STREAM, 0, descriptors.data()) != 0) {
@@ -1631,6 +1622,7 @@ namespace lvh::detail::test {
     CreateGamepadOptions options;
     options.profile = profile;
     options.metadata.stable_id = "xbox-bluetooth-uhid-roundtrip";
+    options.metadata.has_battery = advertises_battery;
 
     UhidGamepad gamepad {descriptors[0]};
     auto event = create_started_profile_uhid_gamepad(gamepad, 13, options, descriptors[1], BUS_BLUETOOTH, result);
@@ -1640,8 +1632,27 @@ namespace lvh::detail::test {
         event.u.create2.rd_data,
         event.u.create2.rd_size,
       };
-      result.xbox.saw_transport_descriptor =
-        descriptor.size() == 283U && xbox_descriptor_crc16(descriptor) == 0xDB7DU;
+      constexpr std::array<std::uint8_t, 16> battery_report_descriptor {
+        0x05U,
+        0x06U,
+        0x09U,
+        0x20U,
+        0x85U,
+        xbox_bluetooth_battery_report_id,
+        0x15U,
+        0x04U,
+        0x25U,
+        0x07U,
+        0x75U,
+        0x08U,
+        0x95U,
+        0x01U,
+        0x81U,
+        0x02U,
+      };
+      result.xbox.saw_transport_descriptor = descriptor.size() == (advertises_battery ? 299U : 283U);
+      result.xbox.saw_battery_descriptor =
+        std::ranges::search(descriptor, battery_report_descriptor).begin() != descriptor.end();
       constexpr std::array<std::uint8_t, 4> right_stick_usages {
         0x09U,
         0x33U,
@@ -1707,6 +1718,12 @@ namespace lvh::detail::test {
     state.right_stick = {.x = 0.5F, .y = -0.5F};
     state.left_trigger = 0.25F;
     state.right_trigger = 0.75F;
+    if (submits_battery) {
+      state.battery = GamepadBattery {
+        .state = GamepadBatteryState::discharging,
+        .percentage = 50,
+      };
+    }
     const auto report = reports::pack_input_report(profile, state);
     result.submit_status = gamepad.submit(state, report);
 
@@ -1724,6 +1741,13 @@ namespace lvh::detail::test {
         input[16] == (kind == GamepadProfileKind::xbox_series ? 0x01U : 0x00U);
     }
     result.saw_input = result.xbox.saw_input;
+
+    if (read_uhid_event_type(descriptors[1], UHID_INPUT2, event)) {
+      const auto input = std::span {event.u.input2.data, event.u.input2.size};
+      result.xbox.saw_battery_input =
+        input.size() == xbox_bluetooth_battery_report_size && input[0] == xbox_bluetooth_battery_report_id &&
+        input[1] == 0x05U;
+    }
 
     constexpr std::array<std::uint8_t, xbox_bluetooth_rumble_report_size> motor_report {
       xbox_bluetooth_rumble_report_id,

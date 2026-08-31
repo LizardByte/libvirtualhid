@@ -120,13 +120,17 @@ namespace lvh::detail {
     constexpr std::size_t xbox_bluetooth_input_report_size = 17;
     constexpr std::uint8_t xbox_bluetooth_rumble_report_id = 0x03;
     constexpr std::size_t xbox_bluetooth_rumble_report_size = 9;
+    constexpr std::uint8_t xbox_bluetooth_battery_report_id = 0x04;
+    constexpr std::size_t xbox_bluetooth_battery_report_size = 2;
 
-    std::vector<std::uint8_t> make_xbox_bluetooth_report_descriptor() {
-      // Preserve the native 283-byte Xbox BLE report layout while advertising
-      // the conventional Linux evdev usages for the right stick and triggers.
+    std::vector<std::uint8_t> make_xbox_bluetooth_report_descriptor(bool include_battery) {
+      // Preserve the native Xbox BLE report layout while advertising the
+      // conventional Linux evdev usages for the right stick and triggers.
       // HIDAPI consumes the same byte offsets directly, while the kernel maps
-      // these usages to ABS_RX/ABS_RY and ABS_Z/ABS_RZ for Steam.
-      constexpr std::array<std::uint8_t, 283> descriptor {
+      // these usages to ABS_RX/ABS_RY and ABS_Z/ABS_RZ for Steam. Battery-capable
+      // clients add the native two-byte Xbox Bluetooth battery notification as
+      // report 4 through the standard Battery Strength usage.
+      std::vector<std::uint8_t> descriptor {
         0x05,
         0x01,  // Usage Page (Generic Desktop)
         0x09,
@@ -409,9 +413,36 @@ namespace lvh::detail {
         0x91,
         0x02,  // Output (Data, Variable, Absolute)
         0xC0,  // End Collection
-        0xC0,  // End Collection
       };
-      return {descriptor.begin(), descriptor.end()};
+
+      if (include_battery) {
+        // SDL's Linux Xbox descriptor reader requires byte-sized fields. Keep
+        // the native wireless/source flag in the byte while narrowing its
+        // logical range to the four values this backend emits, so Linux power
+        // consumers can scale the categorical levels without breaking HIDAPI.
+        constexpr std::array<std::uint8_t, 16> battery_descriptor {
+          0x05,
+          0x06,  // Usage Page (Generic Device Controls)
+          0x09,
+          0x20,  // Usage (Battery Strength)
+          0x85,
+          xbox_bluetooth_battery_report_id,  // Report ID (4)
+          0x15,
+          0x04,  // Logical Minimum (wireless, empty)
+          0x25,
+          0x07,  // Logical Maximum (wireless, full)
+          0x75,
+          0x08,  // Report Size (8)
+          0x95,
+          0x01,  // Report Count (1)
+          0x81,
+          0x02,  // Input (Data, Variable, Absolute)
+        };
+        descriptor.insert(descriptor.end(), battery_descriptor.begin(), battery_descriptor.end());
+      }
+
+      descriptor.push_back(0xC0);  // End Collection
+      return descriptor;
     }
 #endif
 
@@ -596,7 +627,7 @@ namespace lvh::detail {
       return false;
     }
 
-    DeviceProfile uhid_transport_profile(const DeviceProfile &requested_profile) {
+    DeviceProfile uhid_transport_profile(const DeviceProfile &requested_profile, bool include_battery) {
       auto transport_profile = requested_profile;
       if (is_xbox_uhid_profile(requested_profile.gamepad_kind)) {
         const auto series = requested_profile.gamepad_kind == GamepadProfileKind::xbox_series;
@@ -606,7 +637,7 @@ namespace lvh::detail {
         transport_profile.report_id = xbox_bluetooth_input_report_id;
         transport_profile.input_report_size = xbox_bluetooth_input_report_size;
         transport_profile.output_report_size = xbox_bluetooth_rumble_report_size;
-        transport_profile.report_descriptor = make_xbox_bluetooth_report_descriptor();
+        transport_profile.report_descriptor = make_xbox_bluetooth_report_descriptor(include_battery);
       }
       return transport_profile;
     }
@@ -650,6 +681,29 @@ namespace lvh::detail {
       if (include_share_button && state.buttons.test(misc1)) {
         report[16] = 0x01;
       }
+      return report;
+    }
+
+    std::vector<std::uint8_t> make_xbox_bluetooth_battery_report(const GamepadBattery &battery) {
+      constexpr auto wireless_battery_source = std::byte {0x04};
+      constexpr std::uint8_t ten_percent_battery_level = 0;
+      constexpr std::uint8_t forty_percent_battery_level = 1;
+      constexpr std::uint8_t seventy_percent_battery_level = 2;
+      constexpr std::uint8_t full_battery_level = 3;
+
+      const auto percentage = std::min<std::uint8_t>(battery.percentage, 100U);
+      auto level = full_battery_level;
+      if (percentage <= 25U) {
+        level = ten_percent_battery_level;
+      } else if (percentage <= 55U) {
+        level = forty_percent_battery_level;
+      } else if (percentage <= 85U) {
+        level = seventy_percent_battery_level;
+      }
+
+      std::vector<std::uint8_t> report(xbox_bluetooth_battery_report_size);
+      report[0] = xbox_bluetooth_battery_report_id;
+      report[1] = std::to_integer<std::uint8_t>(wireless_battery_source | static_cast<std::byte>(level));
       return report;
     }
 
@@ -3213,7 +3267,7 @@ namespace lvh::detail {
       OperationStatus create(DeviceId id, const CreateGamepadOptions &options) {
         uhid_event event {};
         auto &request = event.u.create2;
-        const auto transport_profile = uhid_transport_profile(options.profile);
+        const auto transport_profile = uhid_transport_profile(options.profile, options.metadata.has_battery);
 
         if (transport_profile.report_descriptor.size() > sizeof(request.rd_data)) {
           return OperationStatus::failure(ErrorCode::unsupported_profile, "HID report descriptor is too large for UHID");
@@ -3248,6 +3302,7 @@ namespace lvh::detail {
           transport_profile.report_descriptor.size()
         );
         profile_ = options.profile;
+        supports_battery_ = options.metadata.has_battery;
         {
           std::lock_guard lock {state_mutex_};
           last_state_ = {};
@@ -3294,6 +3349,9 @@ namespace lvh::detail {
                                         ) :
                                         report;
         auto status = write_input_report(transport_report);
+        if (status.ok() && supports_battery_ && state.battery && is_xbox_uhid_profile(profile_.gamepad_kind)) {
+          status = write_input_report(make_xbox_bluetooth_battery_report(*state.battery));
+        }
         if (status.ok()) {
           last_state_ = state;
         }
@@ -3629,6 +3687,7 @@ namespace lvh::detail {
       std::string unique_id_;
       std::array<std::uint8_t, 6> playstation_mac_address_ {};
       GamepadState last_state_;
+      bool supports_battery_ = false;
       std::atomic_bool open_ = true;
       std::atomic_bool running_ = false;
       std::jthread reader_;
@@ -3661,6 +3720,7 @@ namespace lvh::detail {
         return std::nullopt;
       }
       effective_profile.capabilities.supports_trigger_rumble = false;
+      effective_profile.capabilities.supports_battery = false;
       return effective_profile;
 #endif
     }

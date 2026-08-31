@@ -91,6 +91,28 @@ streams native `0x30` reports every 15 milliseconds. This coalesces separate
 acceleration and gyroscope API updates into the three-sample report cadence used
 by a physical USB controller.
 
+For every gamepad report ID, the VHF driver caches the newest complete input
+report and answers synchronous `GetInputReport` requests from that cache. This
+lets Windows HID consumers retrieve the current battery state for Xbox One,
+Xbox Series, DualShock 4, DualSense, and Switch Pro instead of relying only on
+the asynchronous input stream.
+
+That HID report does not change the XInput battery classification of the VHF
+device. On a Windows desktop where XInput enumerated the virtual Xbox
+controller, `XInputGetBatteryInformation` returned `BATTERY_TYPE_DISCONNECTED`
+and `BATTERY_LEVEL_EMPTY` even while its input was available through
+`XInputGetState`. Headless Windows CI did not expose an XInput slot for the same
+device. Neither path exposes the remote battery through XInput. Consumers that
+prefer XInput, including SDL's correlated Windows Xbox path and Windows Game
+Bar, therefore do not receive the remote Xbox battery value. DualShock 4,
+DualSense, and Switch Pro battery state is independently covered through SDL's
+HID path.
+
+The current Steam client displays its controller battery indicator only when it
+classifies the device as Bluetooth or wireless. Because VHF exposes a wired
+virtual transport, Steam can hide the battery indicator for every Windows
+profile even when another HID consumer can retrieve the submitted value.
+
 Windows VHF devices do not expose a Bluetooth transport identity to HIDAPI.
 The Windows backend therefore reports DualShock 4 and DualSense requests as
 effective USB profiles through `Gamepad::profile()` and uses the matching USB
@@ -127,8 +149,14 @@ reserving the physical middle button for button scrolling.
 
 Gamepad support normally prefers `uhid` because descriptors, raw HID identity,
 feature reports, and output reports matter for controller compatibility. Xbox
-One and Xbox Series use backend-only Bluetooth identities with a 283-byte BLE
-descriptor, sparse input bitmap, and four-motor output framing. The report keeps
+One and Xbox Series use backend-only Bluetooth identities with a BLE descriptor,
+sparse input bitmap, four-motor output framing, and the native report-ID `0x04`
+battery notification. When `CreateGamepadOptions::metadata.has_battery` is true,
+the descriptor exposes the notification's four categorical wireless charge
+levels through a byte-aligned standard HID Battery Strength field and the
+backend emits it only when the submitted state contains battery data. Clients
+without battery support therefore do not create a phantom Linux power device
+or receive a fabricated charge level. The normal input report keeps
 the native byte layout used by HIDAPI while advertising `Rx`/`Ry` for the right
 stick and `Z`/`Rz` for the triggers, so Linux evdev exposes the canonical
 `ABS_RX`/`ABS_RY` and `ABS_Z`/`ABS_RZ` axes expected by Steam. This keeps the bus,
@@ -171,8 +199,10 @@ Xbox 360 retains its `0x045E:0x028E` identity, while its Linux uinput device use
 the Bluetooth bus, so consumers select the sparse button mapping. The Xbox One
 and Xbox Series UHID transports use the native Bluetooth product identities
 `0x045E:0x0B20` and `0x045E:0x0B13`, respectively. Their Bluetooth HID reports
-carry canonical gamepad input and four-motor output, which the backend decodes
-into ordinary and independent trigger-rumble callbacks.
+carry canonical gamepad input, coarse battery levels, and four-motor output,
+which the backend decodes into ordinary and independent trigger-rumble
+callbacks. The backend maps the continuous percentage to the nearest native
+Xbox level exposed by SDL: 10, 40, 70, or 100 percent.
 
 If UHID is unavailable, the Xbox One and Xbox Series uinput fallbacks use the
 corresponding Bluetooth product identities (`0x0B20` and `0x0B13`, respectively),
@@ -183,8 +213,9 @@ pressed, keeping face buttons, shoulders, menu buttons, Guide, L3, and R3 at
 their expected indices. D-pad directions are reported through the hat axes and
 exposed as logical buttons by standard gamepad consumers. The fallback retains
 all of those controls, analog trigger input, and ordinary force feedback, but
-Linux uinput cannot expose independent trigger motors, so its effective profile
-clears trigger-rumble support.
+Linux uinput cannot expose independent trigger motors or native Xbox battery
+notifications, so its effective profile clears trigger-rumble and battery
+support.
 
 DualShock 4 and DualSense remain on `uhid` so their descriptors, motion,
 touchpad, battery, feature reports, and profile-specific output reports stay

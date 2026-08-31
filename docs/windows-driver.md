@@ -93,6 +93,28 @@ backpressure does not turn relative movement into a replaceable absolute state.
 Profile initialization replies are prioritized over pending controller states
 so the Switch Pro handshake remains responsive.
 
+The driver also caches the newest complete input report for each report ID and
+answers VHF `GetInputReport` requests from that cache. Synchronous HID consumers
+can therefore query the current controller and battery state even when they do
+not consume the streaming read queue. Unnumbered reports are returned with the
+leading zero report-ID byte expected by Windows HID APIs.
+
+For Xbox profiles, this HID input value is separate from the battery result
+returned by XInput. On a Windows desktop where XInput enumerated the VHF Xbox
+device, `XInputGetBatteryInformation` returned `BATTERY_TYPE_DISCONNECTED` and
+`BATTERY_LEVEL_EMPTY` even while `XInputGetState` received its input and
+`GetInputReport` contained the submitted value. Headless Windows CI did not
+expose an XInput slot for the same device. Neither path exposes the remote
+battery through XInput. SDL's Windows Xbox path and Windows Game Bar therefore
+have no XInput battery value to display. VHF does not expose a
+wireless-transport or XInput battery-type setting in `VHF_CONFIG`.
+
+The current Steam client also renders its controller battery indicator only for
+devices it classifies as Bluetooth or wireless. All Windows VHF profiles use a
+wired virtual transport, so this UI policy can hide battery values that remain
+available to HID consumers. SDL's HID path independently receives battery state
+for the Windows DualShock 4, DualSense, and Switch Pro profiles.
+
 The driver rejects virtual HID create, destroy, and broker-instance reset IOCTLs
 unless the requestor token contains the `NT SERVICE\libvirtualhid_broker`
 service SID. On the first boot after installation, before Windows applies a
@@ -420,10 +442,10 @@ Xbox Series profile remains `VID_045E&PID_0B12`; the Windows transport presents
 it with release `0x0509` and the `VID_045E&PID_0B12&IG_00` XInputHID match ID
 observed from physical Xbox Series USB and Xbox Wireless Adapter connections.
 The VHF child preserves the native 17-byte GIP-shaped input report, and the
-report parser accepts the native eight-byte four-motor Xbox payload when a
-consumer delivers it. The Xbox 360 profile is rejected by the UMDF/VHF backend
-because a real Xbox 360 controller is an XUSB device rather than a VHF HID
-gamepad.
+last byte carries battery strength for both Xbox One and Xbox Series. The report
+parser accepts the native eight-byte four-motor Xbox payload when a consumer
+delivers it. The Xbox 360 profile is rejected by the UMDF/VHF backend because a
+real Xbox 360 controller is an XUSB device rather than a VHF HID gamepad.
 
 DualShock 4 and DualSense answer the calibration, pairing, and firmware feature
 requests used by their Windows HIDAPI initialization paths. Switch Pro answers
