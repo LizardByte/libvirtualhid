@@ -1632,7 +1632,7 @@ namespace lvh::detail::test {
         event.u.create2.rd_data,
         event.u.create2.rd_size,
       };
-      constexpr std::array<std::uint8_t, 22> battery_report_descriptor {
+      constexpr std::array<std::uint8_t, 16> battery_report_descriptor {
         0x05U,
         0x06U,
         0x09U,
@@ -1640,23 +1640,17 @@ namespace lvh::detail::test {
         0x85U,
         xbox_bluetooth_battery_report_id,
         0x15U,
-        0x00U,
+        0x04U,
         0x25U,
-        0x03U,
+        0x07U,
         0x75U,
-        0x02U,
+        0x08U,
         0x95U,
         0x01U,
         0x81U,
         0x02U,
-        0x75U,
-        0x06U,
-        0x95U,
-        0x01U,
-        0x81U,
-        0x03U,
       };
-      result.xbox.saw_transport_descriptor = descriptor.size() == (advertises_battery ? 305U : 283U);
+      result.xbox.saw_transport_descriptor = descriptor.size() == (advertises_battery ? 299U : 283U);
       result.xbox.saw_battery_descriptor =
         std::ranges::search(descriptor, battery_report_descriptor).begin() != descriptor.end();
       constexpr std::array<std::uint8_t, 4> right_stick_usages {

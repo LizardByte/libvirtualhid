@@ -152,11 +152,11 @@ feature reports, and output reports matter for controller compatibility. Xbox
 One and Xbox Series use backend-only Bluetooth identities with a BLE descriptor,
 sparse input bitmap, four-motor output framing, and the native report-ID `0x04`
 battery notification. When `CreateGamepadOptions::metadata.has_battery` is true,
-the descriptor exposes the notification's two-bit categorical charge field
-through the standard HID Battery Strength usage and the backend emits it only
-when the submitted state contains battery data. Clients without battery support
-therefore do not create a phantom Linux power device or receive a fabricated
-charge level. The normal input report keeps
+the descriptor exposes the notification's four categorical wireless charge
+levels through a byte-aligned standard HID Battery Strength field and the
+backend emits it only when the submitted state contains battery data. Clients
+without battery support therefore do not create a phantom Linux power device
+or receive a fabricated charge level. The normal input report keeps
 the native byte layout used by HIDAPI while advertising `Rx`/`Ry` for the right
 stick and `Z`/`Rz` for the triggers, so Linux evdev exposes the canonical
 `ABS_RX`/`ABS_RY` and `ABS_Z`/`ABS_RZ` axes expected by Steam. This keeps the bus,

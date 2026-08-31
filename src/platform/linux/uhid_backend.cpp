@@ -416,7 +416,11 @@ namespace lvh::detail {
       };
 
       if (include_battery) {
-        constexpr std::array<std::uint8_t, 22> battery_descriptor {
+        // SDL's Linux Xbox descriptor reader requires byte-sized fields. Keep
+        // the native wireless/source flag in the byte while narrowing its
+        // logical range to the four values this backend emits, so Linux power
+        // consumers can scale the categorical levels without breaking HIDAPI.
+        constexpr std::array<std::uint8_t, 16> battery_descriptor {
           0x05,
           0x06,  // Usage Page (Generic Device Controls)
           0x09,
@@ -424,21 +428,15 @@ namespace lvh::detail {
           0x85,
           xbox_bluetooth_battery_report_id,  // Report ID (4)
           0x15,
-          0x00,  // Logical Minimum (0)
+          0x04,  // Logical Minimum (wireless, empty)
           0x25,
-          0x03,  // Logical Maximum (3)
+          0x07,  // Logical Maximum (wireless, full)
           0x75,
-          0x02,  // Report Size (2)
+          0x08,  // Report Size (8)
           0x95,
           0x01,  // Report Count (1)
           0x81,
           0x02,  // Input (Data, Variable, Absolute)
-          0x75,
-          0x06,  // Report Size (6)
-          0x95,
-          0x01,  // Report Count (1)
-          0x81,
-          0x03,  // Input (Constant, Variable, Absolute)
         };
         descriptor.insert(descriptor.end(), battery_descriptor.begin(), battery_descriptor.end());
       }
