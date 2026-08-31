@@ -847,13 +847,14 @@ TEST_F(LinuxBackendTest, XboxOneAndSeriesPreferBluetoothUhidWithUinputFallback) 
     EXPECT_FALSE(effective_profile.capabilities.supports_trigger_rumble);
     EXPECT_FALSE(effective_profile.capabilities.supports_battery);
 
-    const auto result = lvh::detail::test::linux_xbox_bluetooth_uhid_socketpair_reports(kind);
+    const auto result = lvh::detail::test::linux_xbox_bluetooth_uhid_socketpair_reports(kind, true, true);
     EXPECT_TRUE(result.create_status.ok()) << result.create_status.message();
     EXPECT_TRUE(result.submit_status.ok()) << result.submit_status.message();
     EXPECT_TRUE(result.close_status.ok()) << result.close_status.message();
     EXPECT_TRUE(result.creation.saw_create);
     EXPECT_TRUE(result.creation.waited_for_start);
     EXPECT_TRUE(result.xbox.saw_transport_descriptor);
+    EXPECT_TRUE(result.xbox.saw_battery_descriptor);
     EXPECT_TRUE(result.xbox.saw_canonical_evdev_axes);
     EXPECT_TRUE(result.xbox.saw_gamepad_application_usage);
     EXPECT_TRUE(result.xbox.saw_bluetooth_identity);
@@ -868,6 +869,28 @@ TEST_F(LinuxBackendTest, XboxOneAndSeriesPreferBluetoothUhidWithUinputFallback) 
     ASSERT_TRUE(result.output.trigger_rumble.has_value());
     EXPECT_EQ(result.output.trigger_rumble->left_trigger_rumble, 16384U);
     EXPECT_EQ(result.output.trigger_rumble->right_trigger_rumble, 32768U);
+
+    const auto no_battery_result = lvh::detail::test::linux_xbox_bluetooth_uhid_socketpair_reports(kind, false, true);
+    EXPECT_TRUE(no_battery_result.create_status.ok()) << no_battery_result.create_status.message();
+    EXPECT_TRUE(no_battery_result.submit_status.ok()) << no_battery_result.submit_status.message();
+    EXPECT_TRUE(no_battery_result.close_status.ok()) << no_battery_result.close_status.message();
+    EXPECT_TRUE(no_battery_result.creation.saw_create);
+    EXPECT_TRUE(no_battery_result.xbox.saw_transport_descriptor);
+    EXPECT_FALSE(no_battery_result.xbox.saw_battery_descriptor);
+    EXPECT_TRUE(no_battery_result.xbox.saw_input);
+    EXPECT_FALSE(no_battery_result.xbox.saw_battery_input);
+    EXPECT_TRUE(no_battery_result.saw_destroy);
+
+    const auto missing_battery_result = lvh::detail::test::linux_xbox_bluetooth_uhid_socketpair_reports(kind, true, false);
+    EXPECT_TRUE(missing_battery_result.create_status.ok()) << missing_battery_result.create_status.message();
+    EXPECT_TRUE(missing_battery_result.submit_status.ok()) << missing_battery_result.submit_status.message();
+    EXPECT_TRUE(missing_battery_result.close_status.ok()) << missing_battery_result.close_status.message();
+    EXPECT_TRUE(missing_battery_result.creation.saw_create);
+    EXPECT_TRUE(missing_battery_result.xbox.saw_transport_descriptor);
+    EXPECT_TRUE(missing_battery_result.xbox.saw_battery_descriptor);
+    EXPECT_TRUE(missing_battery_result.xbox.saw_input);
+    EXPECT_FALSE(missing_battery_result.xbox.saw_battery_input);
+    EXPECT_TRUE(missing_battery_result.saw_destroy);
   }
 }
 

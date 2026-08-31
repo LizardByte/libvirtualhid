@@ -236,11 +236,14 @@ profile and backend capabilities before warning users about unsupported client
 features. Xbox One and Xbox Series advertise `supports_trigger_rumble` and
 `supports_battery`; the Linux UHID Bluetooth transport preserves both
 capabilities, while the uinput fallback clears them and retains ordinary
-rumble. On Windows, the Xbox HID report carries battery strength, but consumers
-that prefer XInput receive a disconnected battery result for the VHF controller
-instead. The current Steam client also hides its controller battery indicator
-for devices it does not classify as Bluetooth or wireless; Windows VHF exposes
-a wired virtual transport for every profile.
+rumble. The Linux Xbox transport includes its battery descriptor only when
+`CreateGamepadOptions::metadata.has_battery` is true, and it emits battery
+reports only for submitted states that contain battery data. On Windows, the
+Xbox HID report carries battery strength, but consumers
+that prefer XInput do not receive the submitted remote value. The current Steam
+client also hides its controller battery indicator for devices it does not
+classify as Bluetooth or wireless; Windows VHF exposes a wired virtual transport
+for every profile.
 
 The `misc1` button represents Share/Capture/Mic Mute-style controls and is
 available on the generic, Xbox Series, DualSense, and Switch Pro profiles; Xbox

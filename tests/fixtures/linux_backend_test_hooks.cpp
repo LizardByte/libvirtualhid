@@ -734,7 +734,7 @@ namespace lvh::detail::test {
         result.creation.waited_for_start
       );
       if (result.creation.saw_create) {
-        const auto transport_profile = uhid_transport_profile(options.profile);
+        const auto transport_profile = uhid_transport_profile(options.profile, options.metadata.has_battery);
         result.creation.saw_create = event.u.create2.vendor == transport_profile.vendor_id &&
                                      event.u.create2.product == transport_profile.product_id &&
                                      event.u.create2.version == transport_profile.version &&
@@ -1604,7 +1604,11 @@ namespace lvh::detail::test {
     return result;
   }
 
-  LinuxUhidRoundTripResult linux_xbox_bluetooth_uhid_socketpair_reports(GamepadProfileKind kind) {
+  LinuxUhidRoundTripResult linux_xbox_bluetooth_uhid_socketpair_reports(
+    GamepadProfileKind kind,
+    bool advertises_battery,
+    bool submits_battery
+  ) {
     LinuxUhidRoundTripResult result;
     std::array<int, 2> descriptors {-1, -1};
     if (::socketpair(AF_UNIX, SOCK_STREAM, 0, descriptors.data()) != 0) {
@@ -1618,6 +1622,7 @@ namespace lvh::detail::test {
     CreateGamepadOptions options;
     options.profile = profile;
     options.metadata.stable_id = "xbox-bluetooth-uhid-roundtrip";
+    options.metadata.has_battery = advertises_battery;
 
     UhidGamepad gamepad {descriptors[0]};
     auto event = create_started_profile_uhid_gamepad(gamepad, 13, options, descriptors[1], BUS_BLUETOOTH, result);
@@ -1627,7 +1632,7 @@ namespace lvh::detail::test {
         event.u.create2.rd_data,
         event.u.create2.rd_size,
       };
-      constexpr std::array<std::uint8_t, 11> battery_report_descriptor {
+      constexpr std::array<std::uint8_t, 22> battery_report_descriptor {
         0x05U,
         0x06U,
         0x09U,
@@ -1636,12 +1641,23 @@ namespace lvh::detail::test {
         xbox_bluetooth_battery_report_id,
         0x15U,
         0x00U,
-        0x26U,
-        0xFFU,
-        0x00U,
+        0x25U,
+        0x03U,
+        0x75U,
+        0x02U,
+        0x95U,
+        0x01U,
+        0x81U,
+        0x02U,
+        0x75U,
+        0x06U,
+        0x95U,
+        0x01U,
+        0x81U,
+        0x03U,
       };
-      result.xbox.saw_transport_descriptor =
-        descriptor.size() == 300U &&
+      result.xbox.saw_transport_descriptor = descriptor.size() == (advertises_battery ? 305U : 283U);
+      result.xbox.saw_battery_descriptor =
         std::ranges::search(descriptor, battery_report_descriptor).begin() != descriptor.end();
       constexpr std::array<std::uint8_t, 4> right_stick_usages {
         0x09U,
@@ -1708,10 +1724,12 @@ namespace lvh::detail::test {
     state.right_stick = {.x = 0.5F, .y = -0.5F};
     state.left_trigger = 0.25F;
     state.right_trigger = 0.75F;
-    state.battery = GamepadBattery {
-      .state = GamepadBatteryState::discharging,
-      .percentage = 50,
-    };
+    if (submits_battery) {
+      state.battery = GamepadBattery {
+        .state = GamepadBatteryState::discharging,
+        .percentage = 50,
+      };
+    }
     const auto report = reports::pack_input_report(profile, state);
     result.submit_status = gamepad.submit(state, report);
 

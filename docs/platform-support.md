@@ -98,12 +98,15 @@ Xbox Series, DualShock 4, DualSense, and Switch Pro instead of relying only on
 the asynchronous input stream.
 
 That HID report does not change the XInput battery classification of the VHF
-device. `XInputGetBatteryInformation` returns `BATTERY_TYPE_DISCONNECTED` and
-`BATTERY_LEVEL_EMPTY` for the virtual Xbox controller even while its input is
-available through `XInputGetState`. Consumers that prefer XInput, including
-SDL's correlated Windows Xbox path and Windows Game Bar, therefore do not
-receive the remote Xbox battery value. DualShock 4, DualSense, and Switch Pro
-battery state is independently covered through SDL's HID path.
+device. On a Windows desktop where XInput enumerated the virtual Xbox
+controller, `XInputGetBatteryInformation` returned `BATTERY_TYPE_DISCONNECTED`
+and `BATTERY_LEVEL_EMPTY` even while its input was available through
+`XInputGetState`. Headless Windows CI did not expose an XInput slot for the same
+device. Neither path exposes the remote battery through XInput. Consumers that
+prefer XInput, including SDL's correlated Windows Xbox path and Windows Game
+Bar, therefore do not receive the remote Xbox battery value. DualShock 4,
+DualSense, and Switch Pro battery state is independently covered through SDL's
+HID path.
 
 The current Steam client displays its controller battery indicator only when it
 classifies the device as Bluetooth or wireless. Because VHF exposes a wired
@@ -146,11 +149,14 @@ reserving the physical middle button for button scrolling.
 
 Gamepad support normally prefers `uhid` because descriptors, raw HID identity,
 feature reports, and output reports matter for controller compatibility. Xbox
-One and Xbox Series use backend-only Bluetooth identities with a 300-byte BLE
-descriptor, sparse input bitmap, four-motor output framing, and the native
-report-ID `0x04` battery notification. The descriptor exposes that notification
-through the standard HID Battery Strength usage so SDL's descriptor path can
-publish the native categorical charge level. The normal input report keeps
+One and Xbox Series use backend-only Bluetooth identities with a BLE descriptor,
+sparse input bitmap, four-motor output framing, and the native report-ID `0x04`
+battery notification. When `CreateGamepadOptions::metadata.has_battery` is true,
+the descriptor exposes the notification's two-bit categorical charge field
+through the standard HID Battery Strength usage and the backend emits it only
+when the submitted state contains battery data. Clients without battery support
+therefore do not create a phantom Linux power device or receive a fabricated
+charge level. The normal input report keeps
 the native byte layout used by HIDAPI while advertising `Rx`/`Ry` for the right
 stick and `Z`/`Rz` for the triggers, so Linux evdev exposes the canonical
 `ABS_RX`/`ABS_RY` and `ABS_Z`/`ABS_RZ` axes expected by Steam. This keeps the bus,

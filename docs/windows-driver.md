@@ -100,12 +100,14 @@ not consume the streaming read queue. Unnumbered reports are returned with the
 leading zero report-ID byte expected by Windows HID APIs.
 
 For Xbox profiles, this HID input value is separate from the battery result
-returned by XInput. `XInputGetBatteryInformation` returns
-`BATTERY_TYPE_DISCONNECTED` and `BATTERY_LEVEL_EMPTY` for the VHF Xbox device,
-even while `XInputGetState` receives its input and `GetInputReport` contains the
-submitted value. SDL's Windows Xbox path and Windows Game Bar therefore have no
-XInput battery value to display. VHF does not expose a wireless-transport or
-XInput battery-type setting in `VHF_CONFIG`.
+returned by XInput. On a Windows desktop where XInput enumerated the VHF Xbox
+device, `XInputGetBatteryInformation` returned `BATTERY_TYPE_DISCONNECTED` and
+`BATTERY_LEVEL_EMPTY` even while `XInputGetState` received its input and
+`GetInputReport` contained the submitted value. Headless Windows CI did not
+expose an XInput slot for the same device. Neither path exposes the remote
+battery through XInput. SDL's Windows Xbox path and Windows Game Bar therefore
+have no XInput battery value to display. VHF does not expose a
+wireless-transport or XInput battery-type setting in `VHF_CONFIG`.
 
 The current Steam client also renders its controller battery indicator only for
 devices it classifies as Bluetooth or wireless. All Windows VHF profiles use a

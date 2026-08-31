@@ -187,6 +187,11 @@ namespace lvh::detail::test {
     bool saw_transport_descriptor = false;
 
     /**
+     * @brief Whether the transport descriptor advertised a two-bit Xbox battery level.
+     */
+    bool saw_battery_descriptor = false;
+
+    /**
      * @brief Whether the descriptor maps sticks and triggers to canonical evdev axes.
      */
     bool saw_canonical_evdev_axes = false;
@@ -981,9 +986,15 @@ namespace lvh::detail::test {
    * @brief Exercise an Xbox profile's Bluetooth input and four-motor output through a socketpair.
    *
    * @param kind Xbox One or Xbox Series profile kind.
+   * @param advertises_battery Whether client metadata advertises battery support.
+   * @param submits_battery Whether submitted state includes battery data.
    * @return Captured lifecycle and protocol observations.
    */
-  LinuxUhidRoundTripResult linux_xbox_bluetooth_uhid_socketpair_reports(GamepadProfileKind kind);
+  LinuxUhidRoundTripResult linux_xbox_bluetooth_uhid_socketpair_reports(
+    GamepadProfileKind kind,
+    bool advertises_battery,
+    bool submits_battery
+  );
 
   /**
    * @brief Check whether the Linux backend prefers UHID for a gamepad profile.
