@@ -19,6 +19,7 @@
 #include <linux/input.h>
 #if defined(LIBVIRTUALHID_HAVE_XTEST)
   #include <X11/keysym.h>
+  #include <X11/XF86keysym.h>
 #endif
 
 // lib includes
@@ -107,6 +108,10 @@ TEST_F(LinuxBackendTest, TranslatesKeyboardKeys) {
   EXPECT_EQ(lvh::detail::test::linux_key_code(0x70), KEY_F1);
   EXPECT_EQ(lvh::detail::test::linux_key_code(0x7B), KEY_F12);
   EXPECT_EQ(lvh::detail::test::linux_key_code(0x87), KEY_F24);
+  EXPECT_EQ(lvh::detail::test::linux_key_code(lvh::keyboard_key_codes::undo), KEY_UNDO);
+  EXPECT_EQ(lvh::detail::test::linux_key_code(lvh::keyboard_key_codes::cut), KEY_CUT);
+  EXPECT_EQ(lvh::detail::test::linux_key_code(lvh::keyboard_key_codes::copy), KEY_COPY);
+  EXPECT_EQ(lvh::detail::test::linux_key_code(lvh::keyboard_key_codes::paste), KEY_PASTE);
   EXPECT_EQ(lvh::detail::test::linux_key_code(0), -1);
   EXPECT_EQ(lvh::detail::test::linux_key_code(0x88), -1);
 }
@@ -1382,6 +1387,10 @@ TEST_F(LinuxBackendTest, XTestFallbackCoversKeyboardAndMousePaths) {
   EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x6F), XK_KP_Divide);
   EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x70), XK_F1);
   EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x87), XK_F24);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(lvh::keyboard_key_codes::undo), XK_Undo);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(lvh::keyboard_key_codes::cut), XF86XK_Cut);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(lvh::keyboard_key_codes::copy), XF86XK_Copy);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(lvh::keyboard_key_codes::paste), XF86XK_Paste);
   EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x88), 0UL);
 
   EXPECT_EQ(lvh::detail::test::linux_xtest_mouse_button(lvh::MouseButton::left), 1);
