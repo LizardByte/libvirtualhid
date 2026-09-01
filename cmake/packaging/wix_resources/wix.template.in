@@ -27,6 +27,7 @@
 
         <WixVariable Id="WixUILicenseRtf" Value="$(var.CPACK_WIX_LICENSE_RTF)"/>
         <Property Id="WIXUI_INSTALLDIR" Value="INSTALL_ROOT"/>
+        <StandardDirectory Id="WindowsFolder"/>
 
         <?ifdef CPACK_WIX_PRODUCT_ICON?>
         <Property Id="ARPPRODUCTICON" Value="ProductIcon.ico" />

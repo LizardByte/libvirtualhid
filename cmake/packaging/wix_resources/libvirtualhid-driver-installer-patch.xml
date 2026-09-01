@@ -13,14 +13,14 @@
                   Return="check"
                   Impersonate="no" />
     <CustomAction Id="CA_LibVirtualHidUninstallDriver"
-                  Directory="INSTALL_ROOT"
-                  ExeCommand="&quot;[WindowsFolder]System32\WindowsPowerShell\v1.0\powershell.exe&quot; -WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File &quot;[INSTALL_ROOT]scripts\windows\uninstall-driver.ps1&quot; -Force -RemoveCertificateSubject &quot;CN=libvirtualhid CI Test Driver Signing&quot; -LogPath &quot;[CommonAppDataFolder]libvirtualhid\uninstall-driver.log&quot;"
+                  Directory="WindowsFolder"
+                  ExeCommand="&quot;[WindowsFolder]System32\WindowsPowerShell\v1.0\powershell.exe&quot; -WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File &quot;[#CM_FP_scripts.windows.uninstall_driver.ps1]&quot; -Force -RemoveCertificateSubject &quot;CN=libvirtualhid CI Test Driver Signing&quot; -LogPath &quot;[CommonAppDataFolder]libvirtualhid\uninstall-driver.log&quot;"
                   Execute="deferred"
                   Return="check"
                   Impersonate="no" />
     <CustomAction Id="CA_LibVirtualHidUninstallDriverSilent"
-                  Directory="INSTALL_ROOT"
-                  ExeCommand="&quot;[WindowsFolder]System32\WindowsPowerShell\v1.0\powershell.exe&quot; -WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File &quot;[INSTALL_ROOT]scripts\windows\uninstall-driver.ps1&quot; -Force -RemoveCertificateSubject &quot;CN=libvirtualhid CI Test Driver Signing&quot; -LogPath &quot;[CommonAppDataFolder]libvirtualhid\uninstall-driver.log&quot;"
+                  Directory="WindowsFolder"
+                  ExeCommand="&quot;[WindowsFolder]System32\WindowsPowerShell\v1.0\powershell.exe&quot; -WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File &quot;[#CM_FP_scripts.windows.uninstall_driver.ps1]&quot; -Force -RemoveCertificateSubject &quot;CN=libvirtualhid CI Test Driver Signing&quot; -LogPath &quot;[CommonAppDataFolder]libvirtualhid\uninstall-driver.log&quot;"
                   Execute="deferred"
                   Return="check"
                   Impersonate="no" />

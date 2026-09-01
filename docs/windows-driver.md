@@ -196,8 +196,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\windows\uninstall-driver.ps1 
   -LogPath .\cmake-build-windows-driver\uninstall-driver.log
 ```
 
-The WiX installer also places validation files under the default install root,
-`C:\Program Files\libvirtualhid`:
+The WiX installer places validation files under the selected install root, which
+defaults to `C:\Program Files\libvirtualhid`:
 
 - `tools\windows\gamepad_adapter.exe`
 - `tools\windows\virtualhid_control.exe`
