@@ -44,7 +44,7 @@ INPUT = ../README.md \
         todo.md \
         streaming-host-integration.md \
         development.md \
-        ../LICENSES/README.md \
+        ../LICENSES/license-map.md \
         ../examples \
         ../third-party/doxyconfig/docs/source_code.md \
         ../src/include

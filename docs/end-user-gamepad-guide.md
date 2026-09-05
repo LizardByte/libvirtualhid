@@ -290,3 +290,11 @@ reaching the library but the virtual device reports it incorrectly.
 
 The [Moonlight setup guide](https://github.com/moonlight-stream/moonlight-docs/wiki/Setup-Guide)
 links the official clients and their support resources.
+
+<div class="section_buttons">
+
+| Previous                 |                      Next |
+|:-------------------------|--------------------------:|
+| [Overview](../README.md) | [Usage and API](usage.md) |
+
+</div>

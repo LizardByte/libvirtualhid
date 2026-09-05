@@ -35,7 +35,10 @@ Proposed solution:
    commit a generated capture later if it is reproducible, sanitized, and used
    by tests or documentation in a way that justifies keeping it.
 
-## PlayStation and Nintendo Rumble
+<div class="section_buttons">
 
-Status: native output-path validation and the remaining Steam and Chromium
-consumer gaps are tracked in [GitHub issue #80](https://github.com/LizardByte/libvirtualhid/issues/80).
+| Previous                                    |                                                        Next |
+|:--------------------------------------------|------------------------------------------------------------:|
+| [Windows Driver Package](windows-driver.md) | [Streaming-Host Integration](streaming-host-integration.md) |
+
+</div>

@@ -189,5 +189,13 @@ licensed under the
 (LB-SAL 1.0). The root
 [license notice](https://github.com/LizardByte/libvirtualhid/blob/master/LICENSE.md)
 points to both complete license texts; see the
-[license map](https://github.com/LizardByte/libvirtualhid/blob/master/LICENSES/README.md)
+[license map](https://github.com/LizardByte/libvirtualhid/blob/master/LICENSES/license-map.md)
 for the authoritative repository path and artifact assignments.
+
+<div class="section_buttons">
+
+| Previous |                                                     Next |
+|:---------|---------------------------------------------------------:|
+|          | [End-User Gamepad Guide](docs/end-user-gamepad-guide.md) |
+
+</div>

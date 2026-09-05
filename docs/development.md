@@ -96,3 +96,11 @@ code and tests provide a better source of truth.
 - Evaluate an optional FreeBSD CUSE-backed `uhid(4)`-compatible device for
   direct HID consumers. This would supplement uinput; it is not equivalent to
   registering a virtual device with FreeBSD's kernel HID bus.
+
+<div class="section_buttons">
+
+| Previous                                                    |                                      Next |
+|:------------------------------------------------------------|------------------------------------------:|
+| [Streaming-Host Integration](streaming-host-integration.md) | [License Map](../LICENSES/license-map.md) |
+
+</div>
