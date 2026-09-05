@@ -53,6 +53,7 @@
 #if defined(LIBVIRTUALHID_HAVE_XTEST)
   #include <X11/extensions/XTest.h>
   #include <X11/keysym.h>
+  #include <X11/XF86keysym.h>
   #include <X11/Xlib.h>
   #include <X11/Xutil.h>
 #endif
@@ -994,7 +995,7 @@ namespace lvh::detail {
     }
 
     int key_code_to_linux(KeyboardKeyCode key_code) {
-      static constexpr std::array<std::pair<KeyboardKeyCode, int>, 47> special_keys {{
+      static constexpr std::array<std::pair<KeyboardKeyCode, int>, 51> special_keys {{
         {0x08, KEY_BACKSPACE},
         {0x09, KEY_TAB},
         {0x0D, KEY_ENTER},
@@ -1042,6 +1043,10 @@ namespace lvh::detail {
         {0xDD, KEY_RIGHTBRACE},
         {0xDE, KEY_APOSTROPHE},
         {0xE2, KEY_102ND},
+        {keyboard_key_codes::undo, KEY_UNDO},
+        {keyboard_key_codes::cut, KEY_CUT},
+        {keyboard_key_codes::copy, KEY_COPY},
+        {keyboard_key_codes::paste, KEY_PASTE},
       }};
 
       if (const auto linux_key = mapped_keyboard_code(key_code, special_keys); linux_key.has_value()) {
@@ -2512,7 +2517,7 @@ namespace lvh::detail {
 
 #if defined(LIBVIRTUALHID_HAVE_XTEST)
     KeySym key_code_to_keysym(KeyboardKeyCode key_code) {
-      static constexpr std::array<std::pair<KeyboardKeyCode, KeySym>, 45> special_keysyms {{
+      static constexpr std::array<std::pair<KeyboardKeyCode, KeySym>, 49> special_keysyms {{
         {0x08, XK_BackSpace},
         {0x09, XK_Tab},
         {0x0D, XK_Return},
@@ -2558,6 +2563,10 @@ namespace lvh::detail {
         {0xDC, XK_backslash},
         {0xDD, XK_bracketright},
         {0xDE, XK_apostrophe},
+        {keyboard_key_codes::undo, XK_Undo},
+        {keyboard_key_codes::cut, XF86XK_Cut},
+        {keyboard_key_codes::copy, XF86XK_Copy},
+        {keyboard_key_codes::paste, XF86XK_Paste},
       }};
 
       if (const auto keysym = mapped_keyboard_code(key_code, special_keysyms); keysym.has_value()) {
