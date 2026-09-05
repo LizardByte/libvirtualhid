@@ -970,7 +970,7 @@ namespace lvh::detail::test {
   }
 
   int linux_key_code(KeyboardKeyCode key_code) {
-    return key_code_to_linux(key_code);
+    return key_code_to_linux(key_code, true);
   }
 
   int linux_mouse_button(MouseButton button) {
