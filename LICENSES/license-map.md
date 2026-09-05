@@ -20,3 +20,11 @@ Every installed library distribution includes the MIT notice under
 `share/licenses/libvirtualhid`. The Windows driver MSI may include MIT-licensed
 helper components from this repository; packaged installs include both license
 texts for that reason.
+
+<div class="section_buttons">
+
+| Previous                              |                                                         Next |
+|:--------------------------------------|-------------------------------------------------------------:|
+| [Development](../docs/development.md) | [Source Code](../third-party/doxyconfig/docs/source_code.md) |
+
+</div>

@@ -248,3 +248,11 @@ for every profile.
 The `misc1` button represents Share/Capture/Mic Mute-style controls and is
 available on the generic, Xbox Series, DualSense, and Switch Pro profiles; Xbox
 360 and Xbox One do not advertise that extra button.
+
+<div class="section_buttons">
+
+| Previous                                            |                                    Next |
+|:----------------------------------------------------|----------------------------------------:|
+| [End-User Gamepad Guide](end-user-gamepad-guide.md) | [Platform Support](platform-support.md) |
+
+</div>

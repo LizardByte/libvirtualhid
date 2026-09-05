@@ -437,3 +437,11 @@ Native macOS virtual-HID gamepad support is planned. A future backend may use
 `IOHIDUserDevice`, DriverKit/HIDDriverKit, or a combination that preserves the
 same public API while documenting any signing, entitlement, and installer
 requirements.
+
+<div class="section_buttons">
+
+| Previous                  |                                        Next |
+|:--------------------------|--------------------------------------------:|
+| [Usage and API](usage.md) | [Windows Driver Package](windows-driver.md) |
+
+</div>

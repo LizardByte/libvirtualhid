@@ -63,3 +63,11 @@ The core API and adapter shape cover the major streaming-host requirements:
 - FreeBSD uinput gamepads and pointer devices, with basic PlayStation input and
   rumble but without Linux UHID-only PlayStation features.
 - Windows UMDF/VHF gamepad creation through an installed driver package.
+
+<div class="section_buttons">
+
+| Previous        |                          Next |
+|:----------------|------------------------------:|
+| [TODO](todo.md) | [Development](development.md) |
+
+</div>

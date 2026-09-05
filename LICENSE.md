@@ -10,5 +10,5 @@ summary and does not replace the complete license texts.
   sources, and generated Windows driver package artifacts are licensed under
   the [LizardByte Source-Available License 1.0](LICENSES/LicenseRef-LizardByte-SAL-1.0.md).
 
-See the [license map](LICENSES/README.md) for the authoritative repository path
+See the [license map](LICENSES/license-map.md) for the authoritative repository path
 and artifact assignments.
