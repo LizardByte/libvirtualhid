@@ -23,6 +23,11 @@ A streaming host should be able to:
 - Use keyboard and mouse APIs for relative mouse, absolute mouse, buttons,
   wheel, horizontal wheel, key events, and Unicode text input.
 
+On Linux and FreeBSD, one mouse handle may represent separate relative and
+absolute uinput nodes. Consumers should keep using the platform-neutral mouse
+API; the backend routes motion and matching button transitions to the correct
+node.
+
 `libvirtualhid` should not own the host application's network transport, packet
 schema, configuration model, controller assignment policy, or status API.
 

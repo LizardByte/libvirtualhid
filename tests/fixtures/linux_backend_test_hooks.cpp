@@ -835,7 +835,8 @@ namespace lvh::detail::test {
     OperationStatus create_uinput_device_by_type(
       int fd,
       DeviceType device_type,
-      std::optional<GamepadProfileKind> gamepad_kind = std::nullopt
+      std::optional<GamepadProfileKind> gamepad_kind = std::nullopt,
+      UinputMouseDeviceKind mouse_kind = UinputMouseDeviceKind::relative
     ) {
       switch (device_type) {
         case DeviceType::keyboard:
@@ -849,8 +850,8 @@ namespace lvh::detail::test {
           {
             CreateMouseOptions options;
             options.profile = profile_for_uinput_device_type(device_type);
-            UinputMouse mouse {fd};
-            return mouse.create(1, options);
+            UinputMouseDevice mouse {fd};
+            return mouse.create(1, options.profile, mouse_kind);
           }
         case DeviceType::touchscreen:
           {
@@ -889,7 +890,8 @@ namespace lvh::detail::test {
     LinuxLibevdevCreationResult create_fake_libevdev_device(
       DeviceType device_type,
       ConfigureFailure configure_failure,
-      std::optional<GamepadProfileKind> gamepad_kind = std::nullopt
+      std::optional<GamepadProfileKind> gamepad_kind = std::nullopt,
+      UinputMouseDeviceKind mouse_kind = UinputMouseDeviceKind::relative
     ) {
       LinuxTestSyscalls syscalls;
       syscalls.override_libevdev = true;
@@ -903,7 +905,7 @@ namespace lvh::detail::test {
         return result;
       }
 
-      result.status = create_uinput_device_by_type(fd, device_type, gamepad_kind);
+      result.status = create_uinput_device_by_type(fd, device_type, gamepad_kind, mouse_kind);
       if (!syscalls.libevdev_devices.empty()) {
         const auto &device = syscalls.libevdev_devices.back();
         result.name = device.name;
@@ -1059,7 +1061,7 @@ namespace lvh::detail::test {
   std::size_t linux_empty_device_nodes_count() {
     UhidGamepad gamepad {-1};
     UinputKeyboard keyboard {-1};
-    UinputMouse mouse {-1};
+    UinputMouse mouse {-1, -1};
     UinputTouchscreen touchscreen {-1};
     UinputTrackpad trackpad {-1};
     UinputPenTablet pen_tablet {-1};
@@ -1304,17 +1306,17 @@ namespace lvh::detail::test {
     CreateMouseOptions options;
     options.profile = profiles::mouse();
 
-    UinputMouse mouse {-1};
+    UinputMouse mouse {-1, -1};
     return mouse.create(1, options);
   }
 
   OperationStatus linux_uinput_mouse_submit_invalid_fd(const MouseEvent &event) {
-    UinputMouse mouse {-1};
+    UinputMouse mouse {-1, -1};
     return mouse.submit(event);
   }
 
   OperationStatus linux_uinput_mouse_submit_after_close() {
-    UinputMouse mouse {-1};
+    UinputMouse mouse {-1, -1};
     static_cast<void>(mouse.close());
     return mouse.submit({.kind = MouseEventKind::relative_motion, .x = 1, .y = 1});
   }
@@ -1329,7 +1331,14 @@ namespace lvh::detail::test {
       return {system_error_status(ErrorCode::backend_failure, "failed to create pipe", errno), {}};
     }
 
-    UinputMouse mouse {descriptors[1]};
+    const auto absolute_descriptor = ::dup(descriptors[1]);
+    if (absolute_descriptor < 0) {
+      static_cast<void>(::close(descriptors[0]));
+      static_cast<void>(::close(descriptors[1]));
+      return {system_error_status(ErrorCode::backend_failure, "failed to duplicate pipe", errno), {}};
+    }
+
+    UinputMouse mouse {descriptors[1], absolute_descriptor};
     auto status = OperationStatus::success();
     for (const auto &event : events) {
       status = mouse.submit(event);
@@ -1341,6 +1350,35 @@ namespace lvh::detail::test {
     auto records = read_input_events_until_eof(descriptors[0]);
     static_cast<void>(::close(descriptors[0]));
     return {std::move(status), std::move(records)};
+  }
+
+  LinuxMouseInputSubmissionResult linux_uinput_mouse_submit_split_pipe_sequence(const std::vector<MouseEvent> &events) {
+    std::array<int, 2> relative_descriptors {-1, -1};
+    if (::pipe(relative_descriptors.data()) != 0) {
+      return {system_error_status(ErrorCode::backend_failure, "failed to create relative mouse pipe", errno), {}, {}};
+    }
+
+    std::array<int, 2> absolute_descriptors {-1, -1};
+    if (::pipe(absolute_descriptors.data()) != 0) {
+      static_cast<void>(::close(relative_descriptors[0]));
+      static_cast<void>(::close(relative_descriptors[1]));
+      return {system_error_status(ErrorCode::backend_failure, "failed to create absolute mouse pipe", errno), {}, {}};
+    }
+
+    UinputMouse mouse {relative_descriptors[1], absolute_descriptors[1]};
+    auto status = OperationStatus::success();
+    for (const auto &event : events) {
+      status = mouse.submit(event);
+      if (!status.ok()) {
+        break;
+      }
+    }
+    static_cast<void>(mouse.close());
+    auto relative_records = read_input_events_until_eof(relative_descriptors[0]);
+    auto absolute_records = read_input_events_until_eof(absolute_descriptors[0]);
+    static_cast<void>(::close(relative_descriptors[0]));
+    static_cast<void>(::close(absolute_descriptors[0]));
+    return {std::move(status), std::move(relative_records), std::move(absolute_records)};
   }
 
   LinuxInputSubmissionResult linux_uinput_touchscreen_contact_pipe(const TouchContact &contact) {
@@ -2618,6 +2656,15 @@ namespace lvh::detail::test {
     return create_fake_libevdev_device(device_type);
   }
 
+  LinuxLibevdevCreationResult linux_uinput_create_fake_absolute_mouse_device() {
+    return create_fake_libevdev_device(
+      DeviceType::mouse,
+      keep_fake_libevdev_successful,
+      std::nullopt,
+      UinputMouseDeviceKind::absolute
+    );
+  }
+
   LinuxLibevdevCreationResult linux_uinput_create_fake_gamepad(GamepadProfileKind kind) {
     return create_fake_libevdev_gamepad(kind);
   }
@@ -2739,7 +2786,7 @@ namespace lvh::detail::test {
     syscalls.override_ioctl = true;
     ScopedLinuxTestSyscalls scoped_syscalls {syscalls};
 
-    UinputMouse mouse {fake_fd};
+    UinputMouse mouse {fake_fd, fake_fd};
     return mouse.submit(event);
   }
 
@@ -2750,7 +2797,7 @@ namespace lvh::detail::test {
     syscalls.override_ioctl = true;
     ScopedLinuxTestSyscalls scoped_syscalls {syscalls};
 
-    UinputMouse mouse {fake_fd};
+    UinputMouse mouse {fake_fd, fake_fd};
     return mouse.submit(event);
   }
 

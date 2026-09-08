@@ -53,6 +53,26 @@ namespace lvh::detail::test {
   };
 
   /**
+   * @brief Result from a split relative/absolute pipe-backed mouse submission.
+   */
+  struct LinuxMouseInputSubmissionResult {
+    /**
+     * @brief Submit operation status.
+     */
+    OperationStatus status;
+
+    /**
+     * @brief Events written to the relative mouse device.
+     */
+    std::vector<LinuxInputEventRecord> relative_events;
+
+    /**
+     * @brief Events written to the absolute mouse device.
+     */
+    std::vector<LinuxInputEventRecord> absolute_events;
+  };
+
+  /**
    * @brief Result from a fake uinput Xbox force-feedback exchange.
    */
   struct LinuxUinputRumbleResult {
@@ -916,6 +936,14 @@ namespace lvh::detail::test {
   LinuxInputSubmissionResult linux_uinput_mouse_submit_pipe_sequence(const std::vector<MouseEvent> &events);
 
   /**
+   * @brief Submit mouse events to separate relative and absolute pipe-backed devices.
+   *
+   * @param events Mouse events to submit in order.
+   * @return Submission status and the events captured from each device.
+   */
+  LinuxMouseInputSubmissionResult linux_uinput_mouse_submit_split_pipe_sequence(const std::vector<MouseEvent> &events);
+
+  /**
    * @brief Place and release a contact through a pipe-backed uinput touchscreen.
    *
    * @param contact Touch contact to place.
@@ -1251,6 +1279,13 @@ namespace lvh::detail::test {
    * @return Recorded fake libevdev construction result.
    */
   LinuxLibevdevCreationResult linux_uinput_create_fake_libevdev_device(DeviceType device_type);
+
+  /**
+   * @brief Create the absolute half of a uinput mouse through the fake libevdev recorder.
+   *
+   * @return Recorded fake libevdev construction result.
+   */
+  LinuxLibevdevCreationResult linux_uinput_create_fake_absolute_mouse_device();
 
   /**
    * @brief Create a uinput gamepad through the fake libevdev recorder.

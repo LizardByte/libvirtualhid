@@ -1149,7 +1149,7 @@ TEST_F(LinuxConsumerTest, LibinputSeesUinputKeyboardKeys) {
   EXPECT_EQ(libinput_event_keyboard_get_key_state(keyboard_event), LIBINPUT_KEY_STATE_RELEASED);
 }
 
-TEST_F(LinuxConsumerTest, LibinputSeesUinputMouseMotionAndButtons) {
+TEST_F(LinuxConsumerTest, LibinputSeesSplitUinputMouseMotionAndButtons) {
   ASSERT_TRUE(HasReadableWritableDeviceNode("/dev/uinput"));
 
   lvh::RuntimeOptions runtime_options;
@@ -1165,41 +1165,76 @@ TEST_F(LinuxConsumerTest, LibinputSeesUinputMouseMotionAndButtons) {
   auto created = runtime->create_mouse(options);
   ASSERT_TRUE(created) << created.status.message();
 
-  const auto node = wait_for_readable_event_node(options.profile.name);
-  ASSERT_TRUE(node) << "libinput mouse event node was not readable for " << options.profile.name;
+  const auto relative_node = wait_for_readable_event_node(options.profile.name);
+  ASSERT_TRUE(relative_node) << "libinput relative mouse event node was not readable for " << options.profile.name;
+  const auto absolute_name = options.profile.name + " (Absolute)";
+  const auto absolute_node = wait_for_readable_event_node(absolute_name);
+  ASSERT_TRUE(absolute_node) << "libinput absolute mouse event node was not readable for " << absolute_name;
 
-  auto context = create_libinput_context(*node);
-  ASSERT_NE(context.get(), nullptr) << "libinput could not open " << node->string();
+  auto relative_context = create_libinput_context(*relative_node);
+  ASSERT_NE(relative_context.get(), nullptr) << "libinput could not open " << relative_node->string();
+  auto absolute_context = create_libinput_context(*absolute_node);
+  ASSERT_NE(absolute_context.get(), nullptr) << "libinput could not open " << absolute_node->string();
 
-  auto event = wait_for_libinput_event(context.get(), {LIBINPUT_EVENT_DEVICE_ADDED});
+  auto event = wait_for_libinput_event(relative_context.get(), {LIBINPUT_EVENT_DEVICE_ADDED});
   ASSERT_NE(event.get(), nullptr);
   auto *device = libinput_event_get_device(event.get());
   ASSERT_NE(device, nullptr);
   EXPECT_TRUE(libinput_device_has_capability(device, LIBINPUT_DEVICE_CAP_POINTER));
   EXPECT_EQ(libinput_device_config_scroll_get_method(device), LIBINPUT_CONFIG_SCROLL_NO_SCROLL);
 
-  ASSERT_TRUE(created.mouse->move_relative(25, -10).ok());
-  event = wait_for_libinput_event(context.get(), {LIBINPUT_EVENT_POINTER_MOTION});
+  event = wait_for_libinput_event(absolute_context.get(), {LIBINPUT_EVENT_DEVICE_ADDED});
+  ASSERT_NE(event.get(), nullptr);
+  device = libinput_event_get_device(event.get());
+  ASSERT_NE(device, nullptr);
+  EXPECT_TRUE(libinput_device_has_capability(device, LIBINPUT_DEVICE_CAP_POINTER));
+
+  ASSERT_TRUE(created.mouse->move_absolute(50, 25, 100, 100).ok());
+  event = wait_for_libinput_event(absolute_context.get(), {LIBINPUT_EVENT_POINTER_MOTION_ABSOLUTE});
   ASSERT_NE(event.get(), nullptr);
   auto *pointer_event = libinput_event_get_pointer_event(event.get());
   ASSERT_NE(pointer_event, nullptr);
-  EXPECT_DOUBLE_EQ(libinput_event_pointer_get_dx_unaccelerated(pointer_event), 25.0);
-  EXPECT_DOUBLE_EQ(libinput_event_pointer_get_dy_unaccelerated(pointer_event), -10.0);
+  EXPECT_NEAR(libinput_event_pointer_get_absolute_x_transformed(pointer_event, 100), 50.0, 0.1);
+  EXPECT_NEAR(libinput_event_pointer_get_absolute_y_transformed(pointer_event, 100), 25.0, 0.1);
 
   ASSERT_TRUE(created.mouse->button(lvh::MouseButton::middle, true).ok());
-  event = wait_for_libinput_event(context.get(), {LIBINPUT_EVENT_POINTER_BUTTON});
+  event = wait_for_libinput_event(absolute_context.get(), {LIBINPUT_EVENT_POINTER_BUTTON});
   ASSERT_NE(event.get(), nullptr);
   pointer_event = libinput_event_get_pointer_event(event.get());
   ASSERT_NE(pointer_event, nullptr);
   EXPECT_EQ(libinput_event_pointer_get_button(pointer_event), BTN_MIDDLE);
   EXPECT_EQ(libinput_event_pointer_get_button_state(pointer_event), LIBINPUT_BUTTON_STATE_PRESSED);
 
+  ASSERT_TRUE(created.mouse->move_relative(25, -10).ok());
+  event = wait_for_libinput_event(relative_context.get(), {LIBINPUT_EVENT_POINTER_MOTION});
+  ASSERT_NE(event.get(), nullptr);
+  pointer_event = libinput_event_get_pointer_event(event.get());
+  ASSERT_NE(pointer_event, nullptr);
+  EXPECT_DOUBLE_EQ(libinput_event_pointer_get_dx_unaccelerated(pointer_event), 25.0);
+  EXPECT_DOUBLE_EQ(libinput_event_pointer_get_dy_unaccelerated(pointer_event), -10.0);
+
   ASSERT_TRUE(created.mouse->button(lvh::MouseButton::middle, false).ok());
-  event = wait_for_libinput_event(context.get(), {LIBINPUT_EVENT_POINTER_BUTTON});
+  event = wait_for_libinput_event(absolute_context.get(), {LIBINPUT_EVENT_POINTER_BUTTON});
   ASSERT_NE(event.get(), nullptr);
   pointer_event = libinput_event_get_pointer_event(event.get());
   ASSERT_NE(pointer_event, nullptr);
   EXPECT_EQ(libinput_event_pointer_get_button(pointer_event), BTN_MIDDLE);
+  EXPECT_EQ(libinput_event_pointer_get_button_state(pointer_event), LIBINPUT_BUTTON_STATE_RELEASED);
+
+  ASSERT_TRUE(created.mouse->button(lvh::MouseButton::extra, true).ok());
+  event = wait_for_libinput_event(relative_context.get(), {LIBINPUT_EVENT_POINTER_BUTTON});
+  ASSERT_NE(event.get(), nullptr);
+  pointer_event = libinput_event_get_pointer_event(event.get());
+  ASSERT_NE(pointer_event, nullptr);
+  EXPECT_EQ(libinput_event_pointer_get_button(pointer_event), BTN_EXTRA);
+  EXPECT_EQ(libinput_event_pointer_get_button_state(pointer_event), LIBINPUT_BUTTON_STATE_PRESSED);
+
+  ASSERT_TRUE(created.mouse->button(lvh::MouseButton::extra, false).ok());
+  event = wait_for_libinput_event(relative_context.get(), {LIBINPUT_EVENT_POINTER_BUTTON});
+  ASSERT_NE(event.get(), nullptr);
+  pointer_event = libinput_event_get_pointer_event(event.get());
+  ASSERT_NE(pointer_event, nullptr);
+  EXPECT_EQ(libinput_event_pointer_get_button(pointer_event), BTN_EXTRA);
   EXPECT_EQ(libinput_event_pointer_get_button_state(pointer_event), LIBINPUT_BUTTON_STATE_RELEASED);
 }
 

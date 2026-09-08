@@ -140,12 +140,22 @@ The Linux backend uses standard user-space kernel interfaces:
 - X11/XTest only as a keyboard and mouse fallback when `uinput` cannot be used
   and an X11 session is available.
 
-The uinput mouse advertises the legacy `REL_WHEEL` and `REL_HWHEEL` axes together
-with their high-resolution counterparts when the platform provides them. It
-accumulates high-resolution input independently for each axis and emits a legacy
-detent for every 120 accumulated units. This follows the Linux input protocol,
-lets libinput recognize the device as wheel-capable, and prevents libinput from
-reserving the physical middle button for button scrolling.
+One public mouse handle uses separate relative and absolute uinput devices. The
+relative device exposes `REL_X`, `REL_Y`, buttons, and scroll axes. The absolute
+device exposes `ABS_X`, `ABS_Y`, buttons, and `INPUT_PROP_DIRECT`, without
+relative axes, so libinput and the X11 libinput driver deliver absolute pointer
+motion instead of discarding it from a mouse-class relative device. Buttons are
+routed to the device that most recently received motion, while releases remain
+on the device that received the matching press. Scroll always uses the relative
+device.
+
+The relative uinput mouse advertises the legacy `REL_WHEEL` and `REL_HWHEEL`
+axes together with their high-resolution counterparts when the platform
+provides them. It accumulates high-resolution input independently for each axis
+and emits a legacy detent for every 120 accumulated units. This follows the
+Linux input protocol, lets libinput recognize the device as wheel-capable, and
+prevents libinput from reserving the physical middle button for button
+scrolling.
 
 Gamepad support normally prefers `uhid` because descriptors, raw HID identity,
 feature reports, and output reports matter for controller compatibility. Xbox

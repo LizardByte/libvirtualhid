@@ -1312,6 +1312,11 @@ namespace lvh::detail {
       std::int32_t remainder = 0;
     };
 
+    enum class UinputMouseDeviceKind {
+      relative,
+      absolute,
+    };
+
     LegacyScrollConversion accumulated_legacy_scroll(std::int32_t remainder, std::int32_t distance) {
       const auto total = static_cast<std::int64_t>(remainder) + distance;
       return {
@@ -1338,7 +1343,11 @@ namespace lvh::detail {
       }
 
     protected:
-      OperationStatus create_uinput_device(const DeviceProfile &profile, DeviceId id);
+      OperationStatus create_uinput_device(
+        const DeviceProfile &profile,
+        DeviceId id,
+        UinputMouseDeviceKind mouse_kind = UinputMouseDeviceKind::relative
+      );
 
       std::vector<DeviceNode> uinput_device_nodes(const std::string &device_name) const;
 
@@ -1484,14 +1493,8 @@ namespace lvh::detail {
       return OperationStatus::success();
     }
 
-    OperationStatus configure_evdev_mouse(libevdev *device) {
+    OperationStatus configure_evdev_mouse(libevdev *device, UinputMouseDeviceKind kind) {
       if (const auto status = enable_evdev_type(device, EV_KEY, "mouse button events"); !status.ok()) {
-        return status;
-      }
-      if (const auto status = enable_evdev_type(device, EV_REL, "relative mouse events"); !status.ok()) {
-        return status;
-      }
-      if (const auto status = enable_evdev_type(device, EV_ABS, "absolute mouse events"); !status.ok()) {
         return status;
       }
 
@@ -1499,6 +1502,26 @@ namespace lvh::detail {
         if (const auto status = enable_evdev_code(device, EV_KEY, button, "mouse button"); !status.ok()) {
           return status;
         }
+      }
+
+      if (kind == UinputMouseDeviceKind::absolute) {
+        if (const auto status = enable_evdev_property(device, INPUT_PROP_DIRECT, "direct input"); !status.ok()) {
+          return status;
+        }
+        if (const auto status = enable_evdev_type(device, EV_ABS, "absolute mouse events"); !status.ok()) {
+          return status;
+        }
+
+        auto x = make_absinfo(0, absolute_axis_max);
+        if (const auto status = enable_evdev_code(device, EV_ABS, ABS_X, "absolute mouse axis", &x); !status.ok()) {
+          return status;
+        }
+        auto y = make_absinfo(0, absolute_axis_max);
+        return enable_evdev_code(device, EV_ABS, ABS_Y, "absolute mouse axis", &y);
+      }
+
+      if (const auto status = enable_evdev_type(device, EV_REL, "relative mouse events"); !status.ok()) {
+        return status;
       }
 
       for (const auto code : {REL_X, REL_Y}) {
@@ -1525,12 +1548,7 @@ namespace lvh::detail {
       }
 #endif
 
-      auto x = make_absinfo(0, absolute_axis_max);
-      if (const auto status = enable_evdev_code(device, EV_ABS, ABS_X, "absolute mouse axis", &x); !status.ok()) {
-        return status;
-      }
-      auto y = make_absinfo(0, absolute_axis_max);
-      return enable_evdev_code(device, EV_ABS, ABS_Y, "absolute mouse axis", &y);
+      return OperationStatus::success();
     }
 
     OperationStatus configure_evdev_touch_axes(libevdev *device) {
@@ -1768,14 +1786,18 @@ namespace lvh::detail {
       return configure_evdev_gamepad_force_feedback(device, supports_rumble);
     }
 
-    OperationStatus configure_evdev_device(libevdev *device, const DeviceProfile &profile) {
+    OperationStatus configure_evdev_device(
+      libevdev *device,
+      const DeviceProfile &profile,
+      UinputMouseDeviceKind mouse_kind = UinputMouseDeviceKind::relative
+    ) {
       switch (profile.device_type) {
         using enum DeviceType;
 
         case keyboard:
           return configure_evdev_keyboard(device);
         case mouse:
-          return configure_evdev_mouse(device);
+          return configure_evdev_mouse(device, mouse_kind);
         case touchscreen:
           return configure_evdev_touchscreen(device);
         case trackpad:
@@ -1792,7 +1814,12 @@ namespace lvh::detail {
       return OperationStatus::failure(ErrorCode::unsupported_profile, "unsupported uinput device type");
     }
 
-    UinputCreationResult create_libevdev_uinput_device(int fd, const DeviceProfile &profile, DeviceId id) {
+    UinputCreationResult create_libevdev_uinput_device(
+      int fd,
+      const DeviceProfile &profile,
+      DeviceId id,
+      UinputMouseDeviceKind mouse_kind = UinputMouseDeviceKind::relative
+    ) {
       if (fd < 0) {
         return {OperationStatus::failure(ErrorCode::backend_failure, "uinput file descriptor is closed"), nullptr};
       }
@@ -1822,7 +1849,7 @@ namespace lvh::detail {
       libevdev_set_id_product(device.get(), product_id);
       libevdev_set_id_version(device.get(), profile.version);
 
-      if (const auto status = configure_evdev_device(device.get(), profile); !status.ok()) {
+      if (const auto status = configure_evdev_device(device.get(), profile, mouse_kind); !status.ok()) {
         return {status, nullptr};
       }
 
@@ -1840,8 +1867,12 @@ namespace lvh::detail {
       return {OperationStatus::success(), uinput_device};
     }
 
-    OperationStatus UinputDevice::create_uinput_device(const DeviceProfile &profile, DeviceId id) {
-      auto result = create_libevdev_uinput_device(fd_, profile, id);
+    OperationStatus UinputDevice::create_uinput_device(
+      const DeviceProfile &profile,
+      DeviceId id,
+      UinputMouseDeviceKind mouse_kind
+    ) {
+      auto result = create_libevdev_uinput_device(fd_, profile, id, mouse_kind);
       if (!result.status.ok()) {
         return result.status;
       }
@@ -1971,24 +2002,67 @@ namespace lvh::detail {
     };
 
     /**
-     * @brief Backend mouse backed by one Linux uinput file descriptor.
+     * @brief One motion-specific Linux uinput device used by a backend mouse.
      */
-    class UinputMouse final: public BackendMouse, private UinputDevice {
+    class UinputMouseDevice final: private UinputDevice {
     public:
-      explicit UinputMouse(int file_descriptor):
+      explicit UinputMouseDevice(int file_descriptor):
           UinputDevice {file_descriptor} {}
+
+      OperationStatus create(DeviceId id, const DeviceProfile &profile, UinputMouseDeviceKind kind) {
+        device_name_ = profile.name;
+        return create_uinput_device(profile, id, kind);
+      }
+
+      OperationStatus emit(std::uint16_t type, std::uint16_t code, std::int32_t value) {
+        return emit_event(type, code, value);
+      }
+
+      OperationStatus synchronize() {
+        return sync();
+      }
+
+      OperationStatus close(const std::string &description) {
+        return close_uinput(description);
+      }
+
+      bool open() const {
+        return is_open();
+      }
+
+      std::vector<DeviceNode> device_nodes() const {
+        return uinput_device_nodes(device_name_);
+      }
+
+    private:
+      std::string device_name_;
+    };
+
+    /**
+     * @brief Backend mouse backed by separate relative and absolute Linux uinput devices.
+     */
+    class UinputMouse final: public BackendMouse {
+    public:
+      UinputMouse(int relative_file_descriptor, int absolute_file_descriptor):
+          relative_device_ {relative_file_descriptor},
+          absolute_device_ {absolute_file_descriptor} {}
 
       ~UinputMouse() override {
         static_cast<void>(close());
       }
 
       OperationStatus create(DeviceId id, const CreateMouseOptions &options) {
-        device_name_ = options.profile.name;
-        return create_uinput_device(options.profile, id);
+        if (const auto status = relative_device_.create(id, options.profile, UinputMouseDeviceKind::relative); !status.ok()) {
+          return status;
+        }
+
+        auto absolute_profile = options.profile;
+        absolute_profile.name += " (Absolute)";
+        return absolute_device_.create(id, absolute_profile, UinputMouseDeviceKind::absolute);
       }
 
       OperationStatus submit(const MouseEvent &event) override {
-        if (!is_open()) {
+        if (!relative_device_.open() || !absolute_device_.open()) {
           return OperationStatus::failure(ErrorCode::device_closed, "uinput mouse is closed");
         }
 
@@ -2011,47 +2085,107 @@ namespace lvh::detail {
       }
 
       OperationStatus close() override {
-        return close_uinput("uinput mouse");
+        const auto relative_status = relative_device_.close("relative uinput mouse");
+        const auto absolute_status = absolute_device_.close("absolute uinput mouse");
+        return relative_status.ok() ? absolute_status : relative_status;
       }
 
       std::vector<DeviceNode> device_nodes() const override {
-        return uinput_device_nodes(device_name_);
+        auto nodes = relative_device_.device_nodes();
+        const auto absolute_nodes = absolute_device_.device_nodes();
+        nodes.insert(nodes.end(), absolute_nodes.begin(), absolute_nodes.end());
+        return nodes;
       }
 
     private:
-      std::string device_name_;
+      UinputMouseDevice relative_device_;
+      UinputMouseDevice absolute_device_;
+      UinputMouseDeviceKind last_motion_device_ = UinputMouseDeviceKind::relative;
+      std::byte relative_buttons_down_ {};
+      std::byte absolute_buttons_down_ {};
       std::int32_t vertical_scroll_remainder_ = 0;
       std::int32_t horizontal_scroll_remainder_ = 0;
 
+      UinputMouseDevice &device(UinputMouseDeviceKind kind) {
+        return kind == UinputMouseDeviceKind::absolute ? absolute_device_ : relative_device_;
+      }
+
+      std::byte &buttons_down(UinputMouseDeviceKind kind) {
+        return kind == UinputMouseDeviceKind::absolute ? absolute_buttons_down_ : relative_buttons_down_;
+      }
+
+      static std::byte button_mask(MouseButton button) {
+        auto index = std::to_underlying(button);
+        if (index > std::to_underlying(MouseButton::extra)) {
+          index = std::to_underlying(MouseButton::left);
+        }
+        return std::byte {1} << index;
+      }
+
+      UinputMouseDeviceKind button_device(const MouseEvent &event) const {
+        if (!event.pressed) {
+          const auto mask = button_mask(event.button);
+          if ((relative_buttons_down_ & mask) != std::byte {0}) {
+            return UinputMouseDeviceKind::relative;
+          }
+          if ((absolute_buttons_down_ & mask) != std::byte {0}) {
+            return UinputMouseDeviceKind::absolute;
+          }
+        }
+        return last_motion_device_;
+      }
+
       OperationStatus submit_relative_motion(const MouseEvent &event) {
+        auto &relative = device(UinputMouseDeviceKind::relative);
         if (event.x != 0) {
-          if (const auto status = emit_event(EV_REL, REL_X, event.x); !status.ok()) {
+          if (const auto status = relative.emit(EV_REL, REL_X, event.x); !status.ok()) {
             return status;
           }
         }
         if (event.y != 0) {
-          if (const auto status = emit_event(EV_REL, REL_Y, event.y); !status.ok()) {
+          if (const auto status = relative.emit(EV_REL, REL_Y, event.y); !status.ok()) {
             return status;
           }
         }
-        return sync();
+        if (const auto status = relative.synchronize(); !status.ok()) {
+          return status;
+        }
+        last_motion_device_ = UinputMouseDeviceKind::relative;
+        return OperationStatus::success();
       }
 
       OperationStatus submit_absolute_motion(const MouseEvent &event) {
-        if (const auto status = emit_event(EV_ABS, ABS_X, scale_absolute_axis(event.x, event.width)); !status.ok()) {
+        auto &absolute = device(UinputMouseDeviceKind::absolute);
+        if (const auto status = absolute.emit(EV_ABS, ABS_X, scale_absolute_axis(event.x, event.width)); !status.ok()) {
           return status;
         }
-        if (const auto status = emit_event(EV_ABS, ABS_Y, scale_absolute_axis(event.y, event.height)); !status.ok()) {
+        if (const auto status = absolute.emit(EV_ABS, ABS_Y, scale_absolute_axis(event.y, event.height)); !status.ok()) {
           return status;
         }
-        return sync();
+        if (const auto status = absolute.synchronize(); !status.ok()) {
+          return status;
+        }
+        last_motion_device_ = UinputMouseDeviceKind::absolute;
+        return OperationStatus::success();
       }
 
       OperationStatus submit_button(const MouseEvent &event) {
-        if (const auto status = emit_event(EV_KEY, static_cast<std::uint16_t>(mouse_button_to_linux(event.button)), event.pressed ? 1 : 0); !status.ok()) {
+        const auto kind = button_device(event);
+        auto &target = device(kind);
+        if (const auto status = target.emit(EV_KEY, static_cast<std::uint16_t>(mouse_button_to_linux(event.button)), event.pressed ? 1 : 0); !status.ok()) {
           return status;
         }
-        return sync();
+        if (const auto status = target.synchronize(); !status.ok()) {
+          return status;
+        }
+
+        const auto mask = button_mask(event.button);
+        if (event.pressed) {
+          buttons_down(kind) |= mask;
+        } else {
+          buttons_down(kind) &= ~mask;
+        }
+        return OperationStatus::success();
       }
 
       OperationStatus submit_vertical_scroll(std::int32_t distance) {
@@ -2068,18 +2202,19 @@ namespace lvh::detail {
         std::uint16_t legacy_code,
         std::optional<std::uint16_t> high_resolution_code
       ) {
+        auto &relative = device(UinputMouseDeviceKind::relative);
         const auto converted = accumulated_legacy_scroll(remainder, distance);
         if (converted.detents != 0) {
-          if (const auto status = emit_event(EV_REL, legacy_code, converted.detents); !status.ok()) {
+          if (const auto status = relative.emit(EV_REL, legacy_code, converted.detents); !status.ok()) {
             return status;
           }
         }
         if (high_resolution_code.has_value()) {
-          if (const auto status = emit_event(EV_REL, *high_resolution_code, distance); !status.ok()) {
+          if (const auto status = relative.emit(EV_REL, *high_resolution_code, distance); !status.ok()) {
             return status;
           }
         }
-        if (const auto status = sync(); !status.ok()) {
+        if (const auto status = relative.synchronize(); !status.ok()) {
           return status;
         }
         remainder = converted.remainder;
@@ -3821,12 +3956,18 @@ namespace lvh::detail {
       }
 
       BackendMouseCreationResult create_mouse(DeviceId id, const CreateMouseOptions &options) override {
-        const auto fd = open_uinput(O_RDWR | O_CLOEXEC | O_NONBLOCK);
-        if (fd < 0) {
+        const auto relative_fd = open_uinput(O_RDWR | O_CLOEXEC | O_NONBLOCK);
+        if (relative_fd < 0) {
           return create_xtest_mouse();
         }
 
-        auto mouse = std::make_unique<UinputMouse>(fd);
+        const auto absolute_fd = open_uinput(O_RDWR | O_CLOEXEC | O_NONBLOCK);
+        if (absolute_fd < 0) {
+          static_cast<void>(system_close(relative_fd));
+          return create_xtest_mouse();
+        }
+
+        auto mouse = std::make_unique<UinputMouse>(relative_fd, absolute_fd);
         if (const auto status = mouse->create(id, options); !status.ok()) {
           static_cast<void>(mouse->close());
           auto fallback = create_xtest_mouse();

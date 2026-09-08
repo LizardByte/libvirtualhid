@@ -647,6 +647,49 @@ TEST_F(LinuxBackendTest, PipeBackedUinputMouseEmitsEvents) {
   EXPECT_EQ(result.events.back().type, EV_SYN);
 }
 
+TEST_F(LinuxBackendTest, PipeBackedUinputMouseRoutesMotionAndButtonsAcrossSplitDevices) {
+  const std::vector<lvh::MouseEvent> events {
+    {.kind = lvh::MouseEventKind::absolute_motion, .x = 50, .y = 25, .width = 100, .height = 100},
+    {.kind = lvh::MouseEventKind::button, .button = lvh::MouseButton::side, .pressed = true},
+    {.kind = lvh::MouseEventKind::relative_motion, .x = 5, .y = -2},
+    {.kind = lvh::MouseEventKind::button, .button = lvh::MouseButton::side, .pressed = false},
+    {.kind = lvh::MouseEventKind::button, .button = lvh::MouseButton::extra, .pressed = true},
+    {.kind = lvh::MouseEventKind::button, .button = lvh::MouseButton::extra, .pressed = false},
+  };
+  const auto result = lvh::detail::test::linux_uinput_mouse_submit_split_pipe_sequence(events);
+  ASSERT_TRUE(result.status.ok()) << result.status.message();
+
+  ASSERT_EQ(result.absolute_events.size(), 7U);
+  EXPECT_EQ(result.absolute_events[0].type, EV_ABS);
+  EXPECT_EQ(result.absolute_events[0].code, ABS_X);
+  EXPECT_EQ(result.absolute_events[1].type, EV_ABS);
+  EXPECT_EQ(result.absolute_events[1].code, ABS_Y);
+  EXPECT_EQ(result.absolute_events[3].type, EV_KEY);
+  EXPECT_EQ(result.absolute_events[3].code, BTN_SIDE);
+  EXPECT_EQ(result.absolute_events[3].value, 1);
+  EXPECT_EQ(result.absolute_events[5].type, EV_KEY);
+  EXPECT_EQ(result.absolute_events[5].code, BTN_SIDE);
+  EXPECT_EQ(result.absolute_events[5].value, 0);
+  EXPECT_TRUE(std::ranges::none_of(result.absolute_events, [](const auto &event) {
+    return event.type == EV_REL;
+  }));
+
+  ASSERT_EQ(result.relative_events.size(), 7U);
+  EXPECT_EQ(result.relative_events[0].type, EV_REL);
+  EXPECT_EQ(result.relative_events[0].code, REL_X);
+  EXPECT_EQ(result.relative_events[1].type, EV_REL);
+  EXPECT_EQ(result.relative_events[1].code, REL_Y);
+  EXPECT_EQ(result.relative_events[3].type, EV_KEY);
+  EXPECT_EQ(result.relative_events[3].code, BTN_EXTRA);
+  EXPECT_EQ(result.relative_events[3].value, 1);
+  EXPECT_EQ(result.relative_events[5].type, EV_KEY);
+  EXPECT_EQ(result.relative_events[5].code, BTN_EXTRA);
+  EXPECT_EQ(result.relative_events[5].value, 0);
+  EXPECT_TRUE(std::ranges::none_of(result.relative_events, [](const auto &event) {
+    return event.type == EV_ABS;
+  }));
+}
+
 TEST_F(LinuxBackendTest, PipeBackedUinputMouseAccumulatesLegacyScrollDetentsPerAxis) {
   const std::vector<lvh::MouseEvent> events {
     {.kind = lvh::MouseEventKind::vertical_scroll, .high_resolution_scroll = 60},
@@ -1193,22 +1236,31 @@ TEST_F(LinuxBackendTest, FakeUinputConstructionCoversCapabilitiesAndFailureBranc
     EXPECT_EQ(xbox_360_button_slots[index], expected_xbox_360_button_slots[index]) << "button slot " << index;
   }
 
-  const auto mouse = lvh::detail::test::linux_uinput_create_fake_libevdev_device(lvh::DeviceType::mouse);
-  ASSERT_TRUE(mouse.status.ok()) << mouse.status.message();
-  EXPECT_TRUE(has_type(mouse, EV_KEY));
-  EXPECT_TRUE(has_type(mouse, EV_REL));
-  EXPECT_TRUE(has_type(mouse, EV_ABS));
-  EXPECT_NE(find_code(mouse, EV_KEY, BTN_LEFT), nullptr);
-  EXPECT_NE(find_code(mouse, EV_REL, REL_X), nullptr);
-  EXPECT_NE(find_code(mouse, EV_REL, REL_WHEEL), nullptr);
-  EXPECT_NE(find_code(mouse, EV_REL, REL_HWHEEL), nullptr);
+  const auto relative_mouse = lvh::detail::test::linux_uinput_create_fake_libevdev_device(lvh::DeviceType::mouse);
+  ASSERT_TRUE(relative_mouse.status.ok()) << relative_mouse.status.message();
+  EXPECT_TRUE(has_type(relative_mouse, EV_KEY));
+  EXPECT_TRUE(has_type(relative_mouse, EV_REL));
+  EXPECT_FALSE(has_type(relative_mouse, EV_ABS));
+  EXPECT_FALSE(has_property(relative_mouse, INPUT_PROP_DIRECT));
+  EXPECT_NE(find_code(relative_mouse, EV_KEY, BTN_LEFT), nullptr);
+  EXPECT_NE(find_code(relative_mouse, EV_REL, REL_X), nullptr);
+  EXPECT_NE(find_code(relative_mouse, EV_REL, REL_WHEEL), nullptr);
+  EXPECT_NE(find_code(relative_mouse, EV_REL, REL_HWHEEL), nullptr);
 #if defined(REL_WHEEL_HI_RES)
-  EXPECT_NE(find_code(mouse, EV_REL, REL_WHEEL_HI_RES), nullptr);
+  EXPECT_NE(find_code(relative_mouse, EV_REL, REL_WHEEL_HI_RES), nullptr);
 #endif
 #if defined(REL_HWHEEL_HI_RES)
-  EXPECT_NE(find_code(mouse, EV_REL, REL_HWHEEL_HI_RES), nullptr);
+  EXPECT_NE(find_code(relative_mouse, EV_REL, REL_HWHEEL_HI_RES), nullptr);
 #endif
-  const auto *mouse_x = find_code(mouse, EV_ABS, ABS_X);
+
+  const auto absolute_mouse = lvh::detail::test::linux_uinput_create_fake_absolute_mouse_device();
+  ASSERT_TRUE(absolute_mouse.status.ok()) << absolute_mouse.status.message();
+  EXPECT_TRUE(has_type(absolute_mouse, EV_KEY));
+  EXPECT_FALSE(has_type(absolute_mouse, EV_REL));
+  EXPECT_TRUE(has_type(absolute_mouse, EV_ABS));
+  EXPECT_TRUE(has_property(absolute_mouse, INPUT_PROP_DIRECT));
+  EXPECT_NE(find_code(absolute_mouse, EV_KEY, BTN_LEFT), nullptr);
+  const auto *mouse_x = find_code(absolute_mouse, EV_ABS, ABS_X);
   ASSERT_NE(mouse_x, nullptr);
   EXPECT_TRUE(mouse_x->has_absinfo);
   EXPECT_EQ(mouse_x->maximum, 65535);
