@@ -167,7 +167,7 @@ cmake -S . -B cmake-build-windows-driver -G "Visual Studio 17 2022" -A x64 `
   -DLIBVIRTUALHID_BUILD_WINDOWS_DRIVER=ON -DLIBVIRTUALHID_ENABLE_PACKAGING=ON `
   -DBUILD_TESTS=OFF -DBUILD_EXAMPLES=ON -DLIBVIRTUALHID_BUILD_TOOLS=ON
 cmake --build cmake-build-windows-driver --config Release `
-  --target libvirtualhid_windows_catalog libvirtualhid_broker gamepad_adapter virtualhid_control
+  --target libvirtualhid_windows_catalog libvirtualhid_driver_setup libvirtualhid_broker gamepad_adapter virtualhid_control
 cpack -G WIX -C Release --config .\cmake-build-windows-driver\CPackConfig.cmake
 ```
 
@@ -183,6 +183,7 @@ Developer helpers live under `scripts/windows`:
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\windows\install-driver.ps1 `
   -InfPath .\cmake-build-windows-driver\src\platform\windows\driver\package\Release\libvirtualhid.inf `
+  -SetupPath .\cmake-build-windows-driver\src\platform\windows\driver\Release\libvirtualhid_driver_setup.exe `
   -BrokerPath .\cmake-build-windows-driver\src\platform\windows\broker\Release\libvirtualhid_broker.exe `
   -LogPath .\cmake-build-windows-driver\install-driver.log
 powershell -ExecutionPolicy Bypass -File .\scripts\windows\test-installed-driver.ps1 `
@@ -201,6 +202,7 @@ defaults to `C:\Program Files\libvirtualhid`:
 
 - `tools\windows\gamepad_adapter.exe`
 - `tools\windows\virtualhid_control.exe`
+- `tools\windows\libvirtualhid_driver_setup.exe`
 - `services\windows\libvirtualhid_broker.exe`
 
 The source-tree validation scripts remain developer and CI helpers. They are not
@@ -208,11 +210,12 @@ packaged as reviewer-facing MSI validation scripts because the native
 `virtualhid_control.exe` tool can create, exercise, and inspect virtual
 gamepads and mice interactively.
 
-The install helper stages the INF with `pnputil`, updates an existing
+The install script stages the INF with `pnputil`, updates an existing
 `ROOT\LIBVIRTUALHID` device when present, and creates that root-enumerated
-device when it is missing. It uses SetupAPI/NewDev directly, so MSI installs do
-not require WDK tools on the target machine. When a broker executable is present,
-the helper also installs and starts the `libvirtualhid_broker` Windows service
+device when it is missing. A packaged, architecture-matched native helper makes
+the SetupAPI/NewDev calls, so MSI installs do not depend on PowerShell runtime
+C# compilation or require WDK tools on the target machine. When a broker executable is present,
+the install script also installs and starts the `libvirtualhid_broker` Windows service
 with a service SID. The service `ImagePath` is stored as a literal quoted path,
 and installation fails if the registry value is not safely quoted. This avoids
 CWE-428 unquoted-service-path escalation when the install root contains spaces.

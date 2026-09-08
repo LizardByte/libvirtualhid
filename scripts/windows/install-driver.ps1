@@ -13,6 +13,8 @@ param(
 
   [string] $BrokerPath,
 
+  [string] $SetupPath,
+
   [string] $LogPath,
 
   [switch] $StageOnly
@@ -57,6 +59,24 @@ function Resolve-LibVirtualHidBrokerPath {
   }
 
   return $null
+}
+
+function Resolve-LibVirtualHidDriverSetupPath {
+  param([string] $Path)
+
+  if ($Path) {
+    if (-not (Test-Path -LiteralPath $Path)) {
+      throw "The driver setup helper was not found at $Path"
+    }
+    return (Resolve-Path -LiteralPath $Path).Path
+  }
+
+  $packagedPath = Join-Path $PSScriptRoot "..\..\tools\windows\libvirtualhid_driver_setup.exe"
+  if (Test-Path -LiteralPath $packagedPath) {
+    return (Resolve-Path -LiteralPath $packagedPath).Path
+  }
+
+  throw "The libvirtualhid driver setup helper was not found. Pass its path with -SetupPath."
 }
 
 function Get-LibVirtualHidQuotedServiceBinaryPath {
@@ -212,126 +232,6 @@ function Import-DriverCertificate {
   }
 }
 
-function Add-SetupApiRootDeviceInstaller {
-  if (([System.Management.Automation.PSTypeName] "LibVirtualHid.SetupApi.RootDeviceInstaller").Type) {
-    return
-  }
-
-  Add-Type -TypeDefinition @"
-using System;
-using System.ComponentModel;
-using System.Runtime.InteropServices;
-using System.Text;
-
-namespace LibVirtualHid.SetupApi {
-  public static class RootDeviceInstaller {
-    private const uint DicdGenerateId = 0x00000001;
-    private const uint DifRegisterDevice = 0x00000019;
-    private const uint InstallFlagForce = 0x00000001;
-    private const uint InstallFlagNonInteractive = 0x00000004;
-    private const uint SpdrpHardwareId = 0x00000001;
-    private static readonly IntPtr InvalidHandleValue = new IntPtr(-1);
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct SpDevinfoData {
-      public uint cbSize;
-      public Guid ClassGuid;
-      public uint DevInst;
-      public IntPtr Reserved;
-    }
-
-    [DllImport("setupapi.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    private static extern bool SetupDiGetINFClass(string infName, out Guid classGuid, StringBuilder className, uint classNameSize, out uint requiredSize);
-
-    [DllImport("setupapi.dll", SetLastError = true)]
-    private static extern IntPtr SetupDiCreateDeviceInfoList(ref Guid classGuid, IntPtr hwndParent);
-
-    [DllImport("setupapi.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    private static extern bool SetupDiCreateDeviceInfo(IntPtr deviceInfoSet, string deviceName, ref Guid classGuid, string deviceDescription, IntPtr hwndParent, uint creationFlags, ref SpDevinfoData deviceInfoData);
-
-    [DllImport("setupapi.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    private static extern bool SetupDiSetDeviceRegistryProperty(IntPtr deviceInfoSet, ref SpDevinfoData deviceInfoData, uint property, byte[] propertyBuffer, uint propertyBufferSize);
-
-    [DllImport("setupapi.dll", SetLastError = true)]
-    private static extern bool SetupDiCallClassInstaller(uint installFunction, IntPtr deviceInfoSet, ref SpDevinfoData deviceInfoData);
-
-    [DllImport("setupapi.dll", SetLastError = true)]
-    private static extern bool SetupDiDestroyDeviceInfoList(IntPtr deviceInfoSet);
-
-    [DllImport("newdev.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    private static extern bool UpdateDriverForPlugAndPlayDevices(IntPtr hwndParent, string hardwareId, string fullInfPath, uint installFlags, out bool rebootRequired);
-
-    public static void Update(string infPath, string hardwareId, out bool rebootRequired) {
-      rebootRequired = false;
-
-      if (!UpdateDriverForPlugAndPlayDevices(IntPtr.Zero, hardwareId, infPath, InstallFlagForce | InstallFlagNonInteractive, out rebootRequired)) {
-        ThrowLastWin32Error("UpdateDriverForPlugAndPlayDevices");
-      }
-    }
-
-    public static void Install(string infPath, string hardwareId, out bool rebootRequired) {
-      rebootRequired = false;
-
-      string rootDeviceName = GetRootDeviceName(hardwareId);
-
-      Guid classGuid;
-      uint requiredSize;
-      var className = new StringBuilder(256);
-      if (!SetupDiGetINFClass(infPath, out classGuid, className, (uint) className.Capacity, out requiredSize)) {
-        ThrowLastWin32Error("SetupDiGetINFClass");
-      }
-
-      IntPtr deviceInfoSet = SetupDiCreateDeviceInfoList(ref classGuid, IntPtr.Zero);
-      if (deviceInfoSet == InvalidHandleValue) {
-        ThrowLastWin32Error("SetupDiCreateDeviceInfoList");
-      }
-
-      try {
-        var deviceInfoData = new SpDevinfoData { cbSize = (uint) Marshal.SizeOf(typeof(SpDevinfoData)) };
-
-        if (!SetupDiCreateDeviceInfo(deviceInfoSet, rootDeviceName, ref classGuid, null, IntPtr.Zero, DicdGenerateId, ref deviceInfoData)) {
-          ThrowLastWin32Error("SetupDiCreateDeviceInfo");
-        }
-
-        byte[] hardwareIds = Encoding.Unicode.GetBytes(hardwareId + "\0\0");
-        if (!SetupDiSetDeviceRegistryProperty(deviceInfoSet, ref deviceInfoData, SpdrpHardwareId, hardwareIds, (uint) hardwareIds.Length)) {
-          ThrowLastWin32Error("SetupDiSetDeviceRegistryProperty");
-        }
-
-        if (!SetupDiCallClassInstaller(DifRegisterDevice, deviceInfoSet, ref deviceInfoData)) {
-          ThrowLastWin32Error("SetupDiCallClassInstaller");
-        }
-      } finally {
-        SetupDiDestroyDeviceInfoList(deviceInfoSet);
-      }
-    }
-
-    private static string GetRootDeviceName(string hardwareId) {
-      const string rootPrefix = "ROOT\\";
-      if (!hardwareId.StartsWith(rootPrefix, StringComparison.OrdinalIgnoreCase)) {
-        throw new ArgumentException("Hardware ID must use the ROOT\\ enumerator.", "hardwareId");
-      }
-
-      string rootDeviceName = hardwareId.Substring(rootPrefix.Length);
-      if (rootDeviceName.Length == 0 || rootDeviceName.Contains("\\")) {
-        throw new ArgumentException(
-          "Hardware ID must be a root-enumerated device ID without an instance suffix.",
-          "hardwareId");
-      }
-
-      return rootDeviceName;
-    }
-
-    private static void ThrowLastWin32Error(string action) {
-      int error = Marshal.GetLastWin32Error();
-      throw new InvalidOperationException(
-        action + " failed with Win32 error " + error + ": " + new Win32Exception(error).Message);
-    }
-  }
-}
-"@
-}
-
 function Remove-DeviceInstance {
   [CmdletBinding(SupportsShouldProcess)]
   param([string] $InstanceId)
@@ -391,16 +291,20 @@ function Update-RootDeviceDriverWithSetupApi {
     [string] $Path,
 
     [Parameter(Mandatory = $true)]
-    [string] $TargetHardwareId
+    [string] $TargetHardwareId,
+
+    [Parameter(Mandatory = $true)]
+    [string] $SetupHelperPath
   )
 
-  Add-SetupApiRootDeviceInstaller
-  $rebootRequired = $false
   if ($PSCmdlet.ShouldProcess($TargetHardwareId, "Update libvirtualhid development device driver")) {
-    [LibVirtualHid.SetupApi.RootDeviceInstaller]::Update($Path, $TargetHardwareId, [ref] $rebootRequired)
-  }
-  if ($rebootRequired) {
-    Write-Warning "Windows reported that a reboot is required to finish installing the libvirtualhid driver."
+    Invoke-CheckedCommand `
+      -FilePath $SetupHelperPath `
+      -Arguments @("update", $Path, $TargetHardwareId) `
+      -SuccessExitCodes @(0, 3010)
+    if ($LASTEXITCODE -eq 3010) {
+      Write-Warning "Windows reported that a reboot is required to finish installing the libvirtualhid driver."
+    }
   }
 }
 
@@ -410,15 +314,13 @@ function Install-RootDeviceWithSetupApi {
     [string] $Path,
 
     [Parameter(Mandatory = $true)]
-    [string] $TargetHardwareId
+    [string] $TargetHardwareId,
+
+    [Parameter(Mandatory = $true)]
+    [string] $SetupHelperPath
   )
 
-  Add-SetupApiRootDeviceInstaller
-  $rebootRequired = $false
-  [LibVirtualHid.SetupApi.RootDeviceInstaller]::Install($Path, $TargetHardwareId, [ref] $rebootRequired)
-  if ($rebootRequired) {
-    Write-Warning "Windows reported that a reboot is required to finish installing the libvirtualhid driver."
-  }
+  Invoke-CheckedCommand -FilePath $SetupHelperPath -Arguments @("install", $Path, $TargetHardwareId)
 }
 
 Start-LibVirtualHidTranscript -Path $LogPath
@@ -435,6 +337,8 @@ try {
     return
   }
 
+  $resolvedSetup = Resolve-LibVirtualHidDriverSetupPath -Path $SetupPath
+
   $registryRootDevices = @(Get-LibVirtualHidRegistryRootDevice -TargetHardwareId $HardwareId)
   foreach ($device in ($registryRootDevices | Where-Object { $_.HasCorruptHardwareId -or $_.HasLegacyHidClass })) {
     Remove-DeviceInstance -InstanceId $device.InstanceId
@@ -446,7 +350,10 @@ try {
     foreach ($rootDevice in $rootDevices) {
       Set-RootDeviceVhfMode -InstanceId $rootDevice
     }
-    Update-RootDeviceDriverWithSetupApi -Path $resolvedInf -TargetHardwareId $HardwareId
+    Update-RootDeviceDriverWithSetupApi `
+      -Path $resolvedInf `
+      -TargetHardwareId $HardwareId `
+      -SetupHelperPath $resolvedSetup
     foreach ($rootDevice in $rootDevices) {
       Restart-RootDevice -InstanceId $rootDevice
     }
@@ -455,14 +362,20 @@ try {
   }
 
   if ($PSCmdlet.ShouldProcess($HardwareId, "Create libvirtualhid development device with SetupAPI")) {
-    Install-RootDeviceWithSetupApi -Path $resolvedInf -TargetHardwareId $HardwareId
+    Install-RootDeviceWithSetupApi `
+      -Path $resolvedInf `
+      -TargetHardwareId $HardwareId `
+      -SetupHelperPath $resolvedSetup
   }
 
   $rootDevices = @(Get-LibVirtualHidRootDeviceInstanceId -TargetHardwareId $HardwareId)
   foreach ($rootDevice in $rootDevices) {
     Set-RootDeviceVhfMode -InstanceId $rootDevice
   }
-  Update-RootDeviceDriverWithSetupApi -Path $resolvedInf -TargetHardwareId $HardwareId
+  Update-RootDeviceDriverWithSetupApi `
+    -Path $resolvedInf `
+    -TargetHardwareId $HardwareId `
+    -SetupHelperPath $resolvedSetup
   foreach ($rootDevice in $rootDevices) {
     Restart-RootDevice -InstanceId $rootDevice
   }

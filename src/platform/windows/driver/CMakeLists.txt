@@ -189,6 +189,25 @@ endif()
 message(STATUS "stampinf executable: ${LIBVIRTUALHID_STAMPINF}")
 message(STATUS "inf2cat executable: ${LIBVIRTUALHID_INF2CAT}")
 
+add_executable(libvirtualhid_driver_setup
+  "${CMAKE_CURRENT_SOURCE_DIR}/libvirtualhid_driver_setup.cpp")
+target_compile_features(libvirtualhid_driver_setup PRIVATE cxx_std_23)
+target_compile_definitions(libvirtualhid_driver_setup
+  PRIVATE
+  NOMINMAX
+  WIN32_LEAN_AND_MEAN
+  _WIN32_WINNT=0x0A00)
+target_compile_options(libvirtualhid_driver_setup PRIVATE /W4)
+if(LIBVIRTUALHID_WARNINGS_AS_ERRORS)
+    target_compile_options(libvirtualhid_driver_setup PRIVATE /WX)
+endif()
+target_link_libraries(libvirtualhid_driver_setup
+  PRIVATE
+  newdev
+  setupapi)
+set_property(TARGET libvirtualhid_driver_setup PROPERTY
+  MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+
 configure_file(
   "${CMAKE_CURRENT_SOURCE_DIR}/libvirtualhid.inf.in"
   "${CMAKE_CURRENT_BINARY_DIR}/libvirtualhid.inf"
@@ -256,6 +275,9 @@ add_custom_target(libvirtualhid_windows_catalog
   VERBATIM)
 
 if(LIBVIRTUALHID_INSTALL)
+    install(TARGETS libvirtualhid_driver_setup
+      RUNTIME DESTINATION "tools/windows"
+      COMPONENT driver)
     install(TARGETS libvirtualhid_umdf
       RUNTIME DESTINATION "drivers/windows"
       COMPONENT driver)
