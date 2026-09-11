@@ -454,7 +454,10 @@ observed from physical Xbox Series USB and Xbox Wireless Adapter connections.
 The VHF child preserves the native 17-byte GIP-shaped input report, and the
 last byte carries battery strength for both Xbox One and Xbox Series. The report
 parser accepts the native eight-byte four-motor Xbox payload when a consumer
-delivers it. The Xbox 360 profile is rejected by the UMDF/VHF backend because a
+delivers it. The Windows backend submits Xbox input only when the packed state
+changes. State transitions still reach VHF, while raw HID consumers are not
+asked to reinterpret the same unchanged Xbox state as fresh input. The Xbox 360
+profile is rejected by the UMDF/VHF backend because a
 real Xbox 360 controller is an XUSB device rather than a VHF HID gamepad.
 
 DualShock 4 and DualSense answer the calibration, pairing, and firmware feature

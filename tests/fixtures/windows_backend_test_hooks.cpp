@@ -551,6 +551,34 @@ namespace lvh::detail {
       return result;
     }
 
+    WindowsXboxInputDeduplicationResult windows_backend_xbox_input_deduplication(GamepadProfileKind kind) {
+      WindowsXboxInputDeduplicationResult result;
+      auto command_state = std::make_shared<FakeWindowsControlChannelState>();
+      auto backend = make_fake_windows_backend(command_state, std::make_shared<FakeWindowsControlChannelState>());
+
+      CreateGamepadOptions options;
+      options.profile = kind == GamepadProfileKind::xbox_one ? profiles::xbox_one() : profiles::xbox_series();
+      auto created = backend->create_gamepad(9, options);
+      result.create_status = created.status;
+      if (created) {
+        auto report = std::vector<std::uint8_t>(options.profile.input_report_size, 0U);
+        report[12] = 0x10U;
+        result.left_shoulder_status = created.gamepad->submit({}, report);
+        result.repeated_left_shoulder_status = created.gamepad->submit({}, report);
+
+        report[12] = 0x20U;
+        result.right_shoulder_status = created.gamepad->submit({}, report);
+        result.repeated_right_shoulder_status = created.gamepad->submit({}, report);
+
+        report[12] = 0U;
+        result.release_status = created.gamepad->submit({}, report);
+        result.close_status = created.gamepad->close();
+        result.submitted_reports = command_state->submit_reports();
+      }
+
+      return result;
+    }
+
     WindowsHidMouseResult windows_backend_hid_mouse() {
       using enum MouseEventKind;
 

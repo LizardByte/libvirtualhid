@@ -980,6 +980,8 @@ namespace lvh::detail {
 
       std::shared_ptr<WindowsBackendContext> context_;
       std::shared_ptr<WindowsVhfDeviceState> state_;
+      std::mutex input_report_mutex_;
+      std::optional<std::vector<std::uint8_t>> last_input_report_;
       std::condition_variable switch_pro_report_ready_;
       std::mutex switch_pro_report_mutex_;
       std::jthread switch_pro_report_thread_;
@@ -1368,6 +1370,8 @@ namespace lvh::detail {
     ) {
       using enum ErrorCode;
 
+      auto suppress_unchanged_report = false;
+
       {
         std::lock_guard lock {state_->mutex_};
         if (!state_->open) {
@@ -1386,6 +1390,25 @@ namespace lvh::detail {
         if (state_->uses_generic_pid) {
           return context_->submit_device_report(state_, windows::make_generic_windows_input_report(report));
         }
+
+        suppress_unchanged_report =
+          state_->profile.gamepad_kind == GamepadProfileKind::xbox_one ||
+          state_->profile.gamepad_kind == GamepadProfileKind::xbox_series;
+      }
+
+      if (suppress_unchanged_report) {
+        // Xbox input reports have no sequence or timestamp field. Keep raw HID
+        // consumers transition-driven when a streaming host repeats a held state.
+        std::lock_guard lock {input_report_mutex_};
+        if (last_input_report_.has_value() && *last_input_report_ == report) {
+          return OperationStatus::success();
+        }
+
+        auto status = context_->submit_device_report(state_, report);
+        if (status.ok()) {
+          last_input_report_ = report;
+        }
+        return status;
       }
 
       return context_->submit_device_report(state_, report);

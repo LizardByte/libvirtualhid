@@ -1220,6 +1220,88 @@ TEST_F(WindowsConsumerTest, NativeXboxPidRumbleWritesAreNormalized) {
   ASSERT_TRUE(created.adapter->close().ok());
 }
 
+TEST_F(WindowsConsumerTest, XboxNativeInputSuppressesRepeatedHeldShoulderReports) {
+  lvh::RuntimeOptions runtime_options;
+  runtime_options.backend = lvh::BackendKind::platform_default;
+  auto runtime = lvh::Runtime::create(runtime_options);
+  ASSERT_NE(runtime, nullptr);
+  ASSERT_TRUE(runtime->capabilities().supports_gamepad)
+    << "The installed libvirtualhid Windows driver is required for this integration test";
+
+  auto profile = lvh::profiles::xbox_one();
+  // Avoid a report descriptor cached for an older installed-driver identity.
+  profile.vendor_id = 0x1234U;
+  profile.product_id = 0x5670U;
+  profile.version = 0x0001U;
+  const auto previous_paths = current_gamepad_interface_paths();
+
+  lvh::CreateGamepadOptions options;
+  options.profile = profile;
+  options.metadata.stable_id = "native-shoulder-hold-test";
+  auto created = lvh::GamepadStateAdapter::create(*runtime, options);
+  ASSERT_TRUE(created) << created.status.message();
+
+  const auto hid_interface = wait_for_new_interface(previous_paths, profile.vendor_id, profile.product_id);
+  ASSERT_TRUE(hid_interface.has_value()) << "The VHF Xbox HID interface was not enumerated";
+  ASSERT_EQ(hid_interface->input_report_size, profile.input_report_size + 1U);
+
+  Handle reader {CreateFileW(
+    hid_interface->path.c_str(),
+    GENERIC_READ,
+    FILE_SHARE_READ | FILE_SHARE_WRITE,
+    nullptr,
+    OPEN_EXISTING,
+    FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED,
+    nullptr
+  )};
+  ASSERT_TRUE(reader) << "Unable to open the VHF Xbox HID interface: " << GetLastError();
+
+  lvh::GamepadState state;
+  state.buttons.set(lvh::GamepadButton::left_shoulder);
+  ASSERT_TRUE(created.adapter->set_state(state).ok());
+  const auto left_pressed = read_hid_report_matching(
+    reader.get(),
+    hid_interface->input_report_size,
+    5s,
+    [](const auto &report) {
+      return report.size() > 13U && (report[13] & 0x30U) == 0x10U;
+    }
+  );
+  ASSERT_TRUE(left_pressed.has_value()) << "No Xbox LB press reached the native HID client";
+
+  for (auto repeat = 0U; repeat < 32U; ++repeat) {
+    ASSERT_TRUE(created.adapter->set_state(state).ok());
+  }
+  EXPECT_FALSE(read_hid_report_with_timeout(reader.get(), hid_interface->input_report_size, 200ms).has_value())
+    << "An unchanged held LB state was resubmitted to the native HID client";
+
+  state.buttons.reset(lvh::GamepadButton::left_shoulder);
+  state.buttons.set(lvh::GamepadButton::right_shoulder);
+  ASSERT_TRUE(created.adapter->set_state(state).ok());
+  const auto right_pressed = read_hid_report_matching(
+    reader.get(),
+    hid_interface->input_report_size,
+    5s,
+    [](const auto &report) {
+      return report.size() > 13U && (report[13] & 0x30U) == 0x20U;
+    }
+  );
+  ASSERT_TRUE(right_pressed.has_value()) << "No Xbox RB press reached the native HID client";
+
+  state.buttons.reset(lvh::GamepadButton::right_shoulder);
+  ASSERT_TRUE(created.adapter->set_state(state).ok());
+  const auto released = read_hid_report_matching(
+    reader.get(),
+    hid_interface->input_report_size,
+    5s,
+    [](const auto &report) {
+      return report.size() > 13U && (report[13] & 0x30U) == 0U;
+    }
+  );
+  ASSERT_TRUE(released.has_value()) << "No Xbox shoulder release reached the native HID client";
+  ASSERT_TRUE(created.adapter->close().ok());
+}
+
 TEST_F(WindowsConsumerTest, BatteryStateIsAvailableThroughGetInputReport) {
   const std::array profiles {
     lvh::profiles::xbox_one(),
