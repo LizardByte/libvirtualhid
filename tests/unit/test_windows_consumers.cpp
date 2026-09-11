@@ -763,7 +763,7 @@ TEST_F(WindowsConsumerTest, SdlExposesSubmittedBatteryStateForNonXboxProfiles) {
       SDL_UpdateGamepads();
       SDL_PumpEvents();
       power_state = SDL_GetGamepadPowerInfo(gamepad.get(), &percentage);
-      if (power_state != SDL_POWERSTATE_UNKNOWN && percentage >= 0) {
+      if (power_state == SDL_POWERSTATE_ON_BATTERY && percentage == expected_percentage) {
         break;
       }
       std::this_thread::sleep_for(20ms);
