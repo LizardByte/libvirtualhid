@@ -142,6 +142,13 @@ and explicitly wait for pending completion instead of mixing synchronous calls
 with an asynchronous handle. Each caller thread reuses its event to avoid
 creating a kernel handle for every input report.
 
+The pending output read also participates in the UMDF power-managed queue
+lifecycle. When the system sleeps, the driver acknowledges the queue stop while
+retaining the cancelable request, then resumes that same request after the
+control device returns to D0. This allows sleep to complete without waiting for
+controller feedback and keeps the runtime's control handle and virtual devices
+valid across resume.
+
 The driver opens a separate VHF source target for each virtual HID device and
 parents that target to the control-file handle that created it. If the creating
 process exits or crashes, Windows cleans up devices that were not explicitly

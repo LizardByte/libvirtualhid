@@ -70,6 +70,8 @@ EVT_WDF_DEVICE_PREPARE_HARDWARE LvhEvtDevicePrepareHardware;
 EVT_WDF_DEVICE_RELEASE_HARDWARE LvhEvtDeviceReleaseHardware;
 EVT_WDF_FILE_CLEANUP LvhEvtFileCleanup;
 EVT_WDF_IO_QUEUE_IO_DEVICE_CONTROL LvhEvtIoDeviceControl;
+EVT_WDF_IO_QUEUE_IO_RESUME LvhEvtIoResume;
+EVT_WDF_IO_QUEUE_IO_STOP LvhEvtIoStop;
 EVT_WDF_OBJECT_CONTEXT_CLEANUP LvhEvtDeviceCleanup;
 EVT_WDF_REQUEST_CANCEL LvhEvtOutputReadCanceled;
 EVT_VHF_ASYNC_OPERATION LvhEvtVhfGetFeature;
@@ -1270,6 +1272,8 @@ NTSTATUS LvhEvtDeviceAdd(WDFDRIVER driver, PWDFDEVICE_INIT device_init) {
   WDF_IO_QUEUE_CONFIG queue_config;
   WDF_IO_QUEUE_CONFIG_INIT_DEFAULT_QUEUE(&queue_config, WdfIoQueueDispatchParallel);
   queue_config.EvtIoDeviceControl = LvhEvtIoDeviceControl;
+  queue_config.EvtIoStop = LvhEvtIoStop;
+  queue_config.EvtIoResume = LvhEvtIoResume;
 
   status = WdfIoQueueCreate(device, &queue_config, WDF_NO_OBJECT_ATTRIBUTES, WDF_NO_HANDLE);
   trace_status("EvtDeviceAdd WdfIoQueueCreate", status);
@@ -1319,6 +1323,28 @@ void LvhEvtOutputReadCanceled(WDFREQUEST request) {
   if (remove_pending_output_request(request)) {
     complete_request(request, STATUS_CANCELLED);
   }
+}
+
+void LvhEvtIoStop(WDFQUEUE queue, WDFREQUEST request, ULONG action_flags) {
+  UNREFERENCED_PARAMETER(queue);
+  UNREFERENCED_PARAMETER(action_flags);
+
+  trace_status("EvtIoStop suspend output request");
+
+  // Output reads intentionally remain pending until VHF produces feedback.
+  // Keep the cancelable request under driver ownership while the power-managed
+  // queue stops so it cannot block the system power transition. WDF calls the
+  // matching resume callback after the device returns to D0.
+  WdfRequestStopAcknowledge(request, FALSE);
+}
+
+void LvhEvtIoResume(WDFQUEUE queue, WDFREQUEST request) {
+  UNREFERENCED_PARAMETER(queue);
+  UNREFERENCED_PARAMETER(request);
+
+  // The pending output read does not access hardware while it waits, so no
+  // restart operation is necessary after WDF restores the queue to D0.
+  trace_status("EvtIoResume output request");
 }
 
 void LvhEvtVhfReadyForNextReadReport(VhfContext vhf_client_context) {
