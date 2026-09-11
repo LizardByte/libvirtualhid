@@ -19,7 +19,7 @@
 
 inline constexpr std::uint32_t LVH_WINDOWS_XBOX360_PROTOCOL_VERSION = 1U;
 inline constexpr wchar_t LVH_WINDOWS_XBOX360_ENUMERATOR[] = L"LibVirtualHid";
-inline constexpr wchar_t LVH_WINDOWS_XBOX360_HARDWARE_ID[] = L"ROOT\\LIBVIRTUALHID_XBOX360";
+inline constexpr wchar_t LVH_WINDOWS_XBOX360_HARDWARE_ID[] = L"LIBVIRTUALHID_XBOX360";
 
 #if defined(_WIN32)
 inline constexpr GUID LVH_WINDOWS_XUSB_INTERFACE_GUID {

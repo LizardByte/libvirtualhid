@@ -86,11 +86,13 @@ and HID output writes are normalized back to the C++ output callback path.
 Xbox 360 creation takes a separate path because an authentic wired Xbox 360
 controller is XUSB rather than a standard HID-only device. For every requested
 Xbox 360 controller, the broker calls `SwDeviceCreate` with a unique instance
-ID, an explicit non-null container ID, and conventional `ROOT\...` hardware IDs
-that match the package INF. The resulting device instance remains under the
-`SWD\LibVirtualHid` enumerator. Windows binds the package's
-`libvirtualhid_xbox360_umdf.dll` to that System-class software devnode. The
-companion publishes exactly one XUSB interface using
+ID, an explicit non-null container ID, and bare `VID_...` and
+`LIBVIRTUALHID_XBOX360` hardware IDs. The package INF retains a
+`ROOT\LIBVIRTUALHID_XBOX360` provisioning alias, but its bare model entry is
+what matches the IDs reported by `SwDeviceCreate`. The resulting device
+instance remains under the `SWD\LibVirtualHid` enumerator. Windows binds the
+package's `libvirtualhid_xbox360_umdf.dll` to that System-class software
+devnode. The companion publishes exactly one XUSB interface using
 `{EC87F1E3-C13B-4100-B5F7-8B84D54260CB}`, and creates a VHF child with the
 profile's `VID_045E&PID_028E&IG_00` identity. The shared container and ancestor
 metadata let Windows correlate the XUSB and HID views as one controller while

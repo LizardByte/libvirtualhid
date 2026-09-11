@@ -24,10 +24,14 @@ PnpLockdown=1
 [Standard.NT@LIBVIRTUALHID_INF_ARCH@.10.0...19041]
 %DeviceName%=DeviceInstall,ROOT\LIBVIRTUALHID
 %Xbox360DeviceName%=Xbox360Install,ROOT\LIBVIRTUALHID_XBOX360
+; SwDeviceCreate reports the supplied hardware ID verbatim. Keep a bare
+; model entry in addition to the ROOT provisioning alias above.
+%Xbox360DeviceName%=Xbox360Install,LIBVIRTUALHID_XBOX360
 
 [Standard.NT@LIBVIRTUALHID_INF_ARCH@.10.0...22000]
 %DeviceName%=DeviceInstall_Win11,ROOT\LIBVIRTUALHID
 %Xbox360DeviceName%=Xbox360Install_Win11,ROOT\LIBVIRTUALHID_XBOX360
+%Xbox360DeviceName%=Xbox360Install_Win11,LIBVIRTUALHID_XBOX360
 
 [DestinationDirs]
 UMDriverCopy=13

@@ -178,7 +178,7 @@ namespace lvh::windows {
 
     std::wstring hardware_id(const LvhWindowsCreateDeviceRequest &request) {
       return std::format(
-        L"ROOT\\VID_{:04X}&PID_{:04X}&XI_00",
+        L"VID_{:04X}&PID_{:04X}&XI_00",
         request.hardware_ids.vendor_id,
         request.hardware_ids.product_id
       );
@@ -399,8 +399,8 @@ namespace lvh::windows {
 
     const auto vendor_hardware_id = hardware_id(request);
     const std::array<std::wstring_view, 2> hardware_ids {
-      LVH_WINDOWS_XBOX360_HARDWARE_ID,
       vendor_hardware_id,
+      LVH_WINDOWS_XBOX360_HARDWARE_ID,
     };
     const std::array<std::wstring_view, 4> compatible_ids {
       L"USB\\MS_COMP_XUSB10",

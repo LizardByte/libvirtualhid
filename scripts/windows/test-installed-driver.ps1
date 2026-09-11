@@ -271,7 +271,7 @@ function Wait-ForStartedGamepadChild {
 function Wait-ForStartedXbox360Companion {
   param([int] $TimeoutSeconds)
 
-  $hardwareId = "SWD\LIBVIRTUALHID_XBOX360"
+  $hardwareId = "LIBVIRTUALHID_XBOX360"
   $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
   $latestRecords = @()
   do {
