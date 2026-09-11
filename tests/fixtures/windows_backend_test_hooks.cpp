@@ -57,6 +57,11 @@ namespace lvh::detail {
         response.driver_device_id = next_driver_id_++;
         response.session_token = session_token_;
         windows::copy_string(response.device_path, response_device_path_);
+        if (response.status == LVH_WINDOWS_STATUS_SUCCESS && request.device_type == LVH_WINDOWS_DEVICE_GAMEPAD && request.gamepad_kind == LVH_WINDOWS_GAMEPAD_XBOX_360) {
+          response.transport_handle = reinterpret_cast<std::uintptr_t>(
+            ::CreateEventW(nullptr, TRUE, FALSE, nullptr)
+          );
+        }
         return protocol_status(response.status, "Windows driver rejected virtual HID device creation");
       }
 
@@ -921,7 +926,7 @@ namespace lvh::detail {
 
         CreateGamepadOptions options;
         options.profile = profiles::xbox_360();
-        result.xbox_360_unsupported_status = backend->create_gamepad(20, options).status;
+        result.xbox_360_create_status = backend->create_gamepad(20, options).status;
       }
 
       {

@@ -1,10 +1,12 @@
 # Windows Driver Package
 
-Windows virtual HID gamepad, keyboard, and Raw Input mouse support uses a
-user-mode UMDF2 control driver backed by Virtual HID Framework. The driver
-package is separate from the normal C++ library build: the library remains
-consumable from MSVC and MinGW/UCRT64, while the driver package is built with
-the Microsoft SDK/WDK toolchain.
+Windows virtual gamepad, keyboard, and Raw Input mouse support uses a user-mode
+UMDF2 package. Most devices are backed by Virtual HID Framework. The Xbox 360
+profile uses a second, per-controller UMDF2 XUSB personality and also publishes
+a VHF HID child for HID/DirectInput compatibility. The driver package is
+separate from the normal C++ library build: the library remains consumable from
+MSVC and MinGW/UCRT64, while the driver package is built with the Microsoft
+SDK/WDK toolchain.
 
 Windows 11 version 21H2 and later is the supported driver target. The INF also
 provides a best-effort compatibility path for Windows 10 version 2004 and later
@@ -42,9 +44,11 @@ through a local named pipe, while input reports stay on the direct driver path
 after creation. This keeps license and active-device checks outside the input hot
 path.
 
-The UMDF service runs in a dedicated high-priority host process, as recommended
-for response-sensitive input drivers. This isolates its VHF input work from
-normal-priority UMDF device pools while keeping the driver entirely user-mode.
+Each UMDF service runs in a dedicated high-priority host process. This isolates
+its input work from normal-priority UMDF device pools while keeping all
+libvirtualhid driver code in user mode. The package relies only on Microsoft's
+inbox UMDF reflector and VHF lower filter in kernel mode; it does not install a
+libvirtualhid `.sys` driver.
 
 The broker pipe explicitly grants local authenticated users generic read access
 plus the individual data-write and attribute-write rights needed to exchange
@@ -79,6 +83,35 @@ submit/destroy requests include that token so stale or unrelated clients cannot
 control devices they did not create. Input reports are submitted through VHF,
 and HID output writes are normalized back to the C++ output callback path.
 
+Xbox 360 creation takes a separate path because an authentic wired Xbox 360
+controller is XUSB rather than a standard HID-only device. For every requested
+Xbox 360 controller, the broker calls `SwDeviceCreate` with a unique instance
+ID and an explicit non-null container ID. Windows binds the package's
+`libvirtualhid_xbox360_umdf.dll` to that System-class software devnode. The
+companion publishes exactly one XUSB interface using
+`{EC87F1E3-C13B-4100-B5F7-8B84D54260CB}`, and creates a VHF child with the
+profile's `VID_045E&PID_028E&IG_00` identity. The shared container and ancestor
+metadata let Windows correlate the XUSB and HID views as one controller while
+retaining DirectInput/HID compatibility.
+
+The broker opens the XUSB interface, authenticates an initialization request by
+its SCM-registered process ID, and duplicates that per-device handle into the
+requesting client. Subsequent input and feedback operations require both the
+broker-assigned device ID and a random 256-bit session token. The client submits
+native 16-bit sticks, independent 8-bit triggers, and XInput button bits through
+that handle. The companion answers XInput state/capability requests, completes
+the asynchronous XUSB input wait at an 8-millisecond cadence, and returns
+XInput rumble as the normal platform-neutral output callback. Only the broker
+retains the `HSWDEVICE`; destroying the API gamepad, losing the owning client,
+or stopping the broker closes it and removes both device views.
+
+`SwDeviceCreate`, UMDF2, and VHF are documented Windows facilities. The XUSB
+interface GUID, IOCTL numbers, and byte layouts are not a supported public
+Microsoft driver contract. They are an explicitly isolated compatibility layer
+based on observed inbox XInput behavior and HIDMaestro's independently
+documented companion design. Keep that wire protocol private to the Windows
+backend and regression-test it on every supported Windows release.
+
 The driver owns the VHF input buffering policy instead of allowing VHF to build
 the default HID report backlog. VHF readiness notifications permit one report at
 a time; while a gamepad consumer is not ready, the driver replaces superseded
@@ -99,15 +132,17 @@ can therefore query the current controller and battery state even when they do
 not consume the streaming read queue. Unnumbered reports are returned with the
 leading zero report-ID byte expected by Windows HID APIs.
 
-For Xbox profiles, this HID input value is separate from the battery result
-returned by XInput. On a Windows desktop where XInput enumerated the VHF Xbox
-device, `XInputGetBatteryInformation` returned `BATTERY_TYPE_DISCONNECTED` and
-`BATTERY_LEVEL_EMPTY` even while `XInputGetState` received its input and
+For the Xbox One and Xbox Series VHF profiles, this HID input value is separate
+from the battery result returned by XInput. On a Windows desktop where XInput
+enumerated one of those VHF Xbox devices, `XInputGetBatteryInformation` returned
+`BATTERY_TYPE_DISCONNECTED` and `BATTERY_LEVEL_EMPTY` even while `XInputGetState` received its input and
 `GetInputReport` contained the submitted value. Headless Windows CI did not
 expose an XInput slot for the same device. Neither path exposes the remote
 battery through XInput. SDL's Windows Xbox path and Windows Game Bar therefore
 have no XInput battery value to display. VHF does not expose a
 wireless-transport or XInput battery-type setting in `VHF_CONFIG`.
+The Xbox 360 XUSB personality reports the fixed wired-controller battery state;
+its public profile does not advertise remote battery input.
 
 The current Steam client also renders its controller battery indicator only for
 devices it classifies as Bluetooth or wireless. All Windows VHF profiles use a
@@ -126,15 +161,17 @@ they are not a separate runtime bypass for creating or destroying virtual
 devices.
 
 The library and installed driver must use the same control-protocol version.
-Control protocol version 4 adds the canonical keyboard device type and report
-contract to the common create request. It retains the explicit device type and
-2048-byte report-descriptor capacity introduced by version 3. A version mismatch
-is rejected rather than interpreting a request with different semantics.
+Control protocol version 5 adds an optional broker-duplicated per-device
+transport handle to the create response; it is required for Xbox 360 and zero
+for ordinary VHF devices. It retains the canonical keyboard device type from
+version 4 and the explicit device type and 2048-byte report-descriptor capacity
+from version 3. A version mismatch is rejected rather than interpreting a
+request with different semantics.
 
-Each backend runtime uses one control-file handle for commands and its pending
-output read. Broker protocol version 4 carries the generalized device create
-request while continuing to duplicate the handle only for the authorized create
-IOCTL. The driver associates output events with that file object, so feedback
+Each backend runtime uses one root control-file handle for ordinary VHF commands
+and its pending output read. Broker protocol version 5 additionally carries the
+Xbox 360 transport handle in the create response. The root driver associates
+ordinary VHF output events with its control file object, so feedback
 from a virtual gamepad is delivered only to the runtime that created it instead
 of being consumed by another libvirtualhid client. Because the shared handle is
 opened for overlapped I/O, command IOCTLs also supply a valid `OVERLAPPED` event
@@ -149,7 +186,7 @@ control device returns to D0. This allows sleep to complete without waiting for
 controller feedback and keeps the runtime's control handle and virtual devices
 valid across resume.
 
-The driver opens a separate VHF source target for each virtual HID device and
+The root driver opens a separate VHF source target for each ordinary virtual HID device and
 parents that target to the control-file handle that created it. If the creating
 process exits or crashes, Windows cleans up devices that were not explicitly
 destroyed. In brokered driver packages, the broker owns that control-file handle.
@@ -157,7 +194,8 @@ The broker tracks the requesting client process for each created device and
 destroys broker-owned devices when that client process exits unexpectedly. A new
 broker process first asks the driver to remove every device left by the previous
 broker instance and refuses new creation until that reset succeeds. Clients must
-recreate their devices after the broker service restarts.
+recreate their devices after the broker service restarts. Xbox 360 devices use
+the same ownership rule through their broker-held software-device handles.
 
 The backend reports `requires_installed_driver = true` and only advertises
 gamepad/output-report support when the broker is reachable and the control
@@ -449,9 +487,11 @@ and continues through `SendInput`. If the driver, broker, or license is
 unavailable, mouse creation retains the existing `SendInput` fallback; malformed
 requests and unexpected driver failures are returned to the caller.
 
-The Windows backend publishes HID gamepads through VHF. DirectInput, SDL/HIDAPI,
-Windows.Gaming.Input/GameInput, and browser Gamepad API clients should see
-standard HID devices after the driver is installed.
+The Windows backend publishes most gamepads through VHF. DirectInput,
+SDL/HIDAPI, Windows.Gaming.Input/GameInput, and browser Gamepad API clients
+should see standard HID devices after the driver is installed. Xbox 360 instead
+publishes a native XUSB-facing interface for XInput and a correlated VHF child
+for HID/DirectInput consumers.
 
 The built-in Xbox One profile uses its XboxGIP-shaped HID descriptor. The public
 Xbox Series profile remains `VID_045E&PID_0B12`; the Windows transport presents
@@ -460,11 +500,12 @@ observed from physical Xbox Series USB and Xbox Wireless Adapter connections.
 The VHF child preserves the native 17-byte GIP-shaped input report, and the
 last byte carries battery strength for both Xbox One and Xbox Series. The report
 parser accepts the native eight-byte four-motor Xbox payload when a consumer
-delivers it. The Windows backend submits Xbox input only when the packed state
-changes. State transitions still reach VHF, while raw HID consumers are not
-asked to reinterpret the same unchanged Xbox state as fresh input. The Xbox 360
-profile is rejected by the UMDF/VHF backend because a
-real Xbox 360 controller is an XUSB device rather than a VHF HID gamepad.
+delivers it. The Windows backend submits Xbox One and Xbox Series input only
+when the packed state changes. State transitions still reach VHF, while raw HID
+consumers are not asked to reinterpret the same unchanged Xbox state as fresh
+input. The Xbox 360 companion exposes the classic `0x045E:0x028E` wired
+identity, preserves native XInput button/axis precision, and normalizes the two
+XInput motors into the ordinary rumble callback.
 
 DualShock 4 and DualSense answer the calibration, pairing, and firmware feature
 requests used by their Windows HIDAPI initialization paths. Switch Pro answers
@@ -492,6 +533,9 @@ label because VHF does not provide a product/manufacturer string callback.
 - The published Windows driver installer is AMD64-only. Windows ARM64 release
   packages require a Microsoft dashboard signing path that is not part of the
   current Azure Trusted Signing workflow.
+- Xbox 360 support depends on an undocumented XUSB compatibility contract and
+  therefore requires installed-driver XInput, browser/WGI, and rumble validation
+  on each supported Windows release before shipping.
 - A temporary Polar outage limits a previously activated machine to one active
   licensed virtual HID device. Yearly subscriptions must reconnect within 25
   hours of their last successful validation; lifetime licenses can retain one

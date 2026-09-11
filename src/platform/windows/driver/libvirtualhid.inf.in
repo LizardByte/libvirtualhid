@@ -23,9 +23,11 @@ PnpLockdown=1
 
 [Standard.NT@LIBVIRTUALHID_INF_ARCH@.10.0...19041]
 %DeviceName%=DeviceInstall,ROOT\LIBVIRTUALHID
+%Xbox360DeviceName%=Xbox360Install,SWD\LIBVIRTUALHID_XBOX360
 
 [Standard.NT@LIBVIRTUALHID_INF_ARCH@.10.0...22000]
 %DeviceName%=DeviceInstall_Win11,ROOT\LIBVIRTUALHID
+%Xbox360DeviceName%=Xbox360Install_Win11,SWD\LIBVIRTUALHID_XBOX360
 
 [DestinationDirs]
 UMDriverCopy=13
@@ -35,6 +37,7 @@ UMDriverCopy=13
 
 [SourceDisksFiles]
 libvirtualhid_umdf.dll=1
+libvirtualhid_xbox360_umdf.dll=1
 
 [DeviceInstall.NT]
 CopyFiles=UMDriverCopy
@@ -44,6 +47,47 @@ AddReg=DeviceInstall_Device_AddReg,DeviceInstall_Vhf_AddReg
 
 [UMDriverCopy]
 libvirtualhid_umdf.dll
+libvirtualhid_xbox360_umdf.dll
+
+[Xbox360Install.NT]
+CopyFiles=UMDriverCopy
+
+[Xbox360Install.NT.HW]
+AddReg=Xbox360_Device_AddReg,Xbox360_Vhf_AddReg
+
+[Xbox360_Device_AddReg]
+; The XUSB endpoint must be openable by normal game processes. Private
+; libvirtualhid IOCTLs on that interface require a broker-created session token.
+HKR,,Security,,"D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGWGX;;;BU)(A;;GRGWGX;;;AU)(A;;GRGWGX;;;WD)(A;;GR;;;RC)"
+; Windows.Gaming.Input uses this ancestor value as an XUSB classifier marker.
+; xinputhid.sys does not attach to this System-class function device.
+HKR,,"UpperFilters",0x00010008,"xinputhid"
+
+[Xbox360_Vhf_AddReg]
+HKR,,"LowerFilters",0x00010008,"vhf"
+HKR,,VhfMode,0x00010001,0x1
+
+[Xbox360Install.NT.Interfaces]
+AddInterface={EC87F1E3-C13B-4100-B5F7-8B84D54260CB},,Xbox360_Xusb_Interface
+
+[Xbox360_Xusb_Interface]
+AddReg=Xbox360_Xusb_Interface_AddReg
+
+[Xbox360_Xusb_Interface_AddReg]
+HKR,,DeviceEnabled,0x00010001,1
+
+[Xbox360Install.NT.Services]
+AddService=WUDFRd,0x000001fa,WUDFRD_ServiceInstall
+
+[Xbox360Install.NT.Wdf]
+UmdfService=libvirtualhid_xbox360_umdf,libvirtualhid_xbox360_umdf_Install
+UmdfServiceOrder=libvirtualhid_xbox360_umdf
+UmdfHostProcessSharing=ProcessSharingDisabled
+UmdfHostPriority=PriorityHigh
+UmdfKernelModeClientPolicy=AllowKernelModeClients
+UmdfFileObjectPolicy=AllowNullAndUnknownFileObjects
+UmdfMethodNeitherAction=Copy
+UmdfFsContextUsePolicy=CanUseFsContext2
 
 [DeviceInstall_Device_AddReg]
 HKR,,Security,,"D:P(A;;GA;;;SY)(A;;GRGWGX;;;BA)(A;;GRGWGX;;;BU)(A;;GRGWGX;;;AU)(A;;GRGW;;;WD)(A;;GR;;;RC)"
@@ -88,12 +132,44 @@ UmdfServiceOrder=libvirtualhid_umdf
 UmdfHostProcessSharing=ProcessSharingDisabled
 UmdfHostPriority=PriorityHigh
 
+[Xbox360Install_Win11.NT]
+CopyFiles=UMDriverCopy
+Include=wudfrd.inf
+Needs=WUDFRD.NT
+
+[Xbox360Install_Win11.NT.HW]
+AddReg=Xbox360_Device_AddReg,Xbox360_Vhf_AddReg
+Include=wudfrd.inf
+Needs=WUDFRD.NT.HW
+
+[Xbox360Install_Win11.NT.Interfaces]
+AddInterface={EC87F1E3-C13B-4100-B5F7-8B84D54260CB},,Xbox360_Xusb_Interface
+
+[Xbox360Install_Win11.NT.Services]
+Include=wudfrd.inf
+Needs=WUDFRD.NT.Services
+
+[Xbox360Install_Win11.NT.Wdf]
+UmdfService=libvirtualhid_xbox360_umdf,libvirtualhid_xbox360_umdf_Install
+UmdfServiceOrder=libvirtualhid_xbox360_umdf
+UmdfHostProcessSharing=ProcessSharingDisabled
+UmdfHostPriority=PriorityHigh
+UmdfKernelModeClientPolicy=AllowKernelModeClients
+UmdfFileObjectPolicy=AllowNullAndUnknownFileObjects
+UmdfMethodNeitherAction=Copy
+UmdfFsContextUsePolicy=CanUseFsContext2
+
 [libvirtualhid_umdf_Install]
 UmdfLibraryVersion=@LIBVIRTUALHID_UMDF_LIBRARY_VERSION@
 ServiceBinary=%13%\libvirtualhid_umdf.dll
+
+[libvirtualhid_xbox360_umdf_Install]
+UmdfLibraryVersion=@LIBVIRTUALHID_UMDF_LIBRARY_VERSION@
+ServiceBinary=%13%\libvirtualhid_xbox360_umdf.dll
 
 [Strings]
 ManufacturerName="LizardByte"
 DiskName="libvirtualhid UMDF Driver Install Disk"
 DeviceName="libvirtualhid Virtual HID Control Device"
+Xbox360DeviceName="libvirtualhid Xbox 360 Controller"
 WudfRdDisplayName="Windows Driver Foundation - User-mode Driver Framework Reflector"

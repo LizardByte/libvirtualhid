@@ -87,7 +87,11 @@ TEST(RuntimeTest, PlatformDefaultReportsCurrentPlatformCapabilities) {
     EXPECT_FALSE(created);
     EXPECT_EQ(created.status.code(), lvh::ErrorCode::backend_unavailable);
   } else {
-    EXPECT_EQ(runtime->create_gamepad(lvh::profiles::xbox_360()).status.code(), lvh::ErrorCode::unsupported_profile);
+    auto xbox_360 = runtime->create_gamepad(lvh::profiles::xbox_360());
+    ASSERT_TRUE(xbox_360) << xbox_360.status.message();
+    ASSERT_NE(xbox_360.gamepad, nullptr);
+    EXPECT_FALSE(xbox_360.gamepad->device_nodes().empty());
+    EXPECT_TRUE(xbox_360.gamepad->close().ok());
 
     auto created = runtime->create_gamepad(lvh::profiles::xbox_series());
     ASSERT_TRUE(created) << created.status.message();

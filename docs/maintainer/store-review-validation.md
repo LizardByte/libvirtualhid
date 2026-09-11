@@ -89,8 +89,11 @@ C:\ProgramData\libvirtualhid\install-driver.log
 
 ## Scope Notes
 
-The `x360` profile is not used for Store review. The Windows UMDF/VHF backend is
-HID-only and intentionally does not emulate the Xbox 360 XUSB stack.
+The default Store-review path still uses Xbox Series and does not exercise the
+`x360` profile. The package also installs the separate Xbox 360 XUSB companion;
+validate that path with `test-installed-driver.ps1 -GamepadProfile x360` and the
+installed-driver `Xbox360PublishesXInputStateAndRumble` integration test before
+claiming Xbox 360 compatibility for a release.
 
 The reviewer-visible success signal is the installed `ROOT\LIBVIRTUALHID`
 control device, the `\\.\LibVirtualHid` control path, the running

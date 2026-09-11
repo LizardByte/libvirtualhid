@@ -10,7 +10,7 @@
 #include <array>
 #include <stdint.h>
 
-inline constexpr uint32_t LVH_WINDOWS_BROKER_PROTOCOL_VERSION = 4u;
+inline constexpr uint32_t LVH_WINDOWS_BROKER_PROTOCOL_VERSION = 5u;
 inline constexpr uint32_t LVH_WINDOWS_BROKER_MAX_MESSAGE_SIZE = 512u;
 inline constexpr uint32_t LVH_WINDOWS_BROKER_MAX_LICENSE_KEY_SIZE = 128u;
 inline constexpr uint32_t LVH_WINDOWS_BROKER_MAX_INSTANCE_NAME_SIZE = 128u;

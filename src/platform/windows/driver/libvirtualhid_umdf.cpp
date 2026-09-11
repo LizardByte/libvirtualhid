@@ -603,7 +603,8 @@ namespace {
                            request.bus_type == LVH_WINDOWS_BUS_BLUETOOTH;
     const auto known_profile = request.gamepad_kind <= LVH_WINDOWS_GAMEPAD_DUALSHOCK4;
     const auto valid_driver_descriptor =
-      request.device_type == LVH_WINDOWS_DEVICE_GAMEPAD ||
+      (request.device_type == LVH_WINDOWS_DEVICE_GAMEPAD &&
+       request.gamepad_kind != LVH_WINDOWS_GAMEPAD_XBOX_360) ||
       (request.device_type == LVH_WINDOWS_DEVICE_KEYBOARD &&
        descriptor_size == lvh::detail::windows::keyboard_report_descriptor.size() &&
        std::equal(

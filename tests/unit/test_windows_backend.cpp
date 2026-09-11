@@ -265,7 +265,7 @@ TEST_F(WindowsBackendTest, FakeChannelCoversCreateFailureBranches) {
   EXPECT_EQ(result.backend_failure_status.code(), lvh::ErrorCode::backend_failure);
   EXPECT_EQ(result.transport_failure_status.code(), lvh::ErrorCode::backend_failure);
   EXPECT_EQ(result.unavailable_status.code(), lvh::ErrorCode::backend_unavailable);
-  EXPECT_EQ(result.xbox_360_unsupported_status.code(), lvh::ErrorCode::unsupported_profile);
+  EXPECT_TRUE(result.xbox_360_create_status.ok()) << result.xbox_360_create_status.message();
   EXPECT_EQ(result.oversized_descriptor_status.code(), lvh::ErrorCode::invalid_argument);
   EXPECT_EQ(result.oversized_input_report_status.code(), lvh::ErrorCode::invalid_argument);
   EXPECT_EQ(result.oversized_output_report_status.code(), lvh::ErrorCode::invalid_argument);

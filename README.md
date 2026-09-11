@@ -38,8 +38,8 @@ types.
 
 Consumers work with portable concepts such as runtimes, device profiles,
 normalized gamepad state, output callbacks, and device nodes. Platform-specific
-details such as Linux `uhid`/`uinput` or the Windows UMDF/VHF driver package stay
-behind backend implementations.
+details such as Linux `uhid`/`uinput`, Windows VHF, or the Windows Xbox 360 XUSB
+companion stay behind backend implementations.
 
 ## 🎮 Capabilities
 
@@ -49,9 +49,10 @@ behind backend implementations.
   through Linux `uhid`; Generic and Xbox 360 gamepads plus keyboard, mouse,
   touchscreen, trackpad, and pen tablet devices through `uinput`. Xbox One and
   Xbox Series fall back to `uinput` when `uhid` is unavailable.
-- Windows gamepads, keyboards, and Raw Input-visible mice through a user-mode
-  UMDF2 control driver backed by Virtual HID Framework, with Win32 keyboard and
-  mouse fallbacks when the licensed driver path is unavailable.
+- Windows gamepads, keyboards, and Raw Input-visible mice through user-mode
+  UMDF2 drivers. Xbox 360 uses a broker-owned XUSB software-device personality;
+  the other profiles use Virtual HID Framework. Win32 keyboard and mouse
+  fallbacks remain available when the licensed driver path is unavailable.
 - Output callbacks for profile-specific feedback such as ordinary and trigger
   rumble, RGB and player LEDs, adaptive triggers, and raw HID output reports
   when available.
@@ -111,8 +112,9 @@ devices from the OS, or ship a Windows kernel-mode driver.
 
 Linux and Windows provide virtual-device backends. Linux uses standard
 user-space kernel interfaces. Windows remains user-mode: the C++ library talks
-to a UMDF2 control driver, and the driver publishes HID gamepads, keyboards,
-and mice through VHF.
+to a broker and UMDF2 package. The package publishes Xbox 360 through XUSB and
+VHF together, and publishes the other gamepads, keyboards, and mice through
+VHF.
 macOS currently provides a limited CoreGraphics synthetic-input backend for
 keyboard and mouse only. It is not a virtual-HID backend and does not yet
 support gamepads; native macOS virtual-HID gamepad support is planned.
@@ -125,6 +127,10 @@ same API where the backend exposes them.
 
 - The published Windows driver installer is AMD64-only. Windows ARM64 release
   packages require a different Microsoft driver-signing path.
+- Xbox 360 support implements the undocumented XUSB wire contract used by the
+  inbox XInput stack. It must be regression-tested on each supported Windows
+  release; Microsoft does not provide a supported public virtual-XInput driver
+  API.
 
 ## 🔁 Alternatives
 
