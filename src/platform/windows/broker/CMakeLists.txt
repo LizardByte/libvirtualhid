@@ -25,6 +25,7 @@ target_link_libraries(libvirtualhid_broker
   nlohmann_json::nlohmann_json
   advapi32
   bcrypt
+  cfgmgr32
   crypt32
   ole32
   setupapi

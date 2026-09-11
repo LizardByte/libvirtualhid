@@ -178,10 +178,31 @@ namespace lvh::windows {
 
     std::wstring hardware_id(const LvhWindowsCreateDeviceRequest &request) {
       return std::format(
-        L"USB\\VID_{:04X}&PID_{:04X}&XI_00",
+        L"ROOT\\VID_{:04X}&PID_{:04X}&XI_00",
         request.hardware_ids.vendor_id,
         request.hardware_ids.product_id
       );
+    }
+
+    std::string device_node_status(std::wstring_view instance_id) {
+      auto mutable_instance_id = std::wstring {instance_id};
+      DEVINST device_instance {};
+      auto config_result = ::CM_Locate_DevNodeW(
+        &device_instance,
+        mutable_instance_id.data(),
+        CM_LOCATE_DEVNODE_NORMAL
+      );
+      if (config_result != CR_SUCCESS) {
+        return std::format("devnode lookup result {}", config_result);
+      }
+
+      ULONG node_status = 0U;
+      ULONG problem_code = 0U;
+      config_result = ::CM_Get_DevNode_Status(&node_status, &problem_code, device_instance, 0U);
+      if (config_result != CR_SUCCESS) {
+        return std::format("devnode status result {}", config_result);
+      }
+      return std::format("devnode status 0x{:08X}, problem code {}", node_status, problem_code);
     }
 
     UniqueDeviceInfo make_unique_device_info(HDEVINFO value) {
@@ -457,7 +478,8 @@ namespace lvh::windows {
 
     const auto xusb_path = wait_for_interface_path(LVH_WINDOWS_XUSB_INTERFACE_GUID, full_instance_id);
     if (xusb_path.empty()) {
-      message = "The Xbox 360 UMDF driver started without publishing its XUSB interface.";
+      message = "The Xbox 360 software device did not publish its XUSB interface (" +
+                device_node_status(full_instance_id) + ").";
       return nullptr;
     }
 
