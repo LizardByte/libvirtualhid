@@ -48,6 +48,7 @@ namespace {
     int connect_timeout = 0;
     int send_timeout = 0;
     int receive_timeout = 0;
+    std::wstring request_headers;
   };
 
   BrokerServiceTestState &broker_service_test_state() {
@@ -285,14 +286,22 @@ namespace {
 
   BOOL WINAPI broker_test_win_http_send_request(
     HINTERNET,
-    LPCWSTR,
-    DWORD,
+    LPCWSTR headers,
+    DWORD headers_length,
     std::byte *,
     DWORD,
     DWORD,
     DWORD_PTR
   ) {
-    if (broker_service_test_state().polar_scenario == BrokerPolarScenario::send_failure) {
+    auto &state = broker_service_test_state();
+    if (headers == nullptr) {
+      state.request_headers.clear();
+    } else if (headers_length == static_cast<DWORD>(-1)) {
+      state.request_headers = headers;
+    } else {
+      state.request_headers.assign(headers, headers_length);
+    }
+    if (state.polar_scenario == BrokerPolarScenario::send_failure) {
       ::SetLastError(ERROR_WINHTTP_CONNECTION_ERROR);
       return FALSE;
     }
@@ -466,6 +475,7 @@ namespace lvh::detail::test {
     state.connect_timeout = 0;
     state.send_timeout = 0;
     state.receive_timeout = 0;
+    state.request_headers.clear();
     const auto result =
       lvh::detail::windows_broker_service::post_polar_license_request(
         L"/test",
@@ -480,6 +490,7 @@ namespace lvh::detail::test {
       .connect_timeout = state.connect_timeout,
       .send_timeout = state.send_timeout,
       .receive_timeout = state.receive_timeout,
+      .request_headers = state.request_headers,
       .body = result.body,
       .error = result.error,
     };

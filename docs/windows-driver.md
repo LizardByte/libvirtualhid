@@ -352,6 +352,12 @@ portal URL changes, then rebuild the Windows package. No Polar access token or
 webhook secret is compiled into the client:
 activation, validation, and deactivation use Polar's
 [public customer license-key API](https://polar.sh/docs/features/benefits/license-keys).
+Those requests pin Polar's date-based API contract to `2026-04` with the
+`Polar-Version` header. Before Polar removes that version, update
+`polar_request_headers` in
+`src/platform/windows/broker/libvirtualhid_broker.cpp`, review Polar's
+[API versioning guidance](https://polar.sh/docs/api-reference/versioning), and
+validate the license response contract before rebuilding the Windows package.
 
 The production configuration accepts organization
 `3db9f05a-44d7-42f1-ba7c-a0f198235fb7` with yearly license-key benefit
