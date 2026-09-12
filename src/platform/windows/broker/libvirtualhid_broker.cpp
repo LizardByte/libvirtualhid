@@ -28,6 +28,7 @@
 #include "lvh_windows_broker_config.hpp"
 #include "lvh_windows_broker_protocol.h"
 #include "lvh_windows_github_actions_evaluation.hpp"
+#include "xbox_360_software_device.hpp"
 
 // lib includes
 #include <lizardbyte/common/env.h>
@@ -36,6 +37,7 @@
 // standard includes
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <bit>
 #include <charconv>
 #include <chrono>
@@ -1087,6 +1089,15 @@ namespace lvh::detail::windows_broker_service {
     return std::ranges::equal(lhs.bytes, rhs.bytes);
   }
 
+  bool generate_session_token(LvhWindowsSessionToken &session_token) {
+    if (::BCryptGenRandom(nullptr, session_token.bytes.data(), static_cast<ULONG>(session_token.bytes.size()), BCRYPT_USE_SYSTEM_PREFERRED_RNG) != 0) {
+      return false;
+    }
+    return !std::ranges::all_of(session_token.bytes, [](std::uint8_t value) {
+      return value == 0U;
+    });
+  }
+
   LvhWindowsDestroyDeviceRequest make_destroy_device_request(
     std::uint64_t driver_device_id,
     const LvhWindowsSessionToken &session_token
@@ -1322,6 +1333,7 @@ namespace lvh::detail::windows_broker_service {
       LvhWindowsSessionToken session_token {};
       DWORD owner_process_id {};
       UniqueHandle owner_process {nullptr, &::CloseHandle};
+      std::unique_ptr<lvh::windows::Xbox360SoftwareDevice> xbox360_device;
       bool github_actions_evaluation = false;
     };
 
@@ -1396,17 +1408,6 @@ namespace lvh::detail::windows_broker_service {
         return response;
       }
 
-      auto client_control_handle = duplicate_client_handle(
-        owner_process.get(),
-        request.client_control_handle
-      );
-      if (!client_control_handle) {
-        response.status = std::to_underlying(LvhWindowsBrokerStatusCode::invalid_argument);
-        copy_c_string(response.message, "Unable to duplicate the requesting client control handle.");
-        fill_license_status(response.license);
-        return response;
-      }
-
       const auto [authorization_status, github_actions_evaluation] = authorize_device_create(
         response.license,
         response.message
@@ -1417,11 +1418,60 @@ namespace lvh::detail::windows_broker_service {
       }
 
       auto status = LvhWindowsBrokerStatusCode::success;
-      if (std::string message; !driver_.create_device(client_control_handle.get(), request.device, response.device, status, message)) {
-        response.status = std::to_underlying(status);
-        fill_license_status(response.license);
-        copy_c_string(response.message, message);
-        return response;
+      std::unique_ptr<lvh::windows::Xbox360SoftwareDevice> xbox360_device;
+      if (
+        request.device.device_type == LVH_WINDOWS_DEVICE_GAMEPAD &&
+        request.device.gamepad_kind == LVH_WINDOWS_GAMEPAD_XBOX_360
+      ) {
+        const auto driver_device_id = next_xbox360_driver_device_id_.fetch_add(1U);
+        auto session_token = LvhWindowsSessionToken {};
+        std::string message;
+        if (!generate_session_token(session_token)) {
+          response.status = std::to_underlying(LvhWindowsBrokerStatusCode::backend_failure);
+          fill_license_status(response.license);
+          copy_c_string(response.message, "Unable to generate an Xbox 360 device session token.");
+          return response;
+        }
+        xbox360_device = lvh::windows::Xbox360SoftwareDevice::create(
+          request.device,
+          driver_device_id,
+          session_token,
+          owner_process.get(),
+          response.device,
+          status,
+          message
+        );
+        if (!xbox360_device) {
+          response.status = std::to_underlying(status);
+          fill_license_status(response.license);
+          copy_c_string(response.message, message);
+          return response;
+        }
+      } else {
+        auto client_control_handle = duplicate_client_handle(
+          owner_process.get(),
+          request.client_control_handle
+        );
+        if (!client_control_handle) {
+          response.status = std::to_underlying(LvhWindowsBrokerStatusCode::invalid_argument);
+          copy_c_string(response.message, "Unable to duplicate the requesting client control handle.");
+          fill_license_status(response.license);
+          return response;
+        }
+
+        std::string message;
+        if (!driver_.create_device(
+              client_control_handle.get(),
+              request.device,
+              response.device,
+              status,
+              message
+            )) {
+          response.status = std::to_underlying(status);
+          fill_license_status(response.license);
+          copy_c_string(response.message, message);
+          return response;
+        }
       }
 
       {
@@ -1432,6 +1482,7 @@ namespace lvh::detail::windows_broker_service {
             .session_token = response.device.session_token,
             .owner_process_id = client_process_id,
             .owner_process = std::move(owner_process),
+            .xbox360_device = std::move(xbox360_device),
             .github_actions_evaluation = github_actions_evaluation,
           }
         );
@@ -1480,7 +1531,7 @@ namespace lvh::detail::windows_broker_service {
       }
 
       auto status = LvhWindowsBrokerStatusCode::success;
-      if (std::string message; !driver_.destroy_device(request.device, status, message)) {
+      if (std::string message; !destroy_device_transport(request.device, status, message)) {
         response.status = std::to_underlying(status);
         fill_license_status(response.license);
         copy_c_string(response.message, message);
@@ -1549,7 +1600,7 @@ namespace lvh::detail::windows_broker_service {
         [this](const auto &request) {
           auto status = LvhWindowsBrokerStatusCode::success;
           std::string message;
-          return driver_.destroy_device(request, status, message);
+          return destroy_device_transport(request, status, message);
         },
         [this](const auto &request) {
           std::lock_guard lock {mutex_};
@@ -1797,6 +1848,23 @@ namespace lvh::detail::windows_broker_service {
       license_invalid,
       backend_failure,
     };
+
+    bool destroy_device_transport(
+      const LvhWindowsDestroyDeviceRequest &request,
+      LvhWindowsBrokerStatusCode &status,
+      std::string &message
+    ) {
+      {
+        std::lock_guard lock {mutex_};
+        const auto device = devices_.find(request.driver_device_id);
+        if (device != devices_.end() && device->second.xbox360_device) {
+          status = LvhWindowsBrokerStatusCode::success;
+          message.clear();
+          return true;
+        }
+      }
+      return driver_.destroy_device(request, status, message);
+    }
 
     bool reconcile_driver_state(
       LvhWindowsBrokerStatusCode &status,
@@ -2267,6 +2335,7 @@ namespace lvh::detail::windows_broker_service {
     const std::string boot_session_marker_ {load_or_create_boot_session_marker()};
     std::map<std::uint64_t, DeviceRecord> devices_;
     DriverChannel driver_;
+    std::atomic<std::uint64_t> next_xbox360_driver_device_id_ {UINT64_C(0x8000000000000000)};
     std::optional<PolarLicenseState> license_state_ {load_license_state()};
     std::optional<LicenseValidationClock::time_point> next_license_validation_attempt_;
     std::optional<LicenseValidationClock::time_point> license_validation_unavailable_since_;

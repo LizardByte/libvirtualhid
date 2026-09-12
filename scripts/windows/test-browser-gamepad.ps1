@@ -359,9 +359,6 @@ $expectedPattern = if ($ExpectedIdPattern) {
 } else {
   Get-ExpectedGamepadIdPattern -ProfileName $GamepadProfile
 }
-if ($GamepadProfile -eq "x360") {
-  throw "The Windows UMDF/VHF backend does not expose Xbox 360 XUSB gamepads. Use the consumer's XUSB fallback for x360."
-}
 $remoteDebuggingPort = Get-FreeTcpPort
 $browserUserDataDir = Join-Path ([System.IO.Path]::GetTempPath()) "libvirtualhid-browser-gamepad-$([Guid]::NewGuid())"
 $adapterStdoutPath = Join-Path ([System.IO.Path]::GetTempPath()) "libvirtualhid-browser-gamepad-adapter.out"

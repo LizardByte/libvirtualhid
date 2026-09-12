@@ -60,7 +60,7 @@ TEST(WindowsProtocolTest, ExposesStableProtocolConstants) {
   EXPECT_STREQ(lvh::detail::windows::default_control_device_path.data(), R"(\\.\LibVirtualHid)");
   EXPECT_STREQ(lvh::detail::windows::global_control_device_path.data(), R"(\\.\Global\LibVirtualHid)");
 
-  EXPECT_EQ(LVH_WINDOWS_CONTROL_PROTOCOL_VERSION, 4U);
+  EXPECT_EQ(LVH_WINDOWS_CONTROL_PROTOCOL_VERSION, 5U);
   EXPECT_EQ(LVH_WINDOWS_IOCTL_CREATE_DEVICE, 0x8000E000U);
   EXPECT_EQ(LVH_WINDOWS_IOCTL_DESTROY_DEVICE, 0x8000E004U);
   EXPECT_EQ(LVH_WINDOWS_IOCTL_SUBMIT_INPUT_REPORT, 0x8000E008U);
@@ -74,11 +74,20 @@ TEST(WindowsProtocolTest, ExposesStableProtocolConstants) {
   EXPECT_EQ(sizeof(LvhWindowsDeviceReportSizes), 24U);
   EXPECT_EQ(sizeof(LvhWindowsCreateDeviceRequest), 2502U);
   EXPECT_EQ(sizeof(LvhWindowsSessionToken), 32U);
-  EXPECT_EQ(sizeof(LvhWindowsCreateDeviceResponse), 316U);
+  EXPECT_EQ(sizeof(LvhWindowsCreateDeviceResponse), 324U);
   EXPECT_EQ(sizeof(LvhWindowsDestroyDeviceRequest), 48U);
   EXPECT_EQ(sizeof(LvhWindowsResetDevicesRequest), 8U);
   EXPECT_EQ(sizeof(LvhWindowsSubmitInputReportRequest), 312U);
   EXPECT_EQ(sizeof(LvhWindowsOutputReportEvent), 280U);
+  EXPECT_EQ(sizeof(LvhWindowsXbox360InitializeRequest), 2550U);
+  EXPECT_EQ(sizeof(LvhWindowsXbox360InputState), 12U);
+  EXPECT_EQ(sizeof(LvhWindowsXbox360SubmitInputRequest), 60U);
+  EXPECT_EQ(sizeof(LvhWindowsXbox360ReadOutputRequest), 48U);
+  EXPECT_EQ(LVH_WINDOWS_IOCTL_XBOX360_INITIALIZE, 0x8000E400U);
+  EXPECT_EQ(LVH_WINDOWS_IOCTL_XBOX360_SUBMIT_INPUT, 0x8000E404U);
+  EXPECT_EQ(LVH_WINDOWS_IOCTL_XBOX360_READ_OUTPUT, 0x8000E408U);
+  EXPECT_STREQ(LVH_WINDOWS_XBOX360_ENUMERATOR, L"LibVirtualHid");
+  EXPECT_STREQ(LVH_WINDOWS_XBOX360_HARDWARE_ID, L"LIBVIRTUALHID_XBOX360");
 }
 
 TEST(WindowsProtocolTest, MapsBusTypesAndGamepadKinds) {
@@ -689,6 +698,41 @@ TEST(WindowsProtocolTest, PacksSubmitAndDestroyRequests) {
   const auto reset = lvh::detail::windows::make_reset_devices_request();
   EXPECT_EQ(reset.version, LVH_WINDOWS_CONTROL_PROTOCOL_VERSION);
   EXPECT_EQ(reset.size, sizeof(reset));
+}
+
+TEST(WindowsProtocolTest, PacksNativeXbox360InputState) {
+  using enum lvh::GamepadButton;
+
+  lvh::GamepadState state;
+  state.buttons.set(a);
+  state.buttons.set(y);
+  state.buttons.set(back);
+  state.buttons.set(guide);
+  state.buttons.set(dpad_up);
+  state.buttons.set(dpad_right);
+  state.left_stick = {-1.0F, 1.0F};
+  state.right_stick = {0.5F, -0.5F};
+  state.left_trigger = 0.25F;
+  state.right_trigger = 1.0F;
+
+  const auto token = test_session_token();
+  const auto request = lvh::detail::windows::make_xbox_360_submit_input_request(23U, token, state);
+
+  EXPECT_EQ(request.version, LVH_WINDOWS_XBOX360_PROTOCOL_VERSION);
+  EXPECT_EQ(request.size, sizeof(request));
+  EXPECT_EQ(request.driver_device_id, 23U);
+  EXPECT_EQ(request.session_token.bytes, token.bytes);
+  EXPECT_EQ(
+    request.state.buttons,
+    LVH_WINDOWS_XINPUT_A | LVH_WINDOWS_XINPUT_Y | LVH_WINDOWS_XINPUT_BACK |
+      LVH_WINDOWS_XINPUT_GUIDE | LVH_WINDOWS_XINPUT_DPAD_UP | LVH_WINDOWS_XINPUT_DPAD_RIGHT
+  );
+  EXPECT_EQ(request.state.left_trigger, 64U);
+  EXPECT_EQ(request.state.right_trigger, 255U);
+  EXPECT_EQ(request.state.left_thumb_x, -32768);
+  EXPECT_EQ(request.state.left_thumb_y, 32767);
+  EXPECT_EQ(request.state.right_thumb_x, 16384);
+  EXPECT_EQ(request.state.right_thumb_y, -16384);
 }
 
 TEST(WindowsProtocolTest, CompatibilityRequestHelpersUseEmptySessionToken) {

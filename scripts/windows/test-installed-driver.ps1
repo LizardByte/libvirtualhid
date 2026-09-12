@@ -217,7 +217,6 @@ function Get-ExpectedGamepadHardwareId {
 
   switch ($ProfileName) {
     "generic" { return @("HID\VID_1209&PID_0001") }
-    "x360" { return @("HID\VID_045E&PID_028E&IG_00") }
     "xone" { return @("HID\VID_045E&PID_02EA&IG_00") }
     "xseries" { return @("HID\VID_045E&PID_0B12&IG_00") }
     "ds4" { return @("HID\VID_054C&PID_05C4") }
@@ -268,6 +267,32 @@ function Wait-ForStartedGamepadChild {
   }
 }
 
+function Wait-ForStartedXbox360Companion {
+  param([int] $TimeoutSeconds)
+
+  $hardwareId = "LIBVIRTUALHID_XBOX360"
+  $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+  $latestRecords = @()
+  do {
+    $latestRecords = @(Get-PnPUtilDevicesByDeviceId -DeviceId $hardwareId)
+    $started = $latestRecords |
+      Where-Object { $_.Status -eq "Started" } |
+      Select-Object -First 1
+    if ($started) {
+      Write-Information "Xbox 360 XUSB companion started: $($started.InstanceId) ($($started.DriverName))" -InformationAction Continue
+      return
+    }
+    Start-Sleep -Milliseconds 500
+  } while ((Get-Date) -lt $deadline)
+
+  if (-not $latestRecords) {
+    throw "No Xbox 360 XUSB companion was found for $hardwareId."
+  }
+  foreach ($record in $latestRecords) {
+    Assert-StartedPnPRecord -Record $record -Description "Xbox 360 XUSB companion $($record.InstanceId)"
+  }
+}
+
 function Invoke-GamepadAdapterSmoke {
   param(
     [string] $Path,
@@ -278,10 +303,6 @@ function Invoke-GamepadAdapterSmoke {
 
   if (-not $Path) {
     return
-  }
-
-  if ($ProfileName -eq "x360") {
-    throw "The Windows UMDF/VHF backend does not expose Xbox 360 XUSB gamepads. Use the consumer's XUSB fallback for x360."
   }
 
   $resolvedGamepadAdapterPath = (Resolve-Path -LiteralPath $Path).Path
@@ -305,7 +326,11 @@ function Invoke-GamepadAdapterSmoke {
       throw "gamepad_adapter exited with code $($process.ExitCode).`nstdout:`n$stdout`nstderr:`n$stderr"
     }
 
-    Wait-ForStartedGamepadChild -ProfileName $ProfileName -TimeoutSeconds $DeviceStartTimeoutSeconds
+    if ($ProfileName -eq "x360") {
+      Wait-ForStartedXbox360Companion -TimeoutSeconds $DeviceStartTimeoutSeconds
+    } else {
+      Wait-ForStartedGamepadChild -ProfileName $ProfileName -TimeoutSeconds $DeviceStartTimeoutSeconds
+    }
   } finally {
     if (-not $process.HasExited) {
       Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue

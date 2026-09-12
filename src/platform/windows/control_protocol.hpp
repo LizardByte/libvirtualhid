@@ -19,9 +19,11 @@
 // driver includes
 #include "generic_pid_protocol.hpp"
 #include "lvh_windows_protocol.h"
+#include "xbox_360_protocol.hpp"
 
 // local includes
 #include <libvirtualhid/profiles.hpp>
+#include <libvirtualhid/report.hpp>
 #include <libvirtualhid/types.hpp>
 
 namespace lvh::detail::windows {
@@ -286,6 +288,55 @@ namespace lvh::detail::windows {
     const std::vector<std::uint8_t> &report
   ) {
     return make_submit_input_report_request(driver_device_id, empty_session_token, report);
+  }
+
+  inline std::uint16_t xbox_360_button_bits(const ButtonSet &buttons) {
+    using enum GamepadButton;
+
+    auto result = std::uint16_t {};
+    const auto add = [&](GamepadButton button, std::uint16_t flag) {
+      if (buttons.test(button)) {
+        result = static_cast<std::uint16_t>(result | flag);
+      }
+    };
+
+    add(dpad_up, LVH_WINDOWS_XINPUT_DPAD_UP);
+    add(dpad_down, LVH_WINDOWS_XINPUT_DPAD_DOWN);
+    add(dpad_left, LVH_WINDOWS_XINPUT_DPAD_LEFT);
+    add(dpad_right, LVH_WINDOWS_XINPUT_DPAD_RIGHT);
+    add(start, LVH_WINDOWS_XINPUT_START);
+    add(back, LVH_WINDOWS_XINPUT_BACK);
+    add(left_stick, LVH_WINDOWS_XINPUT_LEFT_THUMB);
+    add(right_stick, LVH_WINDOWS_XINPUT_RIGHT_THUMB);
+    add(left_shoulder, LVH_WINDOWS_XINPUT_LEFT_SHOULDER);
+    add(right_shoulder, LVH_WINDOWS_XINPUT_RIGHT_SHOULDER);
+    add(guide, LVH_WINDOWS_XINPUT_GUIDE);
+    add(a, LVH_WINDOWS_XINPUT_A);
+    add(b, LVH_WINDOWS_XINPUT_B);
+    add(x, LVH_WINDOWS_XINPUT_X);
+    add(y, LVH_WINDOWS_XINPUT_Y);
+    return result;
+  }
+
+  inline LvhWindowsXbox360SubmitInputRequest make_xbox_360_submit_input_request(
+    std::uint64_t driver_device_id,
+    const LvhWindowsSessionToken &session_token,
+    const GamepadState &state
+  ) {
+    const auto normalized = reports::normalize_state(state);
+    LvhWindowsXbox360SubmitInputRequest request {};
+    request.version = LVH_WINDOWS_XBOX360_PROTOCOL_VERSION;
+    request.size = sizeof(request);
+    request.driver_device_id = driver_device_id;
+    request.session_token = session_token;
+    request.state.buttons = xbox_360_button_bits(normalized.buttons);
+    request.state.left_trigger = reports::normalize_trigger(normalized.left_trigger);
+    request.state.right_trigger = reports::normalize_trigger(normalized.right_trigger);
+    request.state.left_thumb_x = reports::normalize_axis(normalized.left_stick.x);
+    request.state.left_thumb_y = reports::normalize_axis(normalized.left_stick.y);
+    request.state.right_thumb_x = reports::normalize_axis(normalized.right_stick.x);
+    request.state.right_thumb_y = reports::normalize_axis(normalized.right_stick.y);
+    return request;
   }
 
 }  // namespace lvh::detail::windows

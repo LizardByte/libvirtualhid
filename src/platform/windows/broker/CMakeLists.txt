@@ -7,7 +7,8 @@ CPMUsePackageLock("${PROJECT_SOURCE_DIR}/package-lock.cmake")
 CPMGetPackage(nlohmann_json)
 
 add_executable(libvirtualhid_broker
-  "${CMAKE_CURRENT_SOURCE_DIR}/libvirtualhid_broker.cpp")
+  "${CMAKE_CURRENT_SOURCE_DIR}/libvirtualhid_broker.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/xbox_360_software_device.cpp")
 
 target_compile_features(libvirtualhid_broker PRIVATE cxx_std_23)
 target_include_directories(libvirtualhid_broker
@@ -24,7 +25,10 @@ target_link_libraries(libvirtualhid_broker
   nlohmann_json::nlohmann_json
   advapi32
   bcrypt
+  cfgmgr32
   crypt32
+  ole32
+  setupapi
   winhttp)
 
 if(MSVC AND LIBVIRTUALHID_BUILD_WINDOWS_DRIVER)

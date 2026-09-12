@@ -193,6 +193,15 @@ namespace lvh::detail {
       return {handle, &::CloseHandle};
     }
 
+    UniqueHandle take_transport_handle(LvhWindowsCreateDeviceResponse &response) {
+      const auto raw_value = static_cast<std::uintptr_t>(response.transport_handle);
+      if (raw_value == 0U || raw_value == std::bit_cast<std::uintptr_t>(INVALID_HANDLE_VALUE) || static_cast<std::uint64_t>(raw_value) != response.transport_handle) {
+        return make_unique_handle(nullptr);
+      }
+      response.transport_handle = 0U;
+      return make_unique_handle(std::bit_cast<HANDLE>(raw_value));
+    }
+
     std::string windows_error_message(DWORD error_code) {
       std::array<char, 1024> message_buffer {};
       const auto message_size = ::FormatMessageA(
@@ -531,6 +540,94 @@ namespace lvh::detail {
       }
 
       return OperationStatus::success();
+    }
+
+    OperationStatus submit_xbox360_input(
+      HANDLE handle,
+      std::uint64_t driver_device_id,
+      const LvhWindowsSessionToken &session_token,
+      const GamepadState &state
+    ) {
+      auto request = windows::make_xbox_360_submit_input_request(
+        driver_device_id,
+        session_token,
+        state
+      );
+      DWORD bytes_returned = 0;
+      return run_overlapped_device_io(
+        "submit Windows Xbox 360 input",
+        &bytes_returned,
+        [handle, &request](OVERLAPPED &overlapped, DWORD *result_size) {
+          return ::DeviceIoControl(
+            handle,
+            LVH_WINDOWS_IOCTL_XBOX360_SUBMIT_INPUT,
+            &request,
+            sizeof(request),
+            nullptr,
+            0,
+            result_size,
+            &overlapped
+          );
+        },
+        [handle](OVERLAPPED &overlapped, DWORD *result_size, BOOL wait) {
+          return ::GetOverlappedResult(handle, &overlapped, result_size, wait);
+        }
+      );
+    }
+
+    std::optional<LvhWindowsOutputReportEvent> read_xbox360_output(
+      HANDLE handle,
+      std::uint64_t driver_device_id,
+      const LvhWindowsSessionToken &session_token,
+      HANDLE stop_event
+    ) {
+      LvhWindowsXbox360ReadOutputRequest request {};
+      request.version = LVH_WINDOWS_XBOX360_PROTOCOL_VERSION;
+      request.size = sizeof(request);
+      request.driver_device_id = driver_device_id;
+      request.session_token = session_token;
+      LvhWindowsOutputReportEvent event {};
+
+      auto operation_event = make_unique_handle(::CreateEventW(nullptr, TRUE, FALSE, nullptr));
+      if (!operation_event) {
+        return std::nullopt;
+      }
+      OVERLAPPED overlapped {};
+      overlapped.hEvent = operation_event.get();
+      DWORD bytes_returned = 0;
+      if (::DeviceIoControl(handle, LVH_WINDOWS_IOCTL_XBOX360_READ_OUTPUT, &request, sizeof(request), &event, sizeof(event), &bytes_returned, &overlapped) == FALSE) {
+        if (::GetLastError() != ERROR_IO_PENDING) {
+          return std::nullopt;
+        }
+        const std::array wait_handles {operation_event.get(), stop_event};
+        const auto wait_result = ::WaitForMultipleObjects(
+          static_cast<DWORD>(wait_handles.size()),
+          wait_handles.data(),
+          FALSE,
+          INFINITE
+        );
+        if (wait_result != WAIT_OBJECT_0) {
+          cancel_and_drain_overlapped_io(
+            overlapped,
+            &bytes_returned,
+            [handle](OVERLAPPED &pending) {
+              return ::CancelIoEx(handle, &pending);
+            },
+            [handle](OVERLAPPED &pending, DWORD *result_size, BOOL wait) {
+              return ::GetOverlappedResult(handle, &pending, result_size, wait);
+            }
+          );
+          return std::nullopt;
+        }
+      }
+      if (::GetOverlappedResult(handle, &overlapped, &bytes_returned, FALSE) == FALSE || bytes_returned < sizeof(event) || event.version != LVH_WINDOWS_CONTROL_PROTOCOL_VERSION || event.size != sizeof(event) || event.driver_device_id != driver_device_id) {
+        return std::nullopt;
+      }
+      event.report_size = std::min(
+        event.report_size,
+        static_cast<std::uint32_t>(LVH_WINDOWS_MAX_OUTPUT_REPORT_SIZE)
+      );
+      return event;
     }
 
     bool driver_input_fallback_allowed(ErrorCode code) {
@@ -929,13 +1026,15 @@ namespace lvh::detail {
         std::uint64_t driver_device_id,
         const LvhWindowsSessionToken &session_token,
         DeviceProfile device_profile,
-        std::string device_path
+        std::string device_path,
+        UniqueHandle xbox360_transport_handle = make_unique_handle(nullptr)
       ):
           client_id {client_device_id},
           driver_id {driver_device_id},
           token {session_token},
           profile {std::move(device_profile)},
-          path {std::move(device_path)} {
+          path {std::move(device_path)},
+          xbox360_transport {std::move(xbox360_transport_handle)} {
         if (profile.gamepad_kind == GamepadProfileKind::generic && profile.capabilities.supports_rumble) {
           uses_generic_pid = !windows::make_generic_pid_report_descriptor(profile.report_descriptor).empty();
         }
@@ -954,6 +1053,7 @@ namespace lvh::detail {
       LvhWindowsSessionToken token {};
       DeviceProfile profile;
       std::string path;
+      UniqueHandle xbox360_transport {make_unique_handle(nullptr)};
       bool open = true;
       OutputCallback output_callback;
       bool uses_generic_pid = false;
@@ -985,6 +1085,11 @@ namespace lvh::detail {
       std::condition_variable switch_pro_report_ready_;
       std::mutex switch_pro_report_mutex_;
       std::jthread switch_pro_report_thread_;
+      UniqueHandle xbox360_output_stop_event_ {make_unique_handle(nullptr)};
+      std::jthread xbox360_output_thread_;
+
+      void stream_xbox360_output(std::stop_token stop_token);
+      void stop_xbox360_output_stream();
     };
 
     class WindowsBackendContext: public std::enable_shared_from_this<WindowsBackendContext> {
@@ -1051,12 +1156,28 @@ namespace lvh::detail {
           return {status, nullptr};
         }
 
+        auto xbox360_transport = take_transport_handle(response);
+        if (options.profile.gamepad_kind == GamepadProfileKind::xbox_360 && !xbox360_transport) {
+          static_cast<void>(command_channel_->destroy_device(
+            response.driver_device_id,
+            response.session_token
+          ));
+          return {
+            OperationStatus::failure(
+              ErrorCode::backend_failure,
+              "Windows broker did not return the Xbox 360 transport handle"
+            ),
+            nullptr,
+          };
+        }
+
         auto state = std::make_shared<WindowsVhfDeviceState>(
           id,
           response.driver_device_id,
           response.session_token,
           options.profile,
-          response.device_path[0] == '\0' ? command_channel_->path() : std::string {response.device_path.data()}
+          response.device_path[0] == '\0' ? command_channel_->path() : std::string {response.device_path.data()},
+          std::move(xbox360_transport)
         );
 
         {
@@ -1146,6 +1267,7 @@ namespace lvh::detail {
           state->open = false;
           driver_id = state->driver_id;
           token = state->token;
+          state->xbox360_transport.reset();
         }
 
         {
@@ -1315,10 +1437,19 @@ namespace lvh::detail {
           stream_switch_pro_reports(stop_token);
         }};
       }
+      if (state_->xbox360_transport) {
+        xbox360_output_stop_event_ = make_unique_handle(::CreateEventW(nullptr, TRUE, FALSE, nullptr));
+        if (xbox360_output_stop_event_) {
+          xbox360_output_thread_ = std::jthread {[this](std::stop_token stop_token) {
+            stream_xbox360_output(stop_token);
+          }};
+        }
+      }
     }
 
     WindowsGamepad::~WindowsGamepad() {
       stop_switch_pro_report_stream();
+      stop_xbox360_output_stream();
     }
 
     void WindowsGamepad::stream_switch_pro_reports(std::stop_token stop_token) {
@@ -1364,8 +1495,56 @@ namespace lvh::detail {
       switch_pro_report_thread_.join();
     }
 
+    void WindowsGamepad::stream_xbox360_output(std::stop_token stop_token) {
+      while (!stop_token.stop_requested()) {
+        auto event = read_xbox360_output(
+          state_->xbox360_transport.get(),
+          state_->driver_id,
+          state_->token,
+          xbox360_output_stop_event_.get()
+        );
+        if (!event.has_value()) {
+          if (stop_token.stop_requested() || ::WaitForSingleObject(xbox360_output_stop_event_.get(), 10U) == WAIT_OBJECT_0) {
+            return;
+          }
+          continue;
+        }
+
+        std::unique_lock dispatch_lock {state_->output_dispatch_mutex_};
+        OutputCallback callback;
+        DeviceProfile profile;
+        {
+          std::lock_guard lock {state_->mutex_};
+          if (!state_->open || !state_->output_callback) {
+            continue;
+          }
+          callback = state_->output_callback;
+          profile = state_->profile;
+        }
+        const std::vector<std::uint8_t> report {
+          event->report.begin(),
+          event->report.begin() + std::min(
+                                    event->report_size,
+                                    static_cast<std::uint32_t>(LVH_WINDOWS_MAX_OUTPUT_REPORT_SIZE)
+                                  ),
+        };
+        for (const auto &output : reports::parse_output_reports(profile, report)) {
+          callback(output);
+        }
+      }
+    }
+
+    void WindowsGamepad::stop_xbox360_output_stream() {
+      if (!xbox360_output_thread_.joinable()) {
+        return;
+      }
+      static_cast<void>(::SetEvent(xbox360_output_stop_event_.get()));
+      xbox360_output_thread_.request_stop();
+      xbox360_output_thread_.join();
+    }
+
     OperationStatus WindowsGamepad::submit(
-      const GamepadState & /*state*/,
+      const GamepadState &state,
       const std::vector<std::uint8_t> &report
     ) {
       using enum ErrorCode;
@@ -1389,6 +1568,15 @@ namespace lvh::detail {
 
         if (state_->uses_generic_pid) {
           return context_->submit_device_report(state_, windows::make_generic_windows_input_report(report));
+        }
+
+        if (state_->xbox360_transport) {
+          return submit_xbox360_input(
+            state_->xbox360_transport.get(),
+            state_->driver_id,
+            state_->token,
+            state
+          );
         }
 
         suppress_unchanged_report =
@@ -1430,6 +1618,7 @@ namespace lvh::detail {
 
     OperationStatus WindowsGamepad::close() {
       stop_switch_pro_report_stream();
+      stop_xbox360_output_stream();
       return context_->close_device(state_);
     }
 
@@ -2830,15 +3019,6 @@ namespace lvh::detail {
             OperationStatus::failure(
               backend_unavailable,
               "Windows UMDF control device is unavailable; install the libvirtualhid driver package"
-            ),
-            nullptr,
-          };
-        }
-
-        if (options.profile.gamepad_kind == GamepadProfileKind::xbox_360) {
-          return {
-            unsupported_profile_status(
-              "Windows UMDF/VHF backend cannot expose Xbox 360 XUSB gamepads; use an XUSB fallback for this profile"
             ),
             nullptr,
           };

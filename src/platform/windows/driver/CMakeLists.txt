@@ -248,6 +248,35 @@ set_target_properties(libvirtualhid_umdf PROPERTIES
   OUTPUT_NAME libvirtualhid_umdf
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/package")
 
+add_library(libvirtualhid_xbox360_umdf SHARED
+  "${CMAKE_CURRENT_SOURCE_DIR}/libvirtualhid_xbox360_umdf.cpp")
+target_include_directories(libvirtualhid_xbox360_umdf
+  PRIVATE
+  "${LIBVIRTUALHID_WDF_INCLUDE_DIR}"
+  "${LIBVIRTUALHID_VHF_INCLUDE_DIR}"
+  "${PROJECT_SOURCE_DIR}/src/platform/windows/shared")
+target_compile_definitions(libvirtualhid_xbox360_umdf
+  PRIVATE
+  NOMINMAX
+  WIN32_LEAN_AND_MEAN
+  UMDF_USING_NTSTATUS
+  NTDDI_VERSION=0x0A000000
+  _WIN32_WINNT=0x0A00)
+target_compile_options(libvirtualhid_xbox360_umdf PRIVATE /W4)
+if(LIBVIRTUALHID_WARNINGS_AS_ERRORS)
+    target_compile_options(libvirtualhid_xbox360_umdf PRIVATE /WX)
+endif()
+target_link_libraries(libvirtualhid_xbox360_umdf
+  PRIVATE
+  advapi32
+  "${LIBVIRTUALHID_WDF_DRIVER_STUB_UM_LIBRARY}"
+  "${LIBVIRTUALHID_VHF_UM_LIBRARY}"
+  "${LIBVIRTUALHID_NTDLL_LIBRARY}")
+set_target_properties(libvirtualhid_xbox360_umdf PROPERTIES
+  MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+  OUTPUT_NAME libvirtualhid_xbox360_umdf
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/package")
+
 add_custom_target(libvirtualhid_windows_inf
   COMMAND "${CMAKE_COMMAND}" -E make_directory
           "$<TARGET_FILE_DIR:libvirtualhid_umdf>"
@@ -261,6 +290,7 @@ add_custom_target(libvirtualhid_windows_inf
           -v "${LIBVIRTUALHID_DRIVER_VERSION}"
   DEPENDS
   libvirtualhid_umdf
+  libvirtualhid_xbox360_umdf
   "${CMAKE_CURRENT_BINARY_DIR}/libvirtualhid.inf"
   COMMENT "Preparing libvirtualhid driver INF"
   VERBATIM)
@@ -281,17 +311,26 @@ if(LIBVIRTUALHID_INSTALL)
     install(TARGETS libvirtualhid_umdf
       RUNTIME DESTINATION "drivers/windows"
       COMPONENT driver)
+    install(TARGETS libvirtualhid_xbox360_umdf
+      RUNTIME DESTINATION "drivers/windows"
+      COMPONENT driver)
     install(CODE
       "
       set(lvh_driver_dll \"$<TARGET_FILE:libvirtualhid_umdf>\")
+      set(lvh_xbox360_driver_dll \"$<TARGET_FILE:libvirtualhid_xbox360_umdf>\")
       set(lvh_driver_inf \"$<TARGET_FILE_DIR:libvirtualhid_umdf>/libvirtualhid.inf\")
       set(lvh_driver_cat \"$<TARGET_FILE_DIR:libvirtualhid_umdf>/libvirtualhid.cat\")
-      foreach(lvh_driver_file IN ITEMS \"\${lvh_driver_dll}\" \"\${lvh_driver_inf}\" \"\${lvh_driver_cat}\")
+      foreach(lvh_driver_file IN ITEMS
+          \"\${lvh_driver_dll}\"
+          \"\${lvh_xbox360_driver_dll}\"
+          \"\${lvh_driver_inf}\"
+          \"\${lvh_driver_cat}\")
         if(NOT EXISTS \"\${lvh_driver_file}\")
           message(FATAL_ERROR \"Windows driver package file is missing: \${lvh_driver_file}\")
         endif()
       endforeach()
       if(\"\${lvh_driver_dll}\" IS_NEWER_THAN \"\${lvh_driver_cat}\"
+         OR \"\${lvh_xbox360_driver_dll}\" IS_NEWER_THAN \"\${lvh_driver_cat}\"
          OR \"\${lvh_driver_inf}\" IS_NEWER_THAN \"\${lvh_driver_cat}\")
         message(FATAL_ERROR
                 \"Windows driver catalog is stale; build libvirtualhid_windows_catalog \"

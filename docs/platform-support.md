@@ -26,20 +26,23 @@ Use capability queries for behavior such as:
 
 The Windows backend keeps the normal C++ library buildable with MSVC and
 MinGW/UCRT64. Gamepad creation, Raw Input-visible keyboard input, and Raw
-Input-visible relative mouse input use a user-mode UMDF2 control driver and
-Windows Virtual HID Framework. Keyboard text input, absolute mouse input, and
-the keyboard and mouse fallbacks use Win32 APIs.
+Input-visible relative mouse input use a user-mode UMDF2 package. Xbox 360 uses
+a per-controller XUSB software device plus a correlated VHF child; other
+profiles use the root control driver and Windows Virtual HID Framework.
+Keyboard text input, absolute mouse input, and the keyboard and mouse fallbacks
+use Win32 APIs.
 
 The C++ library communicates with the driver through fixed-size protocol
 structures and `DeviceIoControl`, not C++ STL types. This keeps the public API
 compiler-neutral and preserves the boundary between the MinGW/MSVC client
 library and the WDK/MSVC driver package.
 
-When the driver is installed and licensed, the backend publishes HID gamepads,
-keyboards, and mice that standard HID and Raw Input consumers can enumerate.
-Gamepad consumers include SDL/HIDAPI, DirectInput,
-Windows.Gaming.Input/GameInput, and browser Gamepad API clients. XInput is not
-a direct target of the HID backend.
+When the driver is installed and licensed, the backend publishes gamepads,
+keyboards, and mice that standard Windows consumers can enumerate. Xbox 360 is
+a direct XInput/XUSB target while retaining a HID/DirectInput view; the other
+gamepads are descriptor-driven VHF devices. Consumers include XInput,
+SDL/HIDAPI, DirectInput, Windows.Gaming.Input/GameInput, and browser Gamepad API
+clients.
 
 Driver-backed keyboard key transitions use a standard keyboard-page HID report
 with modifier state and sixteen simultaneous non-modifier usages. Unicode text
@@ -77,6 +80,16 @@ mask and duration field, and reports the body motors as normalized
 low/high-frequency rumble and the independent trigger motors as trigger-rumble
 output.
 
+Xbox 360 uses a broker-owned System-class software devnode with an explicit
+container ID. Its dedicated UMDF2 companion publishes the XUSB interface used
+by `xinput1_4.dll`, while its VHF child preserves the public
+`0x045E:0x028E&IG_00` HID identity. Input state is delivered at native XInput
+precision and `XInputSetState` feedback is normalized into the public two-motor
+rumble callback. This is a private Windows implementation detail; the public C++
+profile and API remain platform-neutral. Because Microsoft does not document
+XUSB as a third-party virtual-driver API, this compatibility layer requires
+release-by-release installed-driver regression testing.
+
 The VHF driver answers the calibration, pairing, and firmware feature reports
 used to initialize DualShock 4 and DualSense HIDAPI output. It also answers the
 Switch Pro USB and subcommand initialization sequence and accepts the native
@@ -97,16 +110,17 @@ lets Windows HID consumers retrieve the current battery state for Xbox One,
 Xbox Series, DualShock 4, DualSense, and Switch Pro instead of relying only on
 the asynchronous input stream.
 
-That HID report does not change the XInput battery classification of the VHF
-device. On a Windows desktop where XInput enumerated the virtual Xbox
-controller, `XInputGetBatteryInformation` returned `BATTERY_TYPE_DISCONNECTED`
-and `BATTERY_LEVEL_EMPTY` even while its input was available through
+That HID report does not change the XInput battery classification of the Xbox
+One and Xbox Series VHF devices. On a Windows desktop where XInput enumerated
+one of those virtual Xbox controllers, `XInputGetBatteryInformation` returned
+`BATTERY_TYPE_DISCONNECTED` and `BATTERY_LEVEL_EMPTY` even while its input was available through
 `XInputGetState`. Headless Windows CI did not expose an XInput slot for the same
 device. Neither path exposes the remote battery through XInput. Consumers that
 prefer XInput, including SDL's correlated Windows Xbox path and Windows Game
 Bar, therefore do not receive the remote Xbox battery value. DualShock 4,
 DualSense, and Switch Pro battery state is independently covered through SDL's
-HID path.
+HID path. The Xbox 360 XUSB personality reports the fixed wired-controller
+battery state and does not accept remote battery input.
 
 The current Steam client displays its controller battery indicator only when it
 classifies the device as Bluetooth or wireless. Because VHF exposes a wired

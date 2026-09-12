@@ -8,7 +8,7 @@
 #include <array>
 #include <stdint.h>
 
-inline constexpr uint32_t LVH_WINDOWS_CONTROL_PROTOCOL_VERSION = 4u;
+inline constexpr uint32_t LVH_WINDOWS_CONTROL_PROTOCOL_VERSION = 5u;
 inline constexpr char LVH_WINDOWS_CONTROL_DEVICE_PATH[] = R"(\\.\LibVirtualHid)";
 inline constexpr char LVH_WINDOWS_GLOBAL_CONTROL_DEVICE_PATH[] = R"(\\.\Global\LibVirtualHid)";
 
@@ -209,6 +209,14 @@ struct LvhWindowsCreateDeviceResponse {
   uint32_t status;
   uint32_t reserved0;
   uint64_t driver_device_id;
+  /**
+   * Broker-duplicated per-device transport handle.
+   *
+   * This is zero for VHF devices hosted by the control driver. Xbox 360
+   * software devices use it for their private, token-authenticated UMDF
+   * channel. The value is valid only in the requesting client process.
+   */
+  uint64_t transport_handle;
   LvhWindowsSessionToken session_token;
   std::array<char, LVH_WINDOWS_MAX_DEVICE_PATH_SIZE> device_path;
 };

@@ -120,12 +120,14 @@ namespace {
   class XInputApi {
   public:
     using GetState = DWORD(WINAPI *)(DWORD, XINPUT_STATE *);
+    using SetState = DWORD(WINAPI *)(DWORD, XINPUT_VIBRATION *);
     using GetBatteryInformation = DWORD(WINAPI *)(DWORD, BYTE, XINPUT_BATTERY_INFORMATION *);
 
     XInputApi():
         module_ {LoadLibraryW(L"xinput1_4.dll")} {
       if (module_ != nullptr) {
         get_state_ = std::bit_cast<GetState>(GetProcAddress(module_, "XInputGetState"));
+        set_state_ = std::bit_cast<SetState>(GetProcAddress(module_, "XInputSetState"));
         get_battery_information_ = std::bit_cast<GetBatteryInformation>(
           GetProcAddress(module_, "XInputGetBatteryInformation")
         );
@@ -142,11 +144,15 @@ namespace {
     }
 
     explicit operator bool() const {
-      return get_state_ != nullptr && get_battery_information_ != nullptr;
+      return get_state_ != nullptr && set_state_ != nullptr && get_battery_information_ != nullptr;
     }
 
     DWORD state(DWORD slot, XINPUT_STATE *state) const {
       return get_state_(slot, state);
+    }
+
+    DWORD set_state(DWORD slot, XINPUT_VIBRATION *vibration) const {
+      return set_state_(slot, vibration);
     }
 
     DWORD battery_information(
@@ -160,6 +166,7 @@ namespace {
   private:
     HMODULE module_ = nullptr;
     GetState get_state_ = nullptr;
+    SetState set_state_ = nullptr;
     GetBatteryInformation get_battery_information_ = nullptr;
   };
 
@@ -814,6 +821,66 @@ TEST_F(WindowsConsumerTest, XInputDoesNotExposeSubmittedXboxBattery) {
   ASSERT_EQ(xinput.battery_information(*slot, BATTERY_DEVTYPE_GAMEPAD, &battery), ERROR_SUCCESS);
   EXPECT_EQ(battery.BatteryType, BATTERY_TYPE_DISCONNECTED);
   EXPECT_EQ(battery.BatteryLevel, BATTERY_LEVEL_EMPTY);
+
+  ASSERT_TRUE(created.adapter->close().ok());
+}
+
+TEST_F(WindowsConsumerTest, Xbox360PublishesXInputStateAndRumble) {
+  XInputApi xinput;
+  ASSERT_TRUE(xinput);
+  const auto previous_slots = current_xinput_slots(xinput);
+
+  lvh::RuntimeOptions runtime_options;
+  runtime_options.backend = lvh::BackendKind::platform_default;
+  auto runtime = lvh::Runtime::create(runtime_options);
+  ASSERT_NE(runtime, nullptr);
+  ASSERT_TRUE(runtime->capabilities().supports_gamepad)
+    << "The installed libvirtualhid Windows driver is required for this integration test";
+
+  lvh::CreateGamepadOptions options;
+  options.profile = lvh::profiles::xbox_360();
+  options.metadata.stable_id = "xinput-xbox360-test";
+  auto created = lvh::GamepadStateAdapter::create(*runtime, options);
+  ASSERT_TRUE(created) << created.status.message();
+  ASSERT_NE(created.adapter->gamepad(), nullptr);
+
+  GamepadOutputCapture output_capture;
+  output_capture.attach(*created.adapter);
+
+  const auto slot = wait_for_new_xinput_slot(xinput, previous_slots);
+  ASSERT_TRUE(slot.has_value()) << "XInput did not enumerate the Xbox 360 software device";
+
+  ASSERT_TRUE(created.adapter->set_button(lvh::GamepadButton::a, true).ok());
+  ASSERT_TRUE(created.adapter->set_button(lvh::GamepadButton::dpad_right, true).ok());
+  ASSERT_TRUE(created.adapter->set_left_trigger(0.5F).ok());
+  ASSERT_TRUE(created.adapter->set_right_stick({.x = 0.25F, .y = -0.75F}).ok());
+
+  XINPUT_STATE state {};
+  const auto input_deadline = std::chrono::steady_clock::now() + 5s;
+  while (std::chrono::steady_clock::now() < input_deadline) {
+    ASSERT_EQ(xinput.state(*slot, &state), ERROR_SUCCESS);
+    if ((state.Gamepad.wButtons & (XINPUT_GAMEPAD_A | XINPUT_GAMEPAD_DPAD_RIGHT)) == (XINPUT_GAMEPAD_A | XINPUT_GAMEPAD_DPAD_RIGHT) && state.Gamepad.bLeftTrigger >= 127U && state.Gamepad.sThumbRX > 0 && state.Gamepad.sThumbRY < 0) {
+      break;
+    }
+    std::this_thread::sleep_for(20ms);
+  }
+  EXPECT_EQ(
+    state.Gamepad.wButtons & (XINPUT_GAMEPAD_A | XINPUT_GAMEPAD_DPAD_RIGHT),
+    XINPUT_GAMEPAD_A | XINPUT_GAMEPAD_DPAD_RIGHT
+  );
+  EXPECT_GE(state.Gamepad.bLeftTrigger, 127U);
+  EXPECT_GT(state.Gamepad.sThumbRX, 0);
+  EXPECT_LT(state.Gamepad.sThumbRY, 0);
+
+  XINPUT_VIBRATION vibration {
+    .wLeftMotorSpeed = 0x5678U,
+    .wRightMotorSpeed = 0x1234U,
+  };
+  ASSERT_EQ(xinput.set_state(*slot, &vibration), ERROR_SUCCESS);
+  const auto rumble = output_capture.wait_for_rumble(true);
+  ASSERT_TRUE(rumble.has_value()) << "No normalized rumble callback followed XInputSetState";
+  EXPECT_NEAR(rumble->low_frequency_rumble, 0x5656U, 0x0101U);
+  EXPECT_NEAR(rumble->high_frequency_rumble, 0x1212U, 0x0101U);
 
   ASSERT_TRUE(created.adapter->close().ok());
 }

@@ -392,7 +392,7 @@ jobs:
               "$env:GITHUB_WORKSPACE\cmake-build-ci\examples\$env:CMAKE_BUILD_CONFIG" `
               "gamepad_adapter.exe"
           }
-          $profiles = @("generic", "xone", "xseries", "ds4", "ds5", "switch")
+          $profiles = @("generic", "x360", "xone", "xseries", "ds4", "ds5", "switch")
           foreach ($profile in $profiles) {
             .\scripts\windows\test-installed-driver.ps1 `
               -GamepadAdapterPath $gamepadAdapterPath `

@@ -108,12 +108,12 @@ cover-img:
                                     support does not require this package.
                                 </li>
                                 <li>
-                                    Xbox 360 is not available through this UMDF/VHF backend because a real Xbox 360
-                                    controller uses XUSB rather than standard HID.
+                                    Xbox 360 uses a dedicated user-mode XUSB companion plus a correlated VHF child;
+                                    other gamepad profiles use the VHF path directly.
                                 </li>
                                 <li>
-                                    Xbox-style HID profiles do not guarantee an XInput slot. Applications that require
-                                    XInput-specific behavior should review the profile compatibility documentation.
+                                    Xbox 360 targets XInput directly. Xbox One and Xbox Series remain HID profiles and
+                                    do not guarantee an XInput slot; review the profile compatibility documentation.
                                 </li>
                             </ul>
                         </div>

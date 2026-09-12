@@ -70,6 +70,7 @@ elseif(WIN32)
 
     list(APPEND LIBVIRTUALHID_TEST_SOURCES
          "${PROJECT_SOURCE_DIR}/src/platform/windows/driver/rotating_trace_log.cpp"
+         "${PROJECT_SOURCE_DIR}/src/platform/windows/broker/xbox_360_software_device.cpp"
          "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/windows_broker_client_test_hooks.cpp"
          "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/windows_broker_service_test_hooks.cpp"
          "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/windows_backend_test_hooks.cpp"
