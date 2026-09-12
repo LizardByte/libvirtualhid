@@ -18,10 +18,11 @@ PnpLockdown=1
 
 [Manufacturer]
 ; Windows 10 requires explicit WUDFRd service registration. Windows 11 can use
-; the inbox WUDFRD.NT sections instead.
-%ManufacturerName%=Standard,NT@LIBVIRTUALHID_INF_ARCH@.10.0...19041,NT@LIBVIRTUALHID_INF_ARCH@.10.0...22000
+; the inbox WUDFRD.NT sections instead. Server SKUs use product-specific model
+; sections because the client-only xinputhid classifier is not present there.
+%ManufacturerName%=Standard,NT@LIBVIRTUALHID_INF_ARCH@.10.0.1..19041,NT@LIBVIRTUALHID_INF_ARCH@.10.0.2..19041,NT@LIBVIRTUALHID_INF_ARCH@.10.0.3..19041,NT@LIBVIRTUALHID_INF_ARCH@.10.0.1..22000,NT@LIBVIRTUALHID_INF_ARCH@.10.0.2..22000,NT@LIBVIRTUALHID_INF_ARCH@.10.0.3..22000
 
-[Standard.NT@LIBVIRTUALHID_INF_ARCH@.10.0...19041]
+[Standard.NT@LIBVIRTUALHID_INF_ARCH@.10.0.1..19041]
 %DeviceName%=DeviceInstall,ROOT\LIBVIRTUALHID
 %Xbox360DeviceName%=Xbox360Install,ROOT\LIBVIRTUALHID_XBOX360
 ; Prefer the default Xbox 360 identity reported first by SwDeviceCreate so
@@ -30,11 +31,35 @@ PnpLockdown=1
 %Xbox360DeviceName%=Xbox360Install,VID_045E&PID_028E&XI_00
 %Xbox360DeviceName%=Xbox360Install,LIBVIRTUALHID_XBOX360
 
-[Standard.NT@LIBVIRTUALHID_INF_ARCH@.10.0...22000]
+[Standard.NT@LIBVIRTUALHID_INF_ARCH@.10.0.1..22000]
 %DeviceName%=DeviceInstall_Win11,ROOT\LIBVIRTUALHID
 %Xbox360DeviceName%=Xbox360Install_Win11,ROOT\LIBVIRTUALHID_XBOX360
 %Xbox360DeviceName%=Xbox360Install_Win11,VID_045E&PID_028E&XI_00
 %Xbox360DeviceName%=Xbox360Install_Win11,LIBVIRTUALHID_XBOX360
+
+[Standard.NT@LIBVIRTUALHID_INF_ARCH@.10.0.2..19041]
+%DeviceName%=DeviceInstall,ROOT\LIBVIRTUALHID
+%Xbox360DeviceName%=Xbox360Install_Server,ROOT\LIBVIRTUALHID_XBOX360
+%Xbox360DeviceName%=Xbox360Install_Server,VID_045E&PID_028E&XI_00
+%Xbox360DeviceName%=Xbox360Install_Server,LIBVIRTUALHID_XBOX360
+
+[Standard.NT@LIBVIRTUALHID_INF_ARCH@.10.0.3..19041]
+%DeviceName%=DeviceInstall,ROOT\LIBVIRTUALHID
+%Xbox360DeviceName%=Xbox360Install_Server,ROOT\LIBVIRTUALHID_XBOX360
+%Xbox360DeviceName%=Xbox360Install_Server,VID_045E&PID_028E&XI_00
+%Xbox360DeviceName%=Xbox360Install_Server,LIBVIRTUALHID_XBOX360
+
+[Standard.NT@LIBVIRTUALHID_INF_ARCH@.10.0.2..22000]
+%DeviceName%=DeviceInstall_Win11,ROOT\LIBVIRTUALHID
+%Xbox360DeviceName%=Xbox360Install_Server_Win11,ROOT\LIBVIRTUALHID_XBOX360
+%Xbox360DeviceName%=Xbox360Install_Server_Win11,VID_045E&PID_028E&XI_00
+%Xbox360DeviceName%=Xbox360Install_Server_Win11,LIBVIRTUALHID_XBOX360
+
+[Standard.NT@LIBVIRTUALHID_INF_ARCH@.10.0.3..22000]
+%DeviceName%=DeviceInstall_Win11,ROOT\LIBVIRTUALHID
+%Xbox360DeviceName%=Xbox360Install_Server_Win11,ROOT\LIBVIRTUALHID_XBOX360
+%Xbox360DeviceName%=Xbox360Install_Server_Win11,VID_045E&PID_028E&XI_00
+%Xbox360DeviceName%=Xbox360Install_Server_Win11,LIBVIRTUALHID_XBOX360
 
 [DestinationDirs]
 UMDriverCopy=13
@@ -60,12 +85,14 @@ libvirtualhid_xbox360_umdf.dll
 CopyFiles=UMDriverCopy
 
 [Xbox360Install.NT.HW]
-AddReg=Xbox360_Device_AddReg,Xbox360_Vhf_AddReg
+AddReg=Xbox360_Device_AddReg,Xbox360_Xinputhid_AddReg,Xbox360_Vhf_AddReg
 
 [Xbox360_Device_AddReg]
 ; The XUSB endpoint must be openable by normal game processes. Private
 ; libvirtualhid IOCTLs on that interface require a broker-created session token.
 HKR,,Security,,"D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGWGX;;;BU)(A;;GRGWGX;;;AU)(A;;GRGWGX;;;WD)(A;;GR;;;RC)"
+
+[Xbox360_Xinputhid_AddReg]
 ; Windows.Gaming.Input uses this ancestor value as an XUSB classifier marker.
 ; xinputhid.sys does not attach to this System-class function device.
 HKR,,"UpperFilters",0x00010008,"xinputhid"
@@ -87,6 +114,28 @@ HKR,,DeviceEnabled,0x00010001,1
 AddService=WUDFRd,0x000001fa,WUDFRD_ServiceInstall
 
 [Xbox360Install.NT.Wdf]
+UmdfService=libvirtualhid_xbox360_umdf,libvirtualhid_xbox360_umdf_Install
+UmdfServiceOrder=libvirtualhid_xbox360_umdf
+UmdfHostProcessSharing=ProcessSharingDisabled
+UmdfHostPriority=PriorityHigh
+UmdfKernelModeClientPolicy=AllowKernelModeClients
+UmdfFileObjectPolicy=AllowNullAndUnknownFileObjects
+UmdfMethodNeitherAction=Copy
+UmdfFsContextUsePolicy=CanUseFsContext2
+
+[Xbox360Install_Server.NT]
+CopyFiles=UMDriverCopy
+
+[Xbox360Install_Server.NT.HW]
+AddReg=Xbox360_Device_AddReg,Xbox360_Vhf_AddReg
+
+[Xbox360Install_Server.NT.Interfaces]
+AddInterface={EC87F1E3-C13B-4100-B5F7-8B84D54260CB},,Xbox360_Xusb_Interface
+
+[Xbox360Install_Server.NT.Services]
+AddService=WUDFRd,0x000001fa,WUDFRD_ServiceInstall
+
+[Xbox360Install_Server.NT.Wdf]
 UmdfService=libvirtualhid_xbox360_umdf,libvirtualhid_xbox360_umdf_Install
 UmdfServiceOrder=libvirtualhid_xbox360_umdf
 UmdfHostProcessSharing=ProcessSharingDisabled
@@ -145,7 +194,7 @@ Include=wudfrd.inf
 Needs=WUDFRD.NT
 
 [Xbox360Install_Win11.NT.HW]
-AddReg=Xbox360_Device_AddReg,Xbox360_Vhf_AddReg
+AddReg=Xbox360_Device_AddReg,Xbox360_Xinputhid_AddReg,Xbox360_Vhf_AddReg
 Include=wudfrd.inf
 Needs=WUDFRD.NT.HW
 
@@ -157,6 +206,33 @@ Include=wudfrd.inf
 Needs=WUDFRD.NT.Services
 
 [Xbox360Install_Win11.NT.Wdf]
+UmdfService=libvirtualhid_xbox360_umdf,libvirtualhid_xbox360_umdf_Install
+UmdfServiceOrder=libvirtualhid_xbox360_umdf
+UmdfHostProcessSharing=ProcessSharingDisabled
+UmdfHostPriority=PriorityHigh
+UmdfKernelModeClientPolicy=AllowKernelModeClients
+UmdfFileObjectPolicy=AllowNullAndUnknownFileObjects
+UmdfMethodNeitherAction=Copy
+UmdfFsContextUsePolicy=CanUseFsContext2
+
+[Xbox360Install_Server_Win11.NT]
+CopyFiles=UMDriverCopy
+Include=wudfrd.inf
+Needs=WUDFRD.NT
+
+[Xbox360Install_Server_Win11.NT.HW]
+AddReg=Xbox360_Device_AddReg,Xbox360_Vhf_AddReg
+Include=wudfrd.inf
+Needs=WUDFRD.NT.HW
+
+[Xbox360Install_Server_Win11.NT.Interfaces]
+AddInterface={EC87F1E3-C13B-4100-B5F7-8B84D54260CB},,Xbox360_Xusb_Interface
+
+[Xbox360Install_Server_Win11.NT.Services]
+Include=wudfrd.inf
+Needs=WUDFRD.NT.Services
+
+[Xbox360Install_Server_Win11.NT.Wdf]
 UmdfService=libvirtualhid_xbox360_umdf,libvirtualhid_xbox360_umdf_Install
 UmdfServiceOrder=libvirtualhid_xbox360_umdf
 UmdfHostProcessSharing=ProcessSharingDisabled

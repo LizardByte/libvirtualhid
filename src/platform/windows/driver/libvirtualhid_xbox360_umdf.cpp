@@ -405,15 +405,11 @@ namespace {
 
   void cleanup_driver_state() {
     auto &state = driver_state();
-    WDFQUEUE wait_queue = nullptr;
-    WDFQUEUE output_queue = nullptr;
     WDFIOTARGET target = nullptr;
     VHFHANDLE vhf_handle = nullptr;
     {
       std::unique_lock lock {state.mutex};
       state.shutting_down = true;
-      wait_queue = state.wait_input_queue;
-      output_queue = state.output_queue;
       vhf_handle = state.virtual_hid.handle;
       state.virtual_hid.handle = nullptr;
       state.virtual_hid.ready = false;
@@ -425,12 +421,10 @@ namespace {
       state.virtual_hid.target = nullptr;
     }
 
-    if (wait_queue != nullptr) {
-      WdfIoQueuePurgeSynchronously(wait_queue);
-    }
-    if (output_queue != nullptr) {
-      WdfIoQueuePurgeSynchronously(output_queue);
-    }
+    // The queues are children of the WDF device and are already being stopped
+    // when this device cleanup callback runs. WDF completes their outstanding
+    // requests as part of object teardown; purging them here can fail the
+    // framework state check and terminate the UMDF host.
     if (vhf_handle != nullptr) {
       VhfDelete(vhf_handle, TRUE);
     }

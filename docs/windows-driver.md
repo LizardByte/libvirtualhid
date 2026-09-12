@@ -100,6 +100,12 @@ profile's `VID_045E&PID_028E&IG_00` identity. The shared container and ancestor
 metadata let Windows correlate the XUSB and HID views as one controller while
 retaining DirectInput/HID compatibility.
 
+On Windows Server SKUs, the package omits the `xinputhid` upper-filter marker
+from the Xbox companion. That classifier belongs to the client gaming stack and
+is not required for XInput discovery; registering it on a server where the
+service is unavailable prevents PnP from completing the software-device stack.
+The XUSB interface and correlated VHF child remain enabled on server systems.
+
 The broker opens the XUSB interface, authenticates an initialization request by
 its SCM-registered process ID, and duplicates that per-device handle into the
 requesting client. Subsequent input and feedback operations require both the
