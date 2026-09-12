@@ -39,6 +39,17 @@ namespace lvh::detail::test {
     std::vector<std::vector<std::uint8_t>> submitted_reports;
   };
 
+  struct WindowsXboxInputDeduplicationResult {
+    OperationStatus create_status;
+    OperationStatus left_shoulder_status;
+    OperationStatus repeated_left_shoulder_status;
+    OperationStatus right_shoulder_status;
+    OperationStatus repeated_right_shoulder_status;
+    OperationStatus release_status;
+    OperationStatus close_status;
+    std::vector<std::vector<std::uint8_t>> submitted_reports;
+  };
+
   struct WindowsBackendFailureResult {
     OperationStatus invalid_argument_status;
     OperationStatus unsupported_profile_status;
@@ -249,6 +260,7 @@ namespace lvh::detail::test {
 
   WindowsBackendLifecycleResult windows_backend_fake_channel_lifecycle();
   WindowsSwitchReportStreamResult windows_backend_switch_report_stream();
+  WindowsXboxInputDeduplicationResult windows_backend_xbox_input_deduplication(GamepadProfileKind kind);
   WindowsPlayStationTransportResult windows_backend_playstation_transport();
   WindowsGenericPidOrderingResult windows_backend_generic_pid_callback_ordering();
   WindowsHidKeyboardResult windows_backend_hid_keyboard();

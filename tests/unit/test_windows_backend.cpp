@@ -118,6 +118,25 @@ TEST_F(WindowsBackendTest, SwitchReportsStreamAtTheNativeCadence) {
   }));
 }
 
+TEST_F(WindowsBackendTest, XboxReportsOnlySubmitShoulderStateTransitions) {
+  for (const auto kind : {lvh::GamepadProfileKind::xbox_one, lvh::GamepadProfileKind::xbox_series}) {
+    SCOPED_TRACE(static_cast<int>(kind));
+    const auto result = lvh::detail::test::windows_backend_xbox_input_deduplication(kind);
+
+    expect_ok(result.create_status);
+    expect_ok(result.left_shoulder_status);
+    expect_ok(result.repeated_left_shoulder_status);
+    expect_ok(result.right_shoulder_status);
+    expect_ok(result.repeated_right_shoulder_status);
+    expect_ok(result.release_status);
+    expect_ok(result.close_status);
+    ASSERT_EQ(result.submitted_reports.size(), 3U);
+    EXPECT_EQ(result.submitted_reports[0][12], 0x10U);
+    EXPECT_EQ(result.submitted_reports[1][12], 0x20U);
+    EXPECT_EQ(result.submitted_reports[2][12], 0U);
+  }
+}
+
 TEST_F(WindowsBackendTest, PlayStationDefaultsUseEffectiveUsbProfiles) {
   const auto result = lvh::detail::test::windows_backend_playstation_transport();
   const auto dualshock4_usb = lvh::profiles::dualshock4_usb();
