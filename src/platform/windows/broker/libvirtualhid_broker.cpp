@@ -80,6 +80,10 @@ namespace lvh::detail::windows_broker_service {
   constexpr int polar_connect_timeout = 5000;
   constexpr int polar_send_timeout = 5000;
   constexpr int polar_receive_timeout = 10000;
+  constexpr auto polar_request_headers =
+    L"Accept: application/json\r\n"
+    L"Content-Type: application/json\r\n"
+    L"Polar-Version: 2026-04\r\n";
   constexpr auto license_validation_interval = std::chrono::days {1};
   constexpr auto license_validation_retry_interval = std::chrono::seconds {60};
   constexpr auto license_outage_device_retention = std::chrono::hours {1};
@@ -944,8 +948,7 @@ namespace lvh::detail::windows_broker_service {
       return result;
     }
 
-    auto body = request_body.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
-    if (constexpr auto headers = L"Accept: application/json\r\nContent-Type: application/json\r\n"; ::WinHttpSendRequest(request.get(), headers, static_cast<DWORD>(-1), body.data(), static_cast<DWORD>(body.size()), static_cast<DWORD>(body.size()), 0) == FALSE) {
+    if (auto body = request_body.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace); ::WinHttpSendRequest(request.get(), polar_request_headers, static_cast<DWORD>(-1), body.data(), static_cast<DWORD>(body.size()), static_cast<DWORD>(body.size()), 0) == FALSE) {
       result.error = "WinHttpSendRequest failed: " + windows_error_message(::GetLastError());
       return result;
     }

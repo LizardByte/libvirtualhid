@@ -395,6 +395,7 @@ TEST(WindowsBrokerImplementationTest, ReportsDpapiAndPolarFailures) {
   EXPECT_EQ(succeeded.connect_timeout, 5000);
   EXPECT_EQ(succeeded.send_timeout, 5000);
   EXPECT_EQ(succeeded.receive_timeout, 10000);
+  EXPECT_NE(succeeded.request_headers.find(L"Polar-Version: 2026-04\r\n"), std::wstring::npos);
 }
 
 TEST(WindowsBrokerImplementationTest, BoundsOfflineSubscriptionValidation) {

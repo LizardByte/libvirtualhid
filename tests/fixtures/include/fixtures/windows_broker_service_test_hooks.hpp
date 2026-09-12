@@ -48,6 +48,7 @@ namespace lvh::detail::test {
     int connect_timeout = 0;
     int send_timeout = 0;
     int receive_timeout = 0;
+    std::wstring request_headers;
     std::string body;
     std::string error;
   };
