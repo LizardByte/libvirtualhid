@@ -217,7 +217,6 @@ function Get-ExpectedGamepadHardwareId {
 
   switch ($ProfileName) {
     "generic" { return @("HID\VID_1209&PID_0001") }
-    "x360" { return @("HID\VID_045E&PID_028E&IG_00") }
     "xone" { return @("HID\VID_045E&PID_02EA&IG_00") }
     "xseries" { return @("HID\VID_045E&PID_0B12&IG_00") }
     "ds4" { return @("HID\VID_054C&PID_05C4") }
@@ -327,9 +326,10 @@ function Invoke-GamepadAdapterSmoke {
       throw "gamepad_adapter exited with code $($process.ExitCode).`nstdout:`n$stdout`nstderr:`n$stderr"
     }
 
-    Wait-ForStartedGamepadChild -ProfileName $ProfileName -TimeoutSeconds $DeviceStartTimeoutSeconds
     if ($ProfileName -eq "x360") {
       Wait-ForStartedXbox360Companion -TimeoutSeconds $DeviceStartTimeoutSeconds
+    } else {
+      Wait-ForStartedGamepadChild -ProfileName $ProfileName -TimeoutSeconds $DeviceStartTimeoutSeconds
     }
   } finally {
     if (-not $process.HasExited) {
