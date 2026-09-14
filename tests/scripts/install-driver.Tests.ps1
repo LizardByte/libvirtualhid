@@ -6,18 +6,18 @@ BeforeAll {
     param([Parameter(ValueFromRemainingArguments)] $Arguments)
 
     $null = $Arguments
-    $global:LASTEXITCODE = $global:LibVirtualHidTestExitCode
+    $global:LASTEXITCODE = [int] $env:LIBVIRTUALHID_INSTALL_TEST_EXIT_CODE
   }
 }
 
 AfterAll {
   Remove-Item -LiteralPath Function:\Invoke-LibVirtualHidTestCommand -ErrorAction SilentlyContinue
-  Remove-Variable -Name LibVirtualHidTestExitCode -Scope Global -ErrorAction SilentlyContinue
+  Remove-Item Env:\LIBVIRTUALHID_INSTALL_TEST_EXIT_CODE -ErrorAction SilentlyContinue
 }
 
 Describe "Invoke-CheckedCommand" {
   It "accepts a configured success exit code" {
-    $global:LibVirtualHidTestExitCode = 5
+    $env:LIBVIRTUALHID_INSTALL_TEST_EXIT_CODE = 5
 
     {
       Invoke-CheckedCommand `
@@ -28,7 +28,7 @@ Describe "Invoke-CheckedCommand" {
   }
 
   It "throws for an unexpected exit code" {
-    $global:LibVirtualHidTestExitCode = 12
+    $env:LIBVIRTUALHID_INSTALL_TEST_EXIT_CODE = 12
 
     {
       Invoke-CheckedCommand `

@@ -6,13 +6,13 @@ BeforeAll {
     param([Parameter(ValueFromRemainingArguments)] $Arguments)
 
     $null = $Arguments
-    $global:LASTEXITCODE = $global:LibVirtualHidSignTestExitCode
+    $global:LASTEXITCODE = [int] $env:LIBVIRTUALHID_SIGN_TEST_EXIT_CODE
   }
 }
 
 AfterAll {
   Remove-Item -LiteralPath Function:\Invoke-LibVirtualHidSignTestCommand -ErrorAction SilentlyContinue
-  Remove-Variable -Name LibVirtualHidSignTestExitCode -Scope Global -ErrorAction SilentlyContinue
+  Remove-Item Env:\LIBVIRTUALHID_SIGN_TEST_EXIT_CODE -ErrorAction SilentlyContinue
 }
 
 Describe "Find-SignTool" {
@@ -81,7 +81,7 @@ Describe "sign-driver-package.ps1 entry point" {
       [pscustomobject]@{ Source = "Invoke-LibVirtualHidSignTestCommand" }
     }
     Mock Remove-Item {}
-    $global:LibVirtualHidSignTestExitCode = 0
+    $env:LIBVIRTUALHID_SIGN_TEST_EXIT_CODE = 0
 
     & $sourcePath `
       -PackagePath $packagePath `
@@ -104,7 +104,7 @@ Describe "sign-driver-package.ps1 entry point" {
 
 Describe "Invoke-CheckedCommand" {
   It "returns after a successful signing command" {
-    $global:LibVirtualHidSignTestExitCode = 0
+    $env:LIBVIRTUALHID_SIGN_TEST_EXIT_CODE = 0
 
     {
       Invoke-CheckedCommand `
@@ -114,7 +114,7 @@ Describe "Invoke-CheckedCommand" {
   }
 
   It "throws after a failed signing command" {
-    $global:LibVirtualHidSignTestExitCode = 9
+    $env:LIBVIRTUALHID_SIGN_TEST_EXIT_CODE = 9
 
     {
       Invoke-CheckedCommand `
