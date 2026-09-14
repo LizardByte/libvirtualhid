@@ -75,13 +75,22 @@ jobs:
       release_commit: ${{ needs.setup_release.outputs.release_commit }}
       release_version: ${{ needs.setup_release.outputs.release_version }}
 
+  powershell:
+    name: PowerShell
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci-powershell.yml
+
   results:
     name: Coverage and Test Results
     if: >-
       always() &&
       (needs.build.result == 'success' || needs.build.result == 'failure') &&
+      (needs.powershell.result == 'success' || needs.powershell.result == 'failure') &&
       startsWith(github.repository, 'LizardByte/')
-    needs: build
+    needs:
+      - build
+      - powershell
     permissions:
       contents: read
     uses: ./.github/workflows/ci-results.yml

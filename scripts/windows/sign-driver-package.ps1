@@ -60,6 +60,10 @@ function Invoke-CheckedCommand {
   }
 }
 
+if ($MyInvocation.InvocationName -eq ".") {
+  return
+}
+
 $resolvedPackagePath = (Resolve-Path -LiteralPath $PackagePath).Path
 $catalogPath = Join-Path $resolvedPackagePath $CatalogName
 if (-not (Test-Path -LiteralPath $catalogPath)) {

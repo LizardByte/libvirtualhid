@@ -348,6 +348,10 @@ function Get-GamepadApiProbeExpression {
 "@
 }
 
+if ($MyInvocation.InvocationName -eq ".") {
+  return
+}
+
 if ($HoldSeconds -le $TimeoutSeconds) {
   throw "-HoldSeconds must be greater than -TimeoutSeconds so the adapter remains alive for browser polling."
 }
