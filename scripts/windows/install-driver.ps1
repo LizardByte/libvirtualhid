@@ -323,6 +323,10 @@ function Install-RootDeviceWithSetupApi {
   Invoke-CheckedCommand -FilePath $SetupHelperPath -Arguments @("install", $Path, $TargetHardwareId)
 }
 
+if ($MyInvocation.InvocationName -eq ".") {
+  return
+}
+
 Start-LibVirtualHidTranscript -Path $LogPath
 
 try {

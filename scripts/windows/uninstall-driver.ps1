@@ -201,6 +201,10 @@ function Remove-DriverCertificate {
   }
 }
 
+if ($MyInvocation.InvocationName -eq ".") {
+  return
+}
+
 Start-LibVirtualHidTranscript -Path $LogPath
 
 try {

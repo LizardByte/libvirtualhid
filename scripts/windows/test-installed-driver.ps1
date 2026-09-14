@@ -339,6 +339,10 @@ function Invoke-GamepadAdapterSmoke {
   }
 }
 
+if ($MyInvocation.InvocationName -eq ".") {
+  return
+}
+
 Assert-RootDeviceStarted -TargetHardwareId $HardwareId
 Assert-ControlDeviceOpen -Path $ControlDevicePath
 Invoke-GamepadAdapterSmoke `
