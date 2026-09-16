@@ -996,6 +996,24 @@ namespace lvh::detail::test {
     return scale_absolute_axis(value, limit);
   }
 
+  int linux_absolute_axis_to_viewport(
+    float value,
+    std::int32_t source_dimension,
+    std::int32_t viewport_offset,
+    std::int32_t viewport_dimension,
+    std::int32_t desktop_offset,
+    std::int32_t desktop_dimension
+  ) {
+    return scale_absolute_axis_to_viewport(
+      value,
+      source_dimension,
+      viewport_offset,
+      viewport_dimension,
+      desktop_offset,
+      desktop_dimension
+    );
+  }
+
   std::vector<std::uint32_t> linux_decode_utf8(const std::string &text) {
     return decode_utf8(text);
   }
@@ -1323,6 +1341,30 @@ namespace lvh::detail::test {
 
   LinuxInputSubmissionResult linux_uinput_mouse_submit_pipe(const MouseEvent &event) {
     return linux_uinput_mouse_submit_pipe_sequence(std::vector<MouseEvent> {event});
+  }
+
+  LinuxInputSubmissionResult linux_uinput_mouse_submit_pipe(
+    const MouseEvent &event,
+    const CreateMouseOptions &options
+  ) {
+    std::array<int, 2> descriptors {-1, -1};
+    if (::pipe(descriptors.data()) != 0) {
+      return {system_error_status(ErrorCode::backend_failure, "failed to create pipe", errno), {}};
+    }
+
+    const auto absolute_descriptor = ::dup(descriptors[1]);
+    if (absolute_descriptor < 0) {
+      static_cast<void>(::close(descriptors[0]));
+      static_cast<void>(::close(descriptors[1]));
+      return {system_error_status(ErrorCode::backend_failure, "failed to duplicate pipe", errno), {}};
+    }
+
+    UinputMouse mouse {descriptors[1], absolute_descriptor, options.desktop, options.viewport};
+    const auto status = mouse.submit(event);
+    static_cast<void>(mouse.close());
+    auto records = read_input_events_until_eof(descriptors[0]);
+    static_cast<void>(::close(descriptors[0]));
+    return {status, std::move(records)};
   }
 
   LinuxInputSubmissionResult linux_uinput_mouse_submit_pipe_sequence(const std::vector<MouseEvent> &events) {

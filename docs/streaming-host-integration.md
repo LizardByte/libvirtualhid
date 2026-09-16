@@ -22,3 +22,9 @@ features. `DeviceNode` paths can help diagnose host-side enumeration; client
 feature support still depends on the physical controller, connection, client,
 and game. See the [end-user compatibility matrix](end-user-gamepad-guide.md#compatibility-matrix)
 for observed streaming behavior.
+
+Route `RuntimeOptions::log_callback` into the host logger for lifecycle,
+failure, and debug-level input coordinate diagnostics. When streaming one
+monitor from a multi-monitor desktop, supply the full desktop bounds and the
+selected viewport in `CreateMouseOptions`. See the
+[mouse viewport setup](usage.md#absolute-mouse-viewports).
