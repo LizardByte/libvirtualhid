@@ -486,6 +486,24 @@ namespace lvh::detail {
 
   namespace test {
 
+    std::int32_t windows_backend_scale_absolute_axis_to_viewport(
+      float value,
+      std::int32_t source_dimension,
+      std::int32_t viewport_offset,
+      std::int32_t viewport_dimension,
+      std::int32_t desktop_offset,
+      std::int32_t desktop_dimension
+    ) {
+      return scale_absolute_axis_to_viewport(
+        value,
+        source_dimension,
+        viewport_offset,
+        viewport_dimension,
+        desktop_offset,
+        desktop_dimension
+      );
+    }
+
     WindowsBackendLifecycleResult windows_backend_fake_channel_lifecycle() {
       WindowsBackendLifecycleResult result;
       auto command_state = std::make_shared<FakeWindowsControlChannelState>();

@@ -645,6 +645,26 @@ namespace lvh::detail::test {
   int linux_absolute_axis(std::int32_t value, std::int32_t limit);
 
   /**
+   * @brief Scale an absolute pointer coordinate through a target viewport.
+   *
+   * @param value Source coordinate.
+   * @param source_dimension Source coordinate-space dimension.
+   * @param viewport_offset Target viewport offset.
+   * @param viewport_dimension Target viewport dimension.
+   * @param desktop_offset Virtual desktop origin.
+   * @param desktop_dimension Virtual desktop dimension.
+   * @return Linux absolute axis value.
+   */
+  int linux_absolute_axis_to_viewport(
+    float value,
+    std::int32_t source_dimension,
+    std::int32_t viewport_offset,
+    std::int32_t viewport_dimension,
+    std::int32_t desktop_offset,
+    std::int32_t desktop_dimension
+  );
+
+  /**
    * @brief Decode UTF-8 into Unicode code points using the Linux backend decoder.
    *
    * @param text UTF-8 text.
@@ -926,6 +946,18 @@ namespace lvh::detail::test {
    * @return Submission status and captured input events.
    */
   LinuxInputSubmissionResult linux_uinput_mouse_submit_pipe(const MouseEvent &event);
+
+  /**
+   * @brief Submit a mouse event to a pipe-backed uinput mouse with explicit desktop mapping.
+   *
+   * @param event Mouse event.
+   * @param options Mouse creation options containing desktop and target viewports.
+   * @return Submission status and captured input events.
+   */
+  LinuxInputSubmissionResult linux_uinput_mouse_submit_pipe(
+    const MouseEvent &event,
+    const CreateMouseOptions &options
+  );
 
   /**
    * @brief Submit mouse events to one pipe-backed uinput mouse.

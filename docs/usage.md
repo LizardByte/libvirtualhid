@@ -171,6 +171,48 @@ The API centers on portable device concepts:
 - `BackendCapabilities`: reports runtime/backend limits such as virtual HID,
   output report, keyboard, mouse, XTest fallback, and installed-driver support.
 
+## Diagnostics
+
+Hosts can route libvirtualhid diagnostics into their own logging system by
+installing `RuntimeOptions::log_callback` before creating the runtime:
+
+```cpp
+lvh::RuntimeOptions runtime_options;
+runtime_options.backend = lvh::BackendKind::platform_default;
+runtime_options.log_callback = [](lvh::LogLevel level, const std::string &message) {
+  host_log(level, message);
+};
+auto runtime = lvh::Runtime::create(runtime_options);
+```
+
+The callback receives runtime and device lifecycle messages, operation failures,
+and debug-level mouse coordinate diagnostics. It runs synchronously on the
+calling thread. libvirtualhid discards callback exceptions so a consumer logger
+cannot interrupt input delivery.
+
+## Absolute Mouse Viewports
+
+Absolute mouse coordinates can target one monitor inside a larger virtual
+desktop. Supply both the desktop bounds and the selected viewport in native
+desktop pixels when creating the mouse:
+
+```cpp
+lvh::CreateMouseOptions mouse_options;
+mouse_options.profile = lvh::profiles::mouse();
+mouse_options.desktop = {.offset_x = -1920, .offset_y = 0, .width = 3840, .height = 1080};
+mouse_options.viewport = {.offset_x = 0, .offset_y = 0, .width = 1920, .height = 1080};
+auto created = runtime->create_mouse(mouse_options);
+```
+
+`Mouse::move_absolute()` coordinates are scaled from their supplied source
+dimensions into the target viewport, then normalized against the virtual
+desktop where the platform input API requires it. This contract covers
+CoreGraphics on macOS, `SendInput` on Windows, and the XTest or `uinput` path on
+Linux and FreeBSD, including virtual desktops whose origin is negative. Leave
+both viewport dimensions at zero to retain the platform-default pointer area
+(the main display on macOS and the virtual desktop on other current backends).
+A configured target viewport must be fully contained by its desktop.
+
 ## Gamepad Example
 
 ```cpp

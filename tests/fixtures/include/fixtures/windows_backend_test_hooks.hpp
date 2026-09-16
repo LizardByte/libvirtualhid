@@ -270,4 +270,24 @@ namespace lvh::detail::test {
   WindowsOverlappedIoResult windows_backend_overlapped_device_io();
   WindowsBackendSendInputResult windows_backend_send_input_devices();
 
+  /**
+   * @brief Scale a source coordinate through a target viewport into a virtual desktop axis.
+   *
+   * @param value Source coordinate.
+   * @param source_dimension Source coordinate-space dimension.
+   * @param viewport_offset Target viewport offset.
+   * @param viewport_dimension Target viewport dimension.
+   * @param desktop_offset Virtual desktop origin.
+   * @param desktop_dimension Virtual desktop dimension.
+   * @return Win32 normalized absolute coordinate.
+   */
+  std::int32_t windows_backend_scale_absolute_axis_to_viewport(
+    float value,
+    std::int32_t source_dimension,
+    std::int32_t viewport_offset,
+    std::int32_t viewport_dimension,
+    std::int32_t desktop_offset,
+    std::int32_t desktop_dimension
+  );
+
 }  // namespace lvh::detail::test

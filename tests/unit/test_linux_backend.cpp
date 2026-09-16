@@ -148,6 +148,13 @@ TEST_F(LinuxBackendTest, ScalesAbsoluteAxesAndScrollSteps) {
   EXPECT_EQ(lvh::detail::test::linux_absolute_axis(101, 100), 65535);
   EXPECT_EQ(lvh::detail::test::linux_absolute_axis(1, 0), 0);
 
+  EXPECT_EQ(lvh::detail::test::linux_absolute_axis_to_viewport(0.0F, 1920, 0, 1920, -1920, 3840), 32768);
+  EXPECT_EQ(lvh::detail::test::linux_absolute_axis_to_viewport(960.0F, 1920, 0, 1920, -1920, 3840), 49143);
+  EXPECT_EQ(lvh::detail::test::linux_absolute_axis_to_viewport(1920.0F, 1920, 0, 1920, -1920, 3840), 65518);
+  EXPECT_EQ(lvh::detail::test::linux_absolute_axis_to_viewport(1.0F, 0, 0, 1920, -1920, 3840), 0);
+  EXPECT_EQ(lvh::detail::test::linux_absolute_axis_to_viewport(1.0F, 1, 0, 0, 0, 1), 0);
+  EXPECT_EQ(lvh::detail::test::linux_absolute_axis_to_viewport(1.0F, 1, 0, 1, 0, 0), 0);
+
   EXPECT_EQ(lvh::detail::test::linux_legacy_scroll_steps(0), 0);
   EXPECT_EQ(lvh::detail::test::linux_legacy_scroll_steps(1), 1);
   EXPECT_EQ(lvh::detail::test::linux_legacy_scroll_steps(-1), -1);
@@ -645,6 +652,27 @@ TEST_F(LinuxBackendTest, PipeBackedUinputMouseEmitsEvents) {
   EXPECT_EQ(result.events[1].value, -120);
 #endif
   EXPECT_EQ(result.events.back().type, EV_SYN);
+}
+
+TEST_F(LinuxBackendTest, PipeBackedUinputMouseMapsConfiguredViewport) {
+  lvh::MouseEvent event {
+    .kind = lvh::MouseEventKind::absolute_motion,
+    .x = 960,
+    .y = 540,
+    .width = 1920,
+    .height = 1080,
+  };
+  lvh::CreateMouseOptions options;
+  options.desktop = {.offset_x = -1920, .offset_y = 0, .width = 3840, .height = 1080};
+  options.viewport = {.offset_x = 0, .offset_y = 0, .width = 1920, .height = 1080};
+
+  const auto result = lvh::detail::test::linux_uinput_mouse_submit_pipe(event, options);
+  ASSERT_TRUE(result.status.ok()) << result.status.message();
+  ASSERT_EQ(result.events.size(), 3U);
+  EXPECT_EQ(result.events[0].code, ABS_X);
+  EXPECT_EQ(result.events[0].value, 49143);
+  EXPECT_EQ(result.events[1].code, ABS_Y);
+  EXPECT_EQ(result.events[1].value, 32737);
 }
 
 TEST_F(LinuxBackendTest, PipeBackedUinputMouseRoutesMotionAndButtonsAcrossSplitDevices) {

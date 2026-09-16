@@ -6,6 +6,13 @@
 // lib includes
 #include <libvirtualhid/libvirtualhid.hpp>
 
+// standard includes
+#include <algorithm>
+#include <stdexcept>
+#include <string>
+#include <string_view>
+#include <vector>
+
 // local includes
 #include "fixtures/fixtures.hpp"
 #if defined(_WIN32)
@@ -30,6 +37,60 @@ TEST(RuntimeTest, FakeBackendReportsCapabilities) {
   EXPECT_TRUE(runtime->capabilities().supports_pen_tablet);
   EXPECT_TRUE(runtime->capabilities().supports_output_reports);
   EXPECT_FALSE(runtime->capabilities().requires_installed_driver);
+}
+
+TEST(RuntimeTest, RoutesDiagnosticsToConsumerCallback) {
+  struct Diagnostic {
+    lvh::LogLevel level;
+    std::string message;
+  };
+
+  std::vector<Diagnostic> diagnostics;
+
+  lvh::RuntimeOptions runtime_options;
+  runtime_options.log_callback = [&diagnostics](lvh::LogLevel level, const std::string &message) {
+    diagnostics.push_back({level, message});
+  };
+  auto runtime = lvh::Runtime::create(runtime_options);
+
+  lvh::CreateMouseOptions mouse_options;
+  mouse_options.profile = lvh::profiles::mouse();
+  mouse_options.desktop = {.offset_x = -1920, .offset_y = 0, .width = 3840, .height = 1080};
+  mouse_options.viewport = {.offset_x = -1920, .offset_y = 0, .width = 1920, .height = 1080};
+  auto created = runtime->create_mouse(mouse_options);
+  ASSERT_TRUE(created) << created.status.message();
+  EXPECT_TRUE(created.mouse->move_relative(1, -1).ok());
+  EXPECT_TRUE(created.mouse->move_absolute(960, 540, 1920, 1080).ok());
+  EXPECT_TRUE(created.mouse->move_absolute(0.5F, 0.25F, 1, 1).ok());
+  EXPECT_TRUE(created.mouse->button(lvh::MouseButton::left, true).ok());
+  EXPECT_TRUE(created.mouse->vertical_scroll(120).ok());
+  EXPECT_TRUE(created.mouse->horizontal_scroll(-120).ok());
+  EXPECT_TRUE(created.mouse->close().ok());
+  EXPECT_EQ(created.mouse->move_relative(1, 1).code(), lvh::ErrorCode::device_closed);
+
+  const auto has_message = [&diagnostics](lvh::LogLevel level, std::string_view text) {
+    return std::ranges::any_of(diagnostics, [level, text](const auto &diagnostic) {
+      return diagnostic.level == level && diagnostic.message.contains(text);
+    });
+  };
+  EXPECT_TRUE(has_message(lvh::LogLevel::info, "initialized fake backend"));
+  EXPECT_TRUE(has_message(lvh::LogLevel::info, "created mouse 1"));
+  EXPECT_TRUE(has_message(lvh::LogLevel::debug, "viewport=-1920,0 1920x1080"));
+  EXPECT_TRUE(has_message(lvh::LogLevel::error, "mouse input failed: mouse is closed"));
+}
+
+TEST(RuntimeTest, DiscardsConsumerDiagnosticExceptions) {
+  lvh::RuntimeOptions options;
+  options.log_callback = [](lvh::LogLevel, const std::string &) {
+    throw std::runtime_error {"consumer logger failed"};
+  };
+
+  EXPECT_NO_THROW({
+    auto runtime = lvh::Runtime::create(options);
+    auto created = runtime->create_mouse();
+    ASSERT_TRUE(created);
+    EXPECT_TRUE(created.mouse->move_relative(1, 1).ok());
+  });
 }
 
 TEST(RuntimeTest, PlatformDefaultReportsCurrentPlatformCapabilities) {
@@ -272,6 +333,29 @@ TEST(RuntimeTest, CreatesSubmitsAndClosesMouse) {
   EXPECT_FALSE(created.mouse->is_open());
   EXPECT_EQ(runtime->active_device_count(), 0U);
   EXPECT_EQ(created.mouse->move_relative(1, 1).code(), lvh::ErrorCode::device_closed);
+}
+
+TEST(RuntimeTest, RejectsIncompleteMouseViewport) {
+  auto runtime = lvh::Runtime::create();
+  const auto expect_invalid = [&runtime](lvh::PointerViewport desktop, lvh::PointerViewport viewport) {
+    lvh::CreateMouseOptions options;
+    options.profile = lvh::profiles::mouse();
+    options.desktop = desktop;
+    options.viewport = viewport;
+
+    const auto created = runtime->create_mouse(options);
+    EXPECT_FALSE(created);
+    EXPECT_EQ(created.status.code(), lvh::ErrorCode::invalid_argument);
+  };
+
+  expect_invalid({}, {.width = 1920});
+  expect_invalid({}, {.width = 1920, .height = 1080});
+  expect_invalid({.width = 3840, .height = 1080}, {});
+  expect_invalid({.width = -1, .height = 1080}, {});
+  expect_invalid(
+    {.offset_x = -1920, .width = 3840, .height = 1080},
+    {.offset_x = 0, .offset_y = 1080, .width = 1920, .height = 1080}
+  );
 }
 
 TEST(RuntimeTest, CreatesSubmitsAndClosesTouchDevices) {

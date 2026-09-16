@@ -56,6 +56,16 @@ namespace lvh::detail::test {
     return {.x = location.x, .y = location.y};
   }
 
+  MacosViewportBounds macos_backend_mouse_viewport_bounds(const PointerViewport &viewport) {
+    const auto bounds = macos::mouse_viewport_bounds(viewport);
+    return {
+      .origin_x = bounds.origin.x,
+      .origin_y = bounds.origin.y,
+      .width = bounds.size.width,
+      .height = bounds.size.height,
+    };
+  }
+
   MacosMouseMotionResult macos_backend_mouse_motion(bool left_down, bool right_down, bool middle_down) {
     const auto motion = macos::macos_mouse_motion({left_down, right_down, middle_down});
     return {
