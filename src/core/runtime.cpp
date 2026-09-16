@@ -5,7 +5,9 @@
 
 // standard includes
 #include <algorithm>
+#include <atomic>
 #include <cmath>
+#include <format>
 #include <memory>
 #include <mutex>
 #include <sstream>
@@ -39,7 +41,7 @@ namespace lvh::detail {
      * @return `true` when messages have a destination.
      */
     bool enabled() const noexcept {
-      return static_cast<bool>(callback_);
+      return static_cast<bool>(callback_) && !callback_failed_.load(std::memory_order_relaxed);
     }
 
     /**
@@ -49,18 +51,20 @@ namespace lvh::detail {
      * @param message Diagnostic text.
      */
     void emit(LogLevel level, const std::string &message) const noexcept {
-      if (!callback_) {
+      if (!enabled()) {
         return;
       }
 
       try {
         callback_(level, message);
       } catch (...) {
+        callback_failed_.store(true, std::memory_order_relaxed);
       }
     }
 
   private:
     LogCallback callback_;
+    mutable std::atomic_bool callback_failed_ = false;  ///< Whether the consumer callback threw an exception.
   };
 
   class SynchronizedState {
@@ -254,19 +258,18 @@ namespace lvh {
       if (options.profile.name.empty()) {
         return OperationStatus::failure(ErrorCode::invalid_argument, "device profile name must not be empty");
       }
-      const auto valid_dimensions = [](const PointerViewport &viewport) {
-        return viewport.width >= 0 && viewport.height >= 0 &&
-               ((viewport.width == 0 && viewport.height == 0) || (viewport.width > 0 && viewport.height > 0));
-      };
-      if (!valid_dimensions(options.desktop) || !valid_dimensions(options.viewport)) {
+      if (const auto valid_dimensions = [](const PointerViewport &viewport) {
+            return viewport.width >= 0 && viewport.height >= 0 &&
+                   ((viewport.width == 0 && viewport.height == 0) || (viewport.width > 0 && viewport.height > 0));
+          };
+          !valid_dimensions(options.desktop) || !valid_dimensions(options.viewport)) {
         return OperationStatus::failure(
           ErrorCode::invalid_argument,
           "mouse viewport dimensions must both be positive or both be zero"
         );
       }
       const auto has_desktop = options.desktop.width > 0;
-      const auto has_viewport = options.viewport.width > 0;
-      if (has_desktop != has_viewport) {
+      if (const auto has_viewport = options.viewport.width > 0; has_desktop != has_viewport) {
         return OperationStatus::failure(
           ErrorCode::invalid_argument,
           "mouse desktop and target viewport must be configured together"
@@ -328,7 +331,7 @@ namespace lvh {
           }
           break;
         case button:
-          message << "button " << static_cast<int>(event.button) << (event.pressed ? " pressed" : " released");
+          message << "button " << static_cast<int>(std::to_underlying(event.button)) << (event.pressed ? " pressed" : " released");
           break;
         case vertical_scroll:
           message << "vertical scroll distance=" << event.high_resolution_scroll;
@@ -1298,7 +1301,7 @@ namespace lvh {
     });
 
     auto mouse = std::make_unique<Mouse>(detail::RuntimeConstructionToken {}, std::move(device));
-    state_->logger->emit(LogLevel::info, "created mouse " + std::to_string(id));
+    state_->logger->emit(LogLevel::info, std::format("created mouse {}", id));
     return {OperationStatus::success(), std::move(mouse)};
   }
 

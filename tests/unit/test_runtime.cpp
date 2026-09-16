@@ -8,7 +8,6 @@
 
 // standard includes
 #include <algorithm>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -49,7 +48,7 @@ TEST(RuntimeTest, RoutesDiagnosticsToConsumerCallback) {
 
   lvh::RuntimeOptions runtime_options;
   runtime_options.log_callback = [&diagnostics](lvh::LogLevel level, const std::string &message) {
-    diagnostics.push_back({level, message});
+    diagnostics.emplace_back(level, message);
   };
   auto runtime = lvh::Runtime::create(runtime_options);
 
@@ -79,10 +78,14 @@ TEST(RuntimeTest, RoutesDiagnosticsToConsumerCallback) {
   EXPECT_TRUE(has_message(lvh::LogLevel::error, "mouse input failed: mouse is closed"));
 }
 
-TEST(RuntimeTest, DiscardsConsumerDiagnosticExceptions) {
+TEST(RuntimeTest, DisablesConsumerDiagnosticsAfterException) {
+  struct ConsumerLoggerFailure {};
+
+  std::size_t callback_count = 0;
   lvh::RuntimeOptions options;
-  options.log_callback = [](lvh::LogLevel, const std::string &) {
-    throw std::runtime_error {"consumer logger failed"};
+  options.log_callback = [&callback_count](lvh::LogLevel, const std::string &) {
+    ++callback_count;
+    throw ConsumerLoggerFailure {};
   };
 
   EXPECT_NO_THROW({
@@ -91,6 +94,7 @@ TEST(RuntimeTest, DiscardsConsumerDiagnosticExceptions) {
     ASSERT_TRUE(created);
     EXPECT_TRUE(created.mouse->move_relative(1, 1).ok());
   });
+  EXPECT_EQ(callback_count, 1U);
 }
 
 TEST(RuntimeTest, PlatformDefaultReportsCurrentPlatformCapabilities) {

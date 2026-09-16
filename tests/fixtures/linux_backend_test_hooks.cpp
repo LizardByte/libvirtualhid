@@ -1339,59 +1339,58 @@ namespace lvh::detail::test {
     return mouse.submit({.kind = MouseEventKind::relative_motion, .x = 1, .y = 1});
   }
 
+  namespace {
+    /**
+     * @brief Submit mouse events through pipe-backed uinput devices.
+     *
+     * @param events Mouse events to submit.
+     * @param options Mouse creation options containing optional viewport bounds.
+     * @return Submission status and captured input events.
+     */
+    LinuxInputSubmissionResult submit_uinput_mouse_pipe_sequence(
+      const std::vector<MouseEvent> &events,
+      const CreateMouseOptions &options
+    ) {
+      std::array<int, 2> descriptors {-1, -1};
+      if (::pipe(descriptors.data()) != 0) {
+        return {system_error_status(ErrorCode::backend_failure, "failed to create pipe", errno), {}};
+      }
+
+      const auto absolute_descriptor = ::dup(descriptors[1]);
+      if (absolute_descriptor < 0) {
+        static_cast<void>(::close(descriptors[0]));
+        static_cast<void>(::close(descriptors[1]));
+        return {system_error_status(ErrorCode::backend_failure, "failed to duplicate pipe", errno), {}};
+      }
+
+      UinputMouse mouse {descriptors[1], absolute_descriptor, options.desktop, options.viewport};
+      auto status = OperationStatus::success();
+      for (const auto &event : events) {
+        status = mouse.submit(event);
+        if (!status.ok()) {
+          break;
+        }
+      }
+      static_cast<void>(mouse.close());
+      auto records = read_input_events_until_eof(descriptors[0]);
+      static_cast<void>(::close(descriptors[0]));
+      return {std::move(status), std::move(records)};
+    }
+  }  // namespace
+
   LinuxInputSubmissionResult linux_uinput_mouse_submit_pipe(const MouseEvent &event) {
-    return linux_uinput_mouse_submit_pipe_sequence(std::vector<MouseEvent> {event});
+    return submit_uinput_mouse_pipe_sequence(std::vector<MouseEvent> {event}, {});
   }
 
   LinuxInputSubmissionResult linux_uinput_mouse_submit_pipe(
     const MouseEvent &event,
     const CreateMouseOptions &options
   ) {
-    std::array<int, 2> descriptors {-1, -1};
-    if (::pipe(descriptors.data()) != 0) {
-      return {system_error_status(ErrorCode::backend_failure, "failed to create pipe", errno), {}};
-    }
-
-    const auto absolute_descriptor = ::dup(descriptors[1]);
-    if (absolute_descriptor < 0) {
-      static_cast<void>(::close(descriptors[0]));
-      static_cast<void>(::close(descriptors[1]));
-      return {system_error_status(ErrorCode::backend_failure, "failed to duplicate pipe", errno), {}};
-    }
-
-    UinputMouse mouse {descriptors[1], absolute_descriptor, options.desktop, options.viewport};
-    const auto status = mouse.submit(event);
-    static_cast<void>(mouse.close());
-    auto records = read_input_events_until_eof(descriptors[0]);
-    static_cast<void>(::close(descriptors[0]));
-    return {status, std::move(records)};
+    return submit_uinput_mouse_pipe_sequence(std::vector<MouseEvent> {event}, options);
   }
 
   LinuxInputSubmissionResult linux_uinput_mouse_submit_pipe_sequence(const std::vector<MouseEvent> &events) {
-    std::array<int, 2> descriptors {-1, -1};
-    if (::pipe(descriptors.data()) != 0) {
-      return {system_error_status(ErrorCode::backend_failure, "failed to create pipe", errno), {}};
-    }
-
-    const auto absolute_descriptor = ::dup(descriptors[1]);
-    if (absolute_descriptor < 0) {
-      static_cast<void>(::close(descriptors[0]));
-      static_cast<void>(::close(descriptors[1]));
-      return {system_error_status(ErrorCode::backend_failure, "failed to duplicate pipe", errno), {}};
-    }
-
-    UinputMouse mouse {descriptors[1], absolute_descriptor};
-    auto status = OperationStatus::success();
-    for (const auto &event : events) {
-      status = mouse.submit(event);
-      if (!status.ok()) {
-        break;
-      }
-    }
-    static_cast<void>(mouse.close());
-    auto records = read_input_events_until_eof(descriptors[0]);
-    static_cast<void>(::close(descriptors[0]));
-    return {std::move(status), std::move(records)};
+    return submit_uinput_mouse_pipe_sequence(events, {});
   }
 
   LinuxMouseInputSubmissionResult linux_uinput_mouse_submit_split_pipe_sequence(const std::vector<MouseEvent> &events) {

@@ -121,7 +121,7 @@ namespace lvh {
    * @brief Consumer callback that receives libvirtualhid diagnostic messages.
    *
    * The callback is invoked synchronously from the thread performing the
-   * operation. Exceptions thrown by the callback are discarded.
+   * operation. If the callback throws, it is disabled for subsequent messages.
    */
   using LogCallback = std::function<void(LogLevel level, const std::string &message)>;
 

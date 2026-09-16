@@ -2180,7 +2180,7 @@ namespace lvh::detail {
        * @param desktop Native virtual-desktop bounds.
        * @param viewport Native desktop viewport receiving absolute input.
        */
-      WindowsMouse(PointerViewport desktop = {}, PointerViewport viewport = {}):
+      explicit WindowsMouse(PointerViewport desktop = {}, PointerViewport viewport = {}):
           desktop_ {desktop},
           viewport_ {viewport} {}
 

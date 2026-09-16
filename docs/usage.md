@@ -187,8 +187,8 @@ auto runtime = lvh::Runtime::create(runtime_options);
 
 The callback receives runtime and device lifecycle messages, operation failures,
 and debug-level mouse coordinate diagnostics. It runs synchronously on the
-calling thread. libvirtualhid discards callback exceptions so a consumer logger
-cannot interrupt input delivery.
+calling thread. If a consumer callback throws, libvirtualhid disables it for
+subsequent messages so it cannot interrupt input delivery.
 
 ## Absolute Mouse Viewports
 
