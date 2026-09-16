@@ -379,13 +379,34 @@ namespace lvh::detail {
     }
 
     /**
+     * @brief Resolve a portable pointer viewport to CoreGraphics desktop bounds.
+     *
+     * @param viewport Consumer-selected viewport, or zero dimensions for the main display.
+     * @return CoreGraphics bounds used for mouse mapping and confinement.
+     */
+    inline CGRect mouse_viewport_bounds(const PointerViewport &viewport) {
+      if (viewport.width > 0 && viewport.height > 0) {
+        return CGRect {
+          .origin = CGPoint {
+            static_cast<CGFloat>(viewport.offset_x),
+            static_cast<CGFloat>(viewport.offset_y),
+          },
+          .size = CGSize {
+            static_cast<CGFloat>(viewport.width),
+            static_cast<CGFloat>(viewport.height),
+          },
+        };
+      }
+
+      return CGDisplayBounds(CGMainDisplayID());
+    }
+
+    /**
      * @brief Shared macOS backend state.
      */
     class MacosInputState {
     public:
       MacosInputState():
-          display {CGMainDisplayID()},
-          display_scaling {display_scaling_for(display)},
           source {CGEventSourceCreate(kCGEventSourceStateHIDSystemState)},
           keyboard_source {CGEventSourceCreate(kCGEventSourceStatePrivate)},
           mouse_event {source ? CGEventCreate(source) : nullptr},
@@ -408,31 +429,6 @@ namespace lvh::detail {
         }
       }
 
-      /**
-       * @brief Compute the coordinate scaling factor for a display.
-       *
-       * @param display_id CoreGraphics display identifier.
-       * @return Coordinate scaling factor.
-       */
-      static CGFloat display_scaling_for(CGDirectDisplayID display_id) {
-        const auto mode = CGDisplayCopyDisplayMode(display_id);
-        if (!mode) {
-          return 1.0;
-        }
-
-        const auto logical_width = CGDisplayModeGetPixelWidth(mode);
-        if (logical_width == 0) {
-          CFRelease(mode);
-          return 1.0;
-        }
-
-        const auto scaling = static_cast<CGFloat>(CGDisplayPixelsWide(display_id)) / static_cast<CGFloat>(logical_width);
-        CFRelease(mode);
-        return scaling;
-      }
-
-      CGDirectDisplayID display {};  ///< CoreGraphics identifier for the target display.
-      CGFloat display_scaling = 1.0;  ///< Scaling factor from logical to physical display pixels.
       CGEventSourceRef source {};  ///< CoreGraphics event source for mouse and scroll events.
       CGEventSourceRef keyboard_source {};  ///< CoreGraphics event source for keyboard events.
       CGEventRef mouse_event {};  ///< Reusable CoreGraphics mouse event.
@@ -628,8 +624,9 @@ namespace lvh::detail {
      */
     class MacosMouse final: public BackendMouse {
     public:
-      explicit MacosMouse(std::shared_ptr<MacosInputState> state):
-          state_ {std::move(state)} {}
+      MacosMouse(std::shared_ptr<MacosInputState> state, const PointerViewport &viewport):
+          state_ {std::move(state)},
+          viewport_bounds_ {mouse_viewport_bounds(viewport)} {}
 
       ~MacosMouse() override {
         static_cast<void>(close());
@@ -672,8 +669,7 @@ namespace lvh::detail {
       CGPoint current_location() const {
         const auto snapshot_event = CGEventCreate(state_->source);
         if (!snapshot_event) {
-          const auto display_bounds = CGDisplayBounds(state_->display);
-          return display_bounds.origin;
+          return viewport_bounds_.origin;
         }
 
         const auto current = CGEventGetLocation(snapshot_event);
@@ -688,10 +684,9 @@ namespace lvh::detail {
         CGPoint previous_location,
         int click_count
       ) const {
-        const auto display_bounds = CGDisplayBounds(state_->display);
         const auto location = CGPoint {
-          std::clamp(raw_location.x, display_bounds.origin.x, display_bounds.origin.x + display_bounds.size.width - 1),
-          std::clamp(raw_location.y, display_bounds.origin.y, display_bounds.origin.y + display_bounds.size.height - 1)
+          std::clamp(raw_location.x, viewport_bounds_.origin.x, viewport_bounds_.origin.x + viewport_bounds_.size.width - 1),
+          std::clamp(raw_location.y, viewport_bounds_.origin.y, viewport_bounds_.origin.y + viewport_bounds_.size.height - 1)
         };
 
         const auto event = state_->mouse_event;
@@ -720,8 +715,7 @@ namespace lvh::detail {
       }
 
       OperationStatus submit_absolute_motion(const MouseEvent &event) {
-        const auto display_bounds = CGDisplayBounds(state_->display);
-        const auto location = absolute_mouse_location(event, display_bounds);
+        const auto location = absolute_mouse_location(event, viewport_bounds_);
         const auto motion = macos_mouse_motion(mouse_down_);
         return post_mouse(motion.button, motion.event_type, location, current_location(), 0);
       }
@@ -765,6 +759,7 @@ namespace lvh::detail {
       }
 
       std::shared_ptr<MacosInputState> state_;
+      CGRect viewport_bounds_ {};  ///< Native desktop bounds receiving mouse input.
       std::array<bool, 3> mouse_down_ {};
       std::array<std::array<std::chrono::steady_clock::time_point, 2>, 3> last_mouse_event_ {};
       std::mutex mutex_;
@@ -809,7 +804,7 @@ namespace lvh::detail {
           return {OperationStatus::failure(ErrorCode::backend_failure, "macOS mouse event source is unavailable"), nullptr};
         }
 
-        return {OperationStatus::success(), std::make_unique<MacosMouse>(state_)};
+        return {OperationStatus::success(), std::make_unique<MacosMouse>(state_, options.viewport)};
       }
 
       BackendTouchscreenCreationResult create_touchscreen(

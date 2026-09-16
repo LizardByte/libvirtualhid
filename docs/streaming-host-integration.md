@@ -44,6 +44,11 @@ intended shape:
   the virtual controller before the first client input packet.
 - Forward output callbacks back to the physical client controller or feedback
   queue.
+- Route `RuntimeOptions::log_callback` into the host logger so backend lifecycle,
+  failures, and debug-level input coordinates appear in the host log.
+- When streaming one monitor from a multi-monitor desktop, provide both the full
+  virtual-desktop bounds and the selected monitor viewport in
+  `CreateMouseOptions` so absolute mouse input reaches the captured output.
 
 This keeps one public code path for Linux, Windows, and future platforms while
 still letting each backend report real capability limits.

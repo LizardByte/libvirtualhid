@@ -104,6 +104,20 @@ TEST_F(MacosBackendTest, ConvertsAbsoluteMouseCoordinates) {
   EXPECT_DOUBLE_EQ(location.y, 170.0);
 }
 
+TEST_F(MacosBackendTest, UsesConfiguredMouseViewport) {
+  const auto bounds = lvh::detail::test::macos_backend_mouse_viewport_bounds({
+    .offset_x = -1920,
+    .offset_y = 120,
+    .width = 1920,
+    .height = 1080,
+  });
+
+  EXPECT_DOUBLE_EQ(bounds.origin_x, -1920.0);
+  EXPECT_DOUBLE_EQ(bounds.origin_y, 120.0);
+  EXPECT_DOUBLE_EQ(bounds.width, 1920.0);
+  EXPECT_DOUBLE_EQ(bounds.height, 1080.0);
+}
+
 TEST_F(MacosBackendTest, SelectsMouseMotionMetadataForHeldButtons) {
   using lvh::detail::test::macos_backend_mouse_motion;
 

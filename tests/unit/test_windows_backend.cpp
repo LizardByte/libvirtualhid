@@ -433,3 +433,14 @@ TEST_F(WindowsBackendTest, SendInputDevicesTranslateKeyboardMouseFailuresAndUnsu
   EXPECT_EQ(result.sent_inputs[17].mouse_x, 1);
   EXPECT_EQ(result.sent_inputs[17].mouse_y, 1);
 }
+
+TEST_F(WindowsBackendTest, MapsAbsoluteMouseInputIntoConfiguredViewport) {
+  using lvh::detail::test::windows_backend_scale_absolute_axis_to_viewport;
+
+  EXPECT_EQ(windows_backend_scale_absolute_axis_to_viewport(0.0F, 1920, 0, 1920, -1920, 3840), 32768);
+  EXPECT_EQ(windows_backend_scale_absolute_axis_to_viewport(960.0F, 1920, 0, 1920, -1920, 3840), 49143);
+  EXPECT_EQ(windows_backend_scale_absolute_axis_to_viewport(1920.0F, 1920, 0, 1920, -1920, 3840), 65518);
+  EXPECT_EQ(windows_backend_scale_absolute_axis_to_viewport(1.0F, 0, 0, 1920, -1920, 3840), 0);
+  EXPECT_EQ(windows_backend_scale_absolute_axis_to_viewport(1.0F, 1, 0, 0, 0, 1), 0);
+  EXPECT_EQ(windows_backend_scale_absolute_axis_to_viewport(1.0F, 1, 0, 1, 0, 0), 0);
+}
