@@ -13,5 +13,6 @@ cmake-build-*/
 /artifacts/
 /docs/controller-research/
 
-# doxyconfig
-docs/doxyconfig*
+# Dockle
+/.dockle/
+/_site/

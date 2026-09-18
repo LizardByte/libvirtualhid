@@ -23,8 +23,8 @@ texts for that reason.
 
 <div class="section_buttons">
 
-| Previous                              |                                                         Next |
-|:--------------------------------------|-------------------------------------------------------------:|
-| [Development](../docs/development.md) | [Source Code](../third-party/doxyconfig/docs/source_code.md) |
+| Previous                              | Next |
+|:--------------------------------------|-----:|
+| [Development](../docs/development.md) |      |
 
 </div>

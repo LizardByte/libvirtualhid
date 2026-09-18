@@ -1,0 +1,35 @@
+[project]
+name = "libvirtualhid"
+version = "0.0.0"
+description = "Cross-platform C++ library for virtual HID devices."
+repository = "https://github.com/LizardByte/libvirtualhid"
+logo = "libvirtualhid.svg"
+favicon = "libvirtualhid.ico"
+
+[build]
+output = "_site"
+work = ".dockle"
+strict = true
+clean = true
+
+[[targets]]
+name = "api"
+title = "libvirtualhid documentation"
+framework = "doxygen"
+source = "."
+
+[targets.doxygen]
+inputs = [
+  "README.md",
+  "docs/end-user-gamepad-guide.md",
+  "docs/usage.md",
+  "docs/platform-support.md",
+  "docs/windows-driver.md",
+  "docs/todo.md",
+  "docs/streaming-host-integration.md",
+  "docs/development.md",
+  "LICENSES/license-map.md",
+  "examples",
+  "src/include",
+]
+main_page = "README.md"
