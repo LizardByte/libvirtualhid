@@ -82,6 +82,37 @@ namespace lvh::detail::windows_broker {
       return last_error == ERROR_SEM_TIMEOUT || last_error == ERROR_FILE_NOT_FOUND;
     }
 
+    static UniqueServiceHandle make_unique_service_handle(SC_HANDLE handle) {
+      return {handle, &::CloseServiceHandle};
+    }
+
+    /**
+     * @brief Check whether the Windows broker service is installed.
+     *
+     * The pipe retry loop bridges a broker that is still starting. When the
+     * service is not installed the pipe can never appear, so waiting out the
+     * full retry deadline only blocks the caller.
+     *
+     * @return False only when the service manager reports that the broker service does not exist.
+     */
+    static bool broker_service_installed() {
+      auto service_manager = make_unique_service_handle(
+        ::OpenSCManagerW(nullptr, nullptr, SC_MANAGER_CONNECT)
+      );
+      if (!service_manager) {
+        return true;
+      }
+
+      auto service = make_unique_service_handle(
+        ::OpenServiceW(service_manager.get(), broker_service_name, SERVICE_QUERY_STATUS)
+      );
+      if (!service) {
+        return ::GetLastError() != ERROR_SERVICE_DOES_NOT_EXIST;
+      }
+
+      return true;
+    }
+
     static UniqueHandle connect_to_broker_pipe() {
       DWORD last_error = ERROR_FILE_NOT_FOUND;
       for (auto attempt = 0U; attempt < pipe_wait_timeout / pipe_retry_interval; ++attempt) {
@@ -90,6 +121,10 @@ namespace lvh::detail::windows_broker {
         }
 
         last_error = ::GetLastError();
+        if (last_error == ERROR_FILE_NOT_FOUND && attempt == 0U && !broker_service_installed()) {
+          last_error = ERROR_SERVICE_DOES_NOT_EXIST;
+          break;
+        }
         if (!wait_to_retry_broker_pipe(last_error)) {
           ::SetLastError(last_error);
           return make_unique_handle(INVALID_HANDLE_VALUE);
@@ -98,10 +133,6 @@ namespace lvh::detail::windows_broker {
 
       ::SetLastError(last_error);
       return make_unique_handle(INVALID_HANDLE_VALUE);
-    }
-
-    static UniqueServiceHandle make_unique_service_handle(SC_HANDLE handle) {
-      return {handle, &::CloseServiceHandle};
     }
 
     static std::string windows_error_message(DWORD error_code) {

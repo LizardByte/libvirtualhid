@@ -15,6 +15,8 @@ namespace lvh::detail::test {
   enum class BrokerServiceScenario {
     pipe_unavailable_once,
     pipe_never_available,
+    pipe_service_missing,
+    pipe_service_manager_unavailable,
     pipe_access_denied,
     pipe_busy_once,
     pipe_busy_timeout_once,

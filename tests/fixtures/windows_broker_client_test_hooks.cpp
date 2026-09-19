@@ -82,7 +82,7 @@ namespace {
 
     ++fake_state().create_attempts;
     const auto scenario = fake_state().scenario;
-    if ((scenario == pipe_unavailable_once && fake_state().create_attempts == 1U) || scenario == pipe_never_available) {
+    if ((scenario == pipe_unavailable_once && fake_state().create_attempts == 1U) || scenario == pipe_never_available || scenario == pipe_service_missing || scenario == pipe_service_manager_unavailable) {
       fake_state().last_error = ERROR_FILE_NOT_FOUND;
       return INVALID_HANDLE_VALUE;
     }
@@ -134,14 +134,22 @@ namespace {
   }
 
   SC_HANDLE WINAPI fake_open_service_manager(LPCWSTR, LPCWSTR, DWORD) {
-    if (fake_state().scenario == lvh::detail::test::BrokerServiceScenario::service_manager_failure) {
+    using enum lvh::detail::test::BrokerServiceScenario;
+
+    if (fake_state().scenario == service_manager_failure || fake_state().scenario == pipe_service_manager_unavailable) {
       return nullptr;
     }
     return fake_service_manager_handle();
   }
 
   SC_HANDLE WINAPI fake_open_service(SC_HANDLE, LPCWSTR, DWORD) {
-    if (fake_state().scenario == lvh::detail::test::BrokerServiceScenario::service_failure) {
+    using enum lvh::detail::test::BrokerServiceScenario;
+
+    if (fake_state().scenario == pipe_service_missing) {
+      fake_state().last_error = ERROR_SERVICE_DOES_NOT_EXIST;
+      return nullptr;
+    }
+    if (fake_state().scenario == service_failure) {
       return nullptr;
     }
     return fake_service_handle();
