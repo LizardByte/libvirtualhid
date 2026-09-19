@@ -103,10 +103,7 @@ namespace lvh::detail::windows_broker {
         return true;
       }
 
-      auto service = make_unique_service_handle(
-        ::OpenServiceW(service_manager.get(), broker_service_name, SERVICE_QUERY_STATUS)
-      );
-      if (!service) {
+      if (const auto service = make_unique_service_handle(::OpenServiceW(service_manager.get(), broker_service_name, SERVICE_QUERY_STATUS)); !service) {
         return ::GetLastError() != ERROR_SERVICE_DOES_NOT_EXIST;
       }
 
