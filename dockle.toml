@@ -17,6 +17,7 @@ name = "api"
 title = "libvirtualhid documentation"
 framework = "doxygen"
 source = "."
+home = true
 
 [targets.doxygen]
 inputs = [
