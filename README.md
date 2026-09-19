@@ -197,11 +197,3 @@ licensed under the
 points to both complete license texts; see the
 [license map](https://github.com/LizardByte/libvirtualhid/blob/master/LICENSES/license-map.md)
 for the authoritative repository path and artifact assignments.
-
-<div class="section_buttons">
-
-| Previous |                                                     Next |
-|:---------|---------------------------------------------------------:|
-|          | [End-User Gamepad Guide](docs/end-user-gamepad-guide.md) |
-
-</div>

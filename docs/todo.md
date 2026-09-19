@@ -34,11 +34,3 @@ Proposed solution:
 6. Treat generated capture files as local debugging artifacts by default. Only
    commit a generated capture later if it is reproducible, sanitized, and used
    by tests or documentation in a way that justifies keeping it.
-
-<div class="section_buttons">
-
-| Previous                                    |                                                        Next |
-|:--------------------------------------------|------------------------------------------------------------:|
-| [Windows Driver Package](windows-driver.md) | [Streaming-Host Integration](streaming-host-integration.md) |
-
-</div>

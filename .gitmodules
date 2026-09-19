@@ -1,6 +1,6 @@
-[submodule "third-party/doxyconfig"]
-	path = third-party/doxyconfig
-	url = https://github.com/LizardByte/doxyconfig.git
+[submodule "third-party/dockle"]
+	path = third-party/dockle
+	url = https://github.com/LizardByte/dockle.git
 	branch = master
 [submodule "third-party/lizardbyte-common"]
 	path = third-party/lizardbyte-common
