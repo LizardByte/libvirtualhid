@@ -535,7 +535,17 @@ namespace lvh::detail {
       return it->second;
     }
 
-    int key_code_to_linux(KeyboardKeyCode key_code, bool uses_normalized_key_code) {
+    constexpr std::uint8_t keyboard_stream_flag_lang1 = 0x02;
+    constexpr std::uint8_t keyboard_stream_flag_lang2 = 0x04;
+
+    int key_code_to_linux(KeyboardKeyCode key_code, bool uses_normalized_key_code, std::uint8_t stream_flags) {
+      if ((stream_flags & keyboard_stream_flag_lang1) != 0U) {
+        return KEY_HANGEUL;
+      }
+      if ((stream_flags & keyboard_stream_flag_lang2) != 0U) {
+        return KEY_HANJA;
+      }
+
       if (!uses_normalized_key_code) {
         switch (key_code) {
           case 0xDC:
@@ -1456,7 +1466,7 @@ namespace lvh::detail {
 
     private:
       OperationStatus emit_keyboard_event(const KeyboardEvent &event) {
-        const auto linux_key = key_code_to_linux(event.key_code, event.uses_normalized_key_code);
+        const auto linux_key = key_code_to_linux(event.key_code, event.uses_normalized_key_code, event.stream_flags);
         if (linux_key < 0) {
           return OperationStatus::failure(ErrorCode::invalid_argument, "keyboard key code is not supported by the Linux backend");
         }
@@ -2048,7 +2058,14 @@ namespace lvh::detail {
     };
 
 #if defined(LIBVIRTUALHID_HAVE_XTEST)
-    KeySym key_code_to_keysym(KeyboardKeyCode key_code, bool uses_normalized_key_code) {
+    KeySym key_code_to_keysym(KeyboardKeyCode key_code, bool uses_normalized_key_code, std::uint8_t stream_flags) {
+      if ((stream_flags & keyboard_stream_flag_lang1) != 0U) {
+        return XK_Hangul;
+      }
+      if ((stream_flags & keyboard_stream_flag_lang2) != 0U) {
+        return XK_Hangul_Hanja;
+      }
+
       if (!uses_normalized_key_code) {
         switch (key_code) {
           case 0xDC:
@@ -2198,7 +2215,7 @@ namespace lvh::detail {
           return OperationStatus::failure(ErrorCode::device_closed, "XTest keyboard is closed");
         }
 
-        const auto keysym = key_code_to_keysym(event.key_code, event.uses_normalized_key_code);
+        const auto keysym = key_code_to_keysym(event.key_code, event.uses_normalized_key_code, event.stream_flags);
         if (keysym == NoSymbol) {
           return OperationStatus::failure(ErrorCode::invalid_argument, "keyboard key code is not supported by XTest fallback");
         }

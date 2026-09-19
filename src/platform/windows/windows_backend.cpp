@@ -467,69 +467,10 @@ namespace lvh::detail {
     }
 
     /**
-     * @brief Whether a scan code is sent with the E0 extended prefix.
-     *
-     * @param scan_code Low byte of the scan code.
-     * @return True when the scan code requires `KEYEVENTF_EXTENDEDKEY`.
-     */
-    bool extended_scan_code(WORD scan_code) {
-      switch (scan_code) {
-        case 0x1C:
-        case 0x35:
-        case 0x37:
-        case 0x38:
-        case 0x47:
-        case 0x48:
-        case 0x49:
-        case 0x4B:
-        case 0x4D:
-        case 0x50:
-        case 0x51:
-        case 0x52:
-        case 0x53:
-        case 0x5B:
-        case 0x5C:
-        case 0x5D:
-        case 0x5F:
-        case 0x64:
-        case 0x65:
-        case 0x66:
-        case 0x67:
-        case 0x68:
-        case 0x69:
-        case 0x6A:
-        case 0x6B:
-        case 0x6C:
-        case 0x6D:
-        case 0x6E:
-        case 0x6F:
-        case 0x70:
-        case 0x71:
-        case 0x72:
-        case 0x73:
-        case 0x74:
-        case 0x75:
-        case 0x76:
-        case 0x77:
-        case 0x78:
-        case 0x79:
-        case 0x7A:
-        case 0x7B:
-        case 0x7C:
-        case 0x7D:
-        case 0x7E:
-        case 0x7F:
-          return true;
-        default:
-          return false;
-      }
-    }
-
-    /**
      * @brief Map a virtual key to a scan code using the active keyboard layout.
      *
      * @param key_code Windows virtual key code.
-     * @return Scan code and extended-prefix flag from `MapVirtualKeyW`.
+     * @return Scan code and extended-prefix flag from `MapVirtualKeyExW`.
      */
     struct MappedScanCode {
       WORD scan_code = 0;
@@ -537,14 +478,15 @@ namespace lvh::detail {
     };
 
     MappedScanCode map_virtual_key_to_scan_code(KeyboardKeyCode key_code) {
-      const auto mapped = ::MapVirtualKeyW(key_code, MAPVK_VK_TO_VSC);
+      const auto mapped = ::MapVirtualKeyExW(key_code, MAPVK_VK_TO_VSC_EX, nullptr);
       if (mapped == 0U) {
         return {};
       }
 
+      const auto prefix = static_cast<UINT>((mapped >> 8U) & 0xFFU);
       return {
         .scan_code = static_cast<WORD>(mapped & 0xFFU),
-        .extended = (mapped & 0xFF00U) != 0U,
+        .extended = prefix == 0xE0U || prefix == 0xE1U,
       };
     }
 
@@ -1360,12 +1302,12 @@ namespace lvh::detail {
           input.ki.wVk = 0;
           input.ki.wScan = event.scan_code;
           input.ki.dwFlags |= KEYEVENTF_SCANCODE;
-          use_extended_key = extended_scan_code(event.scan_code);
+          use_extended_key = event.scan_code_extended;
         } else {
           WORD scan_code = 0;
           if (event.uses_normalized_key_code) {
             scan_code = windows_us_english_scan_code(event.key_code);
-            use_extended_key = extended_key(event.key_code) || extended_scan_code(scan_code);
+            use_extended_key = extended_key(event.key_code);
           } else if (can_map_virtual_key_to_scan_code(event.key_code)) {
             // Non-normalized keys use the host's active keyboard layout.
             const auto mapped = map_virtual_key_to_scan_code(event.key_code);

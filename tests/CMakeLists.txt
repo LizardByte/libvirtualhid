@@ -48,7 +48,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     list(APPEND LIBVIRTUALHID_TEST_SOURCES
          "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/linux_backend_test_hooks.cpp"
          "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_linux_backend.cpp"
-         "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_linux_consumers.cpp")
+         "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_linux_consumers.cpp"
+         "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_moonlight_special_key_mappings.cpp")
 
     if(LIBVIRTUALHID_ENABLE_XTEST)
         find_package(X11 QUIET)
@@ -68,6 +69,7 @@ elseif(WIN32)
          "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/windows_broker_client_test_hooks.cpp"
          "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/windows_broker_service_test_hooks.cpp"
          "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/windows_backend_test_hooks.cpp"
+         "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_windows_keyboard_scancodes.cpp"
          "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_windows_backend.cpp"
          "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_windows_broker_client.cpp"
          "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_windows_broker_service.cpp"
@@ -103,6 +105,9 @@ if(TARGET virtualhid_control_model)
 endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_include_directories(${TEST_BINARY}
+      PRIVATE
+      "${CMAKE_CURRENT_SOURCE_DIR}/../../../../moonlight-qt/app")
     target_link_libraries(${TEST_BINARY}
       PRIVATE
       PkgConfig::LIBEVDEV

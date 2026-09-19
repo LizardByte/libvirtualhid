@@ -111,6 +111,18 @@ TEST_F(LinuxBackendTest, TranslatesKeyboardKeys) {
   EXPECT_EQ(lvh::detail::test::linux_key_code(0x88), -1);
 }
 
+TEST_F(LinuxBackendTest, DistinguishesJapaneseRoFromIso102ndKey) {
+  EXPECT_EQ(lvh::detail::test::linux_key_code_with_options(0xE2, false, 0), KEY_RO);
+  EXPECT_EQ(lvh::detail::test::linux_key_code_with_options(0xE2, true, 0), KEY_102ND);
+  EXPECT_EQ(lvh::detail::test::linux_key_code_with_options(0xDC, false, 0), KEY_YEN);
+}
+
+TEST_F(LinuxBackendTest, KoreanStreamFlagsMapToDistinctLinuxKeys) {
+  EXPECT_EQ(lvh::detail::test::linux_key_code_with_options(0x15, false, 0x02), KEY_HANGEUL);
+  EXPECT_EQ(lvh::detail::test::linux_key_code_with_options(0x19, false, 0x04), KEY_HANJA);
+  EXPECT_EQ(lvh::detail::test::linux_key_code_with_options(0x15, false, 0), KEY_KATAKANAHIRAGANA);
+}
+
 TEST_F(LinuxBackendTest, TranslatesMouseButtonsAndBusTypes) {
   EXPECT_EQ(lvh::detail::test::linux_mouse_button(lvh::MouseButton::left), BTN_LEFT);
   EXPECT_EQ(lvh::detail::test::linux_mouse_button(lvh::MouseButton::middle), BTN_MIDDLE);
@@ -1218,57 +1230,61 @@ TEST_F(LinuxBackendTest, XTestFallbackCoversKeyboardAndMousePaths) {
   EXPECT_TRUE(mouse_closed_status.code() == lvh::ErrorCode::device_closed || mouse_closed_status.code() == lvh::ErrorCode::backend_unavailable);
 
 #if defined(LIBVIRTUALHID_HAVE_XTEST)
-  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x08), XK_BackSpace);
-  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x09), XK_Tab);
-  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x0D), XK_Return);
-  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x10), XK_Shift_L);
-  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x11), XK_Control_L);
-  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x12), XK_Alt_L);
-  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x14), XK_Caps_Lock);
-  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x1B), XK_Escape);
-  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x20), XK_space);
-  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x21), XK_Page_Up);
-  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x22), XK_Page_Down);
-  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x23), XK_End);
-  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x24), XK_Home);
-  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x25), XK_Left);
-  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x26), XK_Up);
-  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x27), XK_Right);
-  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x28), XK_Down);
-  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x2D), XK_Insert);
-  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x2E), XK_Delete);
-  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x5B), XK_Super_L);
-  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x5C), XK_Super_R);
-  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x90), XK_Num_Lock);
-  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x91), XK_Scroll_Lock);
-  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0xA1), XK_Shift_R);
-  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0xA3), XK_Control_R);
-  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0xA5), XK_Alt_R);
-  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0xBA), XK_semicolon);
-  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0xBB), XK_equal);
-  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0xBC), XK_comma);
-  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0xBD), XK_minus);
-  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0xBE), XK_period);
-  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0xBF), XK_slash);
-  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0xC0), XK_grave);
-  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0xDB), XK_bracketleft);
-  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0xDC), XK_backslash);
-  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0xDD), XK_bracketright);
-  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0xDE), XK_apostrophe);
-  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x30), XK_0);
-  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x39), XK_9);
-  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x41), XK_a);
-  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x5A), XK_z);
-  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x60), XK_KP_0);
-  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x69), XK_KP_9);
-  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x6A), XK_KP_Multiply);
-  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x6B), XK_KP_Add);
-  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x6D), XK_KP_Subtract);
-  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x6E), XK_KP_Decimal);
-  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x6F), XK_KP_Divide);
-  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x70), XK_F1);
-  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x87), XK_F24);
-  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x88), 0UL);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x08, true, 0), XK_BackSpace);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x09, true, 0), XK_Tab);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x0D, true, 0), XK_Return);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x10, true, 0), XK_Shift_L);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x11, true, 0), XK_Control_L);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x12, true, 0), XK_Alt_L);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x14, true, 0), XK_Caps_Lock);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x1B, true, 0), XK_Escape);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x20, true, 0), XK_space);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x21, true, 0), XK_Page_Up);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x22, true, 0), XK_Page_Down);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x23, true, 0), XK_End);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x24, true, 0), XK_Home);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x25, true, 0), XK_Left);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x26, true, 0), XK_Up);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x27, true, 0), XK_Right);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x28, true, 0), XK_Down);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x2D, true, 0), XK_Insert);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x2E, true, 0), XK_Delete);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x5B, true, 0), XK_Super_L);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x5C, true, 0), XK_Super_R);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x90, true, 0), XK_Num_Lock);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x91, true, 0), XK_Scroll_Lock);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0xA1, true, 0), XK_Shift_R);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0xA3, true, 0), XK_Control_R);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0xA5, true, 0), XK_Alt_R);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0xBA, true, 0), XK_semicolon);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0xBB, true, 0), XK_equal);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0xBC, true, 0), XK_comma);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0xBD, true, 0), XK_minus);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0xBE, true, 0), XK_period);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0xBF, true, 0), XK_slash);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0xC0, true, 0), XK_grave);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0xDB, true, 0), XK_bracketleft);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0xDC, true, 0), XK_backslash);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0xDD, true, 0), XK_bracketright);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0xDE, true, 0), XK_apostrophe);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x30, true, 0), XK_0);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x39, true, 0), XK_9);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x41, true, 0), XK_a);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x5A, true, 0), XK_z);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x60, true, 0), XK_KP_0);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x69, true, 0), XK_KP_9);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x6A, true, 0), XK_KP_Multiply);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x6B, true, 0), XK_KP_Add);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x6D, true, 0), XK_KP_Subtract);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x6E, true, 0), XK_KP_Decimal);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x6F, true, 0), XK_KP_Divide);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x70, true, 0), XK_F1);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x87, true, 0), XK_F24);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x88, true, 0), 0UL);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0xE2, false, 0), XK_backslash);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0xDC, false, 0), XK_yen);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x15, false, 0x02), XK_Hangul);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x19, false, 0x04), XK_Hangul_Hanja);
 
   EXPECT_EQ(lvh::detail::test::linux_xtest_mouse_button(lvh::MouseButton::left), 1);
   EXPECT_EQ(lvh::detail::test::linux_xtest_mouse_button(lvh::MouseButton::middle), 2);
@@ -1277,7 +1293,7 @@ TEST_F(LinuxBackendTest, XTestFallbackCoversKeyboardAndMousePaths) {
   EXPECT_EQ(lvh::detail::test::linux_xtest_mouse_button(lvh::MouseButton::extra), 9);
   EXPECT_EQ(lvh::detail::test::linux_xtest_mouse_button(static_cast<lvh::MouseButton>(255)), 1);
 #else
-  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x41), 0UL);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x41, true, 0), 0UL);
   EXPECT_EQ(lvh::detail::test::linux_xtest_mouse_button(lvh::MouseButton::left), 1);
 #endif
 }

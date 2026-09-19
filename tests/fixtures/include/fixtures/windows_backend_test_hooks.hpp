@@ -178,4 +178,13 @@ namespace lvh::detail::test {
   WindowsOverlappedIoResult windows_backend_overlapped_device_io();
   WindowsBackendSendInputResult windows_backend_send_input_devices();
 
+  struct WindowsVirtualKeyScanMapping {
+    std::uint16_t scan_code = 0;
+    bool extended = false;
+  };
+
+  WindowsVirtualKeyScanMapping windows_map_active_layout_scan_code(KeyboardKeyCode key_code);
+
+  WindowsSendInputRecord windows_submit_keyboard_event(const KeyboardEvent &event);
+
 }  // namespace lvh::detail::test
