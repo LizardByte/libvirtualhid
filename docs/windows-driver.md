@@ -572,11 +572,3 @@ licensed under the LizardByte Source-Available License 1.0 (LB-SAL 1.0). See
 the [license map](../LICENSES/license-map.md) for the full repository license split.
 The MSI may also include MIT-licensed helper components from this repository,
 so packaged installs include both license texts.
-
-<div class="section_buttons">
-
-| Previous                                |            Next |
-|:----------------------------------------|----------------:|
-| [Platform Support](platform-support.md) | [TODO](todo.md) |
-
-</div>

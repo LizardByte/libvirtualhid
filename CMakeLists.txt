@@ -137,7 +137,8 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
     endif()
 
     if(BUILD_DOCS)
-        add_subdirectory(third-party/doxyconfig docs)
+        include(third-party/dockle/cmake/Dockle.cmake)
+        dockle_add_docs(docs TARGETS api)
     endif()
 
     if(BUILD_EXAMPLES)
