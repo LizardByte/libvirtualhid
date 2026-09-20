@@ -12,6 +12,16 @@
 // standard includes
 #include <string_view>
 
+#ifndef NOMINMAX
+  #define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+  #define WIN32_LEAN_AND_MEAN
+#endif
+
+// platform includes
+#include <Windows.h>
+
 namespace {
 
   struct FailureCase {
@@ -27,6 +37,7 @@ namespace {
     std::uint32_t sleep_attempts;
     std::uint32_t wait_attempts;
     std::uint32_t closed_service_handles;
+    std::uint32_t last_error;
   };
 
 }  // namespace
@@ -69,14 +80,14 @@ TEST(WindowsBrokerClientTest, TransactsOnlyWithRunningInstalledBrokerService) {
 TEST(WindowsBrokerClientTest, RetriesWhileTheBrokerPipeIsBeingRecreated) {
   using enum lvh::detail::test::BrokerServiceScenario;
 
-  // A missing pipe checks that the broker service is installed before waiting,
-  // which opens and closes the service manager and service handles once more.
-  for (const auto &[scenario, name, create_attempts, sleep_attempts, wait_attempts, closed_service_handles] : {
-         PipeCase {pipe_unavailable_once, "missing once", 2U, 1U, 0U, 4U},
-         PipeCase {pipe_busy_once, "busy then available", 2U, 0U, 1U, 2U},
-         PipeCase {pipe_busy_timeout_once, "busy wait timed out", 2U, 0U, 1U, 2U},
-         PipeCase {pipe_busy_disappears_once, "busy pipe disappeared", 2U, 0U, 1U, 2U},
+  // A missing pipe checks the service before waiting: two more handles closed.
+  for (const auto &[scenario, name, create_attempts, sleep_attempts, wait_attempts, closed_service_handles, last_error] : {
+         PipeCase {pipe_unavailable_once, "missing once", 2U, 1U, 0U, 4U, 0U},
+         PipeCase {pipe_busy_once, "busy then available", 2U, 0U, 1U, 2U, 0U},
+         PipeCase {pipe_busy_timeout_once, "busy wait timed out", 2U, 0U, 1U, 2U, 0U},
+         PipeCase {pipe_busy_disappears_once, "busy pipe disappeared", 2U, 0U, 1U, 2U, 0U},
        }) {
+    static_cast<void>(last_error);
     SCOPED_TRACE(name);
     const auto result =
       lvh::detail::test::verify_broker_service_scenario(scenario);
@@ -94,14 +105,17 @@ TEST(WindowsBrokerClientTest, RetriesWhileTheBrokerPipeIsBeingRecreated) {
 TEST(WindowsBrokerClientTest, ReportsBrokerPipeConnectionFailures) {
   using enum lvh::detail::test::BrokerServiceScenario;
 
-  // The retry deadline is only spent when the broker service exists; a host
-  // without the service installed fails on the first attempt without sleeping.
-  for (const auto &[scenario, name, create_attempts, sleep_attempts, wait_attempts, closed_service_handles] : {
-         PipeCase {pipe_access_denied, "access denied", 1U, 0U, 0U, 0U},
-         PipeCase {pipe_busy_failure, "busy wait failed", 1U, 0U, 1U, 0U},
-         PipeCase {pipe_never_available, "retry deadline exhausted", 500U, 500U, 0U, 2U},
-         PipeCase {pipe_service_missing, "broker service not installed", 1U, 0U, 0U, 1U},
-         PipeCase {pipe_service_manager_unavailable, "service manager unavailable", 500U, 500U, 0U, 0U},
+  // Only wait when the service could still show up. Missing or stopped fails
+  // on the first attempt with no sleep; unknown status keeps the full wait.
+  for (const auto &[scenario, name, create_attempts, sleep_attempts, wait_attempts, closed_service_handles, last_error] : {
+         PipeCase {pipe_access_denied, "access denied", 1U, 0U, 0U, 0U, ERROR_ACCESS_DENIED},
+         PipeCase {pipe_busy_failure, "busy wait failed", 1U, 0U, 1U, 0U, ERROR_ACCESS_DENIED},
+         PipeCase {pipe_never_available, "retry deadline exhausted", 500U, 500U, 0U, 2U, ERROR_FILE_NOT_FOUND},
+         PipeCase {pipe_service_missing, "broker service not installed", 1U, 0U, 0U, 1U, ERROR_SERVICE_DOES_NOT_EXIST},
+         PipeCase {pipe_service_stopped, "broker service stopped", 1U, 0U, 0U, 2U, ERROR_SERVICE_NOT_ACTIVE},
+         PipeCase {pipe_service_stop_pending, "broker service stopping", 1U, 0U, 0U, 2U, ERROR_SERVICE_NOT_ACTIVE},
+         PipeCase {pipe_service_query_failure, "service status unknown", 500U, 500U, 0U, 2U, ERROR_FILE_NOT_FOUND},
+         PipeCase {pipe_service_manager_unavailable, "service manager unavailable", 500U, 500U, 0U, 0U, ERROR_FILE_NOT_FOUND},
        }) {
     SCOPED_TRACE(name);
     const auto result =
@@ -110,6 +124,7 @@ TEST(WindowsBrokerClientTest, ReportsBrokerPipeConnectionFailures) {
     EXPECT_FALSE(result.status.ok());
     EXPECT_EQ(result.status.code(), lvh::ErrorCode::backend_unavailable);
     EXPECT_FALSE(result.status.message().empty());
+    EXPECT_EQ(result.last_error, last_error);
     EXPECT_EQ(result.create_attempts, create_attempts);
     EXPECT_EQ(result.sleep_attempts, sleep_attempts);
     EXPECT_EQ(result.wait_attempts, wait_attempts);

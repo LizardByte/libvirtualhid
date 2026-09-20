@@ -87,15 +87,16 @@ namespace lvh::detail::windows_broker {
     }
 
     /**
-     * @brief Check whether the Windows broker service is installed.
+     * @brief Whether waiting on the broker pipe has any chance.
      *
-     * The pipe retry loop bridges a broker that is still starting. When the
-     * service is not installed the pipe can never appear, so waiting out the
-     * full retry deadline only blocks the caller.
+     * The retry loop exists for a broker that's still starting. A missing,
+     * stopped, or stopping service never gets started by us (no trigger start
+     * either), so waiting out the timeout just stalls the caller.
      *
-     * @return False only when the service manager reports that the broker service does not exist.
+     * @param[out] error Set to the reason when this returns false.
+     * @return False only when the service is missing, stopped, or stopping.
      */
-    static bool broker_service_installed() {
+    static bool broker_service_may_answer(DWORD &error) {
       auto service_manager = make_unique_service_handle(
         ::OpenSCManagerW(nullptr, nullptr, SC_MANAGER_CONNECT)
       );
@@ -103,11 +104,26 @@ namespace lvh::detail::windows_broker {
         return true;
       }
 
-      if (const auto service = make_unique_service_handle(::OpenServiceW(service_manager.get(), broker_service_name, SERVICE_QUERY_STATUS)); !service) {
-        return ::GetLastError() != ERROR_SERVICE_DOES_NOT_EXIST;
+      auto service = make_unique_service_handle(
+        ::OpenServiceW(service_manager.get(), broker_service_name, SERVICE_QUERY_STATUS)
+      );
+      if (!service) {
+        if (::GetLastError() != ERROR_SERVICE_DOES_NOT_EXIST) {
+          return true;
+        }
+        error = ERROR_SERVICE_DOES_NOT_EXIST;
+        return false;
       }
 
-      return true;
+      SERVICE_STATUS_PROCESS service_status {};
+      if (DWORD bytes_needed = 0; ::QueryServiceStatusEx(service.get(), SC_STATUS_PROCESS_INFO, std::bit_cast<LPBYTE>(std::as_writable_bytes(std::span {&service_status, 1}).data()), sizeof(service_status), &bytes_needed) == FALSE) {
+        return true;
+      }
+      if (service_status.dwCurrentState != SERVICE_STOPPED && service_status.dwCurrentState != SERVICE_STOP_PENDING) {
+        return true;
+      }
+      error = ERROR_SERVICE_NOT_ACTIVE;
+      return false;
     }
 
     static UniqueHandle connect_to_broker_pipe() {
@@ -118,8 +134,7 @@ namespace lvh::detail::windows_broker {
         }
 
         last_error = ::GetLastError();
-        if (last_error == ERROR_FILE_NOT_FOUND && attempt == 0U && !broker_service_installed()) {
-          last_error = ERROR_SERVICE_DOES_NOT_EXIST;
+        if (last_error == ERROR_FILE_NOT_FOUND && attempt == 0U && !broker_service_may_answer(last_error)) {
           break;
         }
         if (!wait_to_retry_broker_pipe(last_error)) {

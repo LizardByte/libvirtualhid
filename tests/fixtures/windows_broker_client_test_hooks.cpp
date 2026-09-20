@@ -69,6 +69,10 @@ namespace {
     return fake_state().last_error;
   }
 
+  void WINAPI fake_set_last_error(DWORD error) {
+    fake_state().last_error = error;
+  }
+
   HANDLE WINAPI fake_create_file_a(
     LPCSTR,
     DWORD,
@@ -82,7 +86,7 @@ namespace {
 
     ++fake_state().create_attempts;
     const auto scenario = fake_state().scenario;
-    if ((scenario == pipe_unavailable_once && fake_state().create_attempts == 1U) || scenario == pipe_never_available || scenario == pipe_service_missing || scenario == pipe_service_manager_unavailable) {
+    if ((scenario == pipe_unavailable_once && fake_state().create_attempts == 1U) || scenario == pipe_never_available || scenario == pipe_service_missing || scenario == pipe_service_stopped || scenario == pipe_service_stop_pending || scenario == pipe_service_query_failure || scenario == pipe_service_manager_unavailable) {
       fake_state().last_error = ERROR_FILE_NOT_FOUND;
       return INVALID_HANDLE_VALUE;
     }
@@ -164,12 +168,15 @@ namespace {
   ) {
     using enum lvh::detail::test::BrokerServiceScenario;
 
-    if (fake_state().scenario == service_query_failure) {
+    if (fake_state().scenario == service_query_failure || fake_state().scenario == pipe_service_query_failure) {
       return FALSE;
     }
 
     SERVICE_STATUS_PROCESS status {};
-    status.dwCurrentState = fake_state().scenario == service_stopped ? SERVICE_STOPPED : SERVICE_RUNNING;
+    const auto stopped = fake_state().scenario == service_stopped || fake_state().scenario == pipe_service_stopped;
+    const auto stopping = fake_state().scenario == pipe_service_stop_pending;
+    status.dwCurrentState = stopped ? SERVICE_STOPPED : stopping ? SERVICE_STOP_PENDING :
+                                                                   SERVICE_RUNNING;
     status.dwProcessId = fake_state().scenario == service_process_mismatch ? broker_process_id + 1UL : broker_process_id;
     *bytes_needed = sizeof(status);
     std::memcpy(buffer, &status, sizeof(status));
@@ -205,6 +212,7 @@ namespace {
 #define OpenSCManagerW fake_open_service_manager
 #define OpenServiceW fake_open_service
 #define QueryServiceStatusEx fake_query_service_status
+#define SetLastError fake_set_last_error
 #define SetNamedPipeHandleState fake_set_named_pipe_handle_state
 #define Sleep fake_sleep
 #define TransactNamedPipe fake_transact_named_pipe
@@ -221,6 +229,7 @@ namespace {
 #undef OpenSCManagerW
 #undef OpenServiceW
 #undef QueryServiceStatusEx
+#undef SetLastError
 #undef SetNamedPipeHandleState
 #undef Sleep
 #undef TransactNamedPipe
@@ -253,6 +262,7 @@ namespace lvh::detail::test {
       .create_attempts = fake_state().create_attempts,
       .sleep_attempts = fake_state().sleep_attempts,
       .wait_attempts = fake_state().wait_attempts,
+      .last_error = fake_state().last_error,
       .transacted = fake_state().transacted,
     };
   }
