@@ -173,10 +173,13 @@ namespace {
     }
 
     SERVICE_STATUS_PROCESS status {};
-    const auto stopped = fake_state().scenario == service_stopped || fake_state().scenario == pipe_service_stopped;
-    const auto stopping = fake_state().scenario == pipe_service_stop_pending;
-    status.dwCurrentState = stopped ? SERVICE_STOPPED : stopping ? SERVICE_STOP_PENDING :
-                                                                   SERVICE_RUNNING;
+    if (fake_state().scenario == service_stopped || fake_state().scenario == pipe_service_stopped) {
+      status.dwCurrentState = SERVICE_STOPPED;
+    } else if (fake_state().scenario == pipe_service_stop_pending) {
+      status.dwCurrentState = SERVICE_STOP_PENDING;
+    } else {
+      status.dwCurrentState = SERVICE_RUNNING;
+    }
     status.dwProcessId = fake_state().scenario == service_process_mismatch ? broker_process_id + 1UL : broker_process_id;
     *bytes_needed = sizeof(status);
     std::memcpy(buffer, &status, sizeof(status));
