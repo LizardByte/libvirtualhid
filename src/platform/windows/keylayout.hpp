@@ -37,15 +37,15 @@ namespace lvh::detail {
     56, /* 0x12 */
     0, /* 0x13 */
     58, /* 0x14 */
-    0, /* 0x15 */
+    0x70, /* 0x15 VK_KANA */
     0, /* 0x16 */
     0, /* 0x17 */
     0, /* 0x18 */
     0, /* 0x19 */
     0, /* 0x1a */
     1, /* 0x1b */
-    0, /* 0x1c */
-    0, /* 0x1d */
+    0x79, /* 0x1c VK_CONVERT (Henkan) */
+    0x7B, /* 0x1d VK_NONCONVERT (Muhenkan) */
     0, /* 0x1e */
     0, /* 0x1f */
     57, /* 0x20 */

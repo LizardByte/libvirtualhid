@@ -1245,6 +1245,32 @@ namespace lvh::detail {
       return result;
     }
 
+    WindowsVirtualKeyScanMapping windows_map_active_layout_scan_code(KeyboardKeyCode key_code) {
+      const auto mapped = map_virtual_key_to_scan_code(key_code);
+      return {
+        .scan_code = mapped.scan_code,
+        .extended = mapped.extended,
+      };
+    }
+
+    WindowsSendInputRecord windows_submit_keyboard_event(const KeyboardEvent &event) {
+      FakeSendInputState fake_send_input;
+      ScopedFakeSendInput scoped_send_input {fake_send_input};
+      WindowsBackend backend {nullptr, nullptr};
+
+      CreateKeyboardOptions keyboard_options;
+      keyboard_options.profile = profiles::keyboard();
+      if (const auto keyboard = backend.create_keyboard(99, keyboard_options); keyboard) {
+        static_cast<void>(keyboard.keyboard->submit(event));
+      }
+
+      if (fake_send_input.sent_inputs.empty()) {
+        return {};
+      }
+
+      return fake_send_input.sent_inputs.back();
+    }
+
   }  // namespace test
 
 }  // namespace lvh::detail

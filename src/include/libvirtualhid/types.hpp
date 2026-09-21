@@ -740,9 +740,19 @@ namespace lvh {
     std::uint16_t scan_code = 0;
 
     /**
+     * @brief Whether `scan_code` uses the E0/E1 extended prefix from `MapVirtualKeyW`.
+     */
+    bool scan_code_extended = false;
+
+    /**
      * @brief Whether `key_code` is normalized to the Windows US English keyboard layout.
      */
     bool uses_normalized_key_code = false;
+
+    /**
+     * @brief Sunshine keyboard packet flags (`SS_KBE_FLAG_*`) from the streaming client.
+     */
+    std::uint8_t stream_flags = 0;
 
     /**
      * @brief Whether the backend should prefer a native scan-code translation when `scan_code` is not provided.
