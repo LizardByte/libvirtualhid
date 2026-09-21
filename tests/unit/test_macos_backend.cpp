@@ -63,6 +63,91 @@ TEST_F(MacosBackendTest, IdentifiesModifierKeys) {
   EXPECT_FALSE(lvh::detail::test::macos_backend_is_modifier_key(0x13));
 }
 
+TEST_F(MacosBackendTest, AddsImplicitFlagsForFunctionAndKeypadKeys) {
+  using lvh::detail::test::macos_backend_implicit_key_flags;
+  constexpr std::uint64_t fn = kCGEventFlagMaskSecondaryFn;
+  constexpr std::uint64_t numeric_pad = kCGEventFlagMaskNumericPad;
+
+  EXPECT_EQ(macos_backend_implicit_key_flags(0x25), fn | numeric_pad);  // VKEY_LEFT
+  EXPECT_EQ(macos_backend_implicit_key_flags(0x26), fn | numeric_pad);  // VKEY_UP
+  EXPECT_EQ(macos_backend_implicit_key_flags(0x27), fn | numeric_pad);  // VKEY_RIGHT
+  EXPECT_EQ(macos_backend_implicit_key_flags(0x28), fn | numeric_pad);  // VKEY_DOWN
+  EXPECT_EQ(macos_backend_implicit_key_flags(0x21), fn);  // VKEY_PRIOR
+  EXPECT_EQ(macos_backend_implicit_key_flags(0x22), fn);  // VKEY_NEXT
+  EXPECT_EQ(macos_backend_implicit_key_flags(0x23), fn);  // VKEY_END
+  EXPECT_EQ(macos_backend_implicit_key_flags(0x24), fn);  // VKEY_HOME
+  EXPECT_EQ(macos_backend_implicit_key_flags(0x2D), fn);  // VKEY_INSERT
+  EXPECT_EQ(macos_backend_implicit_key_flags(0x2E), fn);  // VKEY_DELETE
+  EXPECT_EQ(macos_backend_implicit_key_flags(0x70), fn);  // VKEY_F1
+  EXPECT_EQ(macos_backend_implicit_key_flags(0x83), fn);  // VKEY_F20
+  EXPECT_EQ(macos_backend_implicit_key_flags(0x60), numeric_pad);  // VKEY_NUMPAD0
+  EXPECT_EQ(macos_backend_implicit_key_flags(0x6B), numeric_pad);  // VKEY_ADD
+  EXPECT_EQ(macos_backend_implicit_key_flags(0x6E), numeric_pad);  // VKEY_DECIMAL
+  EXPECT_EQ(macos_backend_implicit_key_flags(0x0D), 0U);  // VKEY_RETURN
+  EXPECT_EQ(macos_backend_implicit_key_flags(0x41), 0U);  // VKEY_A
+  EXPECT_EQ(macos_backend_implicit_key_flags(0xA2), 0U);  // VKEY_LCONTROL
+  EXPECT_EQ(macos_backend_implicit_key_flags(0x13), 0U);  // unmapped VKEY_PAUSE
+  EXPECT_EQ(macos_backend_implicit_key_flags(0xFFFF), 0U);
+}
+
+TEST_F(MacosBackendTest, BuildsControlArrowEventsWithFnFlags) {
+  using lvh::detail::test::macos_backend_key_events;
+  constexpr std::uint64_t control = kCGEventFlagMaskControl;
+  constexpr std::uint64_t fn = kCGEventFlagMaskSecondaryFn;
+  constexpr std::uint64_t numeric_pad = kCGEventFlagMaskNumericPad;
+  constexpr std::uint64_t checked = kCGEventFlagMaskShift | kCGEventFlagMaskControl | kCGEventFlagMaskAlternate |
+                                    kCGEventFlagMaskCommand | fn | numeric_pad;
+
+  // Control+Up as a client sends it, then Control+A for contrast.
+  const auto events = macos_backend_key_events({
+    {0xA2, true},  // VKEY_LCONTROL down
+    {0x26, true},  // VKEY_UP down
+    {0x26, false},  // VKEY_UP up
+    {0x41, true},  // VKEY_A down
+    {0x41, false},  // VKEY_A up
+    {0xA2, false},  // VKEY_LCONTROL up
+  });
+  ASSERT_EQ(events.size(), 6U);
+
+  EXPECT_EQ(events[0].event_type, kCGEventFlagsChanged);
+  EXPECT_EQ(events[0].flags & checked, control);
+
+  // The arrow event carries the flags a physical arrow key reports, on top of the held Control.
+  EXPECT_EQ(events[1].event_type, kCGEventKeyDown);
+  EXPECT_EQ(events[1].key_code, kVK_UpArrow);
+  EXPECT_EQ(events[1].flags & checked, control | fn | numeric_pad);
+  EXPECT_EQ(events[2].event_type, kCGEventKeyUp);
+  EXPECT_EQ(events[2].flags & checked, control | fn | numeric_pad);
+
+  // The per-key flags never enter the shared modifier state, so Control+A is unchanged.
+  EXPECT_EQ(events[1].tracked_flags & checked, control);
+  EXPECT_EQ(events[2].tracked_flags & checked, control);
+  EXPECT_EQ(events[3].event_type, kCGEventKeyDown);
+  EXPECT_EQ(events[3].key_code, kVK_ANSI_A);
+  EXPECT_EQ(events[3].flags & checked, control);
+  EXPECT_EQ(events[4].flags & checked, control);
+
+  EXPECT_EQ(events[5].event_type, kCGEventFlagsChanged);
+  EXPECT_EQ(events[5].flags & checked, 0U);
+  EXPECT_EQ(events[5].tracked_flags & checked, 0U);
+}
+
+TEST_F(MacosBackendTest, BuildsKeypadEventsWithNumericPadFlag) {
+  using lvh::detail::test::macos_backend_key_events;
+  constexpr std::uint64_t fn = kCGEventFlagMaskSecondaryFn;
+  constexpr std::uint64_t numeric_pad = kCGEventFlagMaskNumericPad;
+
+  const auto events = macos_backend_key_events({
+    {0x67, true},  // VKEY_NUMPAD7 down
+    {0x0D, true},  // VKEY_RETURN down
+  });
+  ASSERT_EQ(events.size(), 2U);
+  EXPECT_EQ(events[0].key_code, kVK_ANSI_Keypad7);
+  EXPECT_EQ(events[0].flags & (fn | numeric_pad), numeric_pad);
+  EXPECT_EQ(events[1].key_code, kVK_Return);
+  EXPECT_EQ(events[1].flags & (fn | numeric_pad), 0U);
+}
+
 TEST_F(MacosBackendTest, ConvertsScrollSettings) {
   EXPECT_EQ(lvh::detail::test::macos_backend_scroll_lines_per_detent(0.0), 1);
   EXPECT_EQ(lvh::detail::test::macos_backend_scroll_lines_per_detent(0.3125), 5);
