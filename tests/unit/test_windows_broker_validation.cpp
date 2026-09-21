@@ -18,6 +18,7 @@
 #include <utility>
 
 // lib includes
+#include <libvirtualhid/profiles.hpp>
 #include <libvirtualhid/types.hpp>
 
 namespace {
@@ -201,6 +202,25 @@ TEST(WindowsBrokerValidationTest, RejectsMalformedCreateFields) {
   request = valid;
   request.device.report_descriptor[request.device.report_sizes.report_descriptor_size] = 1U;
   EXPECT_FALSE(lvh::windows::broker_validation::valid_request(request));
+}
+
+TEST(WindowsBrokerValidationTest, AcceptsSteamControllerCreateRequest) {
+  lvh::CreateGamepadOptions options;
+  options.profile = lvh::profiles::steam_controller_2026();
+  options.metadata.stable_id = "steam-controller-2026";
+  options.metadata.has_battery = true;
+
+  LvhWindowsBrokerCreateDeviceRequest request {};
+  request.header = request_header(
+    LvhWindowsBrokerRequestType::create_device,
+    sizeof(request)
+  );
+  request.client_control_handle = 1U;
+  request.device = lvh::detail::windows::make_create_device_request(1U, options);
+
+  EXPECT_EQ(request.device.gamepad_kind, LVH_WINDOWS_GAMEPAD_STEAM_CONTROLLER_2026);
+  EXPECT_NE(request.device.flags & LVH_WINDOWS_GAMEPAD_FLAG_SUPPORTS_HAPTICS, 0U);
+  EXPECT_TRUE(lvh::windows::broker_validation::valid_request(request));
 }
 
 TEST(WindowsBrokerValidationTest, ValidatesMouseCreateFields) {

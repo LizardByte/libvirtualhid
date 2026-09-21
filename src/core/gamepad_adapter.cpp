@@ -47,6 +47,7 @@ namespace lvh {
         case xbox_series:
         case dualsense:
         case switch_pro:
+        case steam_controller_2026:
           return true;
         case xbox_360:
         case xbox_one:
@@ -87,9 +88,13 @@ namespace lvh {
     support.supports_player_leds = profile.capabilities.supports_player_leds;
     support.supports_motion = profile.capabilities.supports_motion;
     support.supports_touchpad = profile.capabilities.supports_touchpad;
+    support.supported_touchpad_count = profile.capabilities.supported_touchpad_count;
     support.supports_battery = profile.capabilities.supports_battery;
     support.supports_misc1_button = supports_common_misc1_button(profile.gamepad_kind);
-    support.supports_touchpad_button = profile.capabilities.supports_touchpad;
+    support.supports_touchpad_button =
+      profile.capabilities.supports_touchpad && profile.gamepad_kind != GamepadProfileKind::steam_controller_2026;
+    support.supported_rear_paddle_count = profile.capabilities.supported_rear_paddle_count;
+    support.supports_haptics = profile.capabilities.supports_haptics;
 
     return support;
   }
@@ -110,6 +115,20 @@ namespace lvh {
     }
     if (button == touchpad) {
       return support.supports_touchpad_button;
+    }
+    if (button == left_touchpad) {
+      return profile.gamepad_kind == GamepadProfileKind::steam_controller_2026 &&
+             support.supported_touchpad_count >= 1U;
+    }
+    if (button == right_touchpad) {
+      return profile.gamepad_kind == GamepadProfileKind::steam_controller_2026 &&
+             support.supported_touchpad_count >= 2U;
+    }
+    if (
+      button == left_trigger_click || button == right_trigger_click || button == left_stick_touch ||
+      button == right_stick_touch || button == left_grip_touch || button == right_grip_touch
+    ) {
+      return profile.gamepad_kind == GamepadProfileKind::steam_controller_2026 && support.supports_touchpad;
     }
 
     const auto paddle_count = support.supported_rear_paddle_count;
@@ -146,6 +165,8 @@ namespace lvh {
         return support.supports_adaptive_triggers;
       case player_leds:
         return support.supports_player_leds;
+      case haptics:
+        return support.supports_haptics;
       case raw_report:
         return profile.output_report_size > 0U;
     }

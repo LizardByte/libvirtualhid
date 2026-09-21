@@ -41,6 +41,7 @@ namespace {
   using lvh::tools::virtualhid_control::device_feature_summary;
   using lvh::tools::virtualhid_control::device_type_choices;
   using lvh::tools::virtualhid_control::device_type_name;
+  using lvh::tools::virtualhid_control::keyboard_navigation_enabled;
   using lvh::tools::virtualhid_control::mouse_button_choices;
   using lvh::tools::virtualhid_control::mouse_button_event;
   using lvh::tools::virtualhid_control::mouse_event_for_action;
@@ -728,6 +729,11 @@ namespace {
       }
     }
 
+    template<typename SubmitHandler>
+    void release_momentary_buttons(SubmitHandler submit_event) {
+      release_active_buttons(submit_event);
+    }
+
     void forget_device(lvh::DeviceId id) {
       std::erase_if(scheduled_events_, [id](const ScheduledMouseEvent &event) {
         return event.device_id == id;
@@ -981,6 +987,34 @@ namespace {
       mouse_control_panel_.tick([this](lvh::DeviceId id, const lvh::MouseEvent &event) {
         submit_mouse_event(id, event);
       });
+    }
+
+    bool uses_keyboard_navigation() const {
+      auto device_type = std::optional<lvh::DeviceType> {};
+      {
+        std::lock_guard lock {mutex_};
+        if (devices_.contains(selected_id_)) {
+          device_type = lvh::DeviceType::gamepad;
+        } else if (mice_.contains(selected_id_)) {
+          device_type = lvh::DeviceType::mouse;
+        }
+      }
+      return keyboard_navigation_enabled(device_type.value_or(device_panel_.current_device_type()));
+    }
+
+    void release_momentary_inputs() {
+      for (std::size_t index = 0; index < button_active_.size(); ++index) {
+        if (!button_active_[index]) {
+          continue;
+        }
+        button_active_[index] = false;
+        set_selected_button(index, false);
+      }
+      mouse_control_panel_.release_momentary_buttons(
+        [this](lvh::DeviceId id, const lvh::MouseEvent &event) {
+          submit_mouse_event(id, event);
+        }
+      );
     }
 
     void render() {
@@ -1811,8 +1845,6 @@ namespace {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     auto &io = ImGui::GetIO();
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-    // The tool creates virtual gamepads that SDL can see, so gamepad navigation would feed back into the UI.
     io.IniFilename = nullptr;
 
     ImGui::StyleColorsDark();
@@ -1822,6 +1854,9 @@ namespace {
 
     ImGui_ImplSDL3_InitForSDLRenderer(window, renderer);
     ImGui_ImplSDLRenderer3_Init(renderer);
+    // The tool creates virtual gamepads that SDL can see. Do not open them from
+    // the UI process or let their input feed back into the controls.
+    ImGui_ImplSDL3_SetGamepadMode(ImGui_ImplSDL3_GamepadMode_Manual, nullptr, 0);
 
     ControlApp app;
     auto done = false;
@@ -1835,6 +1870,12 @@ namespace {
         if (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED && event.window.windowID == SDL_GetWindowID(window)) {
           done = true;
         }
+        if (
+          (event.type == SDL_EVENT_WINDOW_FOCUS_LOST || event.type == SDL_EVENT_WINDOW_MOUSE_LEAVE) &&
+          event.window.windowID == SDL_GetWindowID(window)
+        ) {
+          app.release_momentary_inputs();
+        }
       }
 
       app.tick();
@@ -1846,6 +1887,11 @@ namespace {
 
       ImGui_ImplSDLRenderer3_NewFrame();
       ImGui_ImplSDL3_NewFrame();
+      if (app.uses_keyboard_navigation()) {
+        io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+      } else {
+        io.ConfigFlags &= ~ImGuiConfigFlags_NavEnableKeyboard;
+      }
       ImGui::NewFrame();
 
       app.render();

@@ -153,6 +153,11 @@ can therefore query the current controller and battery state even when they do
 not consume the streaming read queue. Unnumbered reports are returned with the
 leading zero report-ID byte expected by Windows HID APIs.
 
+Steam Controller battery report `0x43` is intentionally smaller than its main
+`0x42` state report. The driver validates that alternate native length and
+caches both report IDs independently, rather than padding the battery payload
+into a state-sized packet.
+
 For the Xbox One and Xbox Series VHF profiles, this HID input value is separate
 from the battery result returned by XInput. On a Windows desktop where XInput
 enumerated one of those VHF Xbox devices, `XInputGetBatteryInformation` returned
@@ -327,7 +332,9 @@ held inputs. Mouse controls provide relative movement, five momentary buttons,
 vertical scrolling, and horizontal panning. Use Tab or the arrow keys to
 highlight a mouse control and Space or Enter to activate it, avoiding use of the
 physical mouse while testing the virtual device. A mouse button remains pressed
-only while its activation key is held.
+only while its activation key is held. The UI does not open gamepads for its own
+navigation, and losing focus or pointer presence releases momentary buttons to
+avoid leaving Guide or another input held while Steam displays an overlay.
 
 For an external mouse-event tester, enable **Delayed browser test**, choose a
 delay, and activate the desired action. Switch to the browser before the
@@ -538,6 +545,16 @@ gyroscope updates. Its Set Player Lights subcommand is normalized into solid
 and flashing player-indicator output states for the creating runtime, and its
 monochrome HOME light is normalized as equal RGB channels so existing streaming
 LED feedback paths can preserve its intensity.
+
+The Steam Controller (2026) VHF profile exposes Valve's native wired
+`VID_28DE&PID_1302` descriptor. The client backend submits a newly packed
+`0x42` state report every 4.032 milliseconds, preserving held controls while
+advancing its sequence and motion timestamp. It submits battery changes through
+the native `0x43` report and the driver supports both 64-byte feature-report
+channels used for controller attributes, strings, and settings. Output `0x80`
+is decoded as ordinary rumble; targeted pulse, command, tone, sweep, and script
+reports `0x81` through `0x85` are decoded as addressable haptic output without
+losing their raw HID payload.
 The built-in Generic profile is presented to Windows as a DirectInput PID
 Joystick with the complete output-report set required for DirectInput
 enumeration. Constant Force and Sine output is normalized to the portable

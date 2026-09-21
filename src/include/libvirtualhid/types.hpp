@@ -235,6 +235,7 @@ namespace lvh {
     dualsense,  ///< PlayStation DualSense-compatible profile.
     switch_pro,  ///< Nintendo Switch Pro-compatible profile.
     dualshock4,  ///< PlayStation DualShock 4-compatible profile.
+    steam_controller_2026,  ///< Valve Steam Controller (2026)-compatible profile.
   };
 
   /**
@@ -280,6 +281,21 @@ namespace lvh {
      * @brief Whether the profile supports player indicator LED output.
      */
     bool supports_player_leds = false;
+
+    /**
+     * @brief Whether the profile supports profile-neutral haptic effects.
+     */
+    bool supports_haptics = false;
+
+    /**
+     * @brief Number of independently addressable touchpads exposed by the profile.
+     */
+    std::uint8_t supported_touchpad_count = 0;
+
+    /**
+     * @brief Number of rear paddle buttons exposed by the profile.
+     */
+    std::uint8_t supported_rear_paddle_count = 0;
   };
 
   /**
@@ -527,6 +543,14 @@ namespace lvh {
     paddle2,  ///< Second rear paddle button.
     paddle3,  ///< Third rear paddle button.
     paddle4,  ///< Fourth rear paddle button.
+    left_touchpad,  ///< Left touchpad click button.
+    right_touchpad,  ///< Right touchpad click button.
+    left_trigger_click,  ///< Left trigger digital click.
+    right_trigger_click,  ///< Right trigger digital click.
+    left_stick_touch,  ///< Left stick capacitive touch state.
+    right_stick_touch,  ///< Right stick capacitive touch state.
+    left_grip_touch,  ///< Left grip capacitive touch state.
+    right_grip_touch,  ///< Right grip capacitive touch state.
   };
 
   /**
@@ -659,6 +683,11 @@ namespace lvh {
      * @brief Normalized Y coordinate in the inclusive range `[0.0, 1.0]`.
      */
     float y = 0.0F;
+
+    /**
+     * @brief Normalized contact pressure in the inclusive range `[0.0, 1.0]`.
+     */
+    float pressure = 0.0F;
   };
 
   /**
@@ -1009,6 +1038,51 @@ namespace lvh {
     raw_report,  ///< Raw output report bytes.
     trigger_rumble,  ///< Independent trigger rumble output.
     player_leds,  ///< Player indicator LED output.
+    haptics,  ///< Addressable haptic effect output.
+  };
+
+  /**
+   * @brief Addressable gamepad haptic actuator selection.
+   */
+  enum class GamepadHapticTarget : std::uint8_t {
+    none = 0,  ///< No actuator selected.
+    left = 1,  ///< Left actuator or touchpad.
+    right = 2,  ///< Right actuator or touchpad.
+    both = 3,  ///< Both actuators or touchpads.
+  };
+
+  /**
+   * @brief Profile-neutral haptic effect category.
+   */
+  enum class GamepadHapticEffectKind : std::uint8_t {
+    off,  ///< Stop the selected haptic actuator.
+    tick,  ///< Short tick effect.
+    click,  ///< Click effect.
+    tone,  ///< Constant-frequency tone.
+    rumble,  ///< Haptic rumble effect.
+    noise,  ///< Noise effect.
+    script,  ///< Controller-defined scripted effect.
+    logarithmic_sweep,  ///< Logarithmic frequency sweep.
+    pulse,  ///< Repeated on/off pulse.
+  };
+
+  /**
+   * @brief Addressable haptic effect parameters.
+   */
+  struct GamepadHapticEffect {
+    GamepadHapticTarget target = GamepadHapticTarget::none;  ///< Target actuator selection.
+    GamepadHapticEffectKind kind = GamepadHapticEffectKind::off;  ///< Effect category.
+    std::int8_t gain_db = 0;  ///< Signed gain in decibels.
+    std::uint16_t intensity = 0;  ///< Profile-defined intensity value.
+    std::uint16_t frequency_hz = 0;  ///< Primary tone frequency in hertz.
+    std::int32_t duration_us = 0;  ///< Effect duration in microseconds; negative means indefinite.
+    std::uint32_t interval_us = 0;  ///< Off interval between pulses in microseconds.
+    std::uint16_t repeat_count = 0;  ///< Pulse repeat count.
+    std::uint16_t lfo_frequency_hz = 0;  ///< Low-frequency oscillator frequency in hertz.
+    std::uint8_t lfo_depth_percent = 0;  ///< Low-frequency oscillator depth in percent.
+    std::uint16_t start_frequency_hz = 0;  ///< Sweep start frequency in hertz.
+    std::uint16_t end_frequency_hz = 0;  ///< Sweep end frequency in hertz.
+    std::uint8_t script_id = 0;  ///< Controller-defined scripted effect identifier.
   };
 
   /**
@@ -1094,6 +1168,11 @@ namespace lvh {
      * @brief Flashing player indicator LED states, ordered from player one through four.
      */
     std::array<bool, 4> flashing_player_leds {};
+
+    /**
+     * @brief Parsed addressable haptic effect, when supplied by the profile.
+     */
+    std::optional<GamepadHapticEffect> haptic_effect;
   };
 
   /**

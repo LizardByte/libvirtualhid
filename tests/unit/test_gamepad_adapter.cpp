@@ -20,6 +20,7 @@ TEST(GamepadAdapterTest, ReportsProfileSupport) {
   const auto dualshock4 = lvh::profiles::dualshock4();
   const auto dualsense = lvh::profiles::dualsense();
   const auto switch_pro = lvh::profiles::switch_pro();
+  const auto steam_controller = lvh::profiles::steam_controller_2026();
   const auto keyboard = lvh::profiles::keyboard();
 
   const auto generic_support = lvh::gamepad_profile_support(generic);
@@ -34,6 +35,35 @@ TEST(GamepadAdapterTest, ReportsProfileSupport) {
   EXPECT_TRUE(lvh::gamepad_profile_support(xbox_one).supports_battery);
   EXPECT_TRUE(lvh::gamepad_profile_support(xbox_series).supports_battery);
 
+  const auto steam_support = lvh::gamepad_profile_support(steam_controller);
+  EXPECT_TRUE(steam_support.supports_rumble);
+  EXPECT_TRUE(steam_support.supports_motion);
+  EXPECT_TRUE(steam_support.supports_touchpad);
+  EXPECT_TRUE(steam_support.supports_battery);
+  EXPECT_TRUE(steam_support.supports_haptics);
+  EXPECT_FALSE(steam_support.supports_touchpad_button);
+  EXPECT_EQ(steam_support.supported_touchpad_count, 2U);
+  EXPECT_EQ(steam_support.supported_rear_paddle_count, 4U);
+  EXPECT_TRUE(lvh::supports_gamepad_button(steam_controller, lvh::GamepadButton::paddle4));
+  EXPECT_TRUE(lvh::supports_gamepad_button(steam_controller, lvh::GamepadButton::left_touchpad));
+  EXPECT_TRUE(lvh::supports_gamepad_button(steam_controller, lvh::GamepadButton::right_touchpad));
+  EXPECT_TRUE(lvh::supports_gamepad_button(steam_controller, lvh::GamepadButton::left_trigger_click));
+  EXPECT_TRUE(lvh::supports_gamepad_button(steam_controller, lvh::GamepadButton::right_stick_touch));
+  EXPECT_TRUE(lvh::supports_gamepad_button(steam_controller, lvh::GamepadButton::left_grip_touch));
+  EXPECT_TRUE(lvh::supports_gamepad_output(steam_controller, lvh::GamepadOutputKind::haptics));
+
+  auto steam_fallback = steam_controller;
+  steam_fallback.capabilities.supports_touchpad = false;
+  steam_fallback.capabilities.supports_haptics = false;
+  steam_fallback.capabilities.supported_touchpad_count = 0;
+  steam_fallback.capabilities.supported_rear_paddle_count = 0;
+  EXPECT_FALSE(lvh::supports_gamepad_button(steam_fallback, lvh::GamepadButton::paddle1));
+  EXPECT_FALSE(lvh::supports_gamepad_button(steam_fallback, lvh::GamepadButton::left_touchpad));
+  EXPECT_FALSE(lvh::supports_gamepad_button(steam_fallback, lvh::GamepadButton::right_touchpad));
+  EXPECT_FALSE(lvh::supports_gamepad_button(steam_fallback, lvh::GamepadButton::left_trigger_click));
+  EXPECT_FALSE(lvh::supports_gamepad_button(steam_fallback, lvh::GamepadButton::right_grip_touch));
+  EXPECT_FALSE(lvh::supports_gamepad_output(steam_fallback, lvh::GamepadOutputKind::haptics));
+
   const auto dualshock4_support = lvh::gamepad_profile_support(dualshock4);
   EXPECT_TRUE(dualshock4_support.supports_rumble);
   EXPECT_TRUE(dualshock4_support.supports_rgb_led);
@@ -41,6 +71,7 @@ TEST(GamepadAdapterTest, ReportsProfileSupport) {
   EXPECT_TRUE(dualshock4_support.supports_touchpad);
   EXPECT_TRUE(dualshock4_support.supports_battery);
   EXPECT_TRUE(dualshock4_support.supports_touchpad_button);
+  EXPECT_EQ(dualshock4_support.supported_touchpad_count, 1U);
   EXPECT_FALSE(dualshock4_support.supports_adaptive_triggers);
   EXPECT_FALSE(dualshock4_support.supports_misc1_button);
 
@@ -48,6 +79,7 @@ TEST(GamepadAdapterTest, ReportsProfileSupport) {
   EXPECT_TRUE(dualsense_support.supports_rumble);
   EXPECT_TRUE(dualsense_support.supports_rgb_led);
   EXPECT_TRUE(dualsense_support.supports_adaptive_triggers);
+  EXPECT_EQ(dualsense_support.supported_touchpad_count, 1U);
   EXPECT_TRUE(dualsense_support.supports_motion);
   EXPECT_TRUE(dualsense_support.supports_touchpad);
   EXPECT_TRUE(dualsense_support.supports_battery);

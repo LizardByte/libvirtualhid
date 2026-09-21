@@ -12,6 +12,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <numbers>
 #include <optional>
 #include <span>
@@ -84,6 +85,18 @@ namespace lvh::reports {
     constexpr float switch_acceleration_scale = 4096.0F / 9.80665F;
 
     constexpr float switch_gyroscope_scale = 14.2842F;
+
+    constexpr std::uint8_t steam_controller_state_report_id = 0x42;
+
+    constexpr std::uint8_t steam_controller_battery_report_id = 0x43;
+
+    constexpr std::size_t steam_controller_input_report_size = 54;
+
+    constexpr std::size_t steam_controller_battery_report_size = 15;
+
+    constexpr float steam_controller_acceleration_scale = 32768.0F / (2.0F * 9.80665F);
+
+    constexpr float steam_controller_gyroscope_scale = 32768.0F / 2000.0F;
 
     std::uint8_t decode_switch_home_light_intensity(std::byte encoded_intensity) {
       const auto intensity = std::to_integer<std::uint8_t>(encoded_intensity >> 4U);
@@ -536,6 +549,90 @@ namespace lvh::reports {
         }
       }
       return bits;
+    }
+
+    std::uint32_t steam_controller_button_bits(const ButtonSet &buttons) {
+      using enum GamepadButton;
+
+      constexpr std::array mapping {
+        std::pair {a, 0x00000001U},
+        std::pair {b, 0x00000002U},
+        std::pair {x, 0x00000004U},
+        std::pair {y, 0x00000008U},
+        std::pair {misc1, 0x00000010U},
+        std::pair {right_stick, 0x00000020U},
+        std::pair {start, 0x00000040U},
+        std::pair {paddle1, 0x00000080U},
+        std::pair {paddle3, 0x00000100U},
+        std::pair {right_shoulder, 0x00000200U},
+        std::pair {dpad_down, 0x00000400U},
+        std::pair {dpad_right, 0x00000800U},
+        std::pair {dpad_left, 0x00001000U},
+        std::pair {dpad_up, 0x00002000U},
+        std::pair {back, 0x00004000U},
+        std::pair {left_stick, 0x00008000U},
+        std::pair {guide, 0x00010000U},
+        std::pair {paddle2, 0x00020000U},
+        std::pair {paddle4, 0x00040000U},
+        std::pair {left_shoulder, 0x00080000U},
+        std::pair {right_stick_touch, 0x00100000U},
+        std::pair {right_touchpad, 0x00400000U},
+        std::pair {right_trigger_click, 0x00800000U},
+        std::pair {left_stick_touch, 0x01000000U},
+        std::pair {left_touchpad, 0x04000000U},
+        std::pair {left_trigger_click, 0x08000000U},
+        std::pair {right_grip_touch, 0x10000000U},
+        std::pair {left_grip_touch, 0x20000000U},
+      };
+
+      auto value = std::uint32_t {};
+      for (const auto &[button, bit] : mapping) {
+        if (buttons.test(button)) {
+          value |= bit;
+        }
+      }
+      return value;
+    }
+
+    std::uint8_t steam_controller_sequence_number() {
+      static std::atomic_uint32_t sequence_number = 0;
+      return static_cast<std::uint8_t>(sequence_number.fetch_add(1U, std::memory_order_relaxed));
+    }
+
+    std::uint32_t steam_controller_sensor_timestamp() {
+      const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
+                             std::chrono::steady_clock::now().time_since_epoch()
+      )
+                             .count();
+      return static_cast<std::uint32_t>(elapsed);
+    }
+
+    std::int16_t steam_controller_trackpad_axis(float coordinate, bool invert) {
+      const auto normalized = (std::clamp(coordinate, 0.0F, 1.0F) - 0.5F) * 2.0F;
+      return normalize_axis(invert ? -normalized : normalized);
+    }
+
+    std::uint16_t steam_controller_pressure(float pressure) {
+      return static_cast<std::uint16_t>(std::lround(std::clamp(pressure, 0.0F, 1.0F) * 32768.0F));
+    }
+
+    std::uint8_t steam_controller_charge_state(GamepadBatteryState state) {
+      switch (state) {
+        using enum GamepadBatteryState;
+
+        case discharging:
+          return 1;
+        case charging:
+          return 2;
+        case full:
+          return 4;
+        case unknown:
+        case voltage_or_temperature_error:
+        case temperature_error:
+        case charging_error:
+          return 0;
+      }
+      return 0;
     }
 
     std::uint16_t common_button_bits(const ButtonSet &buttons) {
@@ -1064,6 +1161,7 @@ namespace lvh::reports {
     for (auto &contact : normalized.touchpad_contacts) {
       contact.x = std::clamp(contact.x, 0.0F, 1.0F);
       contact.y = std::clamp(contact.y, 0.0F, 1.0F);
+      contact.pressure = std::clamp(contact.pressure, 0.0F, 1.0F);
     }
     if (normalized.battery) {
       normalized.battery->percentage = std::min<std::uint8_t>(100U, normalized.battery->percentage);
@@ -1314,6 +1412,55 @@ namespace lvh::reports {
     return to_uint8_report(report);
   }
 
+  std::vector<std::uint8_t> pack_steam_controller_input_report(
+    const DeviceProfile &profile,
+    const GamepadState &state
+  ) {
+    using enum GamepadButton;
+
+    if (profile.input_report_size < steam_controller_input_report_size) {
+      return {};
+    }
+
+    const auto normalized = normalize_state(state);
+    const auto acceleration = normalized.acceleration.value_or(Vector3 {.y = 9.80665F});
+    const auto gyroscope = normalized.gyroscope.value_or(Vector3 {});
+
+    auto buttons = steam_controller_button_bits(normalized.buttons);
+    if (normalized.touchpad_contacts[0].active) {
+      buttons |= 0x02000000U;
+    }
+    if (normalized.touchpad_contacts[1].active) {
+      buttons |= 0x00200000U;
+    }
+
+    ByteReport report(profile.input_report_size, zero_byte);
+    report[0] = to_byte(steam_controller_state_report_id);
+    report[1] = to_byte(steam_controller_sequence_number());
+    write_u32(report, 2U, buttons);
+    write_i16(report, 6U, static_cast<std::int16_t>(std::lround(normalized.left_trigger * 32767.0F)));
+    write_i16(report, 8U, static_cast<std::int16_t>(std::lround(normalized.right_trigger * 32767.0F)));
+    write_i16(report, 10U, normalize_axis(normalized.left_stick.x));
+    write_i16(report, 12U, normalize_axis(-normalized.left_stick.y));
+    write_i16(report, 14U, normalize_axis(normalized.right_stick.x));
+    write_i16(report, 16U, normalize_axis(-normalized.right_stick.y));
+    write_i16(report, 18U, steam_controller_trackpad_axis(normalized.touchpad_contacts[0].x, false));
+    write_i16(report, 20U, steam_controller_trackpad_axis(normalized.touchpad_contacts[0].y, true));
+    write_u16(report, 22U, steam_controller_pressure(normalized.touchpad_contacts[0].pressure));
+    write_i16(report, 24U, steam_controller_trackpad_axis(normalized.touchpad_contacts[1].x, false));
+    write_i16(report, 26U, steam_controller_trackpad_axis(normalized.touchpad_contacts[1].y, true));
+    write_u16(report, 28U, steam_controller_pressure(normalized.touchpad_contacts[1].pressure));
+    write_u32(report, 30U, steam_controller_sensor_timestamp());
+    write_i16(report, 34U, scale_i16(acceleration.x, steam_controller_acceleration_scale));
+    write_i16(report, 36U, scale_i16(-acceleration.z, steam_controller_acceleration_scale));
+    write_i16(report, 38U, scale_i16(acceleration.y, steam_controller_acceleration_scale));
+    write_i16(report, 40U, scale_i16(gyroscope.x, steam_controller_gyroscope_scale));
+    write_i16(report, 42U, scale_i16(-gyroscope.z, steam_controller_gyroscope_scale));
+    write_i16(report, 44U, scale_i16(gyroscope.y, steam_controller_gyroscope_scale));
+    write_i16(report, 46U, std::numeric_limits<std::int16_t>::max());
+    return to_uint8_report(report);
+  }
+
   std::vector<std::uint8_t> pack_input_report(const DeviceProfile &profile, const GamepadState &state) {
     if (profile.device_type == DeviceType::gamepad) {
       switch (profile.gamepad_kind) {
@@ -1328,6 +1475,8 @@ namespace lvh::reports {
           return pack_dualsense_input_report(profile, state);
         case switch_pro:
           return pack_switch_pro_input_report(profile, state);
+        case steam_controller_2026:
+          return pack_steam_controller_input_report(profile, state);
         case generic:
           return pack_standard_gamepad_input_report(profile, state);
         case xbox_360:
@@ -1357,6 +1506,24 @@ namespace lvh::reports {
     return report;
   }
 
+  std::optional<std::vector<std::uint8_t>> pack_battery_report(
+    const DeviceProfile &profile,
+    const GamepadBattery &battery
+  ) {
+    if (
+      profile.device_type != DeviceType::gamepad ||
+      profile.gamepad_kind != GamepadProfileKind::steam_controller_2026
+    ) {
+      return std::nullopt;
+    }
+
+    std::vector<std::uint8_t> report(steam_controller_battery_report_size, 0U);
+    report[0] = steam_controller_battery_report_id;
+    report[1] = steam_controller_charge_state(battery.state);
+    report[2] = std::min<std::uint8_t>(battery.percentage, 100U);
+    return report;
+  }
+
   GamepadOutput parse_output_report(const DeviceProfile &profile, const std::vector<std::uint8_t> &report) {
     if (const auto outputs = parse_output_reports(profile, report); !outputs.empty()) {
       return outputs.front();
@@ -1369,6 +1536,99 @@ namespace lvh::reports {
 
   std::vector<GamepadOutput> parse_output_reports(const DeviceProfile &profile, const std::vector<std::uint8_t> &report) {
     std::vector<GamepadOutput> outputs;
+
+    if (profile.gamepad_kind == GamepadProfileKind::steam_controller_2026 && !report.empty()) {
+      const auto target = [](std::uint8_t value) {
+        switch (value) {
+          case 1:
+            return GamepadHapticTarget::left;
+          case 2:
+            return GamepadHapticTarget::right;
+          case 3:
+            return GamepadHapticTarget::both;
+          default:
+            return GamepadHapticTarget::none;
+        }
+      };
+      const auto effect_kind = [](std::uint8_t value) {
+        switch (value) {
+          case 1:
+            return GamepadHapticEffectKind::tick;
+          case 2:
+            return GamepadHapticEffectKind::click;
+          case 3:
+            return GamepadHapticEffectKind::tone;
+          case 4:
+            return GamepadHapticEffectKind::rumble;
+          case 5:
+            return GamepadHapticEffectKind::noise;
+          case 6:
+            return GamepadHapticEffectKind::script;
+          case 7:
+            return GamepadHapticEffectKind::logarithmic_sweep;
+          default:
+            return GamepadHapticEffectKind::off;
+        }
+      };
+
+      if (report[0] == 0x80U && report.size() >= 10U) {
+        GamepadOutput output;
+        output.kind = GamepadOutputKind::rumble;
+        output.low_frequency_rumble = read_u16(report, 4U);
+        output.high_frequency_rumble = read_u16(report, 7U);
+        output.raw_report = report;
+        outputs.push_back(std::move(output));
+        return outputs;
+      }
+
+      GamepadHapticEffect effect;
+      auto recognized = false;
+      if (report[0] == 0x81U && report.size() >= 8U) {
+        effect.target = target(report[1]);
+        effect.kind = GamepadHapticEffectKind::pulse;
+        effect.duration_us = read_u16(report, 2U);
+        effect.interval_us = read_u16(report, 4U);
+        effect.repeat_count = read_u16(report, 6U);
+        recognized = true;
+      } else if (report[0] == 0x82U && report.size() >= 4U) {
+        effect.target = target(report[1]);
+        effect.kind = effect_kind(report[2]);
+        effect.gain_db = static_cast<std::int8_t>(report[3]);
+        recognized = true;
+      } else if (report[0] == 0x83U && report.size() >= 10U) {
+        effect.target = target(report[1]);
+        effect.kind = GamepadHapticEffectKind::tone;
+        effect.gain_db = static_cast<std::int8_t>(report[2]);
+        effect.frequency_hz = read_u16(report, 3U);
+        effect.duration_us = static_cast<std::int32_t>(read_u16(report, 5U)) * 1000;
+        effect.lfo_frequency_hz = read_u16(report, 7U);
+        effect.lfo_depth_percent = report[9];
+        recognized = true;
+      } else if (report[0] == 0x84U && report.size() >= 9U) {
+        effect.target = target(report[1]);
+        effect.kind = GamepadHapticEffectKind::logarithmic_sweep;
+        effect.gain_db = static_cast<std::int8_t>(report[2]);
+        effect.duration_us = static_cast<std::int32_t>(read_u16(report, 3U)) * 1000;
+        effect.start_frequency_hz = read_u16(report, 5U);
+        effect.end_frequency_hz = read_u16(report, 7U);
+        recognized = true;
+      } else if (report[0] == 0x85U && report.size() >= 4U) {
+        effect.target = target(report[1]);
+        effect.kind = GamepadHapticEffectKind::script;
+        effect.script_id = report[2];
+        effect.gain_db = static_cast<std::int8_t>(report[3]);
+        recognized = true;
+      }
+
+      if (recognized) {
+        GamepadOutput output;
+        output.kind = GamepadOutputKind::haptics;
+        output.raw_report = report;
+        output.haptic_effect = effect;
+        outputs.push_back(std::move(output));
+        return outputs;
+      }
+    }
 
     if (profile.gamepad_kind == GamepadProfileKind::dualshock4) {
       const auto byte_report = to_byte_report(report);

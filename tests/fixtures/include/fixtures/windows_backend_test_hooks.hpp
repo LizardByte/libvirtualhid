@@ -86,6 +86,18 @@ namespace lvh::detail::test {
     std::string stable_id;
   };
 
+  struct WindowsSteamControllerReportStreamResult {
+    OperationStatus create_status;
+    OperationStatus submit_status;
+    OperationStatus close_status;
+    WindowsHidCreatedDevice device;
+    bool repeated_state_report = false;
+    bool saw_battery_report = false;
+    bool saw_haptic_output = false;
+    GamepadOutput haptic_output;
+    std::vector<std::vector<std::uint8_t>> submitted_reports;
+  };
+
   struct WindowsHidKeyboardResult {
     struct OperationResults {
       OperationStatus create_status;
@@ -260,6 +272,7 @@ namespace lvh::detail::test {
 
   WindowsBackendLifecycleResult windows_backend_fake_channel_lifecycle();
   WindowsSwitchReportStreamResult windows_backend_switch_report_stream();
+  WindowsSteamControllerReportStreamResult windows_backend_steam_controller_report_stream();
   WindowsXboxInputDeduplicationResult windows_backend_xbox_input_deduplication(GamepadProfileKind kind);
   WindowsPlayStationTransportResult windows_backend_playstation_transport();
   WindowsGenericPidOrderingResult windows_backend_generic_pid_callback_ordering();

@@ -79,6 +79,8 @@ namespace lvh::tools::virtualhid_control {
         return L"trigger rumble";
       case player_leds:
         return L"player leds";
+      case haptics:
+        return L"haptics";
     }
     return L"raw report";
   }
@@ -141,6 +143,8 @@ namespace lvh::tools::virtualhid_control {
         return profiles::dualsense();
       case switch_pro:
         return profiles::switch_pro();
+      case steam_controller_2026:
+        return profiles::steam_controller_2026();
     }
     return std::nullopt;
   }
@@ -194,6 +198,10 @@ namespace lvh::tools::virtualhid_control {
     };
   }
 
+  bool keyboard_navigation_enabled(DeviceType device_type) {
+    return device_type == DeviceType::mouse;
+  }
+
   int axis_to_slider(float value) {
     return static_cast<int>(std::lround(std::clamp(value, -1.0F, 1.0F) * static_cast<float>(slider_scale)));
   }
@@ -226,7 +234,8 @@ namespace lvh::tools::virtualhid_control {
            supports_gamepad_output(profile, rgb_led) ||
            supports_gamepad_output(profile, adaptive_triggers) ||
            supports_gamepad_output(profile, trigger_rumble) ||
-           supports_gamepad_output(profile, player_leds);
+           supports_gamepad_output(profile, player_leds) ||
+           supports_gamepad_output(profile, haptics);
   }
 
   std::wstring profile_feature_summary(const DeviceProfile &profile) {
@@ -240,6 +249,7 @@ namespace lvh::tools::virtualhid_control {
     stream << L" | RGB LED " << yes_no(supports_gamepad_output(profile, rgb_led));
     stream << L" | player LEDs " << yes_no(supports_gamepad_output(profile, player_leds));
     stream << L" | adaptive triggers " << yes_no(supports_gamepad_output(profile, adaptive_triggers));
+    stream << L" | haptics " << yes_no(supports_gamepad_output(profile, haptics));
     stream << L" | raw output " << yes_no(supports_gamepad_output(profile, raw_report));
     return stream.str();
   }
@@ -286,6 +296,11 @@ namespace lvh::tools::virtualhid_control {
       for (const auto active : state.latest_player_leds->flashing_player_leds) {
         stream << (active ? L'1' : L'0');
       }
+      wrote = true;
+    }
+    if (state.latest_haptics) {
+      append_summary_separator(stream, wrote);
+      stream << L"haptics";
       wrote = true;
     }
     if (!wrote && state.latest_raw_report) {
@@ -357,6 +372,9 @@ namespace lvh::tools::virtualhid_control {
         break;
       case player_leds:
         state.latest_player_leds = output;
+        break;
+      case haptics:
+        state.latest_haptics = output;
         break;
       case raw_report:
         state.latest_raw_report = output;

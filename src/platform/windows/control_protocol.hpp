@@ -56,6 +56,9 @@ namespace lvh::detail::windows {
     if (capabilities.supports_adaptive_triggers) {
       flags |= LVH_WINDOWS_GAMEPAD_FLAG_SUPPORTS_ADAPTIVE_TRIGGERS;
     }
+    if (capabilities.supports_haptics) {
+      flags |= LVH_WINDOWS_GAMEPAD_FLAG_SUPPORTS_HAPTICS;
+    }
 
     return flags;
   }
@@ -112,6 +115,8 @@ namespace lvh::detail::windows {
         return LVH_WINDOWS_GAMEPAD_DUALSENSE;
       case switch_pro:
         return LVH_WINDOWS_GAMEPAD_SWITCH_PRO;
+      case steam_controller_2026:
+        return LVH_WINDOWS_GAMEPAD_STEAM_CONTROLLER_2026;
     }
 
     return LVH_WINDOWS_GAMEPAD_GENERIC;

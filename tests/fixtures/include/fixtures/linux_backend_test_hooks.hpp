@@ -195,6 +195,11 @@ namespace lvh::detail::test {
      * @brief Independent trigger-rumble output observed during the round trip.
      */
     std::optional<GamepadOutput> trigger_rumble;
+
+    /**
+     * @brief Addressable haptic output observed during the round trip.
+     */
+    std::optional<GamepadOutput> haptics;
   };
 
   /**
@@ -343,6 +348,26 @@ namespace lvh::detail::test {
   };
 
   /**
+   * @brief Steam Controller observations from a socketpair-backed UHID test.
+   */
+  struct LinuxUhidSteamControllerObservation {
+    /**
+     * @brief Whether a submitted state arrived in native report `0x42`.
+     */
+    bool saw_state_input = false;
+
+    /**
+     * @brief Whether a submitted battery arrived in native report `0x43`.
+     */
+    bool saw_battery_input = false;
+
+    /**
+     * @brief Whether feature report 1 returned controller attributes.
+     */
+    bool saw_attribute_feature_reply = false;
+  };
+
+  /**
    * @brief Result from a socketpair-backed UHID lifecycle test.
    */
   struct LinuxUhidRoundTripResult {
@@ -390,6 +415,11 @@ namespace lvh::detail::test {
      * @brief Switch Pro protocol observations.
      */
     LinuxUhidSwitchProObservation switch_pro;
+
+    /**
+     * @brief Steam Controller protocol observations.
+     */
+    LinuxUhidSteamControllerObservation steam_controller;
 
     /**
      * @brief Xbox Bluetooth protocol observations.
@@ -1054,6 +1084,13 @@ namespace lvh::detail::test {
    * @return Round-trip result with motion and player-light observations.
    */
   LinuxUhidRoundTripResult linux_switch_pro_uhid_socketpair_reports();
+
+  /**
+   * @brief Exercise Steam Controller state, battery, feature, and output reports through a socketpair.
+   *
+   * @return Round-trip result with native protocol observations.
+   */
+  LinuxUhidRoundTripResult linux_steam_controller_uhid_socketpair_reports();
 
   /**
    * @brief Exercise DualSense UHID feature-report replies over a socketpair.

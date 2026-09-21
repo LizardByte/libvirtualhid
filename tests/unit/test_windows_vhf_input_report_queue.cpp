@@ -108,6 +108,12 @@ namespace {
       ProfileCase {lvh::profiles::dualshock4_bluetooth(), LVH_WINDOWS_GAMEPAD_DUALSHOCK4, LVH_WINDOWS_BUS_BLUETOOTH, true},
       ProfileCase {lvh::profiles::dualsense_usb(), LVH_WINDOWS_GAMEPAD_DUALSENSE, LVH_WINDOWS_BUS_USB, true},
       ProfileCase {lvh::profiles::dualsense_bluetooth(), LVH_WINDOWS_GAMEPAD_DUALSENSE, LVH_WINDOWS_BUS_BLUETOOTH, true},
+      ProfileCase {
+        lvh::profiles::steam_controller_2026(),
+        LVH_WINDOWS_GAMEPAD_STEAM_CONTROLLER_2026,
+        LVH_WINDOWS_BUS_USB,
+        true,
+      },
     };
 
     for (const auto &test_case : profiles) {

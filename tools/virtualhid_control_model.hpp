@@ -78,6 +78,7 @@ namespace lvh::tools::virtualhid_control {
     std::optional<GamepadOutput> latest_rgb_led;
     std::optional<GamepadOutput> latest_adaptive_triggers;
     std::optional<GamepadOutput> latest_player_leds;
+    std::optional<GamepadOutput> latest_haptics;
     std::optional<GamepadOutput> latest_raw_report;
   };
 
@@ -94,6 +95,7 @@ namespace lvh::tools::virtualhid_control {
     ProfileChoice {L"ds4", L"DualShock 4", GamepadProfileKind::dualshock4, ClientControllerType::playstation},
     ProfileChoice {L"ds5", L"DualSense", GamepadProfileKind::dualsense, ClientControllerType::playstation},
     ProfileChoice {L"switch", L"Switch Pro", GamepadProfileKind::switch_pro, ClientControllerType::nintendo},
+    ProfileChoice {L"steam", L"Steam Controller (2026)", GamepadProfileKind::steam_controller_2026, ClientControllerType::unknown},
   };
 
   inline constexpr std::array button_choices {
@@ -118,6 +120,14 @@ namespace lvh::tools::virtualhid_control {
     ButtonChoice {L"Paddle 2", GamepadButton::paddle2},
     ButtonChoice {L"Paddle 3", GamepadButton::paddle3},
     ButtonChoice {L"Paddle 4", GamepadButton::paddle4},
+    ButtonChoice {L"Left pad click", GamepadButton::left_touchpad},
+    ButtonChoice {L"Right pad click", GamepadButton::right_touchpad},
+    ButtonChoice {L"Left trigger click", GamepadButton::left_trigger_click},
+    ButtonChoice {L"Right trigger click", GamepadButton::right_trigger_click},
+    ButtonChoice {L"Left stick touch", GamepadButton::left_stick_touch},
+    ButtonChoice {L"Right stick touch", GamepadButton::right_stick_touch},
+    ButtonChoice {L"Left grip touch", GamepadButton::left_grip_touch},
+    ButtonChoice {L"Right grip touch", GamepadButton::right_grip_touch},
   };
 
   inline constexpr std::array mouse_button_choices {
@@ -160,6 +170,17 @@ namespace lvh::tools::virtualhid_control {
     std::int32_t scroll_step
   );
   MouseEvent mouse_button_event(MouseButton button, bool pressed);
+  /**
+   * @brief Check whether the selected device type needs keyboard navigation.
+   *
+   * Gamepad input must not navigate the control UI because UI-created virtual
+   * gamepads can otherwise feed their own input back into the tool. Keyboard
+   * navigation remains available for mouse testing without a physical mouse.
+   *
+   * @param device_type Device type displayed by the control panel.
+   * @return `true` only when keyboard navigation should be enabled.
+   */
+  bool keyboard_navigation_enabled(DeviceType device_type);
   int axis_to_slider(float value);
   int trigger_to_slider(float value);
   float slider_to_float(long value);
