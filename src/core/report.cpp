@@ -1573,9 +1573,9 @@ namespace lvh::reports {
     write_i16(report, 6U, static_cast<std::int16_t>(std::lround(normalized.left_trigger * 32767.0F)));
     write_i16(report, 8U, static_cast<std::int16_t>(std::lround(normalized.right_trigger * 32767.0F)));
     write_i16(report, 10U, normalize_axis(normalized.left_stick.x));
-    write_i16(report, 12U, normalize_axis(-normalized.left_stick.y));
+    write_i16(report, 12U, normalize_axis(normalized.left_stick.y));
     write_i16(report, 14U, normalize_axis(normalized.right_stick.x));
-    write_i16(report, 16U, normalize_axis(-normalized.right_stick.y));
+    write_i16(report, 16U, normalize_axis(normalized.right_stick.y));
     write_i16(report, 18U, steam_controller_trackpad_axis(normalized.touchpad_contacts[0].x, false));
     write_i16(report, 20U, steam_controller_trackpad_axis(normalized.touchpad_contacts[0].y, true));
     write_u16(report, 22U, steam_controller_pressure(normalized.touchpad_contacts[0].pressure));

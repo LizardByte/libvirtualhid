@@ -139,9 +139,9 @@ TEST(ReportTest, PacksSteamControllerFullNativeStateAndBattery) {
   EXPECT_EQ(read_i16_le(report, 6U), 16384);
   EXPECT_EQ(read_i16_le(report, 8U), 32767);
   EXPECT_EQ(read_i16_le(report, 10U), 32767);
-  EXPECT_EQ(read_i16_le(report, 12U), 32767);
+  EXPECT_EQ(read_i16_le(report, 12U), -32768);
   EXPECT_EQ(read_i16_le(report, 14U), -32768);
-  EXPECT_EQ(read_i16_le(report, 16U), -32768);
+  EXPECT_EQ(read_i16_le(report, 16U), 32767);
   EXPECT_EQ(read_i16_le(report, 18U), -32768);
   EXPECT_EQ(read_i16_le(report, 20U), -32768);
   EXPECT_EQ(read_u16_le(report, 22U), 8192U);
