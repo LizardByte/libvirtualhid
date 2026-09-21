@@ -105,6 +105,18 @@ namespace lvh::profiles {
   DeviceProfile switch_pro();
 
   /**
+   * @brief Create the Valve Steam Controller (2nd generation) gamepad profile.
+   *
+   * This wired USB profile exposes the controller's native report protocol,
+   * including both pressure-sensitive touchpads, motion sensors, battery
+   * reports, four rear buttons, capacitive sensors, rumble, and addressable
+   * touchpad haptics.
+   *
+   * @return Steam Controller (2nd generation) device profile.
+   */
+  DeviceProfile steam_triton();
+
+  /**
    * @brief Create the generic keyboard profile.
    *
    * @return Generic keyboard device profile.

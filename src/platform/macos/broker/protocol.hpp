@@ -7,8 +7,12 @@
  */
 #pragma once
 
+#include "shared/steam_controller_protocol.hpp"
+
 #include <array>
 #include <cstdint>
+#include <libvirtualhid/types.hpp>
+#include <utility>
 
 namespace lvh::detail::macos_broker {
 
@@ -17,6 +21,13 @@ namespace lvh::detail::macos_broker {
   inline constexpr std::size_t max_descriptor_size = 8192;
   inline constexpr std::size_t max_report_size = 1024;
   inline constexpr std::size_t max_text_size = 128;
+
+  /**
+   * @brief Whether the broker recognizes a serialized gamepad profile kind.
+   */
+  constexpr bool valid_gamepad_kind(std::uint32_t kind) {
+    return kind <= static_cast<std::uint32_t>(std::to_underlying(GamepadProfileKind::steam_triton));
+  }
 
   enum class MessageType : std::uint32_t {
     status = 1,
@@ -58,5 +69,24 @@ namespace lvh::detail::macos_broker {
     std::array<char, 256> message {};
     std::array<std::uint8_t, max_descriptor_size> data {};
   };
+
+  /**
+   * @brief Validate an input report against the selected broker profile.
+   *
+   * @param profile The accepted device-creation message.
+   * @param request The input report message to validate.
+   * @return Whether the report has an accepted type and size.
+   */
+  inline bool valid_submit_request(const Message &profile, const Message &request) {
+    if (request.type != MessageType::submit || request.size > max_report_size) {
+      return false;
+    }
+    if (request.size == profile.input_report_size) {
+      return true;
+    }
+    return profile.kind == static_cast<std::uint32_t>(std::to_underlying(GamepadProfileKind::steam_triton)) &&
+           request.size == steam_controller_protocol::battery_report_size &&
+           request.data[0] == steam_controller_protocol::battery_report_id;
+  }
 
 }  // namespace lvh::detail::macos_broker

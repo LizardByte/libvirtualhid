@@ -9,6 +9,7 @@
 #include "io.hpp"
 #include "license_manager.hpp"
 #include "shared/playstation_feature_reports.hpp"
+#include "shared/steam_controller_protocol.hpp"
 #include "shared/switch_pro_protocol.hpp"
 
 #include <algorithm>
@@ -107,9 +108,16 @@ namespace lvh::detail::macos_broker {
       return {0x02, 0x00, static_cast<std::uint8_t>(hash >> 24U), static_cast<std::uint8_t>(hash >> 16U), static_cast<std::uint8_t>(hash >> 8U), static_cast<std::uint8_t>(hash)};
     }
 
-    std::vector<std::uint8_t> feature_report(const Message &request, std::uint32_t report_id) {
+    std::vector<std::uint8_t> feature_report(const Message &request, std::uint32_t report_id, const steam_controller_protocol::FeatureState *steam_feature) {
       using lvh::GamepadProfileKind;
       const auto kind = static_cast<GamepadProfileKind>(request.kind);
+      if (kind == GamepadProfileKind::steam_triton) {
+        if (!steam_feature || report_id > UINT8_MAX) {
+          return {};
+        }
+        const auto report = steam_feature->get_feature_report(static_cast<std::uint8_t>(report_id));
+        return report.value_or(std::vector<std::uint8_t> {});
+      }
       auto copy = [](auto payload) {
         return std::vector<std::uint8_t> {payload.begin(), payload.end()};
       };
@@ -167,6 +175,8 @@ namespace lvh::detail::macos_broker {
       int fd = -1;
       IOHIDUserDeviceRef device = nullptr;
       std::mutex writer;
+      std::mutex steam_feature_mutex;
+      steam_controller_protocol::FeatureState steam_feature;
       std::atomic<bool> open {true};
 
       bool send(const Message &message) {
@@ -245,7 +255,14 @@ namespace lvh::detail::macos_broker {
       DeviceSession *session_ptr = &session;
       const Message profile = request;
       IOHIDUserDeviceRegisterSetReportBlock(device, ^IOReturn(IOHIDReportType type, uint32_t report_id, const uint8_t *data, CFIndex size) {
-        if (type != kIOHIDReportTypeOutput || size < 0 || (size > 0 && !data)) {
+        if (size < 0 || (size > 0 && !data)) {
+          return kIOReturnUnsupported;
+        }
+        if (type == kIOHIDReportTypeFeature && profile.kind == static_cast<std::uint32_t>(lvh::GamepadProfileKind::steam_triton) && report_id <= UINT8_MAX) {
+          std::lock_guard lock {session_ptr->steam_feature_mutex};
+          return session_ptr->steam_feature.handle_set_feature(static_cast<std::uint8_t>(report_id), std::span {data, static_cast<std::size_t>(size)}) ? kIOReturnSuccess : kIOReturnUnsupported;
+        }
+        if (type != kIOHIDReportTypeOutput) {
           return kIOReturnUnsupported;
         }
         session_ptr->output(data, static_cast<std::size_t>(size), report_id, profile);
@@ -255,7 +272,8 @@ namespace lvh::detail::macos_broker {
         if (type != kIOHIDReportTypeFeature || !data || !size || *size < 0) {
           return kIOReturnUnsupported;
         }
-        const auto report = feature_report(profile, report_id);
+        std::lock_guard lock {session_ptr->steam_feature_mutex};
+        const auto report = feature_report(profile, report_id, &session_ptr->steam_feature);
         if (report.empty() || report.size() > static_cast<std::size_t>(*size)) {
           return kIOReturnBadArgument;
         }
@@ -272,10 +290,10 @@ namespace lvh::detail::macos_broker {
     }
 
     bool valid_create_request(const Message &request) {
-      return request.type == MessageType::create && request.descriptor_size != 0 && request.descriptor_size <= max_descriptor_size && request.input_report_size != 0 && request.input_report_size <= max_report_size && request.output_report_size <= max_report_size && terminated(request.name) && terminated(request.manufacturer) && terminated(request.stable_id) && request.kind <= static_cast<std::uint32_t>(std::to_underlying(lvh::GamepadProfileKind::dualshock4)) && request.bus <= static_cast<std::uint32_t>(std::to_underlying(lvh::BusType::bluetooth));
+      return request.type == MessageType::create && request.descriptor_size != 0 && request.descriptor_size <= max_descriptor_size && request.input_report_size != 0 && request.input_report_size <= max_report_size && request.output_report_size <= max_report_size && terminated(request.name) && terminated(request.manufacturer) && terminated(request.stable_id) && valid_gamepad_kind(request.kind) && request.bus <= static_cast<std::uint32_t>(std::to_underlying(lvh::BusType::bluetooth));
     }
 
-    void receive_reports(DeviceSession &session, LicenseManager &licenses, bool evaluation, std::uint32_t expected_input_size) {
+    void receive_reports(DeviceSession &session, LicenseManager &licenses, bool evaluation, const Message &profile) {
       Message request;
       for (;;) {
         pollfd descriptor {.fd = session.fd, .events = POLLIN, .revents = 0};
@@ -289,7 +307,7 @@ namespace lvh::detail::macos_broker {
         if ((descriptor.revents & (POLLHUP | POLLERR | POLLNVAL)) != 0 || !receive_message(session.fd, request) || request.type == MessageType::close) {
           return;
         }
-        if (request.type != MessageType::submit || request.size != expected_input_size || request.size > max_report_size) {
+        if (!valid_submit_request(profile, request)) {
           auto failure = response_with_error(lvh::ErrorCode::invalid_argument, "Invalid gamepad input report");
           static_cast<void>(session.send(failure));
           continue;
@@ -347,7 +365,7 @@ namespace lvh::detail::macos_broker {
       response.type = MessageType::response;
       response.status = 0;
       static_cast<void>(session.send(response));
-      receive_reports(session, licenses, evaluation, request.input_report_size);
+      receive_reports(session, licenses, evaluation, request);
       session.open = false;
       IOHIDUserDeviceCancel(device);
       static_cast<void>(dispatch_semaphore_wait(cancelled, DISPATCH_TIME_FOREVER));
