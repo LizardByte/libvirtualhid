@@ -31,6 +31,43 @@ namespace lvh::detail::test {
     return macos::modifier_flags_for_key(*mapped, flags);
   }
 
+  std::uint64_t macos_backend_implicit_key_flags(KeyboardKeyCode key_code) {
+    const auto mapped = macos::macos_key_code(key_code);
+    if (!mapped) {
+      return 0;
+    }
+
+    return static_cast<std::uint64_t>(macos::implicit_key_flags(*mapped));
+  }
+
+  std::vector<MacosKeyEventResult> macos_backend_key_events(const std::vector<std::pair<KeyboardKeyCode, bool>> &transitions) {
+    macos::MacosInputState state;
+    std::lock_guard lock {state.keyboard_mutex};
+
+    std::vector<MacosKeyEventResult> results;
+    for (const auto &[key_code, pressed] : transitions) {
+      const auto mapped = macos::macos_key_code(key_code);
+      if (!mapped) {
+        continue;
+      }
+
+      const auto event = macos::create_keyboard_event(state, *mapped, pressed);
+      if (!event) {
+        continue;
+      }
+
+      results.push_back({
+        .event_type = static_cast<std::uint32_t>(CGEventGetType(event)),
+        .key_code = CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode),
+        .flags = static_cast<std::uint64_t>(CGEventGetFlags(event)),
+        .tracked_flags = static_cast<std::uint64_t>(state.keyboard_flags),
+      });
+      CFRelease(event);
+    }
+
+    return results;
+  }
+
   int macos_backend_scroll_lines_per_detent(double scale) {
     return macos::scroll_lines_per_detent(scale);
   }
