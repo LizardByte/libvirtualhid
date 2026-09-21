@@ -82,6 +82,50 @@ namespace lvh::detail::windows_broker {
       return last_error == ERROR_SEM_TIMEOUT || last_error == ERROR_FILE_NOT_FOUND;
     }
 
+    static UniqueServiceHandle make_unique_service_handle(SC_HANDLE handle) {
+      return {handle, &::CloseServiceHandle};
+    }
+
+    /**
+     * @brief Whether waiting on the broker pipe has any chance.
+     *
+     * The retry loop exists for a broker that's still starting. A missing,
+     * stopped, or stopping service never gets started by us (no trigger start
+     * either), so waiting out the timeout just stalls the caller.
+     *
+     * @param[out] error Set to the reason when this returns false.
+     * @return False only when the service is missing, stopped, or stopping.
+     */
+    static bool broker_service_may_answer(DWORD &error) {
+      auto service_manager = make_unique_service_handle(
+        ::OpenSCManagerW(nullptr, nullptr, SC_MANAGER_CONNECT)
+      );
+      if (!service_manager) {
+        return true;
+      }
+
+      auto service = make_unique_service_handle(
+        ::OpenServiceW(service_manager.get(), broker_service_name, SERVICE_QUERY_STATUS)
+      );
+      if (!service) {
+        if (::GetLastError() != ERROR_SERVICE_DOES_NOT_EXIST) {
+          return true;
+        }
+        error = ERROR_SERVICE_DOES_NOT_EXIST;
+        return false;
+      }
+
+      SERVICE_STATUS_PROCESS service_status {};
+      if (DWORD bytes_needed = 0; ::QueryServiceStatusEx(service.get(), SC_STATUS_PROCESS_INFO, std::bit_cast<LPBYTE>(std::as_writable_bytes(std::span {&service_status, 1}).data()), sizeof(service_status), &bytes_needed) == FALSE) {
+        return true;
+      }
+      if (service_status.dwCurrentState != SERVICE_STOPPED && service_status.dwCurrentState != SERVICE_STOP_PENDING) {
+        return true;
+      }
+      error = ERROR_SERVICE_NOT_ACTIVE;
+      return false;
+    }
+
     static UniqueHandle connect_to_broker_pipe() {
       DWORD last_error = ERROR_FILE_NOT_FOUND;
       for (auto attempt = 0U; attempt < pipe_wait_timeout / pipe_retry_interval; ++attempt) {
@@ -90,6 +134,9 @@ namespace lvh::detail::windows_broker {
         }
 
         last_error = ::GetLastError();
+        if (last_error == ERROR_FILE_NOT_FOUND && attempt == 0U && !broker_service_may_answer(last_error)) {
+          break;
+        }
         if (!wait_to_retry_broker_pipe(last_error)) {
           ::SetLastError(last_error);
           return make_unique_handle(INVALID_HANDLE_VALUE);
@@ -98,10 +145,6 @@ namespace lvh::detail::windows_broker {
 
       ::SetLastError(last_error);
       return make_unique_handle(INVALID_HANDLE_VALUE);
-    }
-
-    static UniqueServiceHandle make_unique_service_handle(SC_HANDLE handle) {
-      return {handle, &::CloseServiceHandle};
     }
 
     static std::string windows_error_message(DWORD error_code) {

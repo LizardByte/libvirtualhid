@@ -69,6 +69,10 @@ namespace {
     return fake_state().last_error;
   }
 
+  void WINAPI fake_set_last_error(DWORD error) {
+    fake_state().last_error = error;
+  }
+
   HANDLE WINAPI fake_create_file_a(
     LPCSTR,
     DWORD,
@@ -82,7 +86,7 @@ namespace {
 
     ++fake_state().create_attempts;
     const auto scenario = fake_state().scenario;
-    if ((scenario == pipe_unavailable_once && fake_state().create_attempts == 1U) || scenario == pipe_never_available) {
+    if ((scenario == pipe_unavailable_once && fake_state().create_attempts == 1U) || scenario == pipe_never_available || scenario == pipe_service_missing || scenario == pipe_service_stopped || scenario == pipe_service_stop_pending || scenario == pipe_service_query_failure || scenario == pipe_service_manager_unavailable) {
       fake_state().last_error = ERROR_FILE_NOT_FOUND;
       return INVALID_HANDLE_VALUE;
     }
@@ -134,14 +138,22 @@ namespace {
   }
 
   SC_HANDLE WINAPI fake_open_service_manager(LPCWSTR, LPCWSTR, DWORD) {
-    if (fake_state().scenario == lvh::detail::test::BrokerServiceScenario::service_manager_failure) {
+    using enum lvh::detail::test::BrokerServiceScenario;
+
+    if (fake_state().scenario == service_manager_failure || fake_state().scenario == pipe_service_manager_unavailable) {
       return nullptr;
     }
     return fake_service_manager_handle();
   }
 
   SC_HANDLE WINAPI fake_open_service(SC_HANDLE, LPCWSTR, DWORD) {
-    if (fake_state().scenario == lvh::detail::test::BrokerServiceScenario::service_failure) {
+    using enum lvh::detail::test::BrokerServiceScenario;
+
+    if (fake_state().scenario == pipe_service_missing) {
+      fake_state().last_error = ERROR_SERVICE_DOES_NOT_EXIST;
+      return nullptr;
+    }
+    if (fake_state().scenario == service_failure) {
       return nullptr;
     }
     return fake_service_handle();
@@ -156,12 +168,18 @@ namespace {
   ) {
     using enum lvh::detail::test::BrokerServiceScenario;
 
-    if (fake_state().scenario == service_query_failure) {
+    if (fake_state().scenario == service_query_failure || fake_state().scenario == pipe_service_query_failure) {
       return FALSE;
     }
 
     SERVICE_STATUS_PROCESS status {};
-    status.dwCurrentState = fake_state().scenario == service_stopped ? SERVICE_STOPPED : SERVICE_RUNNING;
+    if (fake_state().scenario == service_stopped || fake_state().scenario == pipe_service_stopped) {
+      status.dwCurrentState = SERVICE_STOPPED;
+    } else if (fake_state().scenario == pipe_service_stop_pending) {
+      status.dwCurrentState = SERVICE_STOP_PENDING;
+    } else {
+      status.dwCurrentState = SERVICE_RUNNING;
+    }
     status.dwProcessId = fake_state().scenario == service_process_mismatch ? broker_process_id + 1UL : broker_process_id;
     *bytes_needed = sizeof(status);
     std::memcpy(buffer, &status, sizeof(status));
@@ -197,6 +215,7 @@ namespace {
 #define OpenSCManagerW fake_open_service_manager
 #define OpenServiceW fake_open_service
 #define QueryServiceStatusEx fake_query_service_status
+#define SetLastError fake_set_last_error
 #define SetNamedPipeHandleState fake_set_named_pipe_handle_state
 #define Sleep fake_sleep
 #define TransactNamedPipe fake_transact_named_pipe
@@ -213,6 +232,7 @@ namespace {
 #undef OpenSCManagerW
 #undef OpenServiceW
 #undef QueryServiceStatusEx
+#undef SetLastError
 #undef SetNamedPipeHandleState
 #undef Sleep
 #undef TransactNamedPipe
@@ -245,6 +265,7 @@ namespace lvh::detail::test {
       .create_attempts = fake_state().create_attempts,
       .sleep_attempts = fake_state().sleep_attempts,
       .wait_attempts = fake_state().wait_attempts,
+      .last_error = fake_state().last_error,
       .transacted = fake_state().transacted,
     };
   }

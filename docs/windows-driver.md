@@ -58,6 +58,15 @@ normal desktop application to use the broker without running as administrator
 while keeping broker ownership and privileged device operations in the Windows
 service.
 
+A client that finds the pipe missing waits up to five seconds for it, in case
+the broker is still starting. It first asks the service manager whether the
+service can still answer: if the `libvirtualhid_broker` service is not
+installed, or is stopped or stopping, the request fails at once with
+`ERROR_SERVICE_DOES_NOT_EXIST` or `ERROR_SERVICE_NOT_ACTIVE` instead of
+spending the wait. The client never starts the service itself, and the service
+has no trigger start, so nothing would have appeared. Any other service state,
+or an unreadable service manager, keeps the wait.
+
 Status, current-license validation, activation, replacement, deactivation,
 virtual HID device creation, and owned-device destruction are available to
 authenticated local users without elevation. Before sending any request, clients compare the

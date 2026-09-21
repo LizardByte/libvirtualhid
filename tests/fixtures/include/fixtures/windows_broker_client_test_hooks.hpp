@@ -15,6 +15,11 @@ namespace lvh::detail::test {
   enum class BrokerServiceScenario {
     pipe_unavailable_once,
     pipe_never_available,
+    pipe_service_missing,
+    pipe_service_stopped,
+    pipe_service_stop_pending,
+    pipe_service_query_failure,
+    pipe_service_manager_unavailable,
     pipe_access_denied,
     pipe_busy_once,
     pipe_busy_timeout_once,
@@ -37,6 +42,8 @@ namespace lvh::detail::test {
     std::uint32_t create_attempts = 0;
     std::uint32_t sleep_attempts = 0;
     std::uint32_t wait_attempts = 0;
+    /// The Win32 error the client left for its caller (fake SetLastError).
+    std::uint32_t last_error = 0;
     bool transacted = false;
   };
 
