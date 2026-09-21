@@ -3390,6 +3390,16 @@ namespace lvh::detail {
     };
 
 #if defined(__linux__)
+    struct UhidOutputState {
+      std::mutex mutex;
+      OutputCallback callback;
+    };
+
+    struct UhidSteamFeatureState {
+      std::mutex mutex;
+      steam_controller_protocol::FeatureState state;
+    };
+
     /**
      * @brief Backend gamepad backed by one Linux UHID file descriptor.
      */
@@ -3513,8 +3523,8 @@ namespace lvh::detail {
       }
 
       void set_output_callback(OutputCallback callback) override {
-        std::lock_guard lock {callback_mutex_};
-        output_callback_ = std::move(callback);
+        std::lock_guard lock {output_.mutex};
+        output_.callback = std::move(callback);
       }
 
       std::vector<DeviceNode> device_nodes() const override {
@@ -3738,8 +3748,8 @@ namespace lvh::detail {
           report.insert(report.begin(), report_number);
         }
         if (profile_.gamepad_kind == GamepadProfileKind::steam_controller_2026) {
-          std::lock_guard lock {feature_mutex_};
-          static_cast<void>(steam_controller_feature_state_.handle_set_feature(report_number, report));
+          std::lock_guard lock {steam_feature_.mutex};
+          static_cast<void>(steam_feature_.state.handle_set_feature(report_number, report));
         }
         dispatch_output_report(report);
       }
@@ -3747,8 +3757,8 @@ namespace lvh::detail {
       void dispatch_output_report(const std::vector<std::uint8_t> &report) {
         OutputCallback callback;
         {
-          std::lock_guard lock {callback_mutex_};
-          callback = output_callback_;
+          std::lock_guard lock {output_.mutex};
+          callback = output_.callback;
         }
 
         if (!callback) {
@@ -3814,8 +3824,8 @@ namespace lvh::detail {
               break;
           }
         } else if (profile_.gamepad_kind == GamepadProfileKind::steam_controller_2026) {
-          std::lock_guard lock {feature_mutex_};
-          if (const auto report = steam_controller_feature_state_.get_feature_report(report_number); report) {
+          std::lock_guard lock {steam_feature_.mutex};
+          if (const auto report = steam_feature_.state.get_feature_report(report_number); report) {
             event.u.get_report_reply.err = 0;
             copy_get_report_payload(event, *report);
           } else {
@@ -3857,7 +3867,7 @@ namespace lvh::detail {
       std::string physical_id_;
       std::string unique_id_;
       std::array<std::uint8_t, 6> playstation_mac_address_ {};
-      steam_controller_protocol::FeatureState steam_controller_feature_state_;
+      UhidSteamFeatureState steam_feature_;
       GamepadState last_state_;
       bool supports_battery_ = false;
       std::atomic_bool open_ = true;
@@ -3870,9 +3880,7 @@ namespace lvh::detail {
       bool reader_exited_ = false;
       std::mutex write_mutex_;
       std::mutex state_mutex_;
-      std::mutex callback_mutex_;
-      std::mutex feature_mutex_;
-      OutputCallback output_callback_;
+      UhidOutputState output_;
     };
 #endif
 

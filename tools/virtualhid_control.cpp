@@ -983,13 +983,26 @@ namespace {
     ControlApp(const ControlApp &) = delete;
     ControlApp &operator=(const ControlApp &) = delete;
 
-    void tick() {
+    bool tick(bool release_inputs) {
+      if (release_inputs) {
+        for (std::size_t index = 0; index < button_active_.size(); ++index) {
+          if (!button_active_[index]) {
+            continue;
+          }
+          button_active_[index] = false;
+          set_selected_button(index, false);
+        }
+        mouse_control_panel_.release_momentary_buttons(
+          [this](lvh::DeviceId id, const lvh::MouseEvent &event) {
+            submit_mouse_event(id, event);
+          }
+        );
+      }
+
       mouse_control_panel_.tick([this](lvh::DeviceId id, const lvh::MouseEvent &event) {
         submit_mouse_event(id, event);
       });
-    }
 
-    bool uses_keyboard_navigation() const {
       auto device_type = std::optional<lvh::DeviceType> {};
       {
         std::lock_guard lock {mutex_};
@@ -1000,21 +1013,6 @@ namespace {
         }
       }
       return keyboard_navigation_enabled(device_type.value_or(device_panel_.current_device_type()));
-    }
-
-    void release_momentary_inputs() {
-      for (std::size_t index = 0; index < button_active_.size(); ++index) {
-        if (!button_active_[index]) {
-          continue;
-        }
-        button_active_[index] = false;
-        set_selected_button(index, false);
-      }
-      mouse_control_panel_.release_momentary_buttons(
-        [this](lvh::DeviceId id, const lvh::MouseEvent &event) {
-          submit_mouse_event(id, event);
-        }
-      );
     }
 
     void render() {
@@ -1861,6 +1859,7 @@ namespace {
     ControlApp app;
     auto done = false;
     while (!done) {
+      auto release_momentary_inputs = false;
       SDL_Event event;
       while (SDL_PollEvent(&event)) {
         ImGui_ImplSDL3_ProcessEvent(&event);
@@ -1874,11 +1873,11 @@ namespace {
           (event.type == SDL_EVENT_WINDOW_FOCUS_LOST || event.type == SDL_EVENT_WINDOW_MOUSE_LEAVE) &&
           event.window.windowID == SDL_GetWindowID(window)
         ) {
-          app.release_momentary_inputs();
+          release_momentary_inputs = true;
         }
       }
 
-      app.tick();
+      const auto use_keyboard_navigation = app.tick(release_momentary_inputs);
 
       if ((SDL_GetWindowFlags(window) & SDL_WINDOW_MINIMIZED) != 0U) {
         SDL_Delay(10);
@@ -1887,7 +1886,7 @@ namespace {
 
       ImGui_ImplSDLRenderer3_NewFrame();
       ImGui_ImplSDL3_NewFrame();
-      if (app.uses_keyboard_navigation()) {
+      if (use_keyboard_navigation) {
         io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
       } else {
         io.ConfigFlags &= ~ImGuiConfigFlags_NavEnableKeyboard;

@@ -963,6 +963,27 @@ namespace lvh::detail::test {
       return {std::move(status), std::move(records)};
     }
 
+    void finish_uhid_output_roundtrip(
+      UhidGamepad &gamepad,
+      int peer_fd,
+      std::atomic_size_t &callback_count,
+      LinuxUhidRoundTripResult &result,
+      uhid_event &event
+    ) {
+      const auto output_deadline = std::chrono::steady_clock::now() + std::chrono::seconds {1};
+      while (std::chrono::steady_clock::now() < output_deadline && callback_count.load() < 2U) {
+        std::this_thread::sleep_for(std::chrono::milliseconds {10});
+      }
+      result.output.callback_count = callback_count.load();
+
+      result.close_status = gamepad.close();
+      if (read_uhid_event_type(peer_fd, UHID_DESTROY, event)) {
+        result.saw_destroy = true;
+      }
+
+      static_cast<void>(::close(peer_fd));
+    }
+
   }  // namespace
 
   std::string linux_copy_string_char_buffer(const std::string &source) {
@@ -1805,18 +1826,7 @@ namespace lvh::detail::test {
     std::copy(motor_report.begin(), motor_report.end(), event.u.output.data);
     static_cast<void>(write_uhid_event(descriptors[1], event));
 
-    const auto output_deadline = std::chrono::steady_clock::now() + std::chrono::seconds {1};
-    while (std::chrono::steady_clock::now() < output_deadline && callback_count.load() < 2U) {
-      std::this_thread::sleep_for(std::chrono::milliseconds {10});
-    }
-    result.output.callback_count = callback_count.load();
-
-    result.close_status = gamepad.close();
-    if (read_uhid_event_type(descriptors[1], UHID_DESTROY, event)) {
-      result.saw_destroy = true;
-    }
-
-    static_cast<void>(::close(descriptors[1]));
+    finish_uhid_output_roundtrip(gamepad, descriptors[1], callback_count, result, event);
     return result;
   }
 
@@ -2037,18 +2047,7 @@ namespace lvh::detail::test {
     std::ranges::copy(pulse_report, event.u.output.data);
     static_cast<void>(write_uhid_event(descriptors[1], event));
 
-    const auto output_deadline = std::chrono::steady_clock::now() + std::chrono::seconds {1};
-    while (std::chrono::steady_clock::now() < output_deadline && callback_count.load() < 2U) {
-      std::this_thread::sleep_for(std::chrono::milliseconds {10});
-    }
-    result.output.callback_count = callback_count.load();
-
-    result.close_status = gamepad.close();
-    if (read_uhid_event_type(descriptors[1], UHID_DESTROY, event)) {
-      result.saw_destroy = true;
-    }
-
-    static_cast<void>(::close(descriptors[1]));
+    finish_uhid_output_roundtrip(gamepad, descriptors[1], callback_count, result, event);
     return result;
   }
 

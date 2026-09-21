@@ -1114,6 +1114,138 @@ namespace lvh::reports {
       }
     }
 
+    GamepadHapticTarget steam_controller_haptic_target(std::uint8_t value) {
+      using enum GamepadHapticTarget;
+
+      switch (value) {
+        case 1:
+          return left;
+        case 2:
+          return right;
+        case 3:
+          return both;
+        default:
+          return none;
+      }
+    }
+
+    GamepadHapticEffectKind steam_controller_haptic_effect_kind(std::uint8_t value) {
+      using enum GamepadHapticEffectKind;
+
+      switch (value) {
+        case 1:
+          return tick;
+        case 2:
+          return click;
+        case 3:
+          return tone;
+        case 4:
+          return rumble;
+        case 5:
+          return noise;
+        case 6:
+          return script;
+        case 7:
+          return logarithmic_sweep;
+        default:
+          return off;
+      }
+    }
+
+    std::optional<GamepadHapticEffect> decode_steam_controller_haptic_effect(
+      const std::vector<std::uint8_t> &report
+    ) {
+      using enum GamepadHapticEffectKind;
+
+      if (report.empty()) {
+        return std::nullopt;
+      }
+
+      GamepadHapticEffect effect;
+      switch (report[0]) {
+        case 0x81U:
+          if (report.size() < 8U) {
+            return std::nullopt;
+          }
+          effect.target = steam_controller_haptic_target(report[1]);
+          effect.kind = pulse;
+          effect.duration_us = read_u16(report, 2U);
+          effect.interval_us = read_u16(report, 4U);
+          effect.repeat_count = read_u16(report, 6U);
+          break;
+        case 0x82U:
+          if (report.size() < 4U) {
+            return std::nullopt;
+          }
+          effect.target = steam_controller_haptic_target(report[1]);
+          effect.kind = steam_controller_haptic_effect_kind(report[2]);
+          effect.gain_db = static_cast<std::int8_t>(report[3]);
+          break;
+        case 0x83U:
+          if (report.size() < 10U) {
+            return std::nullopt;
+          }
+          effect.target = steam_controller_haptic_target(report[1]);
+          effect.kind = tone;
+          effect.gain_db = static_cast<std::int8_t>(report[2]);
+          effect.frequency_hz = read_u16(report, 3U);
+          effect.duration_us = static_cast<std::int32_t>(read_u16(report, 5U)) * 1000;
+          effect.lfo_frequency_hz = read_u16(report, 7U);
+          effect.lfo_depth_percent = report[9];
+          break;
+        case 0x84U:
+          if (report.size() < 9U) {
+            return std::nullopt;
+          }
+          effect.target = steam_controller_haptic_target(report[1]);
+          effect.kind = logarithmic_sweep;
+          effect.gain_db = static_cast<std::int8_t>(report[2]);
+          effect.duration_us = static_cast<std::int32_t>(read_u16(report, 3U)) * 1000;
+          effect.start_frequency_hz = read_u16(report, 5U);
+          effect.end_frequency_hz = read_u16(report, 7U);
+          break;
+        case 0x85U:
+          if (report.size() < 4U) {
+            return std::nullopt;
+          }
+          effect.target = steam_controller_haptic_target(report[1]);
+          effect.kind = script;
+          effect.script_id = report[2];
+          effect.gain_db = static_cast<std::int8_t>(report[3]);
+          break;
+        default:
+          return std::nullopt;
+      }
+      return effect;
+    }
+
+    std::optional<GamepadOutput> decode_steam_controller_output_report(
+      const std::vector<std::uint8_t> &report
+    ) {
+      if (report.empty()) {
+        return std::nullopt;
+      }
+
+      GamepadOutput output;
+      output.raw_report = report;
+      if (report[0] == 0x80U) {
+        if (report.size() < 10U) {
+          return std::nullopt;
+        }
+        output.kind = GamepadOutputKind::rumble;
+        output.low_frequency_rumble = read_u16(report, 4U);
+        output.high_frequency_rumble = read_u16(report, 7U);
+        return output;
+      }
+
+      if (const auto effect = decode_steam_controller_haptic_effect(report); effect.has_value()) {
+        output.kind = GamepadOutputKind::haptics;
+        output.haptic_effect = *effect;
+        return output;
+      }
+      return std::nullopt;
+    }
+
   }  // namespace
 
   float clamp_axis(float value) {
@@ -1537,95 +1669,9 @@ namespace lvh::reports {
   std::vector<GamepadOutput> parse_output_reports(const DeviceProfile &profile, const std::vector<std::uint8_t> &report) {
     std::vector<GamepadOutput> outputs;
 
-    if (profile.gamepad_kind == GamepadProfileKind::steam_controller_2026 && !report.empty()) {
-      const auto target = [](std::uint8_t value) {
-        switch (value) {
-          case 1:
-            return GamepadHapticTarget::left;
-          case 2:
-            return GamepadHapticTarget::right;
-          case 3:
-            return GamepadHapticTarget::both;
-          default:
-            return GamepadHapticTarget::none;
-        }
-      };
-      const auto effect_kind = [](std::uint8_t value) {
-        switch (value) {
-          case 1:
-            return GamepadHapticEffectKind::tick;
-          case 2:
-            return GamepadHapticEffectKind::click;
-          case 3:
-            return GamepadHapticEffectKind::tone;
-          case 4:
-            return GamepadHapticEffectKind::rumble;
-          case 5:
-            return GamepadHapticEffectKind::noise;
-          case 6:
-            return GamepadHapticEffectKind::script;
-          case 7:
-            return GamepadHapticEffectKind::logarithmic_sweep;
-          default:
-            return GamepadHapticEffectKind::off;
-        }
-      };
-
-      if (report[0] == 0x80U && report.size() >= 10U) {
-        GamepadOutput output;
-        output.kind = GamepadOutputKind::rumble;
-        output.low_frequency_rumble = read_u16(report, 4U);
-        output.high_frequency_rumble = read_u16(report, 7U);
-        output.raw_report = report;
-        outputs.push_back(std::move(output));
-        return outputs;
-      }
-
-      GamepadHapticEffect effect;
-      auto recognized = false;
-      if (report[0] == 0x81U && report.size() >= 8U) {
-        effect.target = target(report[1]);
-        effect.kind = GamepadHapticEffectKind::pulse;
-        effect.duration_us = read_u16(report, 2U);
-        effect.interval_us = read_u16(report, 4U);
-        effect.repeat_count = read_u16(report, 6U);
-        recognized = true;
-      } else if (report[0] == 0x82U && report.size() >= 4U) {
-        effect.target = target(report[1]);
-        effect.kind = effect_kind(report[2]);
-        effect.gain_db = static_cast<std::int8_t>(report[3]);
-        recognized = true;
-      } else if (report[0] == 0x83U && report.size() >= 10U) {
-        effect.target = target(report[1]);
-        effect.kind = GamepadHapticEffectKind::tone;
-        effect.gain_db = static_cast<std::int8_t>(report[2]);
-        effect.frequency_hz = read_u16(report, 3U);
-        effect.duration_us = static_cast<std::int32_t>(read_u16(report, 5U)) * 1000;
-        effect.lfo_frequency_hz = read_u16(report, 7U);
-        effect.lfo_depth_percent = report[9];
-        recognized = true;
-      } else if (report[0] == 0x84U && report.size() >= 9U) {
-        effect.target = target(report[1]);
-        effect.kind = GamepadHapticEffectKind::logarithmic_sweep;
-        effect.gain_db = static_cast<std::int8_t>(report[2]);
-        effect.duration_us = static_cast<std::int32_t>(read_u16(report, 3U)) * 1000;
-        effect.start_frequency_hz = read_u16(report, 5U);
-        effect.end_frequency_hz = read_u16(report, 7U);
-        recognized = true;
-      } else if (report[0] == 0x85U && report.size() >= 4U) {
-        effect.target = target(report[1]);
-        effect.kind = GamepadHapticEffectKind::script;
-        effect.script_id = report[2];
-        effect.gain_db = static_cast<std::int8_t>(report[3]);
-        recognized = true;
-      }
-
-      if (recognized) {
-        GamepadOutput output;
-        output.kind = GamepadOutputKind::haptics;
-        output.raw_report = report;
-        output.haptic_effect = effect;
-        outputs.push_back(std::move(output));
+    if (profile.gamepad_kind == GamepadProfileKind::steam_controller_2026) {
+      if (auto output = decode_steam_controller_output_report(report); output.has_value()) {
+        outputs.push_back(std::move(*output));
         return outputs;
       }
     }
