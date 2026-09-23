@@ -369,7 +369,13 @@ namespace lvh {
       return OperationStatus::failure(ErrorCode::invalid_argument, "touchpad contact index is out of range");
     }
 
-    state_.touchpad_contacts[index] = {};
+    // Keep the last position when lifting a finger. A Steam Controller host
+    // interprets the release report's pad axes as motion before contact ends;
+    // resetting them to (0, 0) would create a large artificial final delta.
+    auto &contact = state_.touchpad_contacts[index];
+    contact.id = 0;
+    contact.active = false;
+    contact.pressure = 0.0F;
     return submit();
   }
 

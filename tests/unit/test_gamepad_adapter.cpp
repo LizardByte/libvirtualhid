@@ -371,6 +371,9 @@ TEST(GamepadAdapterTest, ReplacesStateAndClearsOptionalInputs) {
   EXPECT_EQ(adapter.clear_touchpad_contact(2).code(), lvh::ErrorCode::invalid_argument);
   EXPECT_TRUE(adapter.clear_touchpad_contact(1).ok());
   EXPECT_FALSE(adapter.gamepad()->last_submitted_state().touchpad_contacts[1].active);
+  EXPECT_FLOAT_EQ(adapter.gamepad()->last_submitted_state().touchpad_contacts[1].x, contact.x);
+  EXPECT_FLOAT_EQ(adapter.gamepad()->last_submitted_state().touchpad_contacts[1].y, contact.y);
+  EXPECT_FLOAT_EQ(adapter.gamepad()->last_submitted_state().touchpad_contacts[1].pressure, 0.0F);
 }
 
 TEST(GamepadAdapterTest, MovesAdaptersAndClosesOwnedGamepadOnDestruction) {

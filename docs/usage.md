@@ -262,6 +262,8 @@ position and pressure. The pad clicks use `left_touchpad` and
 R5/L5. The profile also accepts `left_trigger_click`, `right_trigger_click`,
 the two stick-touch states, and the two grip-touch states in addition to the
 ordinary gamepad buttons, sticks, analog triggers, motion, and battery fields.
+Releasing a touchpad contact clears its active state and pressure while retaining
+its last position, avoiding a spurious full-pad motion on the release report.
 
 Steam Controller output report `0x80` is normalized to the ordinary `rumble`
 callback. Native reports `0x81` through `0x85` produce `haptics` callbacks with
