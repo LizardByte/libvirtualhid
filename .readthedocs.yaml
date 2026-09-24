@@ -8,7 +8,7 @@ version: 2
 build:
   os: ubuntu-24.04
   tools:
-    nodejs: "24"
+    nodejs: "25"
     python: "miniconda-latest"
   jobs:
     build:
