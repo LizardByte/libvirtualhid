@@ -124,6 +124,12 @@ TEST_F(WindowsBackendTest, SteamControllerStreamsNativeStateAndBatteryReports) {
   expect_ok(result.create_status);
   expect_ok(result.submit_status);
   EXPECT_TRUE(result.repeated_state_report);
+  expect_ok(result.right_pad_down_status);
+  expect_ok(result.right_pad_up_status);
+  EXPECT_TRUE(result.saw_right_pad_touch);
+  EXPECT_TRUE(result.saw_right_pad_release);
+  EXPECT_FALSE(result.state_report_submitted_on_caller_thread);
+  EXPECT_TRUE(result.battery_report_submitted_on_caller_thread);
   EXPECT_TRUE(result.saw_battery_report);
   expect_ok(result.close_status);
   EXPECT_EQ(result.device.device_type, LVH_WINDOWS_DEVICE_GAMEPAD);

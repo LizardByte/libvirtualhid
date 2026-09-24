@@ -92,6 +92,7 @@ namespace lvh::detail {
           return OperationStatus::failure(backend_failure, "unexpected submit session token");
         }
         submit_reports_.push_back(report);
+        submit_threads_.push_back(std::this_thread::get_id());
         return submit_status_;
       }
 
@@ -146,6 +147,11 @@ namespace lvh::detail {
         return submit_reports_;
       }
 
+      std::vector<std::thread::id> submit_threads() const {
+        std::lock_guard lock {mutex_};
+        return submit_threads_;
+      }
+
     private:
       bool session_token_matches(const LvhWindowsSessionToken &session_token) const {
         return std::ranges::equal(session_token.bytes, session_token_.bytes);
@@ -171,6 +177,7 @@ namespace lvh::detail {
       OperationStatus destroy_status_ = OperationStatus::success();
       std::vector<LvhWindowsCreateDeviceRequest> create_requests_;
       std::vector<std::vector<std::uint8_t>> submit_reports_;
+      std::vector<std::thread::id> submit_threads_;
       std::vector<std::uint64_t> destroyed_ids_;
       std::vector<LvhWindowsOutputReportEvent> output_events_;
     };
@@ -558,6 +565,7 @@ namespace lvh::detail {
 
     WindowsSteamControllerReportStreamResult windows_backend_steam_controller_report_stream() {
       WindowsSteamControllerReportStreamResult result;
+      const auto caller_thread = std::this_thread::get_id();
       auto command_state = std::make_shared<FakeWindowsControlChannelState>();
       auto event_state = std::make_shared<FakeWindowsControlChannelState>();
       auto backend = make_fake_windows_backend(command_state, event_state);
@@ -594,6 +602,29 @@ namespace lvh::detail {
                  }) >= 2;
         });
 
+        state.touchpad_contacts[1] = {.id = 2, .active = true, .x = 0.8F, .y = 0.3F, .pressure = 0.5F};
+        result.right_pad_down_status = created.gamepad->submit(state, reports::pack_input_report(options.profile, state));
+        result.saw_right_pad_touch = wait_until([&command_state] {
+          const auto submitted_reports = command_state->submit_reports();
+          return std::ranges::any_of(submitted_reports, [](const auto &submitted) {
+            return submitted.size() == steam_controller_protocol::state_report_size &&
+                   submitted[0] == 0x42U && (submitted[4] & 0x20U) != 0U;
+          });
+        });
+
+        state.touchpad_contacts[1].active = false;
+        state.touchpad_contacts[1].pressure = 0.0F;
+        const auto released_report = reports::pack_input_report(options.profile, state);
+        result.right_pad_up_status = created.gamepad->submit(state, released_report);
+        result.saw_right_pad_release = wait_until([&command_state, &released_report] {
+          const auto submitted_reports = command_state->submit_reports();
+          return std::ranges::any_of(submitted_reports, [&released_report](const auto &submitted) {
+            return submitted.size() == steam_controller_protocol::state_report_size &&
+                   submitted[0] == 0x42U && (submitted[4] & 0x20U) == 0U &&
+                   std::equal(submitted.begin() + 24, submitted.begin() + 30, released_report.begin() + 24);
+          });
+        });
+
         std::atomic_bool haptic_output_seen {false};
         created.gamepad->set_output_callback([&result, &haptic_output_seen](const GamepadOutput &output) {
           if (output.kind == GamepadOutputKind::haptics) {
@@ -625,6 +656,18 @@ namespace lvh::detail {
 
         result.close_status = created.gamepad->close();
         result.submitted_reports = command_state->submit_reports();
+        const auto submit_threads = command_state->submit_threads();
+        for (std::size_t index = 0; index < result.submitted_reports.size(); ++index) {
+          const auto &submitted = result.submitted_reports[index];
+          if (submit_threads[index] != caller_thread || submitted.empty()) {
+            continue;
+          }
+          if (submitted[0] == 0x42U) {
+            result.state_report_submitted_on_caller_thread = true;
+          } else if (submitted[0] == 0x43U) {
+            result.battery_report_submitted_on_caller_thread = true;
+          }
+        }
         result.saw_battery_report = std::ranges::any_of(result.submitted_reports, [](const auto &submitted) {
           return submitted.size() == steam_controller_protocol::battery_report_size &&
                  submitted[0] == 0x43U && submitted[1] == 1U && submitted[2] == 61U;

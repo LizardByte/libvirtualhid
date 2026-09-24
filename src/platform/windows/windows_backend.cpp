@@ -1560,7 +1560,7 @@ namespace lvh::detail {
       using enum ErrorCode;
 
       auto suppress_unchanged_report = false;
-      auto submit_steam_controller_report = false;
+      auto steam_controller_state_queued = false;
 
       {
         std::lock_guard lock {state_->mutex_};
@@ -1579,7 +1579,7 @@ namespace lvh::detail {
 
         if (state_->profile.gamepad_kind == GamepadProfileKind::steam_controller_2026) {
           state_->steam_controller_state = state;
-          submit_steam_controller_report = true;
+          steam_controller_state_queued = true;
         }
 
         if (state_->uses_generic_pid) {
@@ -1600,14 +1600,16 @@ namespace lvh::detail {
           state_->profile.gamepad_kind == GamepadProfileKind::xbox_series;
       }
 
-      if (submit_steam_controller_report) {
-        auto status = context_->submit_device_report(state_, report);
-        if (status.ok() && state.battery) {
+      if (steam_controller_state_queued) {
+        // The periodic stream matches the controller's native report cadence.
+        // Interleaving event-driven state reports can distort pad motion at
+        // touch release in downstream consumers such as Steam Input.
+        if (state.battery) {
           if (const auto battery_report = reports::pack_battery_report(state_->profile, *state.battery); battery_report) {
-            status = context_->submit_device_report(state_, *battery_report);
+            return context_->submit_device_report(state_, *battery_report);
           }
         }
-        return status;
+        return OperationStatus::success();
       }
 
       if (suppress_unchanged_report) {

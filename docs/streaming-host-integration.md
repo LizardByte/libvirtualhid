@@ -78,3 +78,11 @@ states instead of collapsing them into a generic controller packet. Forward
 retain the controller's actuator target and effect parameters. A host that has
 no extended haptic message may still forward `raw_report`, but should not
 reinterpret addressable effects as a two-motor rumble packet.
+
+On Windows, the 2026 Steam Controller backend queues state updates and emits
+native input reports at the controller's 4032-microsecond cadence. It does not
+interleave an extra report for each host input event; doing so can distort
+trackpad-release motion in Steam Input. Battery reports remain immediate, and
+other gamepad profiles retain their existing submission behavior. A successful
+state update means it was queued for the periodic stream, not that the driver
+has already accepted an input report.

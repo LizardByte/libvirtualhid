@@ -89,9 +89,15 @@ namespace lvh::detail::test {
   struct WindowsSteamControllerReportStreamResult {
     OperationStatus create_status;
     OperationStatus submit_status;
+    OperationStatus right_pad_down_status;
+    OperationStatus right_pad_up_status;
     OperationStatus close_status;
     WindowsHidCreatedDevice device;
     bool repeated_state_report = false;
+    bool saw_right_pad_touch = false;
+    bool saw_right_pad_release = false;
+    bool state_report_submitted_on_caller_thread = false;
+    bool battery_report_submitted_on_caller_thread = false;
     bool saw_battery_report = false;
     bool saw_haptic_output = false;
     GamepadOutput haptic_output;
