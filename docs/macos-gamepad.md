@@ -8,6 +8,8 @@ and continues to use CoreGraphics for keyboard and mouse input.
 The client checks root ownership of the broker directory, socket, and
 connected peer before exchanging versioned messages. Socket transfers handle
 partial reads and writes so truncated messages are not treated as complete.
+The root-owned broker directory permits local clients to reach its socket, and
+the broker applies the same machine-license gate to gamepad creation as Windows.
 
 The built-in generic, Xbox 360, Xbox One, Xbox Series, DualShock 4, DualSense,
 and Switch Pro profiles, including the explicit USB and Bluetooth PlayStation

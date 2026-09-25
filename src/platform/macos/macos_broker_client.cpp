@@ -103,7 +103,7 @@ namespace lvh::detail {
         if (callback_thread_.joinable()) {
           if (callback_thread_.get_id() == std::this_thread::get_id()) {
             // A callback may close its own gamepad; captured state outlives this thread.
-            callback_thread_.detach();
+            callback_thread_.detach();  // NOSONAR(cpp:S5962): a callback can close itself; its shared state outlives the thread.
           } else {
             callback_thread_.join();
           }

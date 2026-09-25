@@ -24,6 +24,7 @@
 #include <IOKit/hidsystem/IOHIDUserDevice.h>
 #include <libvirtualhid/types.hpp>
 #include <mach/mach_time.h>
+#include <memory>
 #include <mutex>
 #include <poll.h>
 #include <span>
@@ -364,14 +365,17 @@ int main() {
     return 1;
   }
   // New broker-owned files default to owner-only access.
-  ::umask(0077);
+  ::umask(0077);  // NOSONAR(cpp:S5849): this restricts newly created files to owner access.
   ::signal(SIGPIPE, SIG_IGN);
-  if (::mkdir("/var/run/libvirtualhid", 0755) != 0 && errno != EEXIST) {
+  if (::mkdir("/var/run/libvirtualhid", 0755) != 0 && errno != EEXIST) {  // NOSONAR(cpp:S2612): root owns the directory; others only need traversal.
     return 1;
   }
   struct stat directory {};
   // Clients need traverse access, while root alone can change this directory.
-  if (::lstat("/var/run/libvirtualhid", &directory) != 0 || !S_ISDIR(directory.st_mode) || directory.st_uid != 0 || ::chmod("/var/run/libvirtualhid", 0755) != 0) {
+  if (::lstat("/var/run/libvirtualhid", &directory) != 0 || !S_ISDIR(directory.st_mode) || directory.st_uid != 0) {
+    return 1;
+  }
+  if (::chmod("/var/run/libvirtualhid", 0755) != 0) {  // NOSONAR(cpp:S2612): root retains sole write access.
     return 1;
   }
   const int lock_fd = ::open("/var/run/libvirtualhid/broker.lock", O_CREAT | O_RDWR | O_NOFOLLOW, 0600);
@@ -388,11 +392,17 @@ int main() {
   constexpr std::string_view path {socket_path};
   static_assert(path.size() < sizeof(address.sun_path));
   std::ranges::copy(path, address.sun_path);
-  // Local unprivileged clients need to connect; licensing is enforced per request.
-  if (::bind(listener, reinterpret_cast<sockaddr *>(&address), sizeof(address)) != 0 || ::chmod(socket_path, 0666) != 0 || ::listen(listener, 32) != 0) {
+  if (::bind(listener, reinterpret_cast<sockaddr *>(&address), sizeof(address)) != 0) {  // NOSONAR(cpp:S3630): POSIX sockets require a sockaddr pointer for sockaddr_un.
     return 1;
   }
-  LicenseManager licenses;
+  // Local users need to connect, as with the Windows broker pipe; creation still needs a license.
+  if (::chmod(socket_path, 0666) != 0) {  // NOSONAR(cpp:S2612): only root can replace the socket in its directory.
+    return 1;
+  }
+  if (::listen(listener, 32) != 0) {
+    return 1;
+  }
+  auto licenses = std::make_shared<LicenseManager>();
   while (true) {
     const int client = ::accept(listener, nullptr, nullptr);
     if (client < 0) {
@@ -408,9 +418,9 @@ int main() {
       continue;
     }
     // Serve clients concurrently; a session can remain open for a game's lifetime.
-    std::jthread {[client, &licenses] {
-      serve_client(client, licenses);
-    }}.detach();
+    std::jthread {[client, licenses] {
+      serve_client(client, *licenses);
+    }}.detach();  // NOSONAR(cpp:S5962): gamepad sessions can outlive accept; shared ownership keeps licensing alive.
   }
   ::close(listener);
   return 1;
