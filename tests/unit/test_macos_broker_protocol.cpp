@@ -39,7 +39,7 @@ TEST(MacosBrokerProtocolTest, TransfersVersionedMessagesWithoutTruncation) {
   sent.data[1] = 0x01;
   sent.data[2] = 0x09;
   bool sent_ok = false;
-  std::thread sender {[&] {
+  std::jthread sender {[&sent_ok, &sockets, &sent] {
     sent_ok = lvh::detail::macos_broker::send_message(sockets[0], sent);
   }};
   lvh::detail::macos_broker::Message received;

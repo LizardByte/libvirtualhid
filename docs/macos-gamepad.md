@@ -5,6 +5,10 @@ root-owned broker. The broker alone calls Apple's `IOHIDUserDevice` API and hold
 the virtual HID entitlement. The ordinary C++ library has no Apple entitlement
 and continues to use CoreGraphics for keyboard and mouse input.
 
+The client checks root ownership of the broker directory, socket, and
+connected peer before exchanging versioned messages. Socket transfers handle
+partial reads and writes so truncated messages are not treated as complete.
+
 The built-in generic, Xbox 360, Xbox One, Xbox Series, DualShock 4, DualSense,
 and Switch Pro profiles, including the explicit USB and Bluetooth PlayStation
 variants, are accepted as HID descriptors. Their VID/PID, transport, input

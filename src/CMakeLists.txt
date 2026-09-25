@@ -101,7 +101,7 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
 if((APPLE OR CMAKE_SYSTEM_NAME STREQUAL "FreeBSD") AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     # Apple's and FreeBSD's libc++ keep std::jthread behind this switch on
     # toolchains used by CI. Consumers need the matching link option too.
-    target_compile_options(${PROJECT_NAME} PRIVATE -fexperimental-library)
+    target_compile_options(${PROJECT_NAME} PUBLIC -fexperimental-library)
     target_link_options(${PROJECT_NAME} PUBLIC -fexperimental-library)
 endif()
 if(MSVC AND LIBVIRTUALHID_BUILD_WINDOWS_DRIVER)
