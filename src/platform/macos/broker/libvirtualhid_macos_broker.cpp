@@ -41,14 +41,14 @@ namespace lvh::detail::macos_broker {
 
     namespace ps = playstation_feature_reports;
 
-    template<std::size_t Size>
-    void set_text(std::array<char, Size> &destination, const char *text) {
-      const auto length = std::min(std::strlen(text), destination.size() - 1U);
-      std::ranges::copy_n(text, length, destination.begin());
-      destination[length] = '\0';
+    template<std::size_t DestinationSize, std::size_t TextSize>
+    void set_text(std::array<char, DestinationSize> &destination, const char (&text)[TextSize]) {
+      static_assert(TextSize <= DestinationSize);
+      std::ranges::copy(text, destination.begin());
     }
 
-    Message response_with_error(lvh::ErrorCode code, const char *message) {
+    template<std::size_t MessageSize>
+    Message response_with_error(lvh::ErrorCode code, const char (&message)[MessageSize]) {
       Message response;
       response.type = MessageType::response;
       response.status = std::to_underlying(code);
