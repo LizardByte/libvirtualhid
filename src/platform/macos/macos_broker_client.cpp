@@ -11,9 +11,9 @@
 #include <algorithm>
 #include <chrono>
 #include <condition_variable>
-#include <cstdio>
 #include <cstring>
 #include <deque>
+#include <format>
 #include <libvirtualhid/license.hpp>
 #include <libvirtualhid/report.hpp>
 #include <mutex>
@@ -275,10 +275,11 @@ namespace lvh::detail {
     request.input_report_size = static_cast<std::uint32_t>(profile.input_report_size);
     request.output_report_size = static_cast<std::uint32_t>(profile.output_report_size);
     request.descriptor_size = static_cast<std::uint32_t>(profile.report_descriptor.size());
-    if (options.metadata.stable_id.empty()) {
-      std::snprintf(request.stable_id.data(), request.stable_id.size(), "02:00:%02x:%02x:%02x:%02x", static_cast<unsigned>((id >> 24U) & 0xFFU), static_cast<unsigned>((id >> 16U) & 0xFFU), static_cast<unsigned>((id >> 8U) & 0xFFU), static_cast<unsigned>(id & 0xFFU));
+    auto stable_id = options.metadata.stable_id;
+    if (stable_id.empty()) {
+      stable_id = std::format("02:00:{:02x}:{:02x}:{:02x}:{:02x}", (id >> 24U) & 0xFFU, (id >> 16U) & 0xFFU, (id >> 8U) & 0xFFU, id & 0xFFU);
     }
-    if (!copy_text(request.name, profile.name) || !copy_text(request.manufacturer, profile.manufacturer) || (!options.metadata.stable_id.empty() && !copy_text(request.stable_id, options.metadata.stable_id))) {
+    if (!copy_text(request.name, profile.name) || !copy_text(request.manufacturer, profile.manufacturer) || !copy_text(request.stable_id, stable_id)) {
       return {OperationStatus::failure(ErrorCode::invalid_argument, "macOS gamepad identity exceeds broker limit"), nullptr};
     }
     std::ranges::copy(profile.report_descriptor, request.data.begin());

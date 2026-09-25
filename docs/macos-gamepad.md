@@ -17,6 +17,8 @@ broker. Xbox 360 is an ordinary HID device on macOS; the Windows XUSB/XInput
 personality is Windows-specific. Individual games may use Apple's Game
 Controller framework or their own HID mappings, so a signed installed build
 still needs consumer testing for each profile.
+When metadata omits a stable ID, the client derives a locally administered
+`02:00:xx:xx:xx:xx` identifier from the device ID.
 
 ## What to do in Apple Developer
 
