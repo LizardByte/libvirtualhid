@@ -53,7 +53,7 @@ jobs:
             -DCMAKE_OSX_ARCHITECTURES='arm64;x86_64' \
             -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_DOCS=OFF \
-            -DBUILD_TESTS=OFF \
+            -DBUILD_TESTS=ON \
             -DLIBVIRTUALHID_BUILD_TOOLS=OFF \
             -DLIBVIRTUALHID_WARNINGS_AS_ERRORS=ON
 
@@ -67,6 +67,36 @@ jobs:
             xcrun lipo "${binary}" -verify_arch arm64
             xcrun lipo "${binary}" -verify_arch x86_64
           done
+
+      - name: Test broker policy and protocol
+        run: |
+          cmake-build-macos-universal/tests/test_libvirtualhid \
+            '--gtest_filter=BrokerLicensePolicyTest.*:GitHubActionsEvaluationTest.*:MacosBrokerProtocolTest.*'
+
+      - name: Smoke test broker and license IPC
+        run: |
+          broker=cmake-build-macos-universal/src/platform/macos/broker/VirtualHIDBroker.app/Contents/MacOS/VirtualHIDBroker
+          license_cli=cmake-build-macos-universal/src/platform/macos/broker/libvirtualhid-license
+          sudo -n env GITHUB_ACTIONS=true "${broker}" > "${RUNNER_TEMP}/virtualhid-broker.log" 2>&1 &
+          broker_pid=$!
+          trap 'sudo -n kill "${broker_pid}" 2>/dev/null || true' EXIT
+          ready=false
+          for attempt in {1..20}; do
+            if status_output="$("${license_cli}" status 2>&1)"; then
+              ready=true
+              break
+            fi
+            sleep 1
+          done
+          if [[ "${ready}" != true ]]; then
+            cat "${RUNNER_TEMP}/virtualhid-broker.log"
+            exit 1
+          fi
+          grep -F 'Plan: GitHub Actions Evaluation' <<< "${status_output}"
+          if "${license_cli}" validate >/dev/null 2>&1; then
+            echo 'Unlicensed validation unexpectedly succeeded' >&2
+            exit 1
+          fi
 
       - name: Import Developer ID certificate
         if: inputs.publish_release == 'true'

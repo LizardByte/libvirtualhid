@@ -4,6 +4,8 @@
 set -euo pipefail
 
 repository_root="$(cd "$(dirname "$0")/../.." && pwd)"
+bundle_id="dev.lizardbyte.app.libvirtualhid"
+launchd_plist="${bundle_id}.plist"
 build_directory="${1:-${repository_root}/cmake-build-macos-universal}"
 output_directory="${2:-${repository_root}/cmake-build-macos-universal/artifacts}"
 build_directory="$(cd "${build_directory}" && pwd)"
@@ -17,7 +19,7 @@ signing_identity="${APPLE_CODESIGN_IDENTITY:-}"
 
 if [[ -z "${signing_identity}" || -z "${profile_path}" || ! -f "${profile_path}" ||
       -z "${APPLE_ID:-}" || -z "${APPLE_TEAM_ID:-}" || -z "${APPLE_NOTARYTOOL_PASSWORD:-}" ]]; then
-  echo "A Developer ID identity, approved virtual HID profile, and Sunshine notarization credentials are required." >&2
+  echo "A Developer ID identity, approved virtual HID profile, and notarization credentials are required." >&2
   exit 1
 fi
 
@@ -27,7 +29,7 @@ DESTDIR="${image_root}" cmake --install "${build_directory}" --prefix /usr/local
 
 profile_details="${stage_directory}/profile.plist"
 /usr/bin/security cms -D -i "${profile_path}" > "${profile_details}"
-/usr/bin/python3 - "${profile_details}" "${APPLE_TEAM_ID}" <<'PY'
+/usr/bin/python3 - "${profile_details}" "${APPLE_TEAM_ID}" "${bundle_id}" <<'PY'
 import plistlib
 import sys
 
@@ -35,7 +37,7 @@ with open(sys.argv[1], "rb") as profile_file:
     profile = plistlib.load(profile_file)
 entitlements = profile.get("Entitlements", {})
 app_id = entitlements.get("com.apple.application-identifier", "")
-if app_id != f"{sys.argv[2]}.dev.lizardbyte.app.libvirtualhid":
+if app_id != f"{sys.argv[2]}.{sys.argv[3]}":
     raise SystemExit("Provisioning profile has the wrong App ID")
 if sys.argv[2] not in profile.get("TeamIdentifier", []):
     raise SystemExit("Provisioning profile belongs to another Apple team")
@@ -55,7 +57,7 @@ cp "${profile_path}" "${broker_app}/Contents/embedded.provisionprofile"
   "${image_root}/usr/local/bin/libvirtualhid-license"
 
 cp "${repository_root}/scripts/macos/install.command" "${image_root}/Install libvirtualhid.command"
-cp "${repository_root}/scripts/macos/dev.lizardbyte.app.libvirtualhid.plist" "${image_root}/"
+cp "${repository_root}/scripts/macos/${launchd_plist}" "${image_root}/"
 cp "${repository_root}/LICENSE.md" "${image_root}/"
 cp -R "${repository_root}/LICENSES" "${image_root}/"
 
