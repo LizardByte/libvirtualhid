@@ -133,6 +133,16 @@ if [[ -n "${p12_path}" ]]; then
   /usr/bin/security import "${p12_path}" -k "${temporary_keychain}" \
     -P "${APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_P12_PASSWORD}" \
     -T /usr/bin/codesign || fail "Could not import the Developer ID .p12 file"
+  intermediate_certificate="${temporary_directory}/DeveloperIDG2CA.cer"
+  /usr/bin/curl --fail --location --silent --show-error \
+    --output "${intermediate_certificate}" \
+    https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer \
+    || fail "Could not download Apple's Developer ID G2 intermediate certificate"
+  intermediate_sha256="$(/usr/bin/shasum -a 256 "${intermediate_certificate}" | /usr/bin/awk '{print $1}')"
+  [[ "${intermediate_sha256}" == f16cd3c54c7f83cea4bf1a3e6a0819c8aaa8e4a1528fd144715f350643d2df3a ]] \
+    || fail "Apple's Developer ID G2 intermediate certificate did not match the expected digest"
+  /usr/bin/security add-certificates -k "${temporary_keychain}" "${intermediate_certificate}" \
+    || fail "Could not import Apple's Developer ID G2 intermediate certificate"
   /usr/bin/security set-key-partition-list -S apple-tool:,apple: -s \
     -k "${keychain_password}" "${temporary_keychain}" > /dev/null \
     || fail "Could not grant codesign access to the temporary Keychain"
