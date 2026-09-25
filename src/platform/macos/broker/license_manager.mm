@@ -53,9 +53,7 @@ namespace lvh::detail::macos_broker {
     NSDictionary *read_protected_json(const char *path) {
       struct stat directory {};
       struct stat info {};
-      if (::lstat(state_directory, &directory) != 0 || !S_ISDIR(directory.st_mode) || directory.st_uid != 0 ||
-          (directory.st_mode & 0077) != 0 ||
-          ::lstat(path, &info) != 0 || !S_ISREG(info.st_mode) || info.st_uid != 0 || (info.st_mode & 0077) != 0) {
+      if (::lstat(state_directory, &directory) != 0 || !S_ISDIR(directory.st_mode) || directory.st_uid != 0 || (directory.st_mode & 0077) != 0 || ::lstat(path, &info) != 0 || !S_ISREG(info.st_mode) || info.st_uid != 0 || (info.st_mode & 0077) != 0) {
         return nil;
       }
       NSData *data = [NSData dataWithContentsOfFile:@(path)];
@@ -75,8 +73,7 @@ namespace lvh::detail::macos_broker {
         return false;
       }
       struct stat directory {};
-      if (::lstat(state_directory, &directory) != 0 || !S_ISDIR(directory.st_mode) || directory.st_uid != 0 ||
-          ::chmod(state_directory, 0700) != 0) {
+      if (::lstat(state_directory, &directory) != 0 || !S_ISDIR(directory.st_mode) || directory.st_uid != 0 || ::chmod(state_directory, 0700) != 0) {
         return false;
       }
       NSData *data = [NSJSONSerialization dataWithJSONObject:json options:0 error:&error];
@@ -205,9 +202,7 @@ namespace lvh::detail::macos_broker {
         state.customer_email = from_ns(json_string(saved, @"customer_email"));
         state.activation_limit = [saved[@"activation_limit"] unsignedIntValue];
         bool yearly = false;
-        if (!state.key.empty() && !state.activation_id.empty() && state.status == "granted" &&
-            state.organization_id == windows::broker_config::polar_organization_id &&
-            allowed_benefit(state.benefit_id, yearly)) {
+        if (!state.key.empty() && !state.activation_id.empty() && state.status == "granted" && state.organization_id == windows::broker_config::polar_organization_id && allowed_benefit(state.benefit_id, yearly)) {
           state_ = std::move(state);
         }
       }
@@ -240,8 +235,7 @@ namespace lvh::detail::macos_broker {
   }
 
   bool LicenseManager::licensed_locked() const {
-    if (!state_ || state_->status != "granted" ||
-        state_->organization_id != windows::broker_config::polar_organization_id) {
+    if (!state_ || state_->status != "granted" || state_->organization_id != windows::broker_config::polar_organization_id) {
       return false;
     }
     bool yearly = false;
@@ -322,9 +316,7 @@ namespace lvh::detail::macos_broker {
         state.customer_email = from_ns(json_string(customer, @"email"));
       }
       bool yearly = false;
-      if (state.activation_id.empty() || state.status != "granted" ||
-          state.organization_id != windows::broker_config::polar_organization_id ||
-          !allowed_benefit(state.benefit_id, yearly)) {
+      if (state.activation_id.empty() || state.status != "granted" || state.organization_id != windows::broker_config::polar_organization_id || !allowed_benefit(state.benefit_id, yearly)) {
         response.status = static_cast<int>(ErrorCode::license_invalid);
         set_text(response.message, "License organization, benefit, or activation is not allowed");
         return response;
@@ -401,9 +393,7 @@ namespace lvh::detail::macos_broker {
       const auto new_organization = from_ns(json_string(result.body, @"organization_id"));
       const auto new_benefit = from_ns(json_string(result.body, @"benefit_id"));
       bool yearly = false;
-      if (from_ns(activation_id) != state.activation_id || new_status != "granted" ||
-          new_organization != windows::broker_config::polar_organization_id ||
-          !allowed_benefit(new_benefit, yearly)) {
+      if (from_ns(activation_id) != state.activation_id || new_status != "granted" || new_organization != windows::broker_config::polar_organization_id || !allowed_benefit(new_benefit, yearly)) {
         {
           std::lock_guard lock {mutex_};
           state_.reset();

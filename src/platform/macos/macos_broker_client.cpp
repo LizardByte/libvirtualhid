@@ -38,8 +38,7 @@ namespace lvh::detail {
     }
 
     OperationStatus response_status(const macos_broker::Message &response) {
-      if (response.type != macos_broker::MessageType::response ||
-          response.status < 0 || response.status > static_cast<int>(ErrorCode::backend_failure)) {
+      if (response.type != macos_broker::MessageType::response || response.status < 0 || response.status > static_cast<int>(ErrorCode::backend_failure)) {
         return OperationStatus::failure(ErrorCode::backend_failure, "macOS broker returned an invalid response");
       }
       if (response.status == 0) {
@@ -181,8 +180,7 @@ namespace lvh::detail {
               response_ready_ = true;
             }
             response_condition_.notify_all();
-          } else if (event.type == macos_broker::MessageType::output &&
-                     event.size > 0 && event.size <= macos_broker::max_report_size) {
+          } else if (event.type == macos_broker::MessageType::output && event.size > 0 && event.size <= macos_broker::max_report_size) {
             {
               std::lock_guard lock {callback_state_->mutex};
               if (callback_state_->reports.size() < 64U) {
@@ -254,10 +252,7 @@ namespace lvh::detail {
 
   BackendGamepadCreationResult create_macos_brokered_gamepad(DeviceId id, const CreateGamepadOptions &options) {
     const auto &profile = options.profile;
-    if (profile.device_type != DeviceType::gamepad || profile.report_descriptor.empty() ||
-        profile.report_descriptor.size() > macos_broker::max_descriptor_size ||
-        profile.input_report_size == 0 || profile.input_report_size > macos_broker::max_report_size ||
-        profile.output_report_size > macos_broker::max_report_size) {
+    if (profile.device_type != DeviceType::gamepad || profile.report_descriptor.empty() || profile.report_descriptor.size() > macos_broker::max_descriptor_size || profile.input_report_size == 0 || profile.input_report_size > macos_broker::max_report_size || profile.output_report_size > macos_broker::max_report_size) {
       return {OperationStatus::failure(ErrorCode::unsupported_profile, "macOS broker requires a valid gamepad HID descriptor and report sizes"), nullptr};
     }
     macos_broker::Message request;
@@ -274,8 +269,7 @@ namespace lvh::detail {
     if (options.metadata.stable_id.empty()) {
       std::snprintf(request.stable_id.data(), request.stable_id.size(), "02:00:%02x:%02x:%02x:%02x", static_cast<unsigned>((id >> 24U) & 0xFFU), static_cast<unsigned>((id >> 16U) & 0xFFU), static_cast<unsigned>((id >> 8U) & 0xFFU), static_cast<unsigned>(id & 0xFFU));
     }
-    if (!copy_text(request.name, profile.name) || !copy_text(request.manufacturer, profile.manufacturer) ||
-        (!options.metadata.stable_id.empty() && !copy_text(request.stable_id, options.metadata.stable_id))) {
+    if (!copy_text(request.name, profile.name) || !copy_text(request.manufacturer, profile.manufacturer) || (!options.metadata.stable_id.empty() && !copy_text(request.stable_id, options.metadata.stable_id))) {
       return {OperationStatus::failure(ErrorCode::invalid_argument, "macOS gamepad identity exceeds broker limit"), nullptr};
     }
     std::copy(profile.report_descriptor.begin(), profile.report_descriptor.end(), request.data.begin());
@@ -312,8 +306,7 @@ namespace lvh {
   LicenseResult activate_license(std::string_view license_key, std::string_view instance_name) {
     detail::macos_broker::Message request;
     request.type = detail::macos_broker::MessageType::activate;
-    if (license_key.empty() || !detail::copy_text(request.license_key, license_key) ||
-        !detail::copy_text(request.instance_name, instance_name)) {
+    if (license_key.empty() || !detail::copy_text(request.license_key, license_key) || !detail::copy_text(request.instance_name, instance_name)) {
       LicenseResult result;
       result.status = OperationStatus::failure(ErrorCode::invalid_argument, "invalid macOS license key or instance name");
       result.license.message = result.status.message();
