@@ -6,6 +6,7 @@
 #include "platform/macos/macos_broker_client.hpp"
 
 #include "platform/macos/broker/io.hpp"
+#include "platform/macos/macos_xbox_transport.hpp"
 #include "platform/shared/lvh_broker_license_policy.hpp"
 
 #include <algorithm>
@@ -49,9 +50,10 @@ namespace lvh::detail {
 
     class MacosGamepad final: public BackendGamepad {
     public:
-      MacosGamepad(int fd, DeviceProfile profile):
+      MacosGamepad(int fd, DeviceProfile profile, bool xbox_transport):
           fd_ {fd},
           profile_ {std::move(profile)},
+          xbox_transport_ {xbox_transport},
           reader_ {[this, fd] {
             read_loop(fd);
           }},
@@ -63,14 +65,18 @@ namespace lvh::detail {
         static_cast<void>(close());
       }
 
-      OperationStatus submit(const GamepadState & /*state*/, const std::vector<std::uint8_t> &report) override {
-        if (report.empty() || report.size() > macos_broker::max_report_size) {
+      OperationStatus submit(const GamepadState &state, const std::vector<std::uint8_t> &report) override {
+        const auto xbox_report = xbox_transport_ ?
+                                   macos::xbox_transport_input_report(state) :
+                                   std::vector<std::uint8_t> {};
+        const auto &transport_report = xbox_transport_ ? xbox_report : report;
+        if (transport_report.empty() || transport_report.size() > macos_broker::max_report_size) {
           return OperationStatus::failure(ErrorCode::invalid_argument, "macOS gamepad report exceeds broker limit");
         }
         macos_broker::Message request;
         request.type = macos_broker::MessageType::submit;
-        request.size = static_cast<std::uint32_t>(report.size());
-        std::ranges::copy(report, request.data.begin());
+        request.size = static_cast<std::uint32_t>(transport_report.size());
+        std::ranges::copy(transport_report, request.data.begin());
         return call(request);
       }
 
@@ -213,6 +219,7 @@ namespace lvh::detail {
 
       int fd_;
       DeviceProfile profile_;
+      bool xbox_transport_;
       std::shared_ptr<CallbackState> callback_state_ = std::make_shared<CallbackState>();
       std::jthread reader_;
       std::jthread callback_thread_;
@@ -260,7 +267,7 @@ namespace lvh::detail {
   }  // namespace
 
   BackendGamepadCreationResult create_macos_brokered_gamepad(DeviceId id, const CreateGamepadOptions &options) {
-    const auto &profile = options.profile;
+    const auto profile = macos::xbox_transport_profile(options.profile);
     if (profile.device_type != DeviceType::gamepad || profile.report_descriptor.empty() || profile.report_descriptor.size() > macos_broker::max_descriptor_size || profile.input_report_size == 0 || profile.input_report_size > macos_broker::max_report_size || profile.output_report_size > macos_broker::max_report_size) {
       return {OperationStatus::failure(ErrorCode::unsupported_profile, "macOS broker requires a valid gamepad HID descriptor and report sizes"), nullptr};
     }
@@ -302,7 +309,7 @@ namespace lvh::detail {
     }
     timeval no_receive_timeout {.tv_sec = 0, .tv_usec = 0};
     static_cast<void>(::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &no_receive_timeout, sizeof(no_receive_timeout)));
-    return {OperationStatus::success(), std::make_unique<MacosGamepad>(fd, profile)};
+    return {OperationStatus::success(), std::make_unique<MacosGamepad>(fd, profile, macos::uses_xbox_transport(options.profile))};
   }
 
 }  // namespace lvh::detail

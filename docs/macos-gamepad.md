@@ -13,12 +13,17 @@ the broker checks the machine license before gamepad creation.
 
 The built-in generic, Xbox 360, Xbox One, Xbox Series, DualShock 4, DualSense,
 and Switch Pro profiles, including the explicit USB and Bluetooth PlayStation
-variants, are accepted as HID descriptors. Their VID/PID, transport, input
-reports, output reports, and PlayStation feature reports are carried through the
-broker. Xbox 360 is an ordinary HID device on macOS; the Windows XUSB/XInput
-personality is Windows-specific. Individual games may use Apple's Game
-Controller framework or their own HID mappings, so a signed installed build
-still needs consumer testing for each profile.
+variants, are accepted. The macOS broker receives the selected transport's HID
+descriptor and reports. The Xbox profiles use an Xbox 360-compatible USB HID
+identity (`045e:028e`, version `0114`) on macOS because Steam's macOS mapping
+for that identity expects fifteen mapped buttons, including D-pad buttons. A
+sixteenth HID button carries Xbox Series Share when the client supplies it.
+Xbox One and Xbox Series therefore appear as Xbox 360-compatible controllers to
+macOS HID consumers; their public API button, stick, and trigger states are
+translated for that transport. The Windows XUSB/XInput personality is
+Windows-specific. Individual games may use Apple's Game Controller framework
+or their own HID mappings, so a signed installed build still needs consumer
+testing for each profile.
 When metadata omits a stable ID, the client derives a locally administered
 `02:00:xx:xx:xx:xx` identifier from the device ID.
 
