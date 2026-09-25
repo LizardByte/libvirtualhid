@@ -17,6 +17,14 @@ fail() {
   exit 1
 }
 
+package_only=false
+case "${1:-}" in
+  '') ;;
+  --package-only) package_only=true ;;
+  *) fail 'Usage: build-and-install.sh [--package-only]' ;;
+esac
+[[ $# -le 1 ]] || fail 'Usage: build-and-install.sh [--package-only]'
+
 cleanup() {
   if [[ -n "${mounted_image}" ]]; then
     /usr/bin/hdiutil detach -quiet "${mounted_image}" || true
@@ -134,7 +142,8 @@ fi
 if [[ -z "${APPLE_CODESIGN_IDENTITY:-}" ]]; then
   identity_matches="$(/usr/bin/security find-identity -v -p codesigning | \
     /usr/bin/awk -v team="(${APPLE_TEAM_ID})" \
-      'index($0, "Developer ID Application:") && index($0, team) {print $2}')"
+      'index($0, "Developer ID Application:") && index($0, team) {print $2}' | \
+    /usr/bin/sort -u)"
   identity_count="$(printf '%s\n' "${identity_matches}" | /usr/bin/awk 'NF {count++} END {print count+0}')"
   [[ "${identity_count}" == 1 ]] || fail \
     "Expected one Developer ID Application identity for team ${APPLE_TEAM_ID}, found ${identity_count}. Set APPLE_CODESIGN_IDENTITY if you have more than one, or supply the .p12 file."
@@ -144,15 +153,18 @@ fi
 if ! /usr/bin/xcodebuild -version > /dev/null 2>&1; then
   [[ -d /Applications/Xcode.app/Contents/Developer ]] \
     || fail "Install Xcode from the App Store before running this script"
-  echo 'Selecting the installed Xcode; macOS may ask for your administrator password...'
-  /usr/bin/sudo /usr/bin/xcode-select --switch /Applications/Xcode.app/Contents/Developer
+  export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
   /usr/bin/xcodebuild -version > /dev/null 2>&1 \
     || fail "Open Xcode once to finish its setup, then rerun this script"
 fi
 if ! command -v cmake > /dev/null 2>&1; then
-  command -v brew > /dev/null 2>&1 || fail "Install CMake or Homebrew before running this script"
-  echo 'Installing CMake with Homebrew...'
-  brew install cmake
+  if [[ -x "${repository_root}/.venv/bin/cmake" ]]; then
+    export PATH="${repository_root}/.venv/bin:${PATH}"
+  else
+    command -v brew > /dev/null 2>&1 || fail "Install CMake or Homebrew before running this script"
+    echo 'Installing CMake with Homebrew...'
+    brew install cmake
+  fi
 fi
 
 echo 'Updating submodules...'
@@ -180,6 +192,12 @@ echo 'Signing and notarizing the DMG; Apple may take several minutes...'
   "${build_directory}/artifacts"
 disk_image="${build_directory}/artifacts/libvirtualhid-macOS-universal.dmg"
 [[ -s "${disk_image}" ]] || fail "The DMG was not created"
+
+if [[ "${package_only}" == true ]]; then
+  echo "Signed and notarized PR build from $(git -C "${repository_root}" rev-parse --short HEAD)."
+  echo "DMG: ${disk_image}"
+  exit 0
+fi
 
 mounted_image="${temporary_directory}/mounted-dmg"
 /bin/mkdir -p "${mounted_image}"

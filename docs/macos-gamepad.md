@@ -102,14 +102,17 @@ open -e .env
 bash scripts/macos/build-and-install.sh
 ```
 
-The script selects Xcode, installs CMake through Homebrew if needed, imports
-the certificate into a temporary Keychain, builds and tests universal binaries,
-signs and notarizes the DMG, and installs it. It removes the temporary Keychain
-afterward. The approved profile must be for
-`dev.lizardbyte.app.libvirtualhid`; a profile for another bundle ID fails
-before the build. The certificate and profile are necessary even when System
-Integrity Protection is disabled. A locally built unsigned broker can test IPC
-and licensing, but cannot establish that virtual gamepad creation works.
+The script uses the installed Xcode, finds CMake in the project `.venv` or
+installs it through Homebrew if needed, imports the certificate into a temporary
+Keychain, builds and tests universal binaries, signs and notarizes the DMG, and
+installs it. It removes the temporary Keychain afterward. The approved profile
+must be for `dev.lizardbyte.app.libvirtualhid`; a profile for another bundle
+ID fails before the build. The certificate and profile are necessary even when
+System Integrity Protection is disabled. A locally built unsigned broker can
+test IPC and licensing, but cannot establish that virtual gamepad creation works.
+
+Run `bash scripts/macos/build-and-install.sh --package-only` to create the
+signed DMG without installing it.
 
 After installation, activate a license if needed, then test each gamepad
 profile in a macOS consumer.
