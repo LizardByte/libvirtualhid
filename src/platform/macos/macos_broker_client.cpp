@@ -205,8 +205,8 @@ namespace lvh::detail {
       int fd_;
       DeviceProfile profile_;
       std::shared_ptr<CallbackState> callback_state_;
-      std::thread reader_;
-      std::thread callback_thread_;
+      std::jthread reader_;
+      std::jthread callback_thread_;
       std::mutex call_mutex_;
       std::mutex mutex_;
       std::condition_variable response_condition_;

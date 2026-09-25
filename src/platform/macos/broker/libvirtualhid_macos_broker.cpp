@@ -395,7 +395,7 @@ int main() {
       ::close(client);
       continue;
     }
-    std::thread {[client, &licenses] {
+    std::jthread {[client, &licenses] {
       serve_client(client, licenses);
     }}.detach();
   }
