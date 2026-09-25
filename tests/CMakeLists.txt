@@ -83,6 +83,7 @@ elseif(WIN32)
 elseif(APPLE)
     list(APPEND LIBVIRTUALHID_TEST_SOURCES
          "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/macos_backend_test_hooks.cpp"
+         "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_macos_broker_protocol.cpp"
          "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_macos_backend.cpp")
 endif()
 

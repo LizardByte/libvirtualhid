@@ -1,7 +1,7 @@
 # License Map
 
 `libvirtualhid` uses separate licenses for the cross-platform library and the
-Windows driver package.
+Windows driver and macOS broker packages.
 
 - LB-SAL 1.0 SPDX custom identifier: `LicenseRef-LizardByte-SAL-1.0`.
 - Cross-platform library source, public headers, non-driver backends, examples,
@@ -15,8 +15,12 @@ Windows driver package.
   [LizardByte Source-Available License 1.0](https://github.com/LizardByte/libvirtualhid/blob/master/LICENSES/LicenseRef-LizardByte-SAL-1.0.md).
 - Generated Windows driver package artifacts, including the driver MSI:
   [LizardByte Source-Available License 1.0](https://github.com/LizardByte/libvirtualhid/blob/master/LICENSES/LicenseRef-LizardByte-SAL-1.0.md).
+- macOS broker source under `src/platform/macos/broker/`, plus generated macOS
+  broker bundles and DMGs:
+  [LizardByte Source-Available License 1.0](https://github.com/LizardByte/libvirtualhid/blob/master/LICENSES/LicenseRef-LizardByte-SAL-1.0.md).
 
 Every installed library distribution includes the MIT notice under
 `share/licenses/libvirtualhid`. The Windows driver MSI may include MIT-licensed
 helper components from this repository; packaged installs include both license
-texts for that reason.
+texts for that reason. The macOS broker DMG likewise includes the MIT library
+and the LB-SAL broker, with both license texts.

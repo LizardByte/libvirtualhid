@@ -17,13 +17,13 @@
 </div>
 
 <div align="center">
-  <h2>🎮 Windows Virtual HID Driver License</h2>
+  <h2>🎮 Virtual HID Gamepad License</h2>
   <p>
-    <strong>A license is required to create virtual gamepads, keyboards, or Raw Input-visible mice with the Windows driver.</strong><br>
-    This requirement is Windows-only; non-Windows backends do not currently require a license.<br>
+    <strong>A license is required for Windows driver-backed devices and macOS virtual gamepads.</strong><br>
+    Linux and FreeBSD backends do not currently require a license.<br>
     Yearly and lifetime options are available.
   </p>
-  <a href="https://buy.polar.sh/polar_cl_zj6Io5NVukXfZSl97ULtFvImfI5L1jbL2cSnc0Y72Pt"><img src="https://img.shields.io/badge/Buy_a_Windows_license-0078D4?logo=windows11&logoColor=white&style=for-the-badge" alt="Buy a Windows license"></a>
+  <a href="https://buy.polar.sh/polar_cl_zj6Io5NVukXfZSl97ULtFvImfI5L1jbL2cSnc0Y72Pt"><img src="https://img.shields.io/badge/Buy_a_virtual_HID_license-0078D4?style=for-the-badge" alt="Buy a virtual HID license"></a>
 </div>
 
 # Overview
@@ -53,6 +53,9 @@ companion stay behind backend implementations.
   UMDF2 drivers. Xbox 360 uses a broker-owned XUSB software-device personality;
   the other profiles use Virtual HID Framework. Win32 keyboard and mouse
   fallbacks remain available when the licensed driver path is unavailable.
+- macOS gamepads through a licensed, entitlement-bearing user-space HID broker.
+  The generic, Xbox, PlayStation, and Switch Pro HID profiles use the same
+  public API; keyboard and mouse input continue through CoreGraphics.
 - Output callbacks for profile-specific feedback such as ordinary and trigger
   rumble, RGB and player LEDs, adaptive triggers, and raw HID output reports
   when available.
@@ -115,9 +118,8 @@ user-space kernel interfaces. Windows remains user-mode: the C++ library talks
 to a broker and UMDF2 package. The package publishes Xbox 360 through XUSB and
 VHF together, and publishes the other gamepads, keyboards, and mice through
 VHF.
-macOS currently provides a limited CoreGraphics synthetic-input backend for
-keyboard and mouse only. It is not a virtual-HID backend and does not yet
-support gamepads; native macOS virtual-HID gamepad support is planned.
+macOS gamepad support requires the signed broker app and an Apple-approved
+virtual HID entitlement. See [macOS gamepad setup](docs/macos-gamepad.md).
 
 The library is designed around gamepad use first because remote streaming hosts
 are the first consumer class. Non-gamepad device types are available through the
@@ -188,8 +190,8 @@ test app path and does not currently advertise an ARM64 build.
 
 The cross-platform `libvirtualhid` library is licensed under the
 [MIT License](https://github.com/LizardByte/libvirtualhid/blob/master/LICENSES/MIT.md).
-The Windows UMDF driver, broker, proprietary entitlement/evaluation sources,
-and generated Windows driver package artifacts, including the driver MSI, are
+The Windows UMDF driver, Windows and macOS brokers, proprietary
+entitlement/evaluation sources, and generated driver package artifacts are
 licensed under the
 [LizardByte Source-Available License 1.0](https://github.com/LizardByte/libvirtualhid/blob/master/LICENSES/LicenseRef-LizardByte-SAL-1.0.md)
 (LB-SAL 1.0). The root

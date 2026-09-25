@@ -304,7 +304,11 @@ jobs:
             -S .
 
       - name: Build
-        run: cmake --build cmake-build-ci --config ${{ env.CMAKE_BUILD_CONFIG }} --parallel 2
+        run: >-
+          cmake
+          -DLIBVIRTUALHID_BUILD_DIRECTORY=cmake-build-ci
+          -DLIBVIRTUALHID_BUILD_CONFIG=${{ env.CMAKE_BUILD_CONFIG }}
+          -P cmake/build_with_max_jobs.cmake
 
       - name: Download Windows driver installer artifact
         if: runner.os == 'Windows'
@@ -598,7 +602,7 @@ jobs:
       - name: Build and install FreeBSD package
         if: matrix.kind == 'freebsd'
         run: |
-          cmake --build cmake-build-package --parallel 2
+          cmake --build cmake-build-package --parallel "$(sysctl -n hw.ncpu)"
           cmake --install cmake-build-package
           test ! -d cmake-build-package/install/lib/cmake/lizardbyte-common
 
@@ -616,7 +620,7 @@ jobs:
             -B cmake-build-package-consumer \
             -G Ninja \
             -S tests/package-consumer
-          cmake --build cmake-build-package-consumer --parallel 2
+          cmake --build cmake-build-package-consumer --parallel "$(sysctl -n hw.ncpu)"
 
       - name: Upload report artifact
         if: >-
@@ -676,7 +680,7 @@ jobs:
 
       - name: Build and install package
         run: |
-          cmake --build cmake-build-package --parallel 2
+          cmake --build cmake-build-package --parallel "$(nproc)"
           cmake --install cmake-build-package
           test ! -d cmake-build-package/install/lib/cmake/lizardbyte-common
 
@@ -691,4 +695,4 @@ jobs:
             -B cmake-build-package-consumer \
             -G Ninja \
             -S tests/package-consumer
-          cmake --build cmake-build-package-consumer --parallel 2
+          cmake --build cmake-build-package-consumer --parallel "$(nproc)"

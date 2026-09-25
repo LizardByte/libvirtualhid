@@ -204,6 +204,8 @@ battery or LED data.
 2. Confirm that controller input is enabled in Sunshine.
 3. On Windows, check the Virtual HID Driver version and license status on
    Sunshine's **Troubleshooting** page.
+   On macOS, check that the signed broker is running and its machine license
+   is active; see [macOS gamepad setup](macos-gamepad.md).
 4. End and reconnect the stream, then check whether the host operating system
    sees a newly created controller.
 5. Review the Sunshine log for controller creation, driver, permission, or
