@@ -77,11 +77,11 @@ jobs:
         run: |
           broker=cmake-build-macos-universal/src/platform/macos/broker/VirtualHIDBroker.app/Contents/MacOS/VirtualHIDBroker
           license_cli=cmake-build-macos-universal/src/platform/macos/broker/libvirtualhid-license
-          sudo -n env GITHUB_ACTIONS=true "${broker}" > "${RUNNER_TEMP}/virtualhid-broker.log" 2>&1 &
+          sudo -n env GITHUB_ACTIONS=true "${broker}" &
           broker_pid=$!
           trap 'sudo -n kill "${broker_pid}" 2>/dev/null || true' EXIT
           ready=false
-          for attempt in {1..20}; do
+          for (( attempt = 0; attempt < 20; ++attempt )); do
             if status_output="$("${license_cli}" status 2>&1)"; then
               ready=true
               break
@@ -89,7 +89,7 @@ jobs:
             sleep 1
           done
           if [[ "${ready}" != true ]]; then
-            cat "${RUNNER_TEMP}/virtualhid-broker.log"
+            echo 'Broker did not become ready' >&2
             exit 1
           fi
           grep -F 'Plan: GitHub Actions Evaluation' <<< "${status_output}"
