@@ -30,7 +30,7 @@ namespace lvh::detail::macos_broker {
     response,
   };
 
-  struct Message {
+  struct Message {  // NOSONAR(cpp:S1820): the fixed-size versioned wire message is deliberately flat.
     std::uint32_t version = protocol_version;
     MessageType type = MessageType::status;
     std::int32_t status = 0;

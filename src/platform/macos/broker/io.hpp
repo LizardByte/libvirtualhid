@@ -85,7 +85,7 @@ namespace lvh::detail::macos_broker {
     constexpr std::string_view path {socket_path};
     static_assert(path.size() < sizeof(address.sun_path));
     std::ranges::copy(path, address.sun_path);
-    if (::connect(fd, reinterpret_cast<sockaddr *>(&address), sizeof(address)) != 0) {
+    if (::connect(fd, reinterpret_cast<sockaddr *>(&address), sizeof(address)) != 0) {  // NOSONAR(cpp:S3630): POSIX sockets require a sockaddr pointer for sockaddr_un.
       error = std::strerror(errno);
       ::close(fd);
       return -1;
