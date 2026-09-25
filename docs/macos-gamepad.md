@@ -56,12 +56,13 @@ cmake -S . -B cmake-build-macos-universal \
   -DCMAKE_BUILD_TYPE=Release -DBUILD_DOCS=OFF -DBUILD_TESTS=ON
 cmake --build cmake-build-macos-universal --parallel "$(sysctl -n hw.ncpu)"
 xcrun lipo -info cmake-build-macos-universal/src/platform/macos/broker/VirtualHIDBroker.app/Contents/MacOS/VirtualHIDBroker
+xcrun lipo -info cmake-build-macos-universal/tools/VirtualHIDControl.app/Contents/MacOS/VirtualHIDControl
 ```
 
-The single resulting executable contains both Apple silicon and Intel slices.
+The broker and control app executables each contain Apple silicon and Intel slices.
 CI sets `MACOSX_DEPLOYMENT_TARGET` at the workflow level. The Apple builds use
 `-fexperimental-library` for libc++'s `std::jthread` support.
-The CI job checks the broker, license CLI, and `libvirtualhid.a` with `lipo`.
+The CI job checks the broker, control app, license CLI, and `libvirtualhid.a` with `lipo`.
 It runs the shared license-policy and macOS wire-protocol tests, starts the
 broker as root, and checks license IPC. These checks do not prove virtual HID
 creation: Apple's restricted entitlement needs a matching profile embedded in
@@ -80,14 +81,16 @@ profile path, and set the notarization variables (`APPLE_ID`, `APPLE_TEAM_ID`,
 bash scripts/macos/package-dmg.sh cmake-build-macos-universal
 ```
 
-The script embeds the profile, signs the broker app with Hardened Runtime and
-a secure timestamp, verifies its signature, makes one universal DMG, submits
-it using `notarytool`, and staples the ticket. Release CI performs these steps
-with the corresponding certificate, profile, and notarization secrets.
+The script embeds the profile, signs the broker and control apps with Hardened
+Runtime and a secure timestamp, verifies their signatures, makes one universal
+DMG, submits it using `notarytool`, and staples the ticket. The control app uses
+its own bundle ID and does not need the broker's restricted entitlement. Release
+CI performs these steps with the corresponding certificate, profile, and
+notarization secrets.
 
-### Test a PR on a Mac mini
+### Test a PR on macOS
 
-Check out the PR branch on the Mac mini, install Xcode, and copy
+Check out the PR branch on a Mac, install Xcode, and copy
 `.env.example` to `.env` in the repository root. Fill in the Apple ID,
 notarization app-specific password, Developer ID Application `.p12` file path
 and export password, and the provisioning profile path. Paths must be absolute.
@@ -118,21 +121,20 @@ After installation, activate a license if needed, then test each gamepad
 profile in a macOS consumer.
 
 For manual installation, mount the DMG and double-click
-**Install libvirtualhid.command**. It asks for
-administrator authorization, installs the signed broker app under
-`/Library/Application Support/libvirtualhid`, installs the static library and
-headers under `/usr/local`, and starts the `dev.lizardbyte.app.libvirtualhid`
-LaunchDaemon. Run a host process in the normal user session. The broker socket
-is `/var/run/libvirtualhid/broker.sock`; only the root-owned installed broker
-can answer the library's requests.
+**Install libvirtualhid.command**. It asks for administrator authorization,
+installs **Virtual HID Broker** and **Virtual HID Control** in `/Applications`,
+installs the static library and headers under `/usr/local`, and starts the
+`dev.lizardbyte.app.libvirtualhid` LaunchDaemon. Open **Virtual HID Control**
+from Applications to create and inspect test devices. The broker app runs as a
+system service and does not have a user interface. Run a host process in the
+normal user session. The broker socket is `/var/run/libvirtualhid/broker.sock`;
+only the root-owned installed broker can answer the library's requests.
 
 macOS also requires permission for the broker to create virtual HID devices.
 Open **System Settings**, then **Privacy & Security**, then **Device Control and
 Data Access** (**Accessibility** on older macOS versions). Click **Add**,
-authorize the settings change, and select `VirtualHIDBroker.app` inside the
-mounted DMG at `usr/local/libexec/libvirtualhid/VirtualHIDBroker.app`.
-In the app picker, press **Command-Shift-G** and enter
-`/Volumes/libvirtualhid/usr/local/libexec/libvirtualhid` to reach it. The
+authorize the settings change, and select **Virtual HID Broker** from
+`/Applications/VirtualHIDBroker.app`. The
 installed broker runs as a root LaunchDaemon, so macOS cannot show its prompt
 during gamepad creation. This permission gives the broker broad device control
 access; review the signed app before granting it.
@@ -190,7 +192,7 @@ If creation returns `backend_unavailable`, inspect the launchd job with
 `sudo launchctl print system/dev.lizardbyte.app.libvirtualhid`. If it returns
 `backend_failure` during virtual HID creation, check the broker's macOS
 permission above, then inspect the embedded profile and signature with
-`codesign -d --entitlements :- '/Library/Application Support/libvirtualhid/VirtualHIDBroker.app'`
+`codesign -d --entitlements :- /Applications/VirtualHIDBroker.app`
 and inspect the embedded profile with
-`security cms -D -i '/Library/Application Support/libvirtualhid/VirtualHIDBroker.app/Contents/embedded.provisionprofile'`.
+`security cms -D -i /Applications/VirtualHIDBroker.app/Contents/embedded.provisionprofile`.
 If it returns `license_required`, run `libvirtualhid-license activate`.

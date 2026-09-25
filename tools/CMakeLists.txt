@@ -47,8 +47,21 @@ if(MSVC AND LIBVIRTUALHID_TOOLS_STATIC_RUNTIME AND LIBVIRTUALHID_BUILD_WINDOWS_D
       MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-add_executable(virtualhid_control
-  "${CMAKE_CURRENT_SOURCE_DIR}/virtualhid_control.cpp")
+if(APPLE)
+    configure_file("${CMAKE_CURRENT_SOURCE_DIR}/macos/Info.plist"
+      "${CMAKE_CURRENT_BINARY_DIR}/Info.plist" @ONLY)
+    add_executable(virtualhid_control MACOSX_BUNDLE
+      "${CMAKE_CURRENT_SOURCE_DIR}/virtualhid_control.cpp"
+      "${PROJECT_SOURCE_DIR}/assets/macos/libvirtualhid.icns")
+    set_source_files_properties("${PROJECT_SOURCE_DIR}/assets/macos/libvirtualhid.icns"
+      PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+    set_target_properties(virtualhid_control PROPERTIES
+      OUTPUT_NAME VirtualHIDControl
+      MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_BINARY_DIR}/Info.plist")
+else()
+    add_executable(virtualhid_control
+      "${CMAKE_CURRENT_SOURCE_DIR}/virtualhid_control.cpp")
+endif()
 
 target_link_libraries(virtualhid_control
   PRIVATE
@@ -97,5 +110,10 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND LIBVIRTUALHID_TOOLS_FULLY_STATIC)
       -static)
 endif()
 
-install(TARGETS virtualhid_control
-  RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+if(APPLE)
+    install(TARGETS virtualhid_control
+      BUNDLE DESTINATION Applications)
+else()
+    install(TARGETS virtualhid_control
+      RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+endif()

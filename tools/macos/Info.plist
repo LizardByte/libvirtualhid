@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleDevelopmentRegion</key><string>en</string>
+  <key>CFBundleExecutable</key><string>VirtualHIDControl</string>
+  <key>CFBundleIdentifier</key><string>dev.lizardbyte.app.libvirtualhid.control</string>
+  <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+  <key>CFBundleName</key><string>VirtualHIDControl</string>
+  <key>CFBundleDisplayName</key><string>Virtual HID Control</string>
+  <key>CFBundleIconFile</key><string>libvirtualhid.icns</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>@PROJECT_VERSION@</string>
+  <key>CFBundleVersion</key><string>@PROJECT_VERSION@</string>
+</dict>
+</plist>

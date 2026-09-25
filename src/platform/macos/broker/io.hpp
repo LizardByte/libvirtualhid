@@ -1,6 +1,11 @@
 // SPDX-FileCopyrightText: 2026 LIZARDBYTE LLC
 // SPDX-License-Identifier: LicenseRef-LizardByte-SAL-1.0
 
+/**
+ * @file src/platform/macos/broker/io.hpp
+ * @brief Socket transport and peer verification for the macOS broker.
+ */
+
 #pragma once
 
 #include "protocol.hpp"
