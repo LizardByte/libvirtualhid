@@ -7,6 +7,8 @@
 // standard includes
 #include <cstdint>
 #include <optional>
+#include <utility>
+#include <vector>
 
 // lib includes
 #include <libvirtualhid/types.hpp>
@@ -27,6 +29,16 @@ namespace lvh::detail::test {
   struct MacosMouseMotionResult {
     std::uint32_t button {};  ///< CoreGraphics mouse button value.
     std::uint32_t event_type {};  ///< CoreGraphics mouse event type value.
+  };
+
+  /**
+   * @brief Portable view of one CoreGraphics keyboard event the macOS backend built.
+   */
+  struct MacosKeyEventResult {
+    std::uint32_t event_type {};  ///< CoreGraphics event type value.
+    std::int64_t key_code {};  ///< macOS virtual key code stored on the event.
+    std::uint64_t flags {};  ///< Flags stored on the event.
+    std::uint64_t tracked_flags {};  ///< Shared modifier state after the event was built.
   };
 
   /**
@@ -67,6 +79,22 @@ namespace lvh::detail::test {
    * @return `true` when the mapped key is a modifier.
    */
   bool macos_backend_is_modifier_key(KeyboardKeyCode key_code);
+
+  /**
+   * @brief Resolve the flags the macOS backend adds to a key event for the key itself.
+   *
+   * @param key_code Portable key code.
+   * @return CoreGraphics event flags, or zero when the key is unmapped or carries none.
+   */
+  std::uint64_t macos_backend_implicit_key_flags(KeyboardKeyCode key_code);
+
+  /**
+   * @brief Build, without posting, the events the macOS backend would send for a key sequence.
+   *
+   * @param transitions Portable key codes paired with `true` for press and `false` for release.
+   * @return One result per transition whose key code the backend maps.
+   */
+  std::vector<MacosKeyEventResult> macos_backend_key_events(const std::vector<std::pair<KeyboardKeyCode, bool>> &transitions);
 
   /**
    * @brief Convert a macOS scroll-wheel scaling value to lines per detent.

@@ -284,6 +284,86 @@ namespace lvh::detail {
       }
     }
 
+    /// Keys a physical keyboard reports with the secondary-Fn flag: arrows, navigation keys, and F1 to F20.
+    constexpr std::array<CGKeyCode, 30> secondary_fn_keys {
+      kVK_LeftArrow,
+      kVK_RightArrow,
+      kVK_UpArrow,
+      kVK_DownArrow,
+      kVK_Home,
+      kVK_End,
+      kVK_PageUp,
+      kVK_PageDown,
+      kVK_ForwardDelete,
+      kVK_Help,
+      kVK_F1,
+      kVK_F2,
+      kVK_F3,
+      kVK_F4,
+      kVK_F5,
+      kVK_F6,
+      kVK_F7,
+      kVK_F8,
+      kVK_F9,
+      kVK_F10,
+      kVK_F11,
+      kVK_F12,
+      kVK_F13,
+      kVK_F14,
+      kVK_F15,
+      kVK_F16,
+      kVK_F17,
+      kVK_F18,
+      kVK_F19,
+      kVK_F20,
+    };
+
+    /// Keys a physical keyboard reports with the numeric-pad flag: arrows and the keypad.
+    constexpr std::array<CGKeyCode, 22> numeric_pad_keys {
+      kVK_LeftArrow,
+      kVK_RightArrow,
+      kVK_UpArrow,
+      kVK_DownArrow,
+      kVK_ANSI_Keypad0,
+      kVK_ANSI_Keypad1,
+      kVK_ANSI_Keypad2,
+      kVK_ANSI_Keypad3,
+      kVK_ANSI_Keypad4,
+      kVK_ANSI_Keypad5,
+      kVK_ANSI_Keypad6,
+      kVK_ANSI_Keypad7,
+      kVK_ANSI_Keypad8,
+      kVK_ANSI_Keypad9,
+      kVK_ANSI_KeypadDecimal,
+      kVK_ANSI_KeypadMultiply,
+      kVK_ANSI_KeypadPlus,
+      kVK_ANSI_KeypadClear,
+      kVK_ANSI_KeypadDivide,
+      kVK_ANSI_KeypadEnter,
+      kVK_ANSI_KeypadMinus,
+      kVK_ANSI_KeypadEquals,
+    };
+
+    /**
+     * @brief Resolve the flags macOS attaches to a non-modifier key by itself.
+     *
+     * The system hotkey layer matches on these flags, so a synthetic Control+Up posted without
+     * them never reaches Mission Control even though the same event reaches ordinary applications.
+     *
+     * @param key macOS virtual key code.
+     * @return Flags to add to the posted event for this key only.
+     */
+    inline CGEventFlags implicit_key_flags(CGKeyCode key) {
+      CGEventFlags flags {};
+      if (std::ranges::find(secondary_fn_keys, key) != secondary_fn_keys.end()) {
+        flags |= kCGEventFlagMaskSecondaryFn;
+      }
+      if (std::ranges::find(numeric_pad_keys, key) != numeric_pad_keys.end()) {
+        flags |= kCGEventFlagMaskNumericPad;
+      }
+      return flags;
+    }
+
     /**
      * @brief Convert a scroll-wheel slider value to logical lines per detent.
      *
@@ -443,6 +523,43 @@ namespace lvh::detail {
     };
 
     /**
+     * @brief Build the CoreGraphics event for one key transition and update the shared modifier state.
+     *
+     * The caller must hold `state.keyboard_mutex`.
+     *
+     * @param state Shared backend state whose modifier flags are read and updated.
+     * @param key macOS virtual key code.
+     * @param pressed Whether the key is going down.
+     * @return Event ready to post, or `nullptr` when CoreGraphics cannot create one. The caller releases it.
+     */
+    inline CGEventRef create_keyboard_event(MacosInputState &state, CGKeyCode key, bool pressed) {
+      const auto keyboard_event = CGEventCreateKeyboardEvent(state.keyboard_source, key, pressed);
+      if (!keyboard_event) {
+        return nullptr;
+      }
+
+      CGEventSetIntegerValueField(keyboard_event, kCGKeyboardEventKeycode, key);
+
+      ModifierFlags modifier_flags;
+      if (modifier_flags_for_key(key, modifier_flags)) {
+        if (pressed) {
+          state.keyboard_flags |= modifier_flags.generic | modifier_flags.device;
+        } else {
+          state.keyboard_flags &= ~modifier_flags.device;
+          if ((state.keyboard_flags & modifier_flags.all_devices) == 0) {
+            state.keyboard_flags &= ~modifier_flags.generic;
+          }
+        }
+        CGEventSetType(keyboard_event, kCGEventFlagsChanged);
+      } else {
+        CGEventSetType(keyboard_event, pressed ? kCGEventKeyDown : kCGEventKeyUp);
+      }
+
+      CGEventSetFlags(keyboard_event, state.keyboard_flags | implicit_key_flags(key));
+      return keyboard_event;
+    }
+
+    /**
      * @brief Backend keyboard backed by CoreGraphics keyboard events.
      */
     class MacosKeyboard final: public BackendKeyboard {
@@ -470,30 +587,12 @@ namespace lvh::detail {
           return OperationStatus::failure(backend_failure, "macOS keyboard event source is unavailable");
         }
 
-        const auto keyboard_event = CGEventCreateKeyboardEvent(state_->keyboard_source, *key, event.pressed);
+        std::lock_guard lock {state_->keyboard_mutex};
+        const auto keyboard_event = create_keyboard_event(*state_, *key, event.pressed);
         if (!keyboard_event) {
           return OperationStatus::failure(backend_failure, "create macOS keyboard event");
         }
 
-        std::lock_guard lock {state_->keyboard_mutex};
-        CGEventSetIntegerValueField(keyboard_event, kCGKeyboardEventKeycode, *key);
-
-        ModifierFlags modifier_flags;
-        if (modifier_flags_for_key(*key, modifier_flags)) {
-          if (event.pressed) {
-            state_->keyboard_flags |= modifier_flags.generic | modifier_flags.device;
-          } else {
-            state_->keyboard_flags &= ~modifier_flags.device;
-            if ((state_->keyboard_flags & modifier_flags.all_devices) == 0) {
-              state_->keyboard_flags &= ~modifier_flags.generic;
-            }
-          }
-          CGEventSetType(keyboard_event, kCGEventFlagsChanged);
-        } else {
-          CGEventSetType(keyboard_event, event.pressed ? kCGEventKeyDown : kCGEventKeyUp);
-        }
-
-        CGEventSetFlags(keyboard_event, state_->keyboard_flags);
         CGEventPost(kCGSessionEventTap, keyboard_event);
         CFRelease(keyboard_event);
         return OperationStatus::success();
