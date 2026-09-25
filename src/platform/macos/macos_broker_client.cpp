@@ -66,9 +66,12 @@ namespace lvh::detail {
       }
 
       OperationStatus submit(const GamepadState &state, const std::vector<std::uint8_t> &report) override {
-        const auto xbox_report = xbox_transport_ ?
-                                   macos::xbox_transport_input_report(state) :
-                                   std::vector<std::uint8_t> {};
+        std::vector<std::uint8_t> xbox_report;
+        if (xbox_transport_) {
+          xbox_report = profile_.gamepad_kind == GamepadProfileKind::xbox_360 ?
+                          macos::xbox_transport_input_report(state) :
+                          macos::xbox_bluetooth_input_report(state, report, profile_.gamepad_kind == GamepadProfileKind::xbox_series);
+        }
         const auto &transport_report = xbox_transport_ ? xbox_report : report;
         if (transport_report.empty() || transport_report.size() > macos_broker::max_report_size) {
           return OperationStatus::failure(ErrorCode::invalid_argument, "macOS gamepad report exceeds broker limit");

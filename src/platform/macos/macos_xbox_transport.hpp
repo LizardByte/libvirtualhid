@@ -4,9 +4,13 @@
  */
 #pragma once
 
+#include "platform/macos/macos_xbox_bluetooth_descriptor.hpp"
+
+#include <algorithm>
 #include <cstdint>
 #include <libvirtualhid/profiles.hpp>
 #include <libvirtualhid/report.hpp>
+#include <span>
 #include <vector>
 
 namespace lvh::detail::macos {
@@ -32,10 +36,20 @@ namespace lvh::detail::macos {
       return requested;
     }
 
+    if (requested.gamepad_kind != GamepadProfileKind::xbox_360) {
+      auto transport = requested;
+      transport.bus_type = BusType::bluetooth;
+      transport.product_id = requested.gamepad_kind == GamepadProfileKind::xbox_series ? 0x0B13 : 0x0B20;
+      transport.version = 0x0513;
+      transport.report_id = xbox_bluetooth_input_report_id;
+      transport.input_report_size = 17;
+      transport.output_report_size = 9;
+      transport.report_descriptor = make_xbox_bluetooth_report_descriptor(true);
+      return transport;
+    }
+
     // macOS Steam maps 045e:028e version 0114 as fifteen numbered buttons,
-    // six axes, and a USB device. The public Xbox One/Series GIP descriptors
-    // are not usable by its macOS HID path, so all Xbox profiles use this
-    // compatible transport while keeping their public profile unchanged.
+    // six axes, and a USB device.
     auto transport = profiles::xbox_360();
     transport.name = requested.name;
     transport.report_descriptor = {
@@ -52,7 +66,7 @@ namespace lvh::detail::macos {
       0x19,
       0x01,  // Button 1
       0x29,
-      0x10,  // Button 16 (Series Share is button 16)
+      0x10,  // Button 16 (optional miscellaneous input)
       0x15,
       0x00,
       0x25,
@@ -130,6 +144,37 @@ namespace lvh::detail::macos {
                       button(misc1, 15);
     report[1] = static_cast<std::uint8_t>(bits & 0xFFU);
     report[2] = static_cast<std::uint8_t>((bits >> 8U) & 0xFFU);
+    return report;
+  }
+
+  inline std::vector<std::uint8_t> xbox_bluetooth_input_report(
+    const GamepadState &state,
+    std::span<const std::uint8_t> packed_report,
+    bool include_share_button
+  ) {
+    if (packed_report.size() < 17U) {
+      return {};
+    }
+
+    using enum GamepadButton;
+    std::vector<std::uint8_t> report(17U, 0);
+    report[0] = xbox_bluetooth_input_report_id;
+    std::copy_n(packed_report.begin(), 8U, report.begin() + 1U);
+    std::copy_n(packed_report.begin() + 8U, 4U, report.begin() + 9U);
+    report[13] = packed_report[14];
+    report[14] = static_cast<std::uint8_t>(
+      (state.buttons.test(a) ? 0x01U : 0U) | (state.buttons.test(b) ? 0x02U : 0U) |
+      (state.buttons.test(x) ? 0x08U : 0U) | (state.buttons.test(y) ? 0x10U : 0U) |
+      (state.buttons.test(left_shoulder) ? 0x40U : 0U) | (state.buttons.test(right_shoulder) ? 0x80U : 0U)
+    );
+    report[15] = static_cast<std::uint8_t>(
+      (state.buttons.test(back) ? 0x04U : 0U) | (state.buttons.test(start) ? 0x08U : 0U) |
+      (state.buttons.test(guide) ? 0x10U : 0U) | (state.buttons.test(left_stick) ? 0x20U : 0U) |
+      (state.buttons.test(right_stick) ? 0x40U : 0U)
+    );
+    if (include_share_button && state.buttons.test(misc1)) {
+      report[16] = 0x01;
+    }
     return report;
   }
 
