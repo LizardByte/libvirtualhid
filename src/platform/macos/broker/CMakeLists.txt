@@ -25,6 +25,11 @@ target_include_directories(libvirtualhid_macos_broker PRIVATE
   "${PROJECT_SOURCE_DIR}/src/include")
 target_compile_options(libvirtualhid_macos_broker PRIVATE
   -Wall -Wextra -Wpedantic -fblocks)
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    # Apple's libc++ keeps std::jthread behind this switch on some Xcode versions.
+    target_compile_options(libvirtualhid_macos_broker PRIVATE -fexperimental-library)
+    target_link_options(libvirtualhid_macos_broker PRIVATE -fexperimental-library)
+endif()
 set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/license_manager.mm"
   PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
 if(LIBVIRTUALHID_WARNINGS_AS_ERRORS)

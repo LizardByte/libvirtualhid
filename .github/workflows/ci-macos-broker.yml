@@ -60,12 +60,13 @@ jobs:
       - name: Build and inspect architectures
         run: |
           cmake --build cmake-build-macos-universal --parallel "$(sysctl -n hw.ncpu)"
-          xcrun lipo -verify_arch arm64 x86_64 \
-            cmake-build-macos-universal/src/platform/macos/broker/VirtualHIDBroker.app/Contents/MacOS/VirtualHIDBroker
-          xcrun lipo -verify_arch arm64 x86_64 \
-            cmake-build-macos-universal/src/platform/macos/broker/libvirtualhid-license
-          xcrun lipo -verify_arch arm64 x86_64 \
-            cmake-build-macos-universal/src/libvirtualhid.a
+          for binary in \
+            cmake-build-macos-universal/src/platform/macos/broker/VirtualHIDBroker.app/Contents/MacOS/VirtualHIDBroker \
+            cmake-build-macos-universal/src/platform/macos/broker/libvirtualhid-license \
+            cmake-build-macos-universal/src/libvirtualhid.a; do
+            xcrun lipo -verify_arch arm64 "${binary}"
+            xcrun lipo -verify_arch x86_64 "${binary}"
+          done
 
       - name: Import Developer ID certificate
         if: inputs.publish_release == 'true'
