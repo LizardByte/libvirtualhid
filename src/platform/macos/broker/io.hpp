@@ -5,22 +5,33 @@
 
 #include "protocol.hpp"
 
+#include <algorithm>
 #include <cerrno>
+#include <cstddef>
 #include <cstring>
+#include <span>
 #include <string>
+#include <string_view>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/un.h>
+#include <type_traits>
 #include <unistd.h>
 
 namespace lvh::detail::macos_broker {
 
-  inline bool transfer(int fd, void *buffer, std::size_t size, bool sending) {
-    auto *bytes = static_cast<std::uint8_t *>(buffer);
+  template<typename Byte>
+  bool transfer(int fd, std::span<Byte> buffer) {
+    static_assert(std::is_same_v<std::remove_const_t<Byte>, std::byte>);
+    auto *bytes = buffer.data();
+    auto size = buffer.size_bytes();
     while (size != 0) {
-      const auto count = sending ?
-                           ::send(fd, bytes, size, 0) :
-                           ::recv(fd, bytes, size, 0);
+      ssize_t count;
+      if constexpr (std::is_const_v<Byte>) {
+        count = ::send(fd, bytes, size, 0);
+      } else {
+        count = ::recv(fd, bytes, size, 0);
+      }
       if (count < 0 && errno == EINTR) {
         continue;
       }
@@ -34,11 +45,11 @@ namespace lvh::detail::macos_broker {
   }
 
   inline bool send_message(int fd, const Message &message) {
-    return transfer(fd, const_cast<Message *>(&message), sizeof(message), true);
+    return transfer(fd, std::as_bytes(std::span {&message, 1}));
   }
 
   inline bool receive_message(int fd, Message &message) {
-    return transfer(fd, &message, sizeof(message), false) && message.version == protocol_version;
+    return transfer(fd, std::as_writable_bytes(std::span {&message, 1})) && message.version == protocol_version;
   }
 
   inline int connect_to_broker(std::string &error) {
@@ -71,15 +82,17 @@ namespace lvh::detail::macos_broker {
     static_cast<void>(::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &receive_timeout, sizeof(receive_timeout)));
     sockaddr_un address {};
     address.sun_family = AF_UNIX;
-    std::strncpy(address.sun_path, socket_path, sizeof(address.sun_path) - 1U);
+    constexpr std::string_view path {socket_path};
+    static_assert(path.size() < sizeof(address.sun_path));
+    std::ranges::copy(path, address.sun_path);
     if (::connect(fd, reinterpret_cast<sockaddr *>(&address), sizeof(address)) != 0) {
       error = std::strerror(errno);
       ::close(fd);
       return -1;
     }
 
-    uid_t peer_uid = static_cast<uid_t>(-1);
-    gid_t peer_gid = static_cast<gid_t>(-1);
+    auto peer_uid = static_cast<uid_t>(-1);
+    auto peer_gid = static_cast<gid_t>(-1);
     if (::getpeereid(fd, &peer_uid, &peer_gid) != 0 || peer_uid != 0) {
       error = "macOS broker peer is not root";
       ::close(fd);

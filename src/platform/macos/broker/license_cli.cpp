@@ -69,7 +69,7 @@ int main(int argc, char **argv) {
   } else if (action == "activate") {
     auto key = read_key();
     result = lvh::activate_license(key, argc == 3 ? argv[2] : "");
-    std::fill(key.begin(), key.end(), '\0');
+    std::ranges::fill(key, '\0');
   } else if (action == "validate" && argc == 2) {
     result = lvh::validate_license();
   } else if (action == "deactivate" && argc == 2) {

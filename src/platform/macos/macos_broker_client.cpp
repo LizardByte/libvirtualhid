@@ -29,7 +29,7 @@ namespace lvh::detail {
       if (text.size() >= destination.size()) {
         return false;
       }
-      std::copy(text.begin(), text.end(), destination.begin());
+      std::ranges::copy(text, destination.begin());
       return true;
     }
 
@@ -38,7 +38,7 @@ namespace lvh::detail {
     }
 
     OperationStatus response_status(const macos_broker::Message &response) {
-      if (response.type != macos_broker::MessageType::response || response.status < 0 || response.status > static_cast<int>(ErrorCode::backend_failure)) {
+      if (response.type != macos_broker::MessageType::response || response.status < 0 || response.status > std::to_underlying(ErrorCode::backend_failure)) {
         return OperationStatus::failure(ErrorCode::backend_failure, "macOS broker returned an invalid response");
       }
       if (response.status == 0) {
@@ -52,7 +52,6 @@ namespace lvh::detail {
       MacosGamepad(int fd, DeviceProfile profile):
           fd_ {fd},
           profile_ {std::move(profile)},
-          callback_state_ {std::make_shared<CallbackState>()},
           reader_ {[this, fd] {
             read_loop(fd);
           }},
@@ -71,7 +70,7 @@ namespace lvh::detail {
         macos_broker::Message request;
         request.type = macos_broker::MessageType::submit;
         request.size = static_cast<std::uint32_t>(report.size());
-        std::copy(report.begin(), report.end(), request.data.begin());
+        std::ranges::copy(report, request.data.begin());
         return call(request);
       }
 
@@ -103,6 +102,7 @@ namespace lvh::detail {
         callback_state_->condition.notify_all();
         if (callback_thread_.joinable()) {
           if (callback_thread_.get_id() == std::this_thread::get_id()) {
+            // A callback may close its own gamepad; captured state outlives this thread.
             callback_thread_.detach();
           } else {
             callback_thread_.join();
@@ -126,7 +126,7 @@ namespace lvh::detail {
           OutputCallback callback;
           {
             std::unique_lock lock {state->mutex};
-            state->condition.wait(lock, [&] {
+            state->condition.wait(lock, [&state] {
               return state->stop || !state->reports.empty();
             });
             if (state->reports.empty()) {
@@ -156,18 +156,27 @@ namespace lvh::detail {
         if (!macos_broker::send_message(fd_, request)) {
           return OperationStatus::failure(ErrorCode::backend_unavailable, "macOS broker connection closed");
         }
-        std::unique_lock lock {mutex_};
-        if (!response_condition_.wait_for(lock, std::chrono::seconds {10}, [this] {
-              return response_ready_ || disconnected_;
-            })) {
-          lock.unlock();
+        bool timed_out = false;
+        bool response_ready = false;
+        macos_broker::Message response;
+        {
+          std::unique_lock lock {mutex_};
+          timed_out = !response_condition_.wait_for(lock, std::chrono::seconds {10}, [this] {
+            return response_ready_ || disconnected_;
+          });
+          response_ready = response_ready_;
+          if (response_ready) {
+            response = response_;
+          }
+        }
+        if (timed_out) {
           ::shutdown(fd_, SHUT_RDWR);
           return OperationStatus::failure(ErrorCode::backend_unavailable, "macOS broker did not answer gamepad report");
         }
-        if (!response_ready_) {
+        if (!response_ready) {
           return OperationStatus::failure(ErrorCode::backend_unavailable, "macOS broker connection closed");
         }
-        return response_status(response_);
+        return response_status(response);
       }
 
       void read_loop(int fd) {
@@ -204,7 +213,7 @@ namespace lvh::detail {
 
       int fd_;
       DeviceProfile profile_;
-      std::shared_ptr<CallbackState> callback_state_;
+      std::shared_ptr<CallbackState> callback_state_ = std::make_shared<CallbackState>();
       std::jthread reader_;
       std::jthread callback_thread_;
       std::mutex call_mutex_;
@@ -236,7 +245,7 @@ namespace lvh::detail {
       }
       result.status = response_status(response);
       result.license.service_available = true;
-      result.license.state = response.license_state <= static_cast<std::uint32_t>(LicenseState::invalid) ?
+      result.license.state = response.license_state <= static_cast<std::uint32_t>(std::to_underlying(LicenseState::invalid)) ?
                                static_cast<LicenseState>(response.license_state) :
                                LicenseState::invalid;
       result.license.active_devices = response.active_devices;
@@ -257,8 +266,8 @@ namespace lvh::detail {
     }
     macos_broker::Message request;
     request.type = macos_broker::MessageType::create;
-    request.kind = static_cast<std::uint32_t>(profile.gamepad_kind);
-    request.bus = static_cast<std::uint32_t>(profile.bus_type);
+    request.kind = static_cast<std::uint32_t>(std::to_underlying(profile.gamepad_kind));
+    request.bus = static_cast<std::uint32_t>(std::to_underlying(profile.bus_type));
     request.vendor_id = profile.vendor_id;
     request.product_id = profile.product_id;
     request.device_version = profile.version;
@@ -272,7 +281,7 @@ namespace lvh::detail {
     if (!copy_text(request.name, profile.name) || !copy_text(request.manufacturer, profile.manufacturer) || (!options.metadata.stable_id.empty() && !copy_text(request.stable_id, options.metadata.stable_id))) {
       return {OperationStatus::failure(ErrorCode::invalid_argument, "macOS gamepad identity exceeds broker limit"), nullptr};
     }
-    std::copy(profile.report_descriptor.begin(), profile.report_descriptor.end(), request.data.begin());
+    std::ranges::copy(profile.report_descriptor, request.data.begin());
 
     std::string error;
     const int fd = macos_broker::connect_to_broker(error);
