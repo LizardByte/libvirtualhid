@@ -85,6 +85,8 @@ xcrun lipo -info cmake-build-macos-universal/src/platform/macos/broker/VirtualHI
 
 The single resulting executable contains both Apple silicon and Intel slices.
 CI sets `MACOSX_DEPLOYMENT_TARGET` at the workflow level, as Sunshine does.
+The Apple builds use `-fexperimental-library` for libc++'s `std::jthread`
+support, following Sunshine's macOS build configuration.
 The CI job checks the broker, license CLI, and
 `libvirtualhid.a` with `lipo`.
 
