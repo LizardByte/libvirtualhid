@@ -43,7 +43,6 @@ namespace lvh::detail::macos_broker {
     Message deactivate();
     Message status();
     bool licensed_locked() const;
-    bool yearly_locked() const;
     void fill_status_locked(Message &response) const;
     void background_validation(std::stop_token stop);
 

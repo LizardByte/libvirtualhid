@@ -8,7 +8,7 @@
 
 #include "license_manager.hpp"
 
-#include "platform/windows/shared/lvh_windows_broker_config.hpp"
+#include "platform/shared/lvh_broker_license_policy.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -25,10 +25,6 @@ namespace lvh::detail::macos_broker {
     constexpr auto state_directory = "/Library/Application Support/libvirtualhid";
     constexpr auto state_path = "/Library/Application Support/libvirtualhid/license.json";
     constexpr auto evaluation_path = "/Library/Application Support/libvirtualhid/evaluation.json";
-    constexpr auto validation_interval = std::chrono::hours {24};
-    constexpr auto subscription_max_age = std::chrono::hours {25};
-    constexpr auto outage_retention = std::chrono::hours {1};
-    constexpr auto evaluation_duration = std::chrono::minutes {5};
 
     template<std::size_t Size>
     void set_text(std::array<char, Size> &destination, std::string_view value) {
@@ -163,25 +159,6 @@ namespace lvh::detail::macos_broker {
       return result;
     }
 
-    bool allowed_benefit(std::string_view benefit_id, bool &yearly) {
-      for (const auto &benefit : windows::broker_config::allowed_benefits) {
-        if (benefit.id == benefit_id) {
-          yearly = benefit.subscription_backed;
-          return true;
-        }
-      }
-      return false;
-    }
-
-    std::string plan_name(std::string_view benefit_id) {
-      for (const auto &benefit : windows::broker_config::allowed_benefits) {
-        if (benefit.id == benefit_id) {
-          return std::string {benefit.plan_name};
-        }
-      }
-      return "";
-    }
-
     bool valid_c_string(const std::array<char, max_text_size> &value) {
       return std::memchr(value.data(), '\0', value.size()) != nullptr;
     }
@@ -201,8 +178,7 @@ namespace lvh::detail::macos_broker {
         state.benefit_id = from_ns(json_string(saved, @"benefit_id"));
         state.customer_email = from_ns(json_string(saved, @"customer_email"));
         state.activation_limit = [saved[@"activation_limit"] unsignedIntValue];
-        bool yearly = false;
-        if (!state.key.empty() && !state.activation_id.empty() && state.status == "granted" && state.organization_id == windows::broker_config::polar_organization_id && allowed_benefit(state.benefit_id, yearly)) {
+        if (!state.key.empty() && !state.activation_id.empty() && state.status == "granted" && state.organization_id == broker_license::polar_organization_id && broker_license::benefit(state.benefit_id)) {
           state_ = std::move(state);
         }
       }
@@ -229,20 +205,16 @@ namespace lvh::detail::macos_broker {
     validator_.request_stop();
   }
 
-  bool LicenseManager::yearly_locked() const {
-    bool yearly = false;
-    return state_ && allowed_benefit(state_->benefit_id, yearly) && yearly;
-  }
-
   bool LicenseManager::licensed_locked() const {
-    if (!state_ || state_->status != "granted" || state_->organization_id != windows::broker_config::polar_organization_id) {
+    if (!state_ || state_->status != "granted" || state_->organization_id != broker_license::polar_organization_id) {
       return false;
     }
-    bool yearly = false;
-    if (!allowed_benefit(state_->benefit_id, yearly)) {
+    const auto *benefit = broker_license::benefit(state_->benefit_id);
+    if (!benefit) {
       return false;
     }
-    return !yearly || (validated_at_ && std::chrono::steady_clock::now() - *validated_at_ < subscription_max_age);
+    return !benefit->subscription_backed ||
+           (validated_at_ && std::chrono::steady_clock::now() - *validated_at_ < broker_license::subscription_max_age);
   }
 
   void LicenseManager::fill_status_locked(Message &response) const {
@@ -255,7 +227,7 @@ namespace lvh::detail::macos_broker {
     response.license_state = static_cast<std::uint32_t>(licensed_locked() ? LicenseState::licensed : LicenseState::invalid);
     response.activation_limit = state_->activation_limit;
     response.activation_usage = 1;
-    set_text(response.plan_name, plan_name(state_->benefit_id));
+    set_text(response.plan_name, broker_license::plan_name(state_->benefit_id));
     set_text(response.customer_email, state_->customer_email);
   }
 
@@ -280,7 +252,7 @@ namespace lvh::detail::macos_broker {
     @autoreleasepool {
       NSString *name = request.instance_name[0] ? @(request.instance_name.data()) : [[NSHost currentHost] localizedName];
       auto result = polar_request(@"/v1/customer-portal/license-keys/activate", @{@"key": @(request.license_key.data()),
-                                                                                  @"organization_id": to_ns(windows::broker_config::polar_organization_id),
+                                                                                  @"organization_id": to_ns(broker_license::polar_organization_id),
                                                                                   @"label": name ? name : @"Mac"});
       auto response = status();
       if (!result.transport_ok || result.status != 200) {
@@ -315,8 +287,7 @@ namespace lvh::detail::macos_broker {
       if ([customer isKindOfClass:[NSDictionary class]]) {
         state.customer_email = from_ns(json_string(customer, @"email"));
       }
-      bool yearly = false;
-      if (state.activation_id.empty() || state.status != "granted" || state.organization_id != windows::broker_config::polar_organization_id || !allowed_benefit(state.benefit_id, yearly)) {
+      if (state.activation_id.empty() || state.status != "granted" || state.organization_id != broker_license::polar_organization_id || !broker_license::benefit(state.benefit_id)) {
         response.status = static_cast<int>(ErrorCode::license_invalid);
         set_text(response.message, "License organization, benefit, or activation is not allowed");
         return response;
@@ -363,7 +334,7 @@ namespace lvh::detail::macos_broker {
     @autoreleasepool {
       auto result = polar_request(@"/v1/customer-portal/license-keys/validate", @ {
         @"key": to_ns(state.key),
-        @"organization_id": to_ns(windows::broker_config::polar_organization_id),
+        @"organization_id": to_ns(broker_license::polar_organization_id),
         @"activation_id": to_ns(state.activation_id)
       });
       if (!result.transport_ok || result.status != 200 || !result.body || !result.trusted_time) {
@@ -392,8 +363,7 @@ namespace lvh::detail::macos_broker {
       const auto new_status = from_ns(json_string(result.body, @"status"));
       const auto new_organization = from_ns(json_string(result.body, @"organization_id"));
       const auto new_benefit = from_ns(json_string(result.body, @"benefit_id"));
-      bool yearly = false;
-      if (from_ns(activation_id) != state.activation_id || new_status != "granted" || new_organization != windows::broker_config::polar_organization_id || !allowed_benefit(new_benefit, yearly)) {
+      if (from_ns(activation_id) != state.activation_id || new_status != "granted" || new_organization != broker_license::polar_organization_id || !broker_license::benefit(new_benefit)) {
         {
           std::lock_guard lock {mutex_};
           state_.reset();
@@ -454,7 +424,7 @@ namespace lvh::detail::macos_broker {
     @autoreleasepool {
       auto result = polar_request(@"/v1/customer-portal/license-keys/deactivate", @ {
         @"key": to_ns(state.key),
-        @"organization_id": to_ns(windows::broker_config::polar_organization_id),
+        @"organization_id": to_ns(broker_license::polar_organization_id),
         @"activation_id": to_ns(state.activation_id)
       });
       if (!result.transport_ok || (result.status != 204 && result.status != 404)) {
@@ -524,7 +494,7 @@ namespace lvh::detail::macos_broker {
         }
         evaluation_started_at_ = now;
       }
-      if (now >= *evaluation_started_at_ && now < *evaluation_started_at_ + evaluation_duration) {
+      if (broker_license::github_actions_evaluation::active(*evaluation_started_at_, now)) {
         evaluation = true;
         return true;
       }
@@ -538,12 +508,12 @@ namespace lvh::detail::macos_broker {
     std::lock_guard lock {mutex_};
     if (evaluation) {
       const auto now = std::chrono::system_clock::now();
-      return evaluation_started_at_ && now >= *evaluation_started_at_ && now < *evaluation_started_at_ + evaluation_duration;
+      return evaluation_started_at_ && broker_license::github_actions_evaluation::active(*evaluation_started_at_, now);
     }
     if (!licensed_locked()) {
       return false;
     }
-    return !unavailable_since_ || std::chrono::steady_clock::now() - *unavailable_since_ < outage_retention;
+    return !unavailable_since_ || !broker_license::outage_retention_elapsed(std::chrono::steady_clock::now() - *unavailable_since_);
   }
 
   void LicenseManager::add_device(bool evaluation) {
@@ -573,7 +543,7 @@ namespace lvh::detail::macos_broker {
       bool due = false;
       {
         std::lock_guard lock {mutex_};
-        due = state_ && (!validated_at_ || std::chrono::steady_clock::now() - *validated_at_ >= validation_interval);
+        due = state_ && (!validated_at_ || std::chrono::steady_clock::now() - *validated_at_ >= broker_license::validation_interval);
       }
       if (due) {
         static_cast<void>(validate());

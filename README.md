@@ -20,7 +20,7 @@
   <h2>🎮 Virtual HID Gamepad License</h2>
   <p>
     <strong>A license is required for Windows driver-backed devices and macOS virtual gamepads.</strong><br>
-    Linux and FreeBSD backends do not currently require a license.<br>
+    Linux and FreeBSD backends do not require a license.<br>
     Yearly and lifetime options are available.
   </p>
   <a href="https://buy.polar.sh/polar_cl_zj6Io5NVukXfZSl97ULtFvImfI5L1jbL2cSnc0Y72Pt"><img src="https://img.shields.io/badge/Buy_a_virtual_HID_license-0078D4?style=for-the-badge" alt="Buy a virtual HID license"></a>

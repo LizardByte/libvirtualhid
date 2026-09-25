@@ -3,13 +3,13 @@
 The macOS backend creates descriptor-driven virtual gamepads through a separate
 root-owned broker. The broker alone calls Apple's `IOHIDUserDevice` API and holds
 the virtual HID entitlement. The ordinary C++ library has no Apple entitlement
-and continues to use CoreGraphics for keyboard and mouse input.
+and uses CoreGraphics for keyboard and mouse input.
 
 The client checks root ownership of the broker directory, socket, and
 connected peer before exchanging versioned messages. Socket transfers handle
 partial reads and writes so truncated messages are not treated as complete.
 The root-owned broker directory permits local clients to reach its socket, and
-the broker applies the same machine-license gate to gamepad creation as Windows.
+the broker checks the machine license before gamepad creation.
 
 The built-in generic, Xbox 360, Xbox One, Xbox Series, DualShock 4, DualSense,
 and Switch Pro profiles, including the explicit USB and Bluetooth PlayStation
@@ -22,61 +22,28 @@ still needs consumer testing for each profile.
 When metadata omits a stable ID, the client derives a locally administered
 `02:00:xx:xx:xx:xx` identifier from the device ID.
 
-## What to do in Apple Developer
+## Signing prerequisites
 
-The Sunshine **Developer ID Application** signing certificate and existing
-notarization credentials can be reused. Apple's HID Virtual Device approval may
-be assigned to the team or to a particular App ID. A separate provisioning
-profile for this broker's App ID is required even if Sunshine already has one.
+The broker needs a Developer ID provisioning profile for
+`dev.lizardbyte.app.libvirtualhid` containing
+`com.apple.developer.hid.virtual.device`. An existing Developer ID Application
+certificate and notarization credentials can be reused for this Apple team. A
+profile for another bundle ID cannot authorize the broker. Apple explains the
+[restricted entitlement bundle and embedded profile](https://developer.apple.com/documentation/xcode/signing-a-daemon-with-a-restricted-entitlement).
 
-1. Sign in to [Certificates, Identifiers & Profiles](https://developer.apple.com/account/resources/identifiers/list)
-   as the Apple Developer team's **Account Holder**. If the team is an
-   organization, Apple says the Account Holder must submit managed-capability
-   requests.
-2. Under **Identifiers**, register an explicit macOS App ID with bundle ID
-   **`dev.lizardbyte.app.libvirtualhid`**. This follows Sunshine's
-   `dev.lizardbyte.app.Sunshine` naming pattern. If it already exists, open it.
-3. If the Sunshine request is still pending, wait for its decision. Then open
-   the new App ID's **Capabilities** tab. If **HID Virtual Device** is
-   available from that approval, enable it and save. Otherwise, in
-   **Capability Requests**, request **HID Virtual Device**
-   (`com.apple.developer.hid.virtual.device`) for this App ID. Explain that
-   libvirtualhid is a signed, root-owned user-space broker that publishes
-   descriptor-driven gamepads to other local applications for remote streaming
-   hosts. It does not attach to physical hardware or install a kernel driver.
-   List the generic, Xbox, PlayStation, and Switch Pro profiles and the
-   broker's paid-license gate. After approval, enable the capability and save.
-4. Under **Profiles**, create a **Developer ID** distribution provisioning
-   profile for `dev.lizardbyte.app.libvirtualhid`, selecting the same Developer
-   ID Application certificate used for Sunshine. Download the resulting
-   `.provisionprofile` file. The profile must contain the virtual HID
-   entitlement. A Mac App Development profile is for local development and
-   cannot replace the Developer ID distribution profile in the release DMG.
-5. In this repository's GitHub Actions secrets, add
-   **`APPLE_MACOS_VIRTUAL_HID_PROVISIONING_PROFILE_BASE64`** containing a
-   single-line base64 encoding of the downloaded profile. The downloaded
-   `.provisionprofile` itself is a signed binary file; base64 is only the text
-   encoding used to store it in a GitHub secret. On macOS, run
-   `base64 -i broker.provisionprofile | tr -d '\n'`. On Windows, run this in
-   PowerShell, replacing the path with the downloaded file's location:
+Release CI reads the profile from the
+`APPLE_MACOS_VIRTUAL_HID_PROVISIONING_PROFILE_BASE64` secret. The profile is a
+binary file; on Windows, encode it with PowerShell and paste the clipboard
+contents into that secret:
 
-   ```powershell
-   [Convert]::ToBase64String([IO.File]::ReadAllBytes("C:\path\to\broker.provisionprofile")) | Set-Clipboard
-   ```
+```powershell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("C:\path\to\broker.provisionprofile")) | Set-Clipboard
+```
 
-   Paste the clipboard contents as the secret value. Configure the existing
-   Sunshine secret names here as well: `APPLE_ID`, `APPLE_TEAM_ID`,
-   `APPLE_NOTARYTOOL_PASSWORD`, `APPLE_CODESIGN_IDENTITY`,
-   `APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_BASE64`, and
-   `APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_P12_PASSWORD`.
-
-Apple documents the [virtual HID entitlement](https://developer.apple.com/documentation/bundleresources/entitlements/com.apple.developer.hid.virtual.device),
-the [managed-capability request steps](https://developer.apple.com/help/account/capabilities/capability-requests),
-and why a [daemon with a restricted entitlement needs an app-like bundle and
-embedded profile](https://developer.apple.com/documentation/xcode/signing-a-daemon-with-a-restricted-entitlement).
-Approval is controlled by Apple; the same certificate does not itself grant
-this entitlement. A profile issued for `dev.lizardbyte.app.Sunshine` cannot
-authorize `dev.lizardbyte.app.libvirtualhid`.
+Release CI also uses `APPLE_CODESIGN_IDENTITY`,
+`APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_BASE64`,
+`APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_P12_PASSWORD`, `APPLE_ID`,
+`APPLE_TEAM_ID`, and `APPLE_NOTARYTOOL_PASSWORD`.
 
 ## Build and distribute
 
@@ -86,22 +53,28 @@ On macOS with Xcode and CMake installed:
 export MACOSX_DEPLOYMENT_TARGET=14.2
 cmake -S . -B cmake-build-macos-universal \
   -DCMAKE_OSX_ARCHITECTURES='arm64;x86_64' \
-  -DBUILD_DOCS=OFF -DBUILD_TESTS=OFF
+  -DCMAKE_BUILD_TYPE=Release -DBUILD_DOCS=OFF -DBUILD_TESTS=ON
 cmake --build cmake-build-macos-universal --parallel "$(sysctl -n hw.ncpu)"
 xcrun lipo -info cmake-build-macos-universal/src/platform/macos/broker/VirtualHIDBroker.app/Contents/MacOS/VirtualHIDBroker
 ```
 
 The single resulting executable contains both Apple silicon and Intel slices.
-CI sets `MACOSX_DEPLOYMENT_TARGET` at the workflow level, as Sunshine does.
-The Apple builds use `-fexperimental-library` for libc++'s `std::jthread`
-support, following Sunshine's macOS build configuration.
-The CI job checks the broker, license CLI, and
-`libvirtualhid.a` with `lipo`.
+CI sets `MACOSX_DEPLOYMENT_TARGET` at the workflow level. The Apple builds use
+`-fexperimental-library` for libc++'s `std::jthread` support.
+The CI job checks the broker, license CLI, and `libvirtualhid.a` with `lipo`.
+It runs the shared license-policy and macOS wire-protocol tests, starts the
+broker as root, and checks license IPC. These checks do not prove virtual HID
+creation: Apple's restricted entitlement needs a matching profile embedded in
+the signed app bundle, independent of the runner's System Integrity Protection
+setting.
+PR workflows receive no Apple signing or notarization secrets, so PR CI does
+not sign a package. Debug mode does not change the entitlement requirement.
+Use a Mac with the approved profile for a full device test before merging.
 
-For a release, set `APPLE_CODESIGN_IDENTITY` to the Sunshine Developer ID
-Application identity, set `APPLE_MACOS_VIRTUAL_HID_PROVISIONING_PROFILE` to
-the downloaded profile path, and set the existing Sunshine notarization
-variables (`APPLE_ID`, `APPLE_TEAM_ID`, `APPLE_NOTARYTOOL_PASSWORD`). Then run:
+For a release, set `APPLE_CODESIGN_IDENTITY` to the Developer ID Application
+identity, set `APPLE_MACOS_VIRTUAL_HID_PROVISIONING_PROFILE` to the broker
+profile path, and set the notarization variables (`APPLE_ID`, `APPLE_TEAM_ID`,
+`APPLE_NOTARYTOOL_PASSWORD`). Then run:
 
 ```sh
 bash scripts/macos/package-dmg.sh cmake-build-macos-universal
@@ -110,8 +83,30 @@ bash scripts/macos/package-dmg.sh cmake-build-macos-universal
 The script embeds the profile, signs the broker app with Hardened Runtime and
 a secure timestamp, verifies its signature, makes one universal DMG, submits
 it using `notarytool`, and staples the ticket. Release CI performs these steps
-using the same certificate and notarization secret names as Sunshine. The
-profile secret is the only new secret.
+with the corresponding certificate, profile, and notarization secrets.
+
+### Test a PR on a Mac mini
+
+Install Xcode on the Mac mini and select it with
+`sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer`.
+Confirm `xcodebuild -version` works, install CMake, and check out the PR branch.
+Import the Developer ID Application `.p12` file through Keychain Access into
+the login keychain, entering its export password. Confirm that
+`security find-identity -v -p codesigning` lists the certificate **with its
+private key**. Keep the approved libvirtualhid `.provisionprofile` on the Mac
+mini.
+Set `APPLE_CODESIGN_IDENTITY` to that certificate's identity,
+`APPLE_MACOS_VIRTUAL_HID_PROVISIONING_PROFILE` to the profile's full path, and
+`APPLE_ID`, `APPLE_TEAM_ID`, and `APPLE_NOTARYTOOL_PASSWORD` to the Apple
+notarization values in the local shell. Do not commit these values.
+
+Run the universal CMake commands above, then run
+`bash scripts/macos/package-dmg.sh cmake-build-macos-universal`. This produces a
+signed, notarized, stapled DMG from the PR branch. Install it using the steps
+below, activate a license, and test each gamepad profile in a macOS consumer.
+The certificate and profile are necessary even when System Integrity Protection
+is disabled. A locally built unsigned broker can test IPC and licensing, but
+cannot establish that virtual gamepad creation works.
 
 Mount the DMG and double-click **Install libvirtualhid.command**. It asks for
 administrator authorization, installs the signed broker app under
@@ -153,10 +148,11 @@ retain both license texts.
 
 ## License and validation
 
-The macOS broker uses the same Polar organization, yearly and lifetime benefit
-IDs, purchase URL, and customer portal as Windows. No unlicensed production
-gamepad is created. `lvh::get_license_status()`, `activate_license()`,
-`validate_license()`, and `deactivate_license()` talk to the installed broker;
+The Windows and macOS brokers share the Polar organization, Yearly and Lifetime
+benefit IDs, purchase URL, customer portal, and license time limits. No
+unlicensed production gamepad is created. `lvh::get_license_status()`,
+`activate_license()`, `validate_license()`, and `deactivate_license()` talk to
+the installed broker;
 the license key never enters the virtual gamepad report stream. A five-minute
 GitHub Actions evaluation is available only when the broker itself starts in
 the GitHub Actions environment.

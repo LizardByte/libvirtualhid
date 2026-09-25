@@ -438,12 +438,12 @@ feature reports, and Switch Pro initialization replies. macOS presents Xbox
 360 as HID rather than Windows XInput/XUSB. Consumer recognition still depends
 on each game's macOS controller stack and needs installed validation.
 
-Keyboard and mouse input still use CoreGraphics, including UTF-8 text,
+Keyboard and mouse input use CoreGraphics for UTF-8 text,
 portable key translation, modifier state, relative and absolute motion, and
-pixel-based scrolling. They follow the normal macOS synthetic-input permission
-path where the host requires it. Touchscreen, trackpad, and pen tablet creation
+pixel-based scrolling. The host process needs macOS synthetic-input permission
+when the system requires it. Touchscreen, trackpad, and pen tablet creation
 return `unsupported_profile`.
 
-The broker uses the same paid Polar benefits and license API as Windows. See
-[macOS gamepad setup](macos-gamepad.md) for the Apple portal request, universal
-build, signing, installation, and diagnostics.
+Gamepad creation requires a machine license. The broker accepts the Yearly and
+Lifetime Polar benefits. See [macOS gamepad setup](macos-gamepad.md) for the
+universal build, signing, installation, and diagnostics.

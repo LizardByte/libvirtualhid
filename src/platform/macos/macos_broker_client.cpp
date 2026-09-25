@@ -6,7 +6,7 @@
 #include "platform/macos/macos_broker_client.hpp"
 
 #include "platform/macos/broker/io.hpp"
-#include "platform/windows/shared/lvh_windows_broker_config.hpp"
+#include "platform/shared/lvh_broker_license_policy.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -226,8 +226,8 @@ namespace lvh::detail {
 
     LicenseResult license_call(macos_broker::Message request) {
       LicenseResult result;
-      result.license.purchase_url = windows::broker_config::buy_url;
-      result.license.manage_account_url = windows::broker_config::manage_account_url;
+      result.license.purchase_url = broker_license::buy_url;
+      result.license.manage_account_url = broker_license::manage_account_url;
       std::string error;
       const int fd = macos_broker::connect_to_broker(error);
       if (fd < 0) {
