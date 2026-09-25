@@ -1,6 +1,11 @@
 // SPDX-FileCopyrightText: 2026 LIZARDBYTE LLC
 // SPDX-License-Identifier: LicenseRef-LizardByte-SAL-1.0
 
+/**
+ * @file src/platform/macos/broker/license_manager.hpp
+ * @brief Machine-scoped licensing state for the macOS virtual HID broker.
+ */
+
 #pragma once
 
 #include "protocol.hpp"

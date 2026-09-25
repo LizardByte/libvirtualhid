@@ -13,7 +13,8 @@ mkdir -p "${output_directory}"
 output_directory="$(cd "${output_directory}" && pwd)"
 stage_directory="${build_directory}/macos-dmg-stage"
 image_root="${stage_directory}/image"
-broker_app="${image_root}/usr/local/libexec/libvirtualhid/VirtualHIDBroker.app"
+broker_app="${image_root}/VirtualHIDBroker.app"
+control_app="${image_root}/VirtualHIDControl.app"
 profile_path="${APPLE_MACOS_VIRTUAL_HID_PROVISIONING_PROFILE:-}"
 signing_identity="${APPLE_CODESIGN_IDENTITY:-}"
 
@@ -26,6 +27,8 @@ fi
 rm -rf "${stage_directory}"
 mkdir -p "${image_root}"
 DESTDIR="${image_root}" cmake --install "${build_directory}" --prefix /usr/local
+mv "${image_root}/usr/local/libexec/libvirtualhid/VirtualHIDBroker.app" "${broker_app}"
+mv "${image_root}/usr/local/Applications/VirtualHIDControl.app" "${control_app}"
 
 profile_details="${stage_directory}/profile.plist"
 /usr/bin/security cms -D -i "${profile_path}" > "${profile_details}"
@@ -51,6 +54,9 @@ cp "${profile_path}" "${broker_app}/Contents/embedded.provisionprofile"
   --entitlements "${repository_root}/src/platform/macos/broker/entitlements.plist" \
   "${broker_app}"
 /usr/bin/codesign --verify --deep --strict --verbose=2 "${broker_app}"
+/usr/bin/codesign --force --timestamp --options runtime \
+  --sign "${signing_identity}" "${control_app}"
+/usr/bin/codesign --verify --deep --strict --verbose=2 "${control_app}"
 /usr/bin/codesign --force --timestamp --options runtime \
   --sign "${signing_identity}" "${image_root}/usr/local/bin/libvirtualhid-license"
 /usr/bin/codesign --verify --strict --verbose=2 \

@@ -12,7 +12,10 @@ configure_file("${CMAKE_CURRENT_SOURCE_DIR}/Info.plist"
 
 add_executable(libvirtualhid_macos_broker MACOSX_BUNDLE
   "${CMAKE_CURRENT_SOURCE_DIR}/libvirtualhid_macos_broker.cpp"
-  "${CMAKE_CURRENT_SOURCE_DIR}/license_manager.mm")
+  "${CMAKE_CURRENT_SOURCE_DIR}/license_manager.mm"
+  "${PROJECT_SOURCE_DIR}/assets/macos/libvirtualhid.icns")
+set_source_files_properties("${PROJECT_SOURCE_DIR}/assets/macos/libvirtualhid.icns"
+  PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
 target_compile_features(libvirtualhid_macos_broker PRIVATE cxx_std_23)
 set_target_properties(libvirtualhid_macos_broker PROPERTIES
   OUTPUT_NAME VirtualHIDBroker

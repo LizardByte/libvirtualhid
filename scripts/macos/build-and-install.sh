@@ -189,11 +189,12 @@ echo 'Configuring and building the universal macOS binaries...'
 cmake -S "${repository_root}" -B "${build_directory}" \
   -DCMAKE_OSX_ARCHITECTURES='arm64;x86_64' \
   -DCMAKE_BUILD_TYPE=Release -DBUILD_DOCS=OFF -DBUILD_TESTS=ON \
-  -DLIBVIRTUALHID_BUILD_TOOLS=OFF -DLIBVIRTUALHID_WARNINGS_AS_ERRORS=ON
+  -DLIBVIRTUALHID_BUILD_TOOLS=ON -DLIBVIRTUALHID_WARNINGS_AS_ERRORS=ON
 cmake --build "${build_directory}" --parallel "$(/usr/sbin/sysctl -n hw.ncpu)"
 
 for binary in \
   "${build_directory}/src/platform/macos/broker/VirtualHIDBroker.app/Contents/MacOS/VirtualHIDBroker" \
+  "${build_directory}/tools/VirtualHIDControl.app/Contents/MacOS/VirtualHIDControl" \
   "${build_directory}/src/platform/macos/broker/libvirtualhid-license" \
   "${build_directory}/src/libvirtualhid.a"; do
   /usr/bin/xcrun lipo "${binary}" -verify_arch arm64
