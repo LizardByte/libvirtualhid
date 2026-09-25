@@ -54,3 +54,6 @@ fi
 /usr/bin/sudo /bin/launchctl bootstrap system "${service_plist}"
 /usr/bin/sudo /bin/launchctl kickstart -k "system/${bundle_id}"
 echo "libvirtualhid broker installed. Run: /usr/local/bin/libvirtualhid-license activate"
+echo 'To create gamepads, grant VirtualHIDBroker.app from this DMG access in'
+echo 'System Settings > Privacy & Security > Device Control and Data Access'
+echo '(Accessibility on older macOS).'

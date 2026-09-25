@@ -126,6 +126,17 @@ LaunchDaemon. Run a host process in the normal user session. The broker socket
 is `/var/run/libvirtualhid/broker.sock`; only the root-owned installed broker
 can answer the library's requests.
 
+macOS also requires permission for the broker to create virtual HID devices.
+Open **System Settings**, then **Privacy & Security**, then **Device Control and
+Data Access** (**Accessibility** on older macOS versions). Click **Add**,
+authorize the settings change, and select `VirtualHIDBroker.app` inside the
+mounted DMG at `usr/local/libexec/libvirtualhid/VirtualHIDBroker.app`.
+In the app picker, press **Command-Shift-G** and enter
+`/Volumes/libvirtualhid/usr/local/libexec/libvirtualhid` to reach it. The
+installed broker runs as a root LaunchDaemon, so macOS cannot show its prompt
+during gamepad creation. This permission gives the broker broad device control
+access; review the signed app before granting it.
+
 To activate a purchased license, open Terminal and run:
 
 ```sh
@@ -177,8 +188,8 @@ when trusted elapsed time cannot be reconstructed.
 
 If creation returns `backend_unavailable`, inspect the launchd job with
 `sudo launchctl print system/dev.lizardbyte.app.libvirtualhid`. If it returns
-`backend_failure` with an entitlement message, inspect the embedded profile
-and signature with
+`backend_failure` during virtual HID creation, check the broker's macOS
+permission above, then inspect the embedded profile and signature with
 `codesign -d --entitlements :- '/Library/Application Support/libvirtualhid/VirtualHIDBroker.app'`
 and inspect the embedded profile with
 `security cms -D -i '/Library/Application Support/libvirtualhid/VirtualHIDBroker.app/Contents/embedded.provisionprofile'`.

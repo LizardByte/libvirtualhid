@@ -339,7 +339,7 @@ namespace lvh::detail::macos_broker {
       dispatch_semaphore_t cancelled = dispatch_semaphore_create(0);
       const auto device = create_device(request, session, cancelled);
       if (!device) {
-        static_cast<void>(send_message(fd, response_with_error(lvh::ErrorCode::backend_failure, "Virtual HID creation failed; check the broker's Apple virtual HID entitlement and provisioning profile")));
+        static_cast<void>(send_message(fd, response_with_error(lvh::ErrorCode::backend_failure, "Virtual HID creation failed; check broker signing and macOS Accessibility permission")));
         ::close(fd);
         return;
       }
