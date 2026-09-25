@@ -88,7 +88,6 @@ namespace lvh::detail::windows_broker_service {
     L"Polar-Version: 2026-04\r\n";
   constexpr auto license_validation_interval = lvh::broker_license::validation_interval;
   constexpr auto license_validation_retry_interval = lvh::broker_license::validation_retry_interval;
-  constexpr auto license_outage_device_retention = lvh::broker_license::outage_retention;
   constexpr std::size_t unvalidated_active_device_limit = lvh::broker_license::unvalidated_active_device_limit;
   constexpr auto boot_session_registry_path =
     L"SYSTEM\\CurrentControlSet\\Services\\libvirtualhid_broker\\Runtime";
