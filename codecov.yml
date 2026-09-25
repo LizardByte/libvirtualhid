@@ -1,3 +1,4 @@
+---
 # The hosted coverage matrix does not collect coverage from the root-owned
 # broker or its IPC client, and cannot exercise signed virtual HID creation.
 # The macOS broker CI job tests IPC and licensing behavior separately.
