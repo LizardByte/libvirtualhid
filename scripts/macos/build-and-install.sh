@@ -62,12 +62,17 @@ while IFS= read -r line || [[ -n "${line}" ]]; do
     APPLE_MACOS_VIRTUAL_HID_PROVISIONING_PROFILE|\
     APPLE_MACOS_VIRTUAL_HID_PROVISIONING_PROFILE_BASE64)
       printf -v "${name}" '%s' "${value}"
-      export "${name}"
       ;;
     *) fail "Unknown setting ${name} in ${settings_file}" ;;
   esac
 done < "${settings_file}"
 unset line name value
+export APPLE_ID APPLE_NOTARYTOOL_PASSWORD APPLE_TEAM_ID APPLE_CODESIGN_IDENTITY \
+  APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_P12_FILE \
+  APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_P12_PASSWORD \
+  APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_BASE64 \
+  APPLE_MACOS_VIRTUAL_HID_PROVISIONING_PROFILE \
+  APPLE_MACOS_VIRTUAL_HID_PROVISIONING_PROFILE_BASE64
 
 [[ -n "${APPLE_ID:-}" ]] || fail "Fill APPLE_ID in ${settings_file}"
 [[ -n "${APPLE_NOTARYTOOL_PASSWORD:-}" ]] || fail "Fill APPLE_NOTARYTOOL_PASSWORD in ${settings_file}"
