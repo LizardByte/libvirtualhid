@@ -11,7 +11,8 @@ src/core/                     Shared profile, descriptor, and report logic
 src/platform/windows/         Windows client backend and UMDF control channel
 src/platform/windows/driver/  Windows UMDF2 driver package sources
 src/platform/linux/           Linux uhid/uinput backend
-src/platform/macos/           macOS CoreGraphics keyboard and mouse backend
+src/platform/macos/           macOS CoreGraphics and broker client backends
+src/platform/macos/broker/    Licensed macOS virtual HID broker
 examples/                     Minimal consumers and platform smoke tests
 tests/                        Unit and integration tests
 cmake/                        Package config and helper modules
@@ -49,16 +50,20 @@ cmake-build-debug/tests/test_libvirtualhid
 
 ## macOS Build
 
-macOS builds use the same CMake target shape and link the CoreGraphics backend
-against the system ApplicationServices, Carbon, CoreFoundation, and IOKit
-frameworks. The CI test coverage exercises translation and lifecycle paths
-without posting live synthetic input events.
+macOS builds link the CoreGraphics keyboard/mouse backend and the broker client
+against system frameworks. Top-level builds also compile the broker app. The
+ordinary test suite checks translation, protocol capacity, and lifecycle paths
+without creating a live virtual HID device. Live testing requires Apple's
+approved virtual HID entitlement and a signed installation.
 
 ```bash
 cmake -S . -B cmake-build-debug -G Ninja -DCMAKE_BUILD_TYPE=Debug
 cmake --build cmake-build-debug
 cmake-build-debug/tests/test_libvirtualhid
 ```
+
+For the universal Apple silicon and Intel release build, profile setup, and
+signing workflow, see [macOS gamepad setup](macos-gamepad.md).
 
 ## Documentation
 
@@ -88,9 +93,8 @@ code and tests provide a better source of truth.
 
 ## Roadmap
 
-- Add native macOS virtual-HID gamepad support beyond the current CoreGraphics
-  keyboard and mouse injection backend, including signing, entitlement, and
-  installer constraints.
+- Validate each macOS HID gamepad profile against SDL, Steam, browsers, and
+  Game Controller framework consumers after Apple grants the entitlement.
 - Add bindings for other languages, such as Python, Rust, and C#. Bindings will
   be considered for any requested language.
 - Evaluate an optional FreeBSD CUSE-backed `uhid(4)`-compatible device for

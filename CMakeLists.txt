@@ -45,6 +45,9 @@ option(LIBVIRTUALHID_BUILD_WINDOWS_DRIVER "Build the Windows UMDF2 driver packag
 option(LIBVIRTUALHID_BUILD_WINDOWS_BROKER
        "Build the Windows broker service used by the monetized UMDF driver package"
        ${LIBVIRTUALHID_BUILD_WINDOWS_DRIVER})
+option(LIBVIRTUALHID_BUILD_MACOS_BROKER
+       "Build the licensed macOS virtual HID broker"
+       ${APPLE})
 option(LIBVIRTUALHID_INSTALL
         "Install libvirtualhid targets, headers, and CMake package files" ${LIBVIRTUALHID_IS_TOP_LEVEL})
 option(LIBVIRTUALHID_ENABLE_PACKAGING "Enable CPack package metadata" ${LIBVIRTUALHID_INSTALL})
@@ -134,6 +137,11 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
 
     if(WIN32 AND LIBVIRTUALHID_BUILD_WINDOWS_BROKER)
         add_subdirectory(src/platform/windows/broker)
+    endif()
+
+    if(APPLE AND LIBVIRTUALHID_BUILD_MACOS_BROKER)
+        enable_language(OBJCXX)
+        add_subdirectory(src/platform/macos/broker)
     endif()
 
     if(BUILD_DOCS)

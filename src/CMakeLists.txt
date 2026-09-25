@@ -66,7 +66,7 @@ elseif(WIN32)
 elseif(APPLE)
     target_sources(${PROJECT_NAME}
       PRIVATE
-      "${CMAKE_CURRENT_SOURCE_DIR}/platform/license_unavailable.cpp"
+      "${CMAKE_CURRENT_SOURCE_DIR}/platform/macos/macos_broker_client.cpp"
       "${CMAKE_CURRENT_SOURCE_DIR}/platform/macos/macos_backend.cpp")
     target_link_libraries(${PROJECT_NAME}
       PRIVATE

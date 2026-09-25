@@ -22,6 +22,7 @@
 
 // local includes
 #include "core/backend.hpp"
+#include "platform/macos/macos_broker_client.hpp"
 
 namespace lvh::detail {
   namespace macos {
@@ -777,7 +778,10 @@ namespace lvh::detail {
     class MacosBackend final: public Backend {
     public:
       MacosBackend() {
-        capabilities_.backend_name = "macos-coregraphics";
+        capabilities_.backend_name = "macos-virtual-hid-coregraphics";
+        capabilities_.supports_virtual_hid = true;
+        capabilities_.supports_gamepad = true;
+        capabilities_.supports_output_reports = true;
         capabilities_.supports_keyboard = true;
         capabilities_.supports_mouse = true;
       }
@@ -786,30 +790,32 @@ namespace lvh::detail {
         return capabilities_;
       }
 
-      BackendGamepadCreationResult create_gamepad(DeviceId /*id*/, const CreateGamepadOptions & /*options*/) override {
-        return {OperationStatus::failure(ErrorCode::unsupported_profile, "macOS gamepad backend is not implemented"), nullptr};
+      BackendGamepadCreationResult create_gamepad(DeviceId id, const CreateGamepadOptions &options) override {
+        return create_macos_brokered_gamepad(id, options);
       }
 
       BackendKeyboardCreationResult create_keyboard(DeviceId /*id*/, const CreateKeyboardOptions &options) override {
         if (options.profile.device_type != DeviceType::keyboard) {
           return {OperationStatus::failure(ErrorCode::unsupported_profile, "device profile is not a keyboard"), nullptr};
         }
-        if (!state_->keyboard_source) {
+        auto state = input_state();
+        if (!state->keyboard_source) {
           return {OperationStatus::failure(ErrorCode::backend_failure, "macOS keyboard event source is unavailable"), nullptr};
         }
 
-        return {OperationStatus::success(), std::make_unique<MacosKeyboard>(state_)};
+        return {OperationStatus::success(), std::make_unique<MacosKeyboard>(std::move(state))};
       }
 
       BackendMouseCreationResult create_mouse(DeviceId /*id*/, const CreateMouseOptions &options) override {
         if (options.profile.device_type != DeviceType::mouse) {
           return {OperationStatus::failure(ErrorCode::unsupported_profile, "device profile is not a mouse"), nullptr};
         }
-        if (!state_->source || !state_->mouse_event) {
+        auto state = input_state();
+        if (!state->source || !state->mouse_event) {
           return {OperationStatus::failure(ErrorCode::backend_failure, "macOS mouse event source is unavailable"), nullptr};
         }
 
-        return {OperationStatus::success(), std::make_unique<MacosMouse>(state_)};
+        return {OperationStatus::success(), std::make_unique<MacosMouse>(std::move(state))};
       }
 
       BackendTouchscreenCreationResult create_touchscreen(
@@ -831,8 +837,17 @@ namespace lvh::detail {
       }
 
     private:
+      std::shared_ptr<MacosInputState> input_state() {
+        std::lock_guard lock {state_mutex_};
+        if (!state_) {
+          state_ = std::make_shared<MacosInputState>();
+        }
+        return state_;
+      }
+
       BackendCapabilities capabilities_;
-      std::shared_ptr<MacosInputState> state_ {std::make_shared<MacosInputState>()};
+      std::mutex state_mutex_;
+      std::shared_ptr<MacosInputState> state_;
     };
 
   }  // namespace macos

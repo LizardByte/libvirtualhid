@@ -23,6 +23,11 @@ libvirtualhid_copy_mingw_runtime(keyboard_mouse_adapter)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR WIN32)
     set(RUN_GAMEPAD_EXAMPLE_COMMAND "$<TARGET_FILE:gamepad_adapter>")
     set(RUN_GAMEPAD_EXAMPLE_COMMENT "Running gamepad_adapter example")
+elseif(APPLE)
+    set(RUN_GAMEPAD_EXAMPLE_COMMAND
+      "${CMAKE_COMMAND}" -E echo
+      "Install and activate the macOS virtual HID broker before running gamepad_adapter")
+    set(RUN_GAMEPAD_EXAMPLE_COMMENT "macOS gamepad_adapter requires the installed broker")
 else()
     set(RUN_GAMEPAD_EXAMPLE_COMMAND
       "${CMAKE_COMMAND}" -E echo
