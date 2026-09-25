@@ -418,9 +418,10 @@ int main() {
       continue;
     }
     // Serve clients concurrently; a session can remain open for a game's lifetime.
-    std::jthread {[client, licenses] {
+    std::jthread {[client, licenses] {  // NOSONAR(cpp:S5962): gamepad sessions can outlive accept; shared ownership keeps licensing alive.
       serve_client(client, *licenses);
-    }}.detach();  // NOSONAR(cpp:S5962): gamepad sessions can outlive accept; shared ownership keeps licensing alive.
+    }}
+      .detach();
   }
   ::close(listener);
   return 1;
