@@ -87,28 +87,35 @@ with the corresponding certificate, profile, and notarization secrets.
 
 ### Test a PR on a Mac mini
 
-Install Xcode on the Mac mini and select it with
-`sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer`.
-Confirm `xcodebuild -version` works, install CMake, and check out the PR branch.
-Import the Developer ID Application `.p12` file through Keychain Access into
-the login keychain, entering its export password. Confirm that
-`security find-identity -v -p codesigning` lists the certificate **with its
-private key**. Keep the approved libvirtualhid `.provisionprofile` on the Mac
-mini.
-Set `APPLE_CODESIGN_IDENTITY` to that certificate's identity,
-`APPLE_MACOS_VIRTUAL_HID_PROVISIONING_PROFILE` to the profile's full path, and
-`APPLE_ID`, `APPLE_TEAM_ID`, and `APPLE_NOTARYTOOL_PASSWORD` to the Apple
-notarization values in the local shell. Do not commit these values.
+Check out the PR branch on the Mac mini, install Xcode, and copy
+`.env.example` to `.env` in the repository root. Fill in the Apple ID,
+notarization app-specific password, Developer ID Application `.p12` file path
+and export password, and the provisioning profile path. Paths must be absolute.
+The script can also decode the base64 certificate and profile values used by
+CI, if you have those originals. The optional team ID and signing identity are
+detected from the profile and certificate. `.env` is ignored by Git and must
+stay local. GitHub's secrets API cannot return stored secret values.
 
-Run the universal CMake commands above, then run
-`bash scripts/macos/package-dmg.sh cmake-build-macos-universal`. This produces a
-signed, notarized, stapled DMG from the PR branch. Install it using the steps
-below, activate a license, and test each gamepad profile in a macOS consumer.
-The certificate and profile are necessary even when System Integrity Protection
-is disabled. A locally built unsigned broker can test IPC and licensing, but
-cannot establish that virtual gamepad creation works.
+```sh
+cp -n .env.example .env
+open -e .env
+bash scripts/macos/build-and-install.sh
+```
 
-Mount the DMG and double-click **Install libvirtualhid.command**. It asks for
+The script selects Xcode, installs CMake through Homebrew if needed, imports
+the certificate into a temporary Keychain, builds and tests universal binaries,
+signs and notarizes the DMG, and installs it. It removes the temporary Keychain
+afterward. The approved profile must be for
+`dev.lizardbyte.app.libvirtualhid`; a profile for another bundle ID fails
+before the build. The certificate and profile are necessary even when System
+Integrity Protection is disabled. A locally built unsigned broker can test IPC
+and licensing, but cannot establish that virtual gamepad creation works.
+
+After installation, activate a license if needed, then test each gamepad
+profile in a macOS consumer.
+
+For manual installation, mount the DMG and double-click
+**Install libvirtualhid.command**. It asks for
 administrator authorization, installs the signed broker app under
 `/Library/Application Support/libvirtualhid`, installs the static library and
 headers under `/usr/local`, and starts the `dev.lizardbyte.app.libvirtualhid`

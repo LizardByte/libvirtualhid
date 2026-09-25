@@ -4,6 +4,9 @@
 # Python
 .venv/
 
+# Local macOS signing credentials
+/.env
+
 # CMake
 build/
 cmake-build-*/
