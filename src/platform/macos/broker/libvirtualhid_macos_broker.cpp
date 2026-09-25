@@ -144,17 +144,13 @@ namespace lvh::detail::macos_broker {
             break;
         }
       }
-      if (!result.empty() &&
-          ((report_id == ps::dualshock4_pairing_report && kind == GamepadProfileKind::dualshock4) ||
-           (report_id == ps::dualsense_pairing_report && kind == GamepadProfileKind::dualsense))) {
+      if (!result.empty() && ((report_id == ps::dualshock4_pairing_report && kind == GamepadProfileKind::dualshock4) || (report_id == ps::dualsense_pairing_report && kind == GamepadProfileKind::dualsense))) {
         const auto mac = mac_address(request);
         for (std::size_t index = 0; index < mac.size(); ++index) {
           result[1U + index] = mac[mac.size() - 1U - index];
         }
       }
-      if (!result.empty() &&
-          request.bus == static_cast<std::uint32_t>(lvh::BusType::bluetooth) &&
-          result.size() >= 4U) {
+      if (!result.empty() && request.bus == static_cast<std::uint32_t>(lvh::BusType::bluetooth) && result.size() >= 4U) {
         const auto value = crc32(std::span {result.data(), result.size() - 4U}, ps::playstation_feature_crc_seed);
         for (std::size_t index = 0; index < 4U; ++index) {
           result[result.size() - 4U + index] = static_cast<std::uint8_t>(value >> (8U * index));
@@ -281,19 +277,13 @@ namespace lvh::detail::macos_broker {
         ::close(fd);
         return;
       }
-      if (request.type == MessageType::status || request.type == MessageType::activate ||
-          request.type == MessageType::validate || request.type == MessageType::deactivate) {
+      if (request.type == MessageType::status || request.type == MessageType::activate || request.type == MessageType::validate || request.type == MessageType::deactivate) {
         const auto response = licenses.handle(request);
         static_cast<void>(send_message(fd, response));
         ::close(fd);
         return;
       }
-      if (request.type != MessageType::create || request.descriptor_size == 0 ||
-          request.descriptor_size > max_descriptor_size || request.input_report_size == 0 ||
-          request.input_report_size > max_report_size || request.output_report_size > max_report_size ||
-          !terminated(request.name) || !terminated(request.manufacturer) || !terminated(request.stable_id) ||
-          request.kind > static_cast<std::uint32_t>(lvh::GamepadProfileKind::dualshock4) ||
-          request.bus > static_cast<std::uint32_t>(lvh::BusType::bluetooth)) {
+      if (request.type != MessageType::create || request.descriptor_size == 0 || request.descriptor_size > max_descriptor_size || request.input_report_size == 0 || request.input_report_size > max_report_size || request.output_report_size > max_report_size || !terminated(request.name) || !terminated(request.manufacturer) || !terminated(request.stable_id) || request.kind > static_cast<std::uint32_t>(lvh::GamepadProfileKind::dualshock4) || request.bus > static_cast<std::uint32_t>(lvh::BusType::bluetooth)) {
         static_cast<void>(send_message(fd, response_with_error(lvh::ErrorCode::invalid_argument, "Invalid macOS gamepad request")));
         ::close(fd);
         return;
@@ -335,8 +325,7 @@ namespace lvh::detail::macos_broker {
         if (request.type == MessageType::close) {
           break;
         }
-        if (request.type != MessageType::submit || request.size != expected_input_size ||
-            request.size > max_report_size) {
+        if (request.type != MessageType::submit || request.size != expected_input_size || request.size > max_report_size) {
           auto failure = response_with_error(lvh::ErrorCode::invalid_argument, "Invalid gamepad input report");
           static_cast<void>(session.send(failure));
           continue;
@@ -373,8 +362,7 @@ int main() {
     return 1;
   }
   struct stat directory {};
-  if (::lstat("/var/run/libvirtualhid", &directory) != 0 || !S_ISDIR(directory.st_mode) || directory.st_uid != 0 ||
-      ::chmod("/var/run/libvirtualhid", 0755) != 0) {
+  if (::lstat("/var/run/libvirtualhid", &directory) != 0 || !S_ISDIR(directory.st_mode) || directory.st_uid != 0 || ::chmod("/var/run/libvirtualhid", 0755) != 0) {
     return 1;
   }
   const int lock_fd = ::open("/var/run/libvirtualhid/broker.lock", O_CREAT | O_RDWR | O_NOFOLLOW, 0600);
@@ -389,8 +377,7 @@ int main() {
   sockaddr_un address {};
   address.sun_family = AF_UNIX;
   std::strncpy(address.sun_path, socket_path, sizeof(address.sun_path) - 1U);
-  if (::bind(listener, reinterpret_cast<sockaddr *>(&address), sizeof(address)) != 0 ||
-      ::chmod(socket_path, 0666) != 0 || ::listen(listener, 32) != 0) {
+  if (::bind(listener, reinterpret_cast<sockaddr *>(&address), sizeof(address)) != 0 || ::chmod(socket_path, 0666) != 0 || ::listen(listener, 32) != 0) {
     return 1;
   }
   LicenseManager licenses;

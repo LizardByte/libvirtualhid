@@ -43,9 +43,7 @@ namespace lvh::detail::macos_broker {
 
   inline int connect_to_broker(std::string &error) {
     struct stat directory_stat {};
-    if (::lstat("/var/run/libvirtualhid", &directory_stat) != 0 ||
-        !S_ISDIR(directory_stat.st_mode) || directory_stat.st_uid != 0 ||
-        (directory_stat.st_mode & 0022) != 0) {
+    if (::lstat("/var/run/libvirtualhid", &directory_stat) != 0 || !S_ISDIR(directory_stat.st_mode) || directory_stat.st_uid != 0 || (directory_stat.st_mode & 0022) != 0) {
       error = "macOS broker directory is missing or insecure";
       return -1;
     }

@@ -64,8 +64,8 @@ jobs:
             cmake-build-macos-universal/src/platform/macos/broker/VirtualHIDBroker.app/Contents/MacOS/VirtualHIDBroker \
             cmake-build-macos-universal/src/platform/macos/broker/libvirtualhid-license \
             cmake-build-macos-universal/src/libvirtualhid.a; do
-            xcrun lipo -verify_arch arm64 "${binary}"
-            xcrun lipo -verify_arch x86_64 "${binary}"
+            xcrun lipo "${binary}" -verify_arch arm64
+            xcrun lipo "${binary}" -verify_arch x86_64
           done
 
       - name: Import Developer ID certificate
