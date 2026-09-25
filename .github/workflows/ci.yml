@@ -72,16 +72,16 @@ jobs:
       publish_release: ${{ needs.setup_release.outputs.publish_release }}
       release_version: ${{ needs.setup_release.outputs.release_version }}
     secrets:
-      APPLE_ID: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' && secrets.APPLE_ID || '' }}
-      APPLE_TEAM_ID: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' && secrets.APPLE_TEAM_ID || '' }}
-      APPLE_NOTARYTOOL_PASSWORD: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' && secrets.APPLE_NOTARYTOOL_PASSWORD || '' }}
-      APPLE_CODESIGN_IDENTITY: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' && secrets.APPLE_CODESIGN_IDENTITY || '' }}
+      APPLE_ID: ${{ github.event_name == 'push' && secrets.APPLE_ID || '' }}
+      APPLE_TEAM_ID: ${{ github.event_name == 'push' && secrets.APPLE_TEAM_ID || '' }}
+      APPLE_NOTARYTOOL_PASSWORD: ${{ github.event_name == 'push' && secrets.APPLE_NOTARYTOOL_PASSWORD || '' }}
+      APPLE_CODESIGN_IDENTITY: ${{ github.event_name == 'push' && secrets.APPLE_CODESIGN_IDENTITY || '' }}
       APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_BASE64: >-
-        ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' && secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_BASE64 || '' }}
+        ${{ github.event_name == 'push' && secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_BASE64 || '' }}
       APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_P12_PASSWORD: >-
-        ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' && secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_P12_PASSWORD || '' }}
+        ${{ github.event_name == 'push' && secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_P12_PASSWORD || '' }}
       APPLE_MACOS_VIRTUAL_HID_PROVISIONING_PROFILE_BASE64: >-
-        ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' && secrets.APPLE_MACOS_VIRTUAL_HID_PROVISIONING_PROFILE_BASE64 || '' }}
+        ${{ github.event_name == 'push' && secrets.APPLE_MACOS_VIRTUAL_HID_PROVISIONING_PROFILE_BASE64 || '' }}
 
   build:
     name: Library
