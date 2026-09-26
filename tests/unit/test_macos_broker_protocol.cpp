@@ -7,6 +7,7 @@
 #include "platform/macos/macos_xbox_transport.hpp"
 
 #include <array>
+#include <bitset>
 #include <gtest/gtest.h>
 #include <libvirtualhid/profiles.hpp>
 #include <libvirtualhid/report.hpp>
@@ -77,12 +78,13 @@ TEST(MacosBrokerProtocolTest, XboxTransportUsesSteamMacOSIdentityAndButtonLayout
     state.buttons.set(buttons[bit]);
     const auto report = lvh::detail::macos::xbox_transport_input_report(state);
     ASSERT_EQ(report.size(), transport.input_report_size);
-    const auto flags = static_cast<std::uint16_t>(report[1] | (report[2] << 8U));
-    EXPECT_EQ(flags, static_cast<std::uint16_t>(1U << bit));
+    const auto flags = std::bitset<16> {report[1] + 256U * report[2]};
+    EXPECT_TRUE(flags.test(bit));
+    EXPECT_EQ(flags.count(), 1U);
   }
 }
 
-TEST(MacosBrokerProtocolTest, XboxOneAndSeriesUseDistinctBluetoothIdentities) {
+TEST(MacosBrokerProtocolTest, XboxOneAndSeriesUseDistinctIdentitiesAndGipInput) {
   for (const auto &requested : {lvh::profiles::xbox_one(), lvh::profiles::xbox_series()}) {
     SCOPED_TRACE(requested.name);
     const auto transport = lvh::detail::macos::xbox_transport_profile(requested);
@@ -90,8 +92,8 @@ TEST(MacosBrokerProtocolTest, XboxOneAndSeriesUseDistinctBluetoothIdentities) {
     EXPECT_EQ(transport.product_id, requested.gamepad_kind == lvh::GamepadProfileKind::xbox_one ? 0x0B20 : 0x0B13);
     EXPECT_EQ(transport.version, 0x0513);
     EXPECT_EQ(transport.bus_type, lvh::BusType::bluetooth);
-    EXPECT_EQ(transport.report_id, 1);
-    EXPECT_EQ(transport.input_report_size, 17U);
+    EXPECT_EQ(transport.report_id, lvh::detail::macos::xbox_gip_input_command);
+    EXPECT_EQ(transport.input_report_size, 25U);
     EXPECT_EQ(transport.output_report_size, 9U);
     EXPECT_NE(transport.report_descriptor, requested.report_descriptor);
 
@@ -102,16 +104,62 @@ TEST(MacosBrokerProtocolTest, XboxOneAndSeriesUseDistinctBluetoothIdentities) {
     state.buttons.set(lvh::GamepadButton::misc1);
     state.left_stick = {1.0F, -1.0F};
     const auto original = lvh::reports::pack_input_report(requested, state);
-    const auto report = lvh::detail::xbox_bluetooth::make_xbox_bluetooth_input_report(
+    const auto report = lvh::detail::macos::xbox_gip_transport_input_report(
       state,
       original,
       requested.gamepad_kind == lvh::GamepadProfileKind::xbox_series
     );
     ASSERT_EQ(report.size(), transport.input_report_size);
-    EXPECT_EQ(report[0], 1U);
-    EXPECT_EQ(report[14], 0x01U);
-    EXPECT_EQ(report[15], 0x08U);
-    EXPECT_EQ(report[16], requested.gamepad_kind == lvh::GamepadProfileKind::xbox_series ? 1U : 0U);
+    EXPECT_EQ(report[0], 0x20U);
+    EXPECT_EQ(report[3], 16U);
+    EXPECT_EQ(report[4], 0x14U);  // Start and A.
+    EXPECT_EQ(report[5], 0x04U);  // D-pad left.
+    EXPECT_EQ(report[10], 0xFFU);  // Left X fully right.
+    EXPECT_EQ(report[11], 0x7FU);
+    EXPECT_EQ(report[12], 0xFFU);  // Left Y fully up before consumer inversion.
+    EXPECT_EQ(report[13], 0x7FU);
+    EXPECT_EQ(report[18], requested.gamepad_kind == lvh::GamepadProfileKind::xbox_series ? 1U : 0U);
+    EXPECT_EQ(report[20], 0x07U);  // Separate Guide packet.
+    EXPECT_EQ(report[21], 0x20U);
+    EXPECT_EQ(report[23], 1U);
+    EXPECT_EQ(report[24], 0U);
+  }
+}
+
+TEST(MacosBrokerProtocolTest, XboxGipTransportMapsEveryButtonAndGuide) {
+  using enum lvh::GamepadButton;
+
+  struct ButtonCase {
+    lvh::GamepadButton button;
+    std::size_t index;
+    std::uint8_t mask;
+  };
+
+  const std::array buttons {
+    ButtonCase {start, 4, 0x04},
+    ButtonCase {back, 4, 0x08},
+    ButtonCase {a, 4, 0x10},
+    ButtonCase {b, 4, 0x20},
+    ButtonCase {x, 4, 0x40},
+    ButtonCase {y, 4, 0x80},
+    ButtonCase {dpad_up, 5, 0x01},
+    ButtonCase {dpad_down, 5, 0x02},
+    ButtonCase {dpad_left, 5, 0x04},
+    ButtonCase {dpad_right, 5, 0x08},
+    ButtonCase {left_shoulder, 5, 0x10},
+    ButtonCase {right_shoulder, 5, 0x20},
+    ButtonCase {left_stick, 5, 0x40},
+    ButtonCase {right_stick, 5, 0x80},
+    ButtonCase {misc1, 18, 0x01},
+    ButtonCase {guide, 24, 0x01},
+  };
+  for (const auto &item : buttons) {
+    lvh::GamepadState state;
+    state.buttons.set(item.button);
+    const auto packed = lvh::reports::pack_input_report(lvh::profiles::xbox_series(), state);
+    const auto report = lvh::detail::macos::xbox_gip_transport_input_report(state, packed, true);
+    ASSERT_EQ(report.size(), 25U);
+    EXPECT_EQ(report[item.index], item.mask);
   }
 }
 

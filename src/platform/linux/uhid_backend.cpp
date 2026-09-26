@@ -119,7 +119,6 @@ namespace lvh::detail {
     constexpr std::uint16_t xbox_bluetooth_version = 0x0513;
     constexpr std::uint8_t xbox_bluetooth_input_report_id = 0x01;
     constexpr std::size_t xbox_bluetooth_input_report_size = 17;
-    constexpr std::uint8_t xbox_bluetooth_rumble_report_id = 0x03;
     constexpr std::size_t xbox_bluetooth_rumble_report_size = 9;
     constexpr std::uint8_t xbox_bluetooth_battery_report_id = 0x04;
     constexpr std::size_t xbox_bluetooth_battery_report_size = 2;
