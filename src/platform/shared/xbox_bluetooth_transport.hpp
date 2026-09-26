@@ -1,14 +1,17 @@
 /**
- * @file src/platform/macos/macos_xbox_bluetooth_descriptor.hpp
- * @brief Xbox Bluetooth HID descriptor used by the macOS broker transport.
+ * @file src/platform/shared/xbox_bluetooth_transport.hpp
+ * @brief Xbox Bluetooth HID descriptor and input report shared by Linux and macOS.
  */
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
+#include <libvirtualhid/types.hpp>
+#include <span>
 #include <vector>
 
-namespace lvh::detail::macos {
+namespace lvh::detail::xbox_bluetooth {
   inline constexpr std::uint8_t xbox_bluetooth_input_report_id = 0x01;
   inline constexpr std::uint8_t xbox_bluetooth_rumble_report_id = 0x03;
   inline constexpr std::uint8_t xbox_bluetooth_battery_report_id = 0x04;
@@ -329,4 +332,35 @@ namespace lvh::detail::macos {
     return descriptor;
   }
 
-}  // namespace lvh::detail::macos
+  inline std::vector<std::uint8_t> make_xbox_bluetooth_input_report(
+    const GamepadState &state,
+    std::span<const std::uint8_t> packed_report,
+    bool include_share_button
+  ) {
+    if (packed_report.size() < 17U) {
+      return {};
+    }
+
+    using enum GamepadButton;
+    std::vector<std::uint8_t> report(17U, 0);
+    report[0] = xbox_bluetooth_input_report_id;
+    std::copy_n(packed_report.begin(), 8U, report.begin() + 1U);
+    std::copy_n(packed_report.begin() + 8U, 4U, report.begin() + 9U);
+    report[13] = packed_report[14];
+    report[14] = static_cast<std::uint8_t>(
+      (state.buttons.test(a) ? 0x01U : 0U) | (state.buttons.test(b) ? 0x02U : 0U) |
+      (state.buttons.test(x) ? 0x08U : 0U) | (state.buttons.test(y) ? 0x10U : 0U) |
+      (state.buttons.test(left_shoulder) ? 0x40U : 0U) | (state.buttons.test(right_shoulder) ? 0x80U : 0U)
+    );
+    report[15] = static_cast<std::uint8_t>(
+      (state.buttons.test(back) ? 0x04U : 0U) | (state.buttons.test(start) ? 0x08U : 0U) |
+      (state.buttons.test(guide) ? 0x10U : 0U) | (state.buttons.test(left_stick) ? 0x20U : 0U) |
+      (state.buttons.test(right_stick) ? 0x40U : 0U)
+    );
+    if (include_share_button && state.buttons.test(misc1)) {
+      report[16] = 0x01;
+    }
+    return report;
+  }
+
+}  // namespace lvh::detail::xbox_bluetooth
