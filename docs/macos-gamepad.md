@@ -20,6 +20,8 @@ and Xbox Series use distinct HID identities (`045e:0b20` and `045e:0b13`).
 macOS exposes broker-created devices as Virtual transport, so the backend
 frames their input as wired Xbox GIP packets for Steam's Xbox HID decoder. The
 backend accepts both wired GIP and report-ID-3 rumble output for these profiles.
+The macOS Xbox reports reverse the vertical stick bytes so positive public Y
+moves the sticks up in Steam, as with the PlayStation and Switch profiles.
 Windows XUSB/XInput personality is Windows-specific. Individual games may use Apple's
 Game Controller framework or their own HID mappings, so a signed installed
 build still needs consumer testing for each profile.
