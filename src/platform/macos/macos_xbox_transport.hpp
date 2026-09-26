@@ -5,6 +5,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <libvirtualhid/profiles.hpp>
 #include <libvirtualhid/report.hpp>
@@ -80,7 +81,7 @@ namespace lvh::detail::macos {
     std::copy_n(packed.begin() + 8, 4, report.begin() + 6);  // Triggers.
     std::copy_n(packed.begin(), 8, report.begin() + 10);  // Sticks.
     for (const auto index : {11U, 13U, 15U, 17U}) {
-      report[index] ^= 0x80U;  // Unsigned public axes to signed GIP axes.
+      report[index] = std::to_integer<std::uint8_t>(std::byte {report[index]} ^ std::byte {0x80});
     }
     report[18] = series && state.buttons.test(misc1) ? 0x01 : 0x00;
     report[20] = 0x07;  // GIP virtual-key command for Guide.
@@ -88,6 +89,27 @@ namespace lvh::detail::macos {
     report[23] = 0x01;
     report[24] = state.buttons.test(guide) ? 0x01 : 0x00;
     return report;
+  }
+
+  inline std::vector<GamepadOutput> xbox_transport_output_reports(
+    const DeviceProfile &profile,
+    const std::vector<std::uint8_t> &report
+  ) {
+    if (
+      (profile.gamepad_kind == GamepadProfileKind::xbox_one || profile.gamepad_kind == GamepadProfileKind::xbox_series) &&
+      report.size() >= 13U && report[0] == 0x09U && report[3] == 0x09U
+    ) {
+      // The wired GIP rumble payload has a leading reserved byte. Reuse the
+      // shared four-motor decoder with its equivalent report-ID-3 layout.
+      std::vector<std::uint8_t> normalized {0x03};
+      normalized.insert(normalized.end(), report.begin() + 5, report.begin() + 13);
+      auto outputs = reports::parse_output_reports(profile, normalized);
+      for (auto &output : outputs) {
+        output.raw_report = report;
+      }
+      return outputs;
+    }
+    return reports::parse_output_reports(profile, report);
   }
 
   inline bool uses_xbox_transport(const DeviceProfile &profile) {
