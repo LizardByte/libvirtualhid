@@ -102,15 +102,15 @@ TEST(MacosBrokerProtocolTest, XboxOneAndSeriesUseDistinctBluetoothIdentities) {
     state.buttons.set(lvh::GamepadButton::misc1);
     state.left_stick = {1.0F, -1.0F};
     const auto original = lvh::reports::pack_input_report(requested, state);
-    const auto report = lvh::detail::macos::xbox_bluetooth_input_report(
+    const auto report = lvh::detail::xbox_bluetooth::make_xbox_bluetooth_input_report(
       state,
       original,
       requested.gamepad_kind == lvh::GamepadProfileKind::xbox_series
     );
     ASSERT_EQ(report.size(), transport.input_report_size);
     EXPECT_EQ(report[0], 1U);
-    EXPECT_EQ(report[14] & 0x01U, 0x01U);
-    EXPECT_EQ(report[15] & 0x08U, 0x08U);
+    EXPECT_EQ(report[14], 0x01U);
+    EXPECT_EQ(report[15], 0x08U);
     EXPECT_EQ(report[16], requested.gamepad_kind == lvh::GamepadProfileKind::xbox_series ? 1U : 0U);
   }
 }

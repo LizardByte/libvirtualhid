@@ -70,7 +70,7 @@ namespace lvh::detail {
         if (xbox_transport_) {
           xbox_report = profile_.gamepad_kind == GamepadProfileKind::xbox_360 ?
                           macos::xbox_transport_input_report(state) :
-                          macos::xbox_bluetooth_input_report(state, report, profile_.gamepad_kind == GamepadProfileKind::xbox_series);
+                          xbox_bluetooth::make_xbox_bluetooth_input_report(state, report, profile_.gamepad_kind == GamepadProfileKind::xbox_series);
         }
         const auto &transport_report = xbox_transport_ ? xbox_report : report;
         if (transport_report.empty() || transport_report.size() > macos_broker::max_report_size) {
