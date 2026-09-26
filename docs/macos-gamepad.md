@@ -22,9 +22,12 @@ frames their input as wired Xbox GIP packets for Steam's Xbox HID decoder. The
 backend accepts both wired GIP and report-ID-3 rumble output for these profiles.
 The macOS Xbox reports reverse the vertical stick bytes so positive public Y
 moves the sticks up in Steam, as with the PlayStation and Switch profiles.
-Windows XUSB/XInput personality is Windows-specific. Individual games may use Apple's
-Game Controller framework or their own HID mappings, so a signed installed
-build still needs consumer testing for each profile.
+Xbox 360, Xbox One, and Xbox Series input, plus Xbox One and Series rumble,
+were validated with Steam's controller tester on an installed, notarized build.
+Windows uses a separate XUSB/XInput personality. Individual games may use
+Apple's Game Controller framework or their own HID mappings, so each profile
+still needs testing in the intended consumer.
+
 When metadata omits a stable ID, the client derives a locally administered
 `02:00:xx:xx:xx:xx` identifier from the device ID.
 
