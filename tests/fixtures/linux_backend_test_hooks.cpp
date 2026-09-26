@@ -1787,7 +1787,7 @@ namespace lvh::detail::test {
     }
 
     constexpr std::array<std::uint8_t, xbox_bluetooth_rumble_report_size> motor_report {
-      xbox_bluetooth_rumble_report_id,
+      xbox_bluetooth::xbox_bluetooth_rumble_report_id,
       0x0F,
       25,
       50,
