@@ -4,8 +4,6 @@
  */
 #pragma once
 
-#include "platform/shared/xbox_bluetooth_transport.hpp"
-
 #include <algorithm>
 #include <cstdint>
 #include <libvirtualhid/profiles.hpp>
@@ -14,6 +12,83 @@
 #include <vector>
 
 namespace lvh::detail::macos {
+
+  inline constexpr std::uint8_t xbox_gip_input_command = 0x20;
+
+  inline std::vector<std::uint8_t> xbox_gip_report_descriptor() {
+    // IOHIDUserDevice exposes its transport as Virtual even when Bluetooth is
+    // requested. Steam therefore selects its wired GIP decoder for these IDs.
+    return {
+      0x05,
+      0x01,  // Usage Page (Generic Desktop)
+      0x09,
+      0x05,  // Usage (Game Pad)
+      0xA1,
+      0x01,  // Collection (Application)
+      0x06,
+      0x00,
+      0xFF,  // Usage Page (Vendor Defined)
+      0x09,
+      0x01,  // Usage (Vendor Defined 1)
+      0x15,
+      0x00,  // Logical Minimum (0)
+      0x26,
+      0xFF,
+      0x00,  // Logical Maximum (255)
+      0x75,
+      0x08,  // Report Size (8)
+      0x85,
+      xbox_gip_input_command,  // Report ID (GIP input command)
+      0x95,
+      0x18,  // 24 bytes after the report ID
+      0x81,
+      0x02,  // Input (Data, Variable, Absolute)
+      0x85,
+      0x03,  // Bluetooth-compatible rumble output
+      0x95,
+      0x08,
+      0x91,
+      0x02,  // Output (Data, Variable, Absolute)
+      0x85,
+      0x09,  // Wired GIP rumble output
+      0x95,
+      0x0C,
+      0x91,
+      0x02,
+      0xC0,
+    };
+  }
+
+  inline std::vector<std::uint8_t> xbox_gip_transport_input_report(
+    const GamepadState &state,
+    std::span<const std::uint8_t> packed,
+    bool series
+  ) {
+    if (packed.size() < 12U) {
+      return {};
+    }
+
+    using enum GamepadButton;
+    const auto pressed = [&state](GamepadButton button, unsigned int bit) {
+      return state.buttons.test(button) ? (1U << bit) : 0U;
+    };
+    std::vector<std::uint8_t> report(25U);
+    report[0] = xbox_gip_input_command;
+    report[3] = 0x10;  // Sixteen-byte GIP state payload.
+    report[4] = static_cast<std::uint8_t>(pressed(start, 2) | pressed(back, 3) | pressed(a, 4) | pressed(b, 5) | pressed(x, 6) | pressed(y, 7));
+    report[5] = static_cast<std::uint8_t>(pressed(dpad_up, 0) | pressed(dpad_down, 1) | pressed(dpad_left, 2) | pressed(dpad_right, 3) | pressed(left_shoulder, 4) | pressed(right_shoulder, 5) | pressed(left_stick, 6) | pressed(right_stick, 7));
+    std::copy_n(packed.begin() + 8, 4, report.begin() + 6);  // Triggers.
+    std::copy_n(packed.begin(), 8, report.begin() + 10);  // Sticks.
+    for (const auto index : {11U, 13U, 15U, 17U}) {
+      report[index] ^= 0x80U;  // Unsigned public axes to signed GIP axes.
+    }
+    report[18] = series && state.buttons.test(misc1) ? 0x01 : 0x00;
+    report[20] = 0x07;  // GIP virtual-key command for Guide.
+    report[21] = 0x20;  // Internal command.
+    report[23] = 0x01;
+    report[24] = state.buttons.test(guide) ? 0x01 : 0x00;
+    return report;
+  }
 
   inline bool uses_xbox_transport(const DeviceProfile &profile) {
     if (profile.vendor_id != 0x045E) {
@@ -42,10 +117,10 @@ namespace lvh::detail::macos {
       transport.bus_type = BusType::bluetooth;
       transport.product_id = requested.gamepad_kind == GamepadProfileKind::xbox_series ? 0x0B13 : 0x0B20;
       transport.version = 0x0513;
-      transport.report_id = xbox_bluetooth::xbox_bluetooth_input_report_id;
-      transport.input_report_size = 17;
+      transport.report_id = xbox_gip_input_command;
+      transport.input_report_size = 25;
       transport.output_report_size = 9;
-      transport.report_descriptor = xbox_bluetooth::make_xbox_bluetooth_report_descriptor(true);
+      transport.report_descriptor = xbox_gip_report_descriptor();
       return transport;
     }
 

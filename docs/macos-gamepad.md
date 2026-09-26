@@ -16,10 +16,10 @@ and Switch Pro profiles, including the explicit USB and Bluetooth PlayStation
 variants, are accepted. The macOS broker receives the selected transport's HID
 descriptor and reports. Xbox 360 uses a USB HID identity (`045e:028e`, version
 `0114`) with numbered D-pad buttons that match Steam's macOS mapping. Xbox One
-and Xbox Series use their respective Xbox Bluetooth HID identities
-(`045e:0b20` and `045e:0b13`); the macOS backend translates their public GIP
-input reports into the corresponding Bluetooth report layout. The Windows
-XUSB/XInput personality is Windows-specific. Individual games may use Apple's
+and Xbox Series use distinct HID identities (`045e:0b20` and `045e:0b13`).
+macOS exposes broker-created devices as Virtual transport, so the backend
+frames their input as wired Xbox GIP packets for Steam's Xbox HID decoder. The
+Windows XUSB/XInput personality is Windows-specific. Individual games may use Apple's
 Game Controller framework or their own HID mappings, so a signed installed
 build still needs consumer testing for each profile.
 When metadata omits a stable ID, the client derives a locally administered

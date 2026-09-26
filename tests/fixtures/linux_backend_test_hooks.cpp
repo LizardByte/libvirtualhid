@@ -1770,8 +1770,7 @@ namespace lvh::detail::test {
       result.xbox.saw_input =
         input.size() == xbox_bluetooth_input_report_size && input[0] == xbox_bluetooth_input_report_id &&
         std::equal(report.begin(), report.begin() + 8, input.begin() + 1) &&
-        read_u16_le(input, 9U) == read_u16_le(report, 8U) &&
-        read_u16_le(input, 11U) == read_u16_le(report, 10U) && input[13] == report[14] &&
+        std::equal(report.begin() + 8, report.begin() + 12, input.begin() + 9) && input[13] == report[14] &&
         input[14] == 0x41U && input[15] == 0x38U;
       result.xbox.saw_guide = input.size() == xbox_bluetooth_input_report_size && (input[15] & 0x10U) != 0U;
       result.xbox.saw_profile_consumer_button =
