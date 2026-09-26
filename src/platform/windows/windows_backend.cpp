@@ -432,6 +432,36 @@ namespace lvh::detail {
       return static_cast<LONG>(std::lround(scaled));
     }
 
+    /**
+     * @brief Scale an absolute source coordinate through a target viewport into a virtual desktop axis.
+     *
+     * @param value Absolute source coordinate.
+     * @param source_dimension Source coordinate-space dimension.
+     * @param viewport_offset Target viewport offset in native desktop pixels.
+     * @param viewport_dimension Target viewport dimension in native desktop pixels.
+     * @param desktop_offset Virtual desktop origin in native desktop pixels.
+     * @param desktop_dimension Virtual desktop dimension in native desktop pixels.
+     * @return Win32 normalized absolute coordinate.
+     */
+    LONG scale_absolute_axis_to_viewport(
+      float value,
+      std::int32_t source_dimension,
+      std::int32_t viewport_offset,
+      std::int32_t viewport_dimension,
+      std::int32_t desktop_offset,
+      std::int32_t desktop_dimension
+    ) {
+      if (source_dimension <= 0 || viewport_dimension <= 0 || desktop_dimension <= 0) {
+        return 0;
+      }
+
+      const auto clamped = std::clamp(value, 0.0F, static_cast<float>(source_dimension));
+      const auto viewport_span = static_cast<float>(std::max(viewport_dimension - 1, 0));
+      const auto target = static_cast<float>(viewport_offset - desktop_offset) +
+                          clamped * viewport_span / static_cast<float>(source_dimension);
+      return scale_absolute_axis(target, desktop_dimension);
+    }
+
     PointerViewport resolve_pointer_viewport(PointerViewport viewport) {
       if (viewport.width > 0 && viewport.height > 0) {
         return viewport;
@@ -2144,6 +2174,16 @@ namespace lvh::detail {
 
     class WindowsMouse final: public BackendMouse {
     public:
+      /**
+       * @brief Construct a Win32 mouse injection backend.
+       *
+       * @param desktop Native virtual-desktop bounds.
+       * @param viewport Native desktop viewport receiving absolute input.
+       */
+      explicit WindowsMouse(PointerViewport desktop = {}, PointerViewport viewport = {}):
+          desktop_ {desktop},
+          viewport_ {viewport} {}
+
       OperationStatus submit(const MouseEvent &event) override {
         using enum ErrorCode;
 
@@ -2165,14 +2205,33 @@ namespace lvh::detail {
             break;
           case absolute_motion:
             mouse.dwFlags = MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK;
-            mouse.dx = scale_absolute_axis(
-              event.has_fractional_absolute_coordinates ? event.absolute_x : static_cast<float>(event.x),
-              event.width
-            );
-            mouse.dy = scale_absolute_axis(
-              event.has_fractional_absolute_coordinates ? event.absolute_y : static_cast<float>(event.y),
-              event.height
-            );
+            if (viewport_.width > 0 && viewport_.height > 0) {
+              mouse.dx = scale_absolute_axis_to_viewport(
+                event.has_fractional_absolute_coordinates ? event.absolute_x : static_cast<float>(event.x),
+                event.width,
+                viewport_.offset_x,
+                viewport_.width,
+                desktop_.offset_x,
+                desktop_.width
+              );
+              mouse.dy = scale_absolute_axis_to_viewport(
+                event.has_fractional_absolute_coordinates ? event.absolute_y : static_cast<float>(event.y),
+                event.height,
+                viewport_.offset_y,
+                viewport_.height,
+                desktop_.offset_y,
+                desktop_.height
+              );
+            } else {
+              mouse.dx = scale_absolute_axis(
+                event.has_fractional_absolute_coordinates ? event.absolute_x : static_cast<float>(event.x),
+                event.width
+              );
+              mouse.dy = scale_absolute_axis(
+                event.has_fractional_absolute_coordinates ? event.absolute_y : static_cast<float>(event.y),
+                event.height
+              );
+            }
             break;
           case button:
             mouse.dwFlags = mouse_button_flags(event.button, event.pressed);
@@ -2197,6 +2256,8 @@ namespace lvh::detail {
       }
 
     private:
+      PointerViewport desktop_;  ///< Native virtual-desktop bounds.
+      PointerViewport viewport_;  ///< Native desktop viewport receiving absolute input.
       bool open_ = true;
     };
 
@@ -2276,10 +2337,13 @@ namespace lvh::detail {
     public:
       WindowsHidMouse(
         std::shared_ptr<WindowsBackendContext> context,
-        std::shared_ptr<WindowsVhfDeviceState> state
+        std::shared_ptr<WindowsVhfDeviceState> state,
+        const PointerViewport &desktop,
+        const PointerViewport &viewport
       ):
           context_ {std::move(context)},
-          state_ {std::move(state)} {}
+          state_ {std::move(state)},
+          fallback_ {desktop, viewport} {}
 
       OperationStatus submit(const MouseEvent &event) override {
         using enum ErrorCode;
@@ -2437,7 +2501,10 @@ namespace lvh::detail {
       if (!status.ok()) {
         return {status, nullptr};
       }
-      return {std::move(status), std::make_unique<WindowsHidMouse>(shared_from_this(), std::move(state))};
+      return {
+        std::move(status),
+        std::make_unique<WindowsHidMouse>(shared_from_this(), std::move(state), options.desktop, options.viewport),
+      };
     }
 
     /**
@@ -3077,7 +3144,7 @@ namespace lvh::detail {
           }
         }
 
-        return {OperationStatus::success(), std::make_unique<WindowsMouse>()};
+        return {OperationStatus::success(), std::make_unique<WindowsMouse>(options.desktop, options.viewport)};
       }
 
       BackendTouchscreenCreationResult create_touchscreen(

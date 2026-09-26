@@ -108,6 +108,24 @@ namespace lvh {
   };
 
   /**
+   * @brief Diagnostic message severity.
+   */
+  enum class LogLevel : std::uint8_t {
+    debug,  ///< Detailed diagnostic information.
+    info,  ///< Normal runtime lifecycle information.
+    warning,  ///< Recoverable problem or fallback.
+    error,  ///< Operation failure.
+  };
+
+  /**
+   * @brief Consumer callback that receives libvirtualhid diagnostic messages.
+   *
+   * The callback is invoked synchronously from the thread performing the
+   * operation. If the callback throws, it is disabled for subsequent messages.
+   */
+  using LogCallback = std::function<void(LogLevel level, const std::string &message)>;
+
+  /**
    * @brief Runtime creation options.
    */
   struct RuntimeOptions {
@@ -115,6 +133,11 @@ namespace lvh {
      * @brief Backend implementation requested by the caller.
      */
     BackendKind backend = BackendKind::fake;
+
+    /**
+     * @brief Optional callback for diagnostic messages.
+     */
+    LogCallback log_callback;
   };
 
   /**
@@ -443,6 +466,31 @@ namespace lvh {
   };
 
   /**
+   * @brief Pixel viewport used by backends that need screen-local pointer coordinates.
+   */
+  struct PointerViewport {
+    /**
+     * @brief Horizontal viewport offset in native desktop pixels.
+     */
+    std::int32_t offset_x = 0;
+
+    /**
+     * @brief Vertical viewport offset in native desktop pixels.
+     */
+    std::int32_t offset_y = 0;
+
+    /**
+     * @brief Viewport width in native desktop pixels, or `0` to use the platform default.
+     */
+    std::int32_t width = 0;
+
+    /**
+     * @brief Viewport height in native desktop pixels, or `0` to use the platform default.
+     */
+    std::int32_t height = 0;
+  };
+
+  /**
    * @brief Full mouse creation request.
    */
   struct CreateMouseOptions {
@@ -455,6 +503,22 @@ namespace lvh {
      * @brief Consumer-defined stable identity string.
      */
     std::string stable_id;
+
+    /**
+     * @brief Native virtual-desktop bounds used to normalize the target viewport.
+     *
+     * Set this together with `viewport`; leave both dimensions at zero to use
+     * the platform-default pointer area.
+     */
+    PointerViewport desktop;
+
+    /**
+     * @brief Native desktop viewport that receives absolute mouse input.
+     *
+     * Set this together with `desktop`; leave both dimensions at zero to use
+     * the platform-default pointer area.
+     */
+    PointerViewport viewport;
   };
 
   /**
@@ -758,31 +822,6 @@ namespace lvh {
      * @brief UTF-8 text to type.
      */
     std::string text;
-  };
-
-  /**
-   * @brief Pixel viewport used by backends that need screen-local pointer coordinates.
-   */
-  struct PointerViewport {
-    /**
-     * @brief Horizontal viewport offset in pixels.
-     */
-    std::int32_t offset_x = 0;
-
-    /**
-     * @brief Vertical viewport offset in pixels.
-     */
-    std::int32_t offset_y = 0;
-
-    /**
-     * @brief Viewport width in pixels, or `0` to use the platform default.
-     */
-    std::int32_t width = 0;
-
-    /**
-     * @brief Viewport height in pixels, or `0` to use the platform default.
-     */
-    std::int32_t height = 0;
   };
 
   /**

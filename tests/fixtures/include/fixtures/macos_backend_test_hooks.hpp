@@ -22,6 +22,16 @@ namespace lvh::detail::test {
   };
 
   /**
+   * @brief Portable representation of CoreGraphics viewport bounds for tests.
+   */
+  struct MacosViewportBounds {
+    double origin_x {};  ///< Horizontal viewport origin.
+    double origin_y {};  ///< Vertical viewport origin.
+    double width {};  ///< Viewport width.
+    double height {};  ///< Viewport height.
+  };
+
+  /**
    * @brief Portable representation of CoreGraphics mouse motion metadata for tests.
    */
   struct MacosMouseMotionResult {
@@ -103,6 +113,14 @@ namespace lvh::detail::test {
     double width,
     double height
   );
+
+  /**
+   * @brief Resolve an explicit portable mouse viewport to CoreGraphics bounds.
+   *
+   * @param viewport Portable pointer viewport.
+   * @return CoreGraphics bounds represented with portable scalar fields.
+   */
+  MacosViewportBounds macos_backend_mouse_viewport_bounds(const PointerViewport &viewport);
 
   /**
    * @brief Select CoreGraphics motion metadata for a mouse button state.

@@ -1171,6 +1171,37 @@ namespace lvh::detail {
       return static_cast<int>(numerator / limit);
     }
 
+    /**
+     * @brief Scale a source coordinate through a target viewport into an absolute input axis.
+     *
+     * @param value Source coordinate.
+     * @param source_dimension Source coordinate-space dimension.
+     * @param viewport_offset Native target viewport offset.
+     * @param viewport_dimension Native target viewport dimension.
+     * @param desktop_offset Native virtual-desktop origin.
+     * @param desktop_dimension Native virtual-desktop dimension.
+     * @return Normalized evdev absolute-axis value.
+     */
+    int scale_absolute_axis_to_viewport(
+      float value,
+      std::int32_t source_dimension,
+      std::int32_t viewport_offset,
+      std::int32_t viewport_dimension,
+      std::int32_t desktop_offset,
+      std::int32_t desktop_dimension
+    ) {
+      if (source_dimension <= 0 || desktop_dimension <= 0 || viewport_dimension <= 0) {
+        return 0;
+      }
+
+      const auto clamped = std::clamp(value, 0.0F, static_cast<float>(source_dimension));
+      const auto viewport_span = static_cast<float>(std::max(viewport_dimension - 1, 0));
+      const auto target = static_cast<float>(viewport_offset - desktop_offset) +
+                          clamped * viewport_span / static_cast<float>(source_dimension);
+      const auto normalized = std::clamp(target / static_cast<float>(desktop_dimension), 0.0F, 1.0F);
+      return static_cast<int>(std::lround(normalized * static_cast<float>(absolute_axis_max)));
+    }
+
     int scale_normalized_axis(float value, int maximum) {
       return static_cast<int>(std::lround(std::clamp(value, 0.0F, 1.0F) * static_cast<float>(maximum)));
     }
@@ -2043,15 +2074,24 @@ namespace lvh::detail {
      */
     class UinputMouse final: public BackendMouse {
     public:
-      UinputMouse(int relative_file_descriptor, int absolute_file_descriptor):
+      UinputMouse(
+        int relative_file_descriptor,
+        int absolute_file_descriptor,
+        PointerViewport desktop = {},
+        PointerViewport viewport = {}
+      ):
           relative_device_ {relative_file_descriptor},
-          absolute_device_ {absolute_file_descriptor} {}
+          absolute_device_ {absolute_file_descriptor},
+          desktop_ {desktop},
+          viewport_ {viewport} {}
 
       ~UinputMouse() override {
         static_cast<void>(close());
       }
 
       OperationStatus create(DeviceId id, const CreateMouseOptions &options) {
+        desktop_ = options.desktop;
+        viewport_ = options.viewport;
         if (const auto status = relative_device_.create(id, options.profile, UinputMouseDeviceKind::relative); !status.ok()) {
           return status;
         }
@@ -2100,6 +2140,8 @@ namespace lvh::detail {
     private:
       UinputMouseDevice relative_device_;
       UinputMouseDevice absolute_device_;
+      PointerViewport desktop_;  ///< Native virtual-desktop bounds used for absolute input.
+      PointerViewport viewport_;  ///< Native target viewport used for absolute input.
       UinputMouseDeviceKind last_motion_device_ = UinputMouseDeviceKind::relative;
       std::byte relative_buttons_down_ {};
       std::byte absolute_buttons_down_ {};
@@ -2156,10 +2198,32 @@ namespace lvh::detail {
 
       OperationStatus submit_absolute_motion(const MouseEvent &event) {
         auto &absolute = device(UinputMouseDeviceKind::absolute);
-        if (const auto status = absolute.emit(EV_ABS, ABS_X, scale_absolute_axis(event.x, event.width)); !status.ok()) {
+        const auto x = event.has_fractional_absolute_coordinates ? event.absolute_x : static_cast<float>(event.x);
+        const auto y = event.has_fractional_absolute_coordinates ? event.absolute_y : static_cast<float>(event.y);
+        const auto absolute_x = viewport_.width > 0 ?
+                                  scale_absolute_axis_to_viewport(
+                                    x,
+                                    event.width,
+                                    viewport_.offset_x,
+                                    viewport_.width,
+                                    desktop_.offset_x,
+                                    desktop_.width
+                                  ) :
+                                  scale_absolute_axis(event.x, event.width);
+        const auto absolute_y = viewport_.height > 0 ?
+                                  scale_absolute_axis_to_viewport(
+                                    y,
+                                    event.height,
+                                    viewport_.offset_y,
+                                    viewport_.height,
+                                    desktop_.offset_y,
+                                    desktop_.height
+                                  ) :
+                                  scale_absolute_axis(event.y, event.height);
+        if (const auto status = absolute.emit(EV_ABS, ABS_X, absolute_x); !status.ok()) {
           return status;
         }
-        if (const auto status = absolute.emit(EV_ABS, ABS_Y, scale_absolute_axis(event.y, event.height)); !status.ok()) {
+        if (const auto status = absolute.emit(EV_ABS, ABS_Y, absolute_y); !status.ok()) {
           return status;
         }
         if (const auto status = absolute.synchronize(); !status.ok()) {
@@ -2825,7 +2889,9 @@ namespace lvh::detail {
         static_cast<void>(close());
       }
 
-      OperationStatus create() {
+      OperationStatus create(const CreateMouseOptions &options = {}) {
+        desktop_ = options.desktop;
+        viewport_ = options.viewport;
         display_ = XOpenDisplay(nullptr);
         if (display_ == nullptr) {
           return OperationStatus::failure(ErrorCode::backend_unavailable, "failed to open X display for XTest mouse fallback");
@@ -2877,11 +2943,23 @@ namespace lvh::detail {
     private:
       void submit_absolute_motion(const MouseEvent &event) {
         const auto screen = DefaultScreen(display_);
-        const auto screen_width = DisplayWidth(display_, screen);
-        const auto screen_height = DisplayHeight(display_, screen);
-        const auto x = scale_absolute_axis(event.x, event.width) * std::max(screen_width - 1, 0) / absolute_axis_max;
-        const auto y = scale_absolute_axis(event.y, event.height) * std::max(screen_height - 1, 0) / absolute_axis_max;
-        XTestFakeMotionEvent(display_, screen, x, y, CurrentTime);
+        const auto screen_width = std::max(DisplayWidth(display_, screen) - 1, 0);
+        const auto screen_height = std::max(DisplayHeight(display_, screen) - 1, 0);
+        const auto event_x = event.has_fractional_absolute_coordinates ? event.absolute_x : static_cast<float>(event.x);
+        const auto event_y = event.has_fractional_absolute_coordinates ? event.absolute_y : static_cast<float>(event.y);
+        const auto x = viewport_.width > 0 ?
+                         viewport_.offset_x - desktop_.offset_x + static_cast<int>(std::lround(std::clamp(event_x, 0.0F, static_cast<float>(event.width)) * static_cast<float>(std::max(viewport_.width - 1, 0)) / static_cast<float>(event.width))) :
+                         scale_absolute_axis(event.x, event.width) * screen_width / absolute_axis_max;
+        const auto y = viewport_.height > 0 ?
+                         viewport_.offset_y - desktop_.offset_y + static_cast<int>(std::lround(std::clamp(event_y, 0.0F, static_cast<float>(event.height)) * static_cast<float>(std::max(viewport_.height - 1, 0)) / static_cast<float>(event.height))) :
+                         scale_absolute_axis(event.y, event.height) * screen_height / absolute_axis_max;
+        XTestFakeMotionEvent(
+          display_,
+          screen,
+          std::clamp(x, 0, screen_width),
+          std::clamp(y, 0, screen_height),
+          CurrentTime
+        );
       }
 
       void submit_scroll(std::int32_t distance, int positive_button, int negative_button) {
@@ -2894,6 +2972,8 @@ namespace lvh::detail {
       }
 
       Display *display_ = nullptr;
+      PointerViewport desktop_;  ///< Native virtual-desktop bounds represented by the X root window.
+      PointerViewport viewport_;  ///< Native target viewport used for absolute input.
     };
 #else
     bool can_use_xtest() {
@@ -3958,19 +4038,19 @@ namespace lvh::detail {
       BackendMouseCreationResult create_mouse(DeviceId id, const CreateMouseOptions &options) override {
         const auto relative_fd = open_uinput(O_RDWR | O_CLOEXEC | O_NONBLOCK);
         if (relative_fd < 0) {
-          return create_xtest_mouse();
+          return create_xtest_mouse(options);
         }
 
         const auto absolute_fd = open_uinput(O_RDWR | O_CLOEXEC | O_NONBLOCK);
         if (absolute_fd < 0) {
           static_cast<void>(system_close(relative_fd));
-          return create_xtest_mouse();
+          return create_xtest_mouse(options);
         }
 
         auto mouse = std::make_unique<UinputMouse>(relative_fd, absolute_fd);
         if (const auto status = mouse->create(id, options); !status.ok()) {
           static_cast<void>(mouse->close());
-          auto fallback = create_xtest_mouse();
+          auto fallback = create_xtest_mouse(options);
           if (fallback) {
             return fallback;
           }
@@ -4041,10 +4121,10 @@ namespace lvh::detail {
 #endif
       }
 
-      BackendMouseCreationResult create_xtest_mouse() {
+      BackendMouseCreationResult create_xtest_mouse(const CreateMouseOptions &options) {
 #if defined(LIBVIRTUALHID_HAVE_XTEST)
         auto mouse = std::make_unique<XTestMouse>();
-        if (const auto status = mouse->create(); !status.ok()) {
+        if (const auto status = mouse->create(options); !status.ok()) {
           return {status, nullptr};
         }
         return {OperationStatus::success(), std::move(mouse)};
