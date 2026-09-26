@@ -117,8 +117,8 @@ TEST(MacosBrokerProtocolTest, XboxOneAndSeriesUseDistinctIdentitiesAndGipInput) 
     EXPECT_EQ(report[5], 0x04U);  // D-pad left.
     EXPECT_EQ(report[10], 0xFFU);  // Left X fully right.
     EXPECT_EQ(report[11], 0x7FU);
-    EXPECT_EQ(report[12], 0xFFU);  // Left Y fully up before consumer inversion.
-    EXPECT_EQ(report[13], 0x7FU);
+    EXPECT_EQ(report[12], 0x00U);  // Left Y is inverted for Steam's GIP decoder.
+    EXPECT_EQ(report[13], 0x80U);
     EXPECT_EQ(report[18], requested.gamepad_kind == lvh::GamepadProfileKind::xbox_series ? 1U : 0U);
     EXPECT_EQ(report[20], 0x07U);  // Separate Guide packet.
     EXPECT_EQ(report[21], 0x20U);
@@ -199,7 +199,7 @@ TEST(MacosBrokerProtocolTest, XboxGipRumbleUsesFourMotorOutputDecoder) {
   EXPECT_EQ(wireless_outputs[1].left_trigger_rumble, outputs[1].left_trigger_rumble);
 }
 
-TEST(MacosBrokerProtocolTest, XboxTransportKeepsAxesAndSharedReportsUntouched) {
+TEST(MacosBrokerProtocolTest, Xbox360TransportChangesOnlyButtonsAndVerticalAxes) {
   lvh::GamepadState state;
   state.left_stick = {1.0F, -1.0F};
   state.right_stick = {-1.0F, 1.0F};
@@ -213,7 +213,36 @@ TEST(MacosBrokerProtocolTest, XboxTransportKeepsAxesAndSharedReportsUntouched) {
   EXPECT_EQ(shared[1], 0x40U);
   EXPECT_EQ(transport[2], 0x02U);
   for (std::size_t index = 3; index < shared.size(); ++index) {
-    EXPECT_EQ(transport[index], shared[index]);
+    if (index == 4U || index == 7U) {
+      EXPECT_EQ(transport[index], 0xFFU - shared[index]);
+    } else {
+      EXPECT_EQ(transport[index], shared[index]);
+    }
+  }
+}
+
+TEST(MacosBrokerProtocolTest, XboxVerticalSticksUsePositiveUpOnMacOS) {
+  lvh::GamepadState state;
+  state.left_stick.y = 1.0F;
+  state.right_stick.y = -1.0F;
+
+  const auto xbox_360 = lvh::detail::macos::xbox_transport_input_report(state);
+  ASSERT_EQ(xbox_360.size(), 9U);
+  EXPECT_EQ(xbox_360[4], 0xFFU);
+  EXPECT_EQ(xbox_360[7], 0x00U);
+
+  for (const auto &profile : {lvh::profiles::xbox_one(), lvh::profiles::xbox_series()}) {
+    const auto packed = lvh::reports::pack_input_report(profile, state);
+    const auto report = lvh::detail::macos::xbox_gip_transport_input_report(
+      state,
+      packed,
+      profile.gamepad_kind == lvh::GamepadProfileKind::xbox_series
+    );
+    ASSERT_EQ(report.size(), 25U);
+    EXPECT_EQ(report[12], 0xFFU);
+    EXPECT_EQ(report[13], 0x7FU);
+    EXPECT_EQ(report[16], 0x00U);
+    EXPECT_EQ(report[17], 0x80U);
   }
 }
 

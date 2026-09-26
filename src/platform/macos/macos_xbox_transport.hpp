@@ -80,6 +80,9 @@ namespace lvh::detail::macos {
     report[5] = static_cast<std::uint8_t>(pressed(dpad_up, 0) | pressed(dpad_down, 1) | pressed(dpad_left, 2) | pressed(dpad_right, 3) | pressed(left_shoulder, 4) | pressed(right_shoulder, 5) | pressed(left_stick, 6) | pressed(right_stick, 7));
     std::copy_n(packed.begin() + 8, 4, report.begin() + 6);  // Triggers.
     std::copy_n(packed.begin(), 8, report.begin() + 10);  // Sticks.
+    for (const auto index : {12U, 13U, 16U, 17U}) {
+      report[index] = static_cast<std::uint8_t>(0xFFU - report[index]);
+    }
     for (const auto index : {11U, 13U, 15U, 17U}) {
       report[index] = std::to_integer<std::uint8_t>(std::byte {report[index]} ^ std::byte {0x80});
     }
@@ -242,6 +245,8 @@ namespace lvh::detail::macos {
                       button(misc1, 15);
     report[1] = static_cast<std::uint8_t>(bits & 0xFFU);
     report[2] = static_cast<std::uint8_t>((bits >> 8U) & 0xFFU);
+    report[4] = static_cast<std::uint8_t>(0xFFU - report[4]);
+    report[7] = static_cast<std::uint8_t>(0xFFU - report[7]);
     return report;
   }
 
