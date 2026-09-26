@@ -19,6 +19,7 @@ descriptor and reports. Xbox 360 uses a USB HID identity (`045e:028e`, version
 and Xbox Series use distinct HID identities (`045e:0b20` and `045e:0b13`).
 macOS exposes broker-created devices as Virtual transport, so the backend
 frames their input as wired Xbox GIP packets for Steam's Xbox HID decoder. The
+backend accepts both wired GIP and report-ID-3 rumble output for these profiles.
 Windows XUSB/XInput personality is Windows-specific. Individual games may use Apple's
 Game Controller framework or their own HID mappings, so a signed installed
 build still needs consumer testing for each profile.

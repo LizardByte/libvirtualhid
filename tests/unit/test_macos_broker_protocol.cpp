@@ -14,6 +14,7 @@
 #include <sys/socket.h>
 #include <thread>
 #include <unistd.h>
+#include <vector>
 
 TEST(MacosBrokerProtocolTest, BuiltInProfilesFitBrokerTransport) {
   auto profiles = lvh::profiles::built_in_gamepad_profiles();
@@ -161,6 +162,41 @@ TEST(MacosBrokerProtocolTest, XboxGipTransportMapsEveryButtonAndGuide) {
     ASSERT_EQ(report.size(), 25U);
     EXPECT_EQ(report[item.index], item.mask);
   }
+}
+
+TEST(MacosBrokerProtocolTest, XboxGipRumbleUsesFourMotorOutputDecoder) {
+  const auto profile = lvh::detail::macos::xbox_transport_profile(lvh::profiles::xbox_series());
+  const std::vector<std::uint8_t> wired {
+    0x09,
+    0x00,
+    0x00,
+    0x09,
+    0x00,
+    0x0F,
+    25,
+    50,
+    75,
+    100,
+    0xFF,
+    0x00,
+    0xEB,
+  };
+  const auto outputs = lvh::detail::macos::xbox_transport_output_reports(profile, wired);
+  ASSERT_EQ(outputs.size(), 2U);
+  EXPECT_EQ(outputs[0].kind, lvh::GamepadOutputKind::rumble);
+  EXPECT_GT(outputs[0].low_frequency_rumble, 0U);
+  EXPECT_GT(outputs[0].high_frequency_rumble, outputs[0].low_frequency_rumble);
+  EXPECT_EQ(outputs[1].kind, lvh::GamepadOutputKind::trigger_rumble);
+  EXPECT_GT(outputs[1].left_trigger_rumble, 0U);
+  EXPECT_GT(outputs[1].right_trigger_rumble, outputs[1].left_trigger_rumble);
+  EXPECT_EQ(outputs[0].raw_report, wired);
+  EXPECT_EQ(outputs[1].raw_report, wired);
+
+  const std::vector<std::uint8_t> bluetooth {0x03, 0x0F, 25, 50, 75, 100, 0xFF, 0x00, 0xEB};
+  const auto wireless_outputs = lvh::detail::macos::xbox_transport_output_reports(profile, bluetooth);
+  ASSERT_EQ(wireless_outputs.size(), 2U);
+  EXPECT_EQ(wireless_outputs[0].low_frequency_rumble, outputs[0].low_frequency_rumble);
+  EXPECT_EQ(wireless_outputs[1].left_trigger_rumble, outputs[1].left_trigger_rumble);
 }
 
 TEST(MacosBrokerProtocolTest, XboxTransportKeepsAxesAndSharedReportsUntouched) {

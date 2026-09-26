@@ -146,7 +146,7 @@ namespace lvh::detail {
             callback = state->callback;
           }
           if (callback) {
-            for (const auto &output : reports::parse_output_reports(profile, report)) {
+            for (const auto &output : macos::xbox_transport_output_reports(profile, report)) {
               callback(output);
             }
           }
