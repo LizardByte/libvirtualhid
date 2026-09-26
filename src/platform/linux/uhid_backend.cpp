@@ -65,6 +65,7 @@
 #include "core/backend.hpp"
 #if defined(__linux__)
   #include "shared/playstation_feature_reports.hpp"
+  #include "shared/steam_controller_protocol.hpp"
   #include "shared/switch_pro_protocol.hpp"
 #endif
 
@@ -598,6 +599,7 @@ namespace lvh::detail {
         case switch_pro:
         case dualshock4:
         case dualsense:
+        case steam_controller_2026:
 #if defined(__FreeBSD__)
           return true;
 #else
@@ -616,6 +618,7 @@ namespace lvh::detail {
         case switch_pro:
         case dualshock4:
         case dualsense:
+        case steam_controller_2026:
         case xbox_one:
         case xbox_series:
           return true;
@@ -721,6 +724,7 @@ namespace lvh::detail {
           return KEY_RECORD;
         case switch_pro:
           return BTN_Z;
+        case steam_controller_2026:
         case xbox_360:
         case xbox_one:
         case dualshock4:
@@ -752,7 +756,11 @@ namespace lvh::detail {
       // parent in sysfs. UHID devices do not, so expose transports handled by
       // HIDAPI through the Bluetooth HID enumeration path. Xbox transport
       // profiles use the corresponding native Bluetooth identity and framing.
-      if (profile.gamepad_kind == GamepadProfileKind::switch_pro || is_xbox_uhid_profile(profile.gamepad_kind)) {
+      if (
+        profile.gamepad_kind == GamepadProfileKind::switch_pro ||
+        profile.gamepad_kind == GamepadProfileKind::steam_controller_2026 ||
+        is_xbox_uhid_profile(profile.gamepad_kind)
+      ) {
         return BUS_BLUETOOTH;
       }
       return to_uhid_bus(profile.bus_type);
@@ -3382,6 +3390,16 @@ namespace lvh::detail {
     };
 
 #if defined(__linux__)
+    struct UhidOutputState {
+      std::mutex mutex;
+      OutputCallback callback;
+    };
+
+    struct UhidSteamFeatureState {
+      std::mutex mutex;
+      steam_controller_protocol::FeatureState state;
+    };
+
     /**
      * @brief Backend gamepad backed by one Linux UHID file descriptor.
      */
@@ -3463,7 +3481,10 @@ namespace lvh::detail {
           return status;
         }
 
-        if (is_playstation_profile(profile_.gamepad_kind)) {
+        if (
+          is_playstation_profile(profile_.gamepad_kind) ||
+          profile_.gamepad_kind == GamepadProfileKind::steam_controller_2026
+        ) {
           periodic_reporter_ = std::jthread {[this](std::stop_token stop_token) {
             periodic_report_loop(stop_token);
           }};
@@ -3487,6 +3508,14 @@ namespace lvh::detail {
         if (status.ok() && supports_battery_ && state.battery && is_xbox_uhid_profile(profile_.gamepad_kind)) {
           status = write_input_report(make_xbox_bluetooth_battery_report(*state.battery));
         }
+        if (
+          status.ok() && supports_battery_ && state.battery &&
+          profile_.gamepad_kind == GamepadProfileKind::steam_controller_2026
+        ) {
+          if (const auto battery_report = reports::pack_battery_report(profile_, *state.battery); battery_report) {
+            status = write_input_report(*battery_report);
+          }
+        }
         if (status.ok()) {
           last_state_ = state;
         }
@@ -3494,8 +3523,8 @@ namespace lvh::detail {
       }
 
       void set_output_callback(OutputCallback callback) override {
-        std::lock_guard lock {callback_mutex_};
-        output_callback_ = std::move(callback);
+        std::lock_guard lock {output_.mutex};
+        output_.callback = std::move(callback);
       }
 
       std::vector<DeviceNode> device_nodes() const override {
@@ -3676,8 +3705,13 @@ namespace lvh::detail {
       }
 
       void periodic_report_loop(std::stop_token stop_token) {
+        const auto interval = profile_.gamepad_kind == GamepadProfileKind::steam_controller_2026 ?
+                                std::chrono::microseconds {steam_controller_protocol::input_interval_us} :
+                                std::chrono::duration_cast<std::chrono::microseconds>(
+                                  std::chrono::milliseconds {playstation_periodic_report_ms}
+                                );
         while (!stop_token.stop_requested() && running_) {
-          std::this_thread::sleep_for(std::chrono::milliseconds {playstation_periodic_report_ms});
+          std::this_thread::sleep_for(interval);
           if (stop_token.stop_requested() || !running_ || !open_) {
             break;
           }
@@ -3713,14 +3747,18 @@ namespace lvh::detail {
         if (report_number != 0 && (report.empty() || report.front() != report_number)) {
           report.insert(report.begin(), report_number);
         }
+        if (profile_.gamepad_kind == GamepadProfileKind::steam_controller_2026) {
+          std::lock_guard lock {steam_feature_.mutex};
+          static_cast<void>(steam_feature_.state.handle_set_feature(report_number, report));
+        }
         dispatch_output_report(report);
       }
 
       void dispatch_output_report(const std::vector<std::uint8_t> &report) {
         OutputCallback callback;
         {
-          std::lock_guard lock {callback_mutex_};
-          callback = output_callback_;
+          std::lock_guard lock {output_.mutex};
+          callback = output_.callback;
         }
 
         if (!callback) {
@@ -3785,6 +3823,14 @@ namespace lvh::detail {
               event.u.get_report_reply.err = EINVAL;
               break;
           }
+        } else if (profile_.gamepad_kind == GamepadProfileKind::steam_controller_2026) {
+          std::lock_guard lock {steam_feature_.mutex};
+          if (const auto report = steam_feature_.state.get_feature_report(report_number); report) {
+            event.u.get_report_reply.err = 0;
+            copy_get_report_payload(event, *report);
+          } else {
+            event.u.get_report_reply.err = EINVAL;
+          }
         }
 
         if (
@@ -3821,6 +3867,7 @@ namespace lvh::detail {
       std::string physical_id_;
       std::string unique_id_;
       std::array<std::uint8_t, 6> playstation_mac_address_ {};
+      UhidSteamFeatureState steam_feature_;
       GamepadState last_state_;
       bool supports_battery_ = false;
       std::atomic_bool open_ = true;
@@ -3833,8 +3880,7 @@ namespace lvh::detail {
       bool reader_exited_ = false;
       std::mutex write_mutex_;
       std::mutex state_mutex_;
-      std::mutex callback_mutex_;
-      OutputCallback output_callback_;
+      UhidOutputState output_;
     };
 #endif
 
@@ -3849,6 +3895,9 @@ namespace lvh::detail {
       effective_profile.capabilities.supports_battery = false;
       effective_profile.capabilities.supports_adaptive_triggers = false;
       effective_profile.capabilities.supports_player_leds = false;
+      effective_profile.capabilities.supports_haptics = false;
+      effective_profile.capabilities.supported_touchpad_count = 0;
+      effective_profile.capabilities.supported_rear_paddle_count = 0;
       return effective_profile;
 #else
       if (!effective_profile.capabilities.supports_trigger_rumble) {

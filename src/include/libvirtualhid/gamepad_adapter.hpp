@@ -51,6 +51,11 @@ namespace lvh {
     bool supports_touchpad = false;
 
     /**
+     * @brief Number of independently addressable touchpads exposed by the profile.
+     */
+    std::uint8_t supported_touchpad_count = 0;
+
+    /**
      * @brief Whether the profile exposes battery state input.
      */
     bool supports_battery = false;
@@ -69,6 +74,11 @@ namespace lvh {
      * @brief Number of rear paddle buttons exposed by the profile.
      */
     std::uint8_t supported_rear_paddle_count = 0;
+
+    /**
+     * @brief Whether the profile supports addressable haptic effects.
+     */
+    bool supports_haptics = false;
 
     /**
      * @brief Whether the profile supports player indicator LED output.

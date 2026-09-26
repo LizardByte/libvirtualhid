@@ -13,9 +13,9 @@ A streaming host should be able to:
   indexes.
 - Submit incremental button, axis, trigger, touchpad, motion, and battery
   updates without recreating a device.
-- Receive output callbacks for rumble, RGB and player LEDs, adaptive triggers,
-  trigger rumble, and raw output reports where the selected profile supports
-  them.
+- Receive output callbacks for rumble, addressable haptics, RGB and player
+  LEDs, adaptive triggers, trigger rumble, and raw output reports where the
+  selected profile supports them.
 - Query profile and backend capabilities before warning users about unsupported
   client features.
 - Read device nodes and platform paths when a downstream consumer or diagnostic
@@ -57,14 +57,32 @@ The core API and adapter shape cover the major streaming-host requirements:
 - Rich controller metadata.
 - Gamepad output callbacks.
 - Keyboard and mouse input paths.
-- Linux PlayStation, Switch Pro, Xbox One, and Xbox Series gamepads through
-  descriptor-driven `uhid`, Generic and Xbox 360 gamepads through `uinput`,
-  Xbox One and Xbox Series uinput fallbacks, and `uinput` keyboard/pointer
-  devices.
+- Linux PlayStation, Switch Pro, Steam Controller, Xbox One, and Xbox Series
+  gamepads through descriptor-driven `uhid`, Generic and Xbox 360 gamepads
+  through `uinput`, Xbox One and Xbox Series uinput fallbacks, and `uinput`
+  keyboard/pointer devices.
 - Native Switch Pro motion, initialization replies, rumble, HOME-light, and
   player-light output handling on Linux and Windows descriptor-driven backends.
+- Native 2026 Steam Controller state, battery, feature-report initialization,
+  ordinary rumble, and addressable pad-haptic handling on Linux and Windows.
 - Linux DualSense and DualShock 4 USB/Bluetooth report handling.
 - Linux touchscreen, trackpad, and pen tablet device types.
 - FreeBSD uinput gamepads and pointer devices, with basic PlayStation input and
   rumble but without Linux UHID-only PlayStation features.
 - Windows UMDF/VHF gamepad creation through an installed driver package.
+
+For Steam Controller clients, preserve both pad contacts and pressure values,
+all four rear buttons, digital trigger clicks, and capacitive stick/grip touch
+states instead of collapsing them into a generic controller packet. Forward
+`GamepadOutputKind::haptics` separately from ordinary rumble so a client can
+retain the controller's actuator target and effect parameters. A host that has
+no extended haptic message may still forward `raw_report`, but should not
+reinterpret addressable effects as a two-motor rumble packet.
+
+On Windows, the 2026 Steam Controller backend queues state updates and emits
+native input reports at the controller's 4032-microsecond cadence. It does not
+interleave an extra report for each host input event; doing so can distort
+trackpad-release motion in Steam Input. Battery reports remain immediate, and
+other gamepad profiles retain their existing submission behavior. A successful
+state update means it was queued for the periodic stream, not that the driver
+has already accepted an input report.

@@ -57,6 +57,7 @@
 #include "mouse_protocol.hpp"
 #include "playstation_feature_protocol.hpp"
 #include "rotating_trace_log.hpp"
+#include "shared/steam_controller_protocol.hpp"
 #include "shared/switch_pro_protocol.hpp"
 #include "unique_win32_handle.hpp"
 #include "vhf_input_report_queue.hpp"
@@ -93,7 +94,8 @@ namespace {
     LVH_WINDOWS_GAMEPAD_FLAG_SUPPORTS_TOUCHPAD |
     LVH_WINDOWS_GAMEPAD_FLAG_SUPPORTS_RGB_LED |
     LVH_WINDOWS_GAMEPAD_FLAG_SUPPORTS_BATTERY |
-    LVH_WINDOWS_GAMEPAD_FLAG_SUPPORTS_ADAPTIVE_TRIGGERS;
+    LVH_WINDOWS_GAMEPAD_FLAG_SUPPORTS_ADAPTIVE_TRIGGERS |
+    LVH_WINDOWS_GAMEPAD_FLAG_SUPPORTS_HAPTICS;
 
   using UniqueServiceHandle = std::unique_ptr<
     std::remove_pointer_t<SC_HANDLE>,
@@ -122,6 +124,7 @@ namespace {
     std::vector<UCHAR> report_descriptor;
     std::wstring hardware_ids;
     lvh::detail::windows::GenericPidFeatureState generic_pid_feature_state;
+    lvh::detail::steam_controller_protocol::FeatureState steam_controller_feature_state;
     lvh::detail::windows::VhfInputReportQueue pending_input_reports;
     std::map<std::uint8_t, std::vector<std::uint8_t>> latest_input_reports;
     std::shared_ptr<std::vector<std::uint8_t>> in_flight_input_report;
@@ -601,7 +604,7 @@ namespace {
     const auto known_bus = request.bus_type == LVH_WINDOWS_BUS_UNKNOWN ||
                            request.bus_type == LVH_WINDOWS_BUS_USB ||
                            request.bus_type == LVH_WINDOWS_BUS_BLUETOOTH;
-    const auto known_profile = request.gamepad_kind <= LVH_WINDOWS_GAMEPAD_DUALSHOCK4;
+    const auto known_profile = request.gamepad_kind <= LVH_WINDOWS_GAMEPAD_STEAM_CONTROLLER_2026;
     const auto valid_driver_descriptor =
       (request.device_type == LVH_WINDOWS_DEVICE_GAMEPAD &&
        request.gamepad_kind != LVH_WINDOWS_GAMEPAD_XBOX_360) ||
@@ -843,7 +846,11 @@ namespace {
     const DeviceRecord &record,
     const LvhWindowsSubmitInputReportRequest &request
   ) {
-    if (request.report_size != record.request.report_sizes.input_report_size) {
+    const auto steam_battery_report =
+      record.request.gamepad_kind == LVH_WINDOWS_GAMEPAD_STEAM_CONTROLLER_2026 &&
+      request.report_size == lvh::detail::steam_controller_protocol::battery_report_size &&
+      request.report[0] == lvh::detail::steam_controller_protocol::battery_report_id;
+    if (request.report_size != record.request.report_sizes.input_report_size && !steam_battery_report) {
       return {};
     }
 
@@ -854,7 +861,7 @@ namespace {
       return {report_begin, report_end};
     }
 
-    if (request.report[0] != report_id) {
+    if (request.report[0] != report_id && !steam_battery_report) {
       return {};
     }
 
@@ -918,6 +925,9 @@ namespace {
     ) {
       std::lock_guard lock {record.mutex};
       report = record.generic_pid_feature_state.get_feature_report(report_number);
+    } else if (record.request.gamepad_kind == LVH_WINDOWS_GAMEPAD_STEAM_CONTROLLER_2026) {
+      std::lock_guard lock {record.mutex};
+      report = record.steam_controller_feature_state.get_feature_report(report_number);
     } else {
       report = lvh::detail::windows::make_playstation_feature_report(record.request, report_number);
     }
@@ -972,6 +982,15 @@ namespace {
       const auto report_id = packet.reportId == 0U && event.report_size > 0U ? event.report[0] : packet.reportId;
       std::lock_guard lock {record.mutex};
       return record.generic_pid_feature_state.handle_set_feature(
+        static_cast<std::uint8_t>(report_id),
+        {event.report.data(), event.report_size}
+      );
+    }
+    if (record.request.gamepad_kind == LVH_WINDOWS_GAMEPAD_STEAM_CONTROLLER_2026) {
+      auto event = make_output_event(record, packet);
+      const auto report_id = packet.reportId == 0U && event.report_size > 0U ? event.report[0] : packet.reportId;
+      std::lock_guard lock {record.mutex};
+      return record.steam_controller_feature_state.handle_set_feature(
         static_cast<std::uint8_t>(report_id),
         {event.report.data(), event.report_size}
       );

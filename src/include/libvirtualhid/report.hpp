@@ -6,6 +6,7 @@
 
 // standard includes
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 // local includes
@@ -69,6 +70,18 @@ namespace lvh::reports {
    * @return Packed input report bytes.
    */
   std::vector<std::uint8_t> pack_input_report(const DeviceProfile &profile, const GamepadState &state);
+
+  /**
+   * @brief Pack a profile-specific battery input report when the profile uses one.
+   *
+   * @param profile Device profile used for report identity and layout.
+   * @param battery Battery metadata to pack.
+   * @return Packed report, or `std::nullopt` when the profile has no separate battery report.
+   */
+  std::optional<std::vector<std::uint8_t>> pack_battery_report(
+    const DeviceProfile &profile,
+    const GamepadBattery &battery
+  );
 
   /**
    * @brief Parse a backend output report into the profile-neutral output model.

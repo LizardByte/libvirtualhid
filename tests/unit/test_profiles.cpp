@@ -85,6 +85,7 @@ TEST(ProfileTest, BuiltInProfilesUseDefaultDeviceNames) {
   EXPECT_EQ(lvh::profiles::dualshock4().name, "(libvirtualhid) PS4 Controller");
   EXPECT_EQ(lvh::profiles::dualsense().name, "(libvirtualhid) PS5 Controller");
   EXPECT_EQ(lvh::profiles::switch_pro().name, "(libvirtualhid) Nintendo Pro Controller");
+  EXPECT_EQ(lvh::profiles::steam_controller_2026().name, "Steam Controller");
 }
 
 TEST(ProfileTest, StreamingControllerProfilesArePresent) {
@@ -92,6 +93,7 @@ TEST(ProfileTest, StreamingControllerProfilesArePresent) {
   const auto dualshock4 = lvh::profiles::dualshock4();
   const auto dualsense = lvh::profiles::dualsense();
   const auto switch_pro = lvh::profiles::switch_pro();
+  const auto steam_controller = lvh::profiles::steam_controller_2026();
 
   EXPECT_EQ(xbox_one.vendor_id, 0x045E);
   EXPECT_EQ(xbox_one.product_id, 0x02EA);
@@ -103,6 +105,32 @@ TEST(ProfileTest, StreamingControllerProfilesArePresent) {
   EXPECT_EQ(xbox_one.report_id, 0);
   EXPECT_EQ(xbox_one.input_report_size, 17U);
   EXPECT_EQ(xbox_one.output_report_size, 8U);
+
+  EXPECT_EQ(steam_controller.vendor_id, 0x28DE);
+  EXPECT_EQ(steam_controller.product_id, 0x1302);
+  EXPECT_EQ(steam_controller.bus_type, lvh::BusType::usb);
+  EXPECT_EQ(steam_controller.manufacturer, "Valve Software");
+  EXPECT_EQ(steam_controller.report_id, 0x42U);
+  EXPECT_EQ(steam_controller.input_report_size, 54U);
+  EXPECT_EQ(steam_controller.output_report_size, 10U);
+  EXPECT_TRUE(steam_controller.capabilities.supports_rumble);
+  EXPECT_TRUE(steam_controller.capabilities.supports_motion);
+  EXPECT_TRUE(steam_controller.capabilities.supports_touchpad);
+  EXPECT_TRUE(steam_controller.capabilities.supports_battery);
+  EXPECT_TRUE(steam_controller.capabilities.supports_haptics);
+  EXPECT_EQ(steam_controller.capabilities.supported_touchpad_count, 2U);
+  EXPECT_EQ(steam_controller.capabilities.supported_rear_paddle_count, 4U);
+  expect_descriptor_contains(steam_controller, std::array<std::uint8_t, 8> {0x85, 0x42, 0x15, 0x00, 0x26, 0xFF, 0x00, 0x75});
+  expect_descriptor_contains(steam_controller, std::array<std::uint8_t, 4> {0x85, 0x43, 0x15, 0x00});
+  expect_descriptor_contains(steam_controller, std::array<std::uint8_t, 4> {0x85, 0x80, 0x15, 0x00});
+  for (const auto report_id : {0x81U, 0x82U, 0x83U, 0x84U, 0x85U}) {
+    expect_descriptor_contains(
+      steam_controller,
+      std::array<std::uint8_t, 2> {0x85U, static_cast<std::uint8_t>(report_id)}
+    );
+  }
+  expect_descriptor_contains(steam_controller, std::array<std::uint8_t, 5> {0x85, 0x01, 0x95, 0x3F, 0x09});
+  expect_descriptor_contains(steam_controller, std::array<std::uint8_t, 5> {0x85, 0x02, 0x95, 0x3F, 0x09});
 
   const auto xbox_series = lvh::profiles::xbox_series();
   EXPECT_EQ(xbox_series.vendor_id, 0x045E);

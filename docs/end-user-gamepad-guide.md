@@ -16,9 +16,9 @@ physical controller <- Moonlight client <- Sunshine <- libvirtualhid <- game
 ```
 
 Buttons, sticks, triggers, touch, motion, and battery state travel toward the
-host. Rumble, Xbox Impulse Triggers, DualSense adaptive-trigger effects, and
-LEDs travel back toward the client. A feature works end to end only when every
-layer in its direction supports it.
+host. Rumble, Steam Controller pad haptics, Xbox Impulse Triggers, DualSense
+adaptive-trigger effects, and LEDs travel back toward the client. A feature
+works end to end only when every layer in its direction supports it.
 
 The capabilities advertised by a `libvirtualhid` profile describe what the
 host-side virtual controller can represent. They do not guarantee that a
@@ -49,6 +49,10 @@ manufacturer's instructions:
   [pair, use, and troubleshoot the controller](https://www.nintendo.com/my/support/switch/controller/nintendoswitchpro.html)
   and
   [update the controller firmware](https://en-americas-support.nintendo.com/app/answers/detail/a_id/26321/~/how-to-update-the-controller-firmware).
+- Steam Controller (2026): confirm both trackpads, their clicks, all four rear
+  buttons, trigger clicks, stick/grip touch sensors, and both haptic actuators
+  locally before testing the streaming path. A generic client mapping may omit
+  these extended controls even when its ordinary gamepad input works.
 
 A controller working locally proves only the physical controller-to-client
 part of the path. It does not prove that an extended feature is implemented by

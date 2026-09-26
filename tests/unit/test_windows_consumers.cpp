@@ -722,6 +722,60 @@ TEST_F(WindowsConsumerTest, SdlHidapiOutputReachesDefaultPlayStationAndSwitchCal
   }
 }
 
+TEST_F(WindowsConsumerTest, SdlReadsSteamControllerMotionAtExpectedScale) {
+  SdlGamepadSubsystem sdl;
+  ASSERT_TRUE(sdl.initialized()) << SDL_GetError();
+
+  lvh::RuntimeOptions runtime_options;
+  runtime_options.backend = lvh::BackendKind::platform_default;
+  auto runtime = lvh::Runtime::create(runtime_options);
+  ASSERT_NE(runtime, nullptr);
+  ASSERT_TRUE(runtime->capabilities().supports_gamepad)
+    << "The installed libvirtualhid Windows driver is required for this integration test";
+
+  const auto previous_gamepads = current_sdl_gamepads();
+  lvh::CreateGamepadOptions options;
+  options.profile = lvh::profiles::steam_controller_2026();
+  options.metadata.stable_id = "02:11:22:33:44:55";
+  auto created = lvh::GamepadStateAdapter::create(*runtime, options);
+  ASSERT_TRUE(created) << created.status.message();
+
+  auto gamepad = wait_for_new_sdl_gamepad(
+    previous_gamepads,
+    options.profile.vendor_id,
+    options.profile.product_id
+  );
+  ASSERT_NE(gamepad.get(), nullptr) << SDL_GetError();
+  ASSERT_TRUE(SDL_GamepadHasSensor(gamepad.get(), SDL_SENSOR_GYRO)) << SDL_GetError();
+  ASSERT_TRUE(SDL_SetGamepadSensorEnabled(gamepad.get(), SDL_SENSOR_GYRO, true)) << SDL_GetError();
+
+  constexpr float angular_velocity_degrees_per_second = 180.0F;
+  constexpr float expected_radians_per_second = 3.14159265F;
+  std::array<float, 3> gyroscope {};
+  bool received_motion = false;
+  const auto deadline = std::chrono::steady_clock::now() + 5s;
+  while (std::chrono::steady_clock::now() < deadline) {
+    ASSERT_TRUE(created.adapter->set_gyroscope(
+                                   lvh::Vector3 {.x = angular_velocity_degrees_per_second}
+    )
+                  .ok());
+    SDL_UpdateGamepads();
+    SDL_PumpEvents();
+    if (
+      SDL_GetGamepadSensorData(gamepad.get(), SDL_SENSOR_GYRO, gyroscope.data(), gyroscope.size()) &&
+      std::abs(gyroscope[0] - expected_radians_per_second) < 0.2F
+    ) {
+      received_motion = true;
+      break;
+    }
+    std::this_thread::sleep_for(20ms);
+  }
+  EXPECT_TRUE(received_motion) << "Steam Controller gyro scale mismatch: " << gyroscope[0] << " rad/s";
+
+  gamepad.reset();
+  ASSERT_TRUE(created.adapter->close().ok());
+}
+
 TEST_F(WindowsConsumerTest, SdlExposesSubmittedBatteryStateForNonXboxProfiles) {
   SdlGamepadSubsystem sdl;
   ASSERT_TRUE(sdl.initialized()) << SDL_GetError();

@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <utility>
 #include <vector>
 
 // local includes
@@ -82,6 +83,181 @@ TEST(ReportTest, NormalizesAxesAndTriggers) {
   EXPECT_EQ(lvh::reports::normalize_trigger(0.0F), 0);
   EXPECT_EQ(lvh::reports::normalize_trigger(1.0F), 255);
   EXPECT_EQ(lvh::reports::normalize_trigger(2.0F), 255);
+}
+
+TEST(ReportTest, PacksSteamControllerFullNativeStateAndBattery) {
+  using enum lvh::GamepadButton;
+
+  const auto profile = lvh::profiles::steam_controller_2026();
+  lvh::GamepadState state;
+  for (const auto button : {
+         a,
+         b,
+         x,
+         y,
+         back,
+         start,
+         guide,
+         left_stick,
+         right_stick,
+         left_shoulder,
+         right_shoulder,
+         dpad_up,
+         dpad_down,
+         dpad_left,
+         dpad_right,
+         misc1,
+         paddle1,
+         paddle2,
+         paddle3,
+         paddle4,
+         left_touchpad,
+         right_touchpad,
+         left_trigger_click,
+         right_trigger_click,
+         left_stick_touch,
+         right_stick_touch,
+         left_grip_touch,
+         right_grip_touch,
+       }) {
+    state.buttons.set(button);
+  }
+  state.left_stick = {.x = 1.0F, .y = -1.0F};
+  state.right_stick = {.x = -1.0F, .y = 1.0F};
+  state.left_trigger = 0.5F;
+  state.right_trigger = 1.0F;
+  state.touchpad_contacts[0] = {.id = 1, .active = true, .x = 0.0F, .y = 1.0F, .pressure = 0.25F};
+  state.touchpad_contacts[1] = {.id = 2, .active = true, .x = 1.0F, .y = 0.0F, .pressure = 1.0F};
+  state.acceleration = lvh::Vector3 {.x = 9.80665F, .y = 0.0F, .z = -9.80665F};
+  state.gyroscope = lvh::Vector3 {.x = 1000.0F, .y = -500.0F, .z = 250.0F};
+
+  const auto report = lvh::reports::pack_input_report(profile, state);
+
+  ASSERT_EQ(report.size(), 54U);
+  EXPECT_EQ(report[0], 0x42U);
+  EXPECT_EQ(read_u32_le(report, 2U), 0x3FFFFFFFU);
+  EXPECT_EQ(read_i16_le(report, 6U), 16384);
+  EXPECT_EQ(read_i16_le(report, 8U), 32767);
+  EXPECT_EQ(read_i16_le(report, 10U), 32767);
+  EXPECT_EQ(read_i16_le(report, 12U), -32768);
+  EXPECT_EQ(read_i16_le(report, 14U), -32768);
+  EXPECT_EQ(read_i16_le(report, 16U), 32767);
+  EXPECT_EQ(read_i16_le(report, 18U), -32768);
+  EXPECT_EQ(read_i16_le(report, 20U), -32768);
+  EXPECT_EQ(read_u16_le(report, 22U), 8192U);
+  EXPECT_EQ(read_i16_le(report, 24U), 32767);
+  EXPECT_EQ(read_i16_le(report, 26U), 32767);
+  EXPECT_EQ(read_u16_le(report, 28U), 32768U);
+  EXPECT_EQ(read_i16_le(report, 34U), 16384);
+  EXPECT_EQ(read_i16_le(report, 36U), 16384);
+  EXPECT_EQ(read_i16_le(report, 38U), 0);
+  EXPECT_EQ(read_i16_le(report, 40U), 16384);
+  EXPECT_EQ(read_i16_le(report, 42U), -4096);
+  EXPECT_EQ(read_i16_le(report, 44U), -8192);
+  EXPECT_EQ(read_i16_le(report, 46U), 32767);
+
+  const auto battery = lvh::reports::pack_battery_report(
+    profile,
+    {.state = lvh::GamepadBatteryState::charging, .percentage = 73}
+  );
+  ASSERT_TRUE(battery.has_value());
+  ASSERT_EQ(battery->size(), 15U);
+  EXPECT_EQ((*battery)[0], 0x43U);
+  EXPECT_EQ((*battery)[1], 2U);
+  EXPECT_EQ((*battery)[2], 73U);
+  EXPECT_FALSE(
+    lvh::reports::pack_battery_report(
+      lvh::profiles::generic_gamepad(),
+      {.state = lvh::GamepadBatteryState::full, .percentage = 100}
+    )
+      .has_value()
+  );
+}
+
+TEST(ReportTest, PacksSteamControllerButtonsWithoutGuideAliasing) {
+  using enum lvh::GamepadButton;
+
+  constexpr std::array button_cases {
+    std::pair {x, 0x00000004U},
+    std::pair {dpad_down, 0x00000400U},
+    std::pair {dpad_right, 0x00000800U},
+    std::pair {dpad_left, 0x00001000U},
+    std::pair {dpad_up, 0x00002000U},
+    std::pair {guide, 0x00010000U},
+  };
+
+  const auto profile = lvh::profiles::steam_controller_2026();
+  for (const auto &[button, expected_mask] : button_cases) {
+    lvh::GamepadState state;
+    state.buttons.set(button);
+    const auto report = lvh::reports::pack_input_report(profile, state);
+
+    ASSERT_EQ(report.size(), 54U);
+    EXPECT_EQ(read_u32_le(report, 2U), expected_mask)
+      << "logical button " << static_cast<unsigned>(std::to_underlying(button));
+  }
+}
+
+TEST(ReportTest, ParsesSteamControllerRumbleAndAddressableHaptics) {
+  const auto profile = lvh::profiles::steam_controller_2026();
+
+  const auto rumble = lvh::reports::parse_output_report(
+    profile,
+    {0x80, 0x00, 0x34, 0x12, 0xCD, 0xAB, 0xFE, 0x57, 0x13, 0x02}
+  );
+  EXPECT_EQ(rumble.kind, lvh::GamepadOutputKind::rumble);
+  EXPECT_EQ(rumble.low_frequency_rumble, 0xABCDU);
+  EXPECT_EQ(rumble.high_frequency_rumble, 0x1357U);
+
+  const auto pulse = lvh::reports::parse_output_report(
+    profile,
+    {0x81, 0x03, 0xE8, 0x03, 0xD0, 0x07, 0x05, 0x00}
+  );
+  ASSERT_EQ(pulse.kind, lvh::GamepadOutputKind::haptics);
+  ASSERT_TRUE(pulse.haptic_effect.has_value());
+  EXPECT_EQ(pulse.haptic_effect->target, lvh::GamepadHapticTarget::both);
+  EXPECT_EQ(pulse.haptic_effect->kind, lvh::GamepadHapticEffectKind::pulse);
+  EXPECT_EQ(pulse.haptic_effect->duration_us, 1000);
+  EXPECT_EQ(pulse.haptic_effect->interval_us, 2000U);
+  EXPECT_EQ(pulse.haptic_effect->repeat_count, 5U);
+
+  const auto tone = lvh::reports::parse_output_report(
+    profile,
+    {0x83, 0x01, 0xFA, 0xB8, 0x01, 0x19, 0x00, 0x05, 0x00, 100}
+  );
+  ASSERT_TRUE(tone.haptic_effect.has_value());
+  EXPECT_EQ(tone.haptic_effect->target, lvh::GamepadHapticTarget::left);
+  EXPECT_EQ(tone.haptic_effect->kind, lvh::GamepadHapticEffectKind::tone);
+  EXPECT_EQ(tone.haptic_effect->gain_db, -6);
+  EXPECT_EQ(tone.haptic_effect->frequency_hz, 440U);
+  EXPECT_EQ(tone.haptic_effect->duration_us, 25000);
+  EXPECT_EQ(tone.haptic_effect->lfo_frequency_hz, 5U);
+  EXPECT_EQ(tone.haptic_effect->lfo_depth_percent, 100U);
+
+  const auto command = lvh::reports::parse_output_report(profile, {0x82, 0x02, 0x04, 0xF4});
+  ASSERT_TRUE(command.haptic_effect.has_value());
+  EXPECT_EQ(command.haptic_effect->target, lvh::GamepadHapticTarget::right);
+  EXPECT_EQ(command.haptic_effect->kind, lvh::GamepadHapticEffectKind::rumble);
+  EXPECT_EQ(command.haptic_effect->gain_db, -12);
+
+  const auto sweep = lvh::reports::parse_output_report(
+    profile,
+    {0x84, 0x03, 0xFD, 0xE8, 0x03, 0x64, 0x00, 0xC8, 0x00}
+  );
+  ASSERT_TRUE(sweep.haptic_effect.has_value());
+  EXPECT_EQ(sweep.haptic_effect->target, lvh::GamepadHapticTarget::both);
+  EXPECT_EQ(sweep.haptic_effect->kind, lvh::GamepadHapticEffectKind::logarithmic_sweep);
+  EXPECT_EQ(sweep.haptic_effect->gain_db, -3);
+  EXPECT_EQ(sweep.haptic_effect->duration_us, 1000000);
+  EXPECT_EQ(sweep.haptic_effect->start_frequency_hz, 100U);
+  EXPECT_EQ(sweep.haptic_effect->end_frequency_hz, 200U);
+
+  const auto script = lvh::reports::parse_output_report(profile, {0x85, 0x01, 0x07, 0xF6});
+  ASSERT_TRUE(script.haptic_effect.has_value());
+  EXPECT_EQ(script.haptic_effect->target, lvh::GamepadHapticTarget::left);
+  EXPECT_EQ(script.haptic_effect->kind, lvh::GamepadHapticEffectKind::script);
+  EXPECT_EQ(script.haptic_effect->script_id, 7U);
+  EXPECT_EQ(script.haptic_effect->gain_db, -10);
 }
 
 TEST(ReportTest, EncodesHatSwitch) {

@@ -134,11 +134,14 @@ disabled, or mismatched entitlement invalidates the license and removes all
 licensed virtual HID devices.
 Purchase and account-management buttons use the compiled URLs in
 `src/platform/windows/shared/lvh_windows_broker_config.hpp`.
-Enable `Lock buttons` to click-to-toggle behavior for held inputs.
+Enable `Lock buttons` for click-to-toggle behavior for held inputs. Momentary
+buttons are released if the control window loses focus or the pointer leaves it,
+preventing a system-overlay transition from leaving a button held.
 The resizable window supports a compact width. Its device and control panels
 stack, and the button grid reflows to keep controls usable when it is narrowed.
-The UI intentionally does not use gamepad navigation, so virtual devices created
-by the tool cannot drive the tool's own controls.
+The UI intentionally does not open gamepads for navigation and enables keyboard
+navigation only for mouse controls, so virtual gamepads created by the tool
+cannot drive the tool's own controls.
 
 External devices created by another process, such as Sunshine, are not
 enumerated yet. That requires backend protocol support, so the Windows driver or
@@ -215,6 +218,7 @@ Built-in gamepad profiles and their platform-neutral default device names are:
 | DualShock 4 USB and Bluetooth | `(libvirtualhid) PS4 Controller`          |
 | DualSense USB and Bluetooth   | `(libvirtualhid) PS5 Controller`          |
 | Nintendo Switch Pro           | `(libvirtualhid) Nintendo Pro Controller` |
+| Steam Controller (2026)       | `Steam Controller`                        |
 
 Consumers may replace `DeviceProfile::name` before creating a gamepad, for
 example, to prepend an application name while preserving the default controller
@@ -230,11 +234,12 @@ through 16 in the input report. Linux may still route that profile through
 standard `ABS_HAT0X` and `ABS_HAT0Y` axes.
 
 Profiles advertise support for features such as rumble, trigger rumble, RGB and
-player LEDs, adaptive triggers, motion sensors, touchpads, battery state,
-profile-specific buttons, and raw output reports. Consumers should query
-profile and backend capabilities before warning users about unsupported client
-features. Xbox One and Xbox Series advertise `supports_trigger_rumble` and
-`supports_battery`; the Linux UHID Bluetooth transport preserves both
+player LEDs, adaptive triggers, addressable haptics, motion sensors, touchpads,
+battery state, profile-specific buttons, and raw output reports. Consumers
+should query profile and backend capabilities before warning users about
+unsupported client features. Xbox One and Xbox Series advertise
+`supports_trigger_rumble` and `supports_battery`; the Linux UHID Bluetooth
+transport preserves both
 capabilities, while the uinput fallback clears them and retains ordinary
 rumble. The Linux Xbox transport includes its battery descriptor only when
 `CreateGamepadOptions::metadata.has_battery` is true, and it emits battery
@@ -248,3 +253,22 @@ for every profile.
 The `misc1` button represents Share/Capture/Mic Mute-style controls and is
 available on the generic, Xbox Series, DualSense, and Switch Pro profiles; Xbox
 360 and Xbox One do not advertise that extra button.
+
+`profiles::steam_controller_2026()` exposes Valve's wired `0x28DE:0x1302`
+native profile. `touchpad_contacts[0]` is the left pad and
+`touchpad_contacts[1]` is the right pad; each contact accepts normalized
+position and pressure. The pad clicks use `left_touchpad` and
+`right_touchpad`. `paddle1`/`paddle2` are R4/L4 and `paddle3`/`paddle4` are
+R5/L5. The profile also accepts `left_trigger_click`, `right_trigger_click`,
+the two stick-touch states, and the two grip-touch states in addition to the
+ordinary gamepad buttons, sticks, analog triggers, motion, and battery fields.
+Releasing a touchpad contact clears its active state and pressure while retaining
+its last position, avoiding a spurious full-pad motion on the release report.
+
+Steam Controller output report `0x80` is normalized to the ordinary `rumble`
+callback. Native reports `0x81` through `0x85` produce `haptics` callbacks with
+the selected left, right, or paired actuator and the decoded pulse, tone,
+command, sweep, or script parameters. The unchanged bytes remain available in
+`GamepadOutput::raw_report`. Both Windows VHF and Linux UHID also answer the
+controller's two 64-byte feature-report channels used for initialization and
+lizard-mode settings.

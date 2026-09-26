@@ -59,6 +59,7 @@ TEST(VirtualHidControlModelTest, NamesKnownAndFallbackEnumValues) {
   EXPECT_EQ(control::output_kind_name(lvh::GamepadOutputKind::raw_report), L"raw report");
   EXPECT_EQ(control::output_kind_name(lvh::GamepadOutputKind::trigger_rumble), L"trigger rumble");
   EXPECT_EQ(control::output_kind_name(lvh::GamepadOutputKind::player_leds), L"player leds");
+  EXPECT_EQ(control::output_kind_name(lvh::GamepadOutputKind::haptics), L"haptics");
   EXPECT_EQ(control::output_kind_name(static_cast<lvh::GamepadOutputKind>(255)), L"raw report");
 
   EXPECT_EQ(control::battery_state_name(lvh::GamepadBatteryState::unknown), L"unknown");
@@ -153,6 +154,12 @@ TEST(VirtualHidControlModelTest, BuildsMomentaryMouseButtonEvents) {
   EXPECT_FALSE(release.pressed);
 }
 
+TEST(VirtualHidControlModelTest, EnablesKeyboardNavigationOnlyForMouseControls) {
+  EXPECT_FALSE(control::keyboard_navigation_enabled(lvh::DeviceType::gamepad));
+  EXPECT_TRUE(control::keyboard_navigation_enabled(lvh::DeviceType::mouse));
+  EXPECT_FALSE(control::keyboard_navigation_enabled(lvh::DeviceType::keyboard));
+}
+
 TEST(VirtualHidControlModelTest, ConvertsSliderValues) {
   EXPECT_EQ(control::axis_to_slider(-2.0F), -control::slider_scale);
   EXPECT_EQ(control::axis_to_slider(-0.5F), -50);
@@ -192,11 +199,11 @@ TEST(VirtualHidControlModelTest, SummarizesProfileFeatures) {
 
   EXPECT_EQ(
     control::profile_feature_summary(generic),
-    L"Features: battery no | rumble yes | trigger rumble no | RGB LED no | player LEDs no | adaptive triggers no | raw output yes"
+    L"Features: battery no | rumble yes | trigger rumble no | RGB LED no | player LEDs no | adaptive triggers no | haptics no | raw output yes"
   );
   EXPECT_EQ(
     control::profile_feature_summary(dualsense),
-    L"Features: battery yes | rumble yes | trigger rumble no | RGB LED yes | player LEDs no | adaptive triggers yes | raw output yes"
+    L"Features: battery yes | rumble yes | trigger rumble no | RGB LED yes | player LEDs no | adaptive triggers yes | haptics no | raw output yes"
   );
   EXPECT_EQ(
     control::device_feature_summary(mouse),

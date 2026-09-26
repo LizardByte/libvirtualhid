@@ -963,6 +963,27 @@ namespace lvh::detail::test {
       return {std::move(status), std::move(records)};
     }
 
+    void finish_uhid_output_roundtrip(
+      UhidGamepad &gamepad,
+      int peer_fd,
+      std::atomic_size_t &callback_count,
+      LinuxUhidRoundTripResult &result,
+      uhid_event &event
+    ) {
+      const auto output_deadline = std::chrono::steady_clock::now() + std::chrono::seconds {1};
+      while (std::chrono::steady_clock::now() < output_deadline && callback_count.load() < 2U) {
+        std::this_thread::sleep_for(std::chrono::milliseconds {10});
+      }
+      result.output.callback_count = callback_count.load();
+
+      result.close_status = gamepad.close();
+      if (read_uhid_event_type(peer_fd, UHID_DESTROY, event)) {
+        result.saw_destroy = true;
+      }
+
+      static_cast<void>(::close(peer_fd));
+    }
+
   }  // namespace
 
   std::string linux_copy_string_char_buffer(const std::string &source) {
@@ -1805,18 +1826,7 @@ namespace lvh::detail::test {
     std::copy(motor_report.begin(), motor_report.end(), event.u.output.data);
     static_cast<void>(write_uhid_event(descriptors[1], event));
 
-    const auto output_deadline = std::chrono::steady_clock::now() + std::chrono::seconds {1};
-    while (std::chrono::steady_clock::now() < output_deadline && callback_count.load() < 2U) {
-      std::this_thread::sleep_for(std::chrono::milliseconds {10});
-    }
-    result.output.callback_count = callback_count.load();
-
-    result.close_status = gamepad.close();
-    if (read_uhid_event_type(descriptors[1], UHID_DESTROY, event)) {
-      result.saw_destroy = true;
-    }
-
-    static_cast<void>(::close(descriptors[1]));
+    finish_uhid_output_roundtrip(gamepad, descriptors[1], callback_count, result, event);
     return result;
   }
 
@@ -1903,6 +1913,141 @@ namespace lvh::detail::test {
 
     result.close_status = gamepad.close();
     static_cast<void>(::close(descriptors[1]));
+    return result;
+  }
+
+  LinuxUhidRoundTripResult linux_steam_controller_uhid_socketpair_reports() {
+    LinuxUhidRoundTripResult result;
+    std::array<int, 2> descriptors {-1, -1};
+    if (::socketpair(AF_UNIX, SOCK_STREAM, 0, descriptors.data()) != 0) {
+      result.create_status = system_error_status(ErrorCode::backend_failure, "failed to create socketpair", errno);
+      result.submit_status = result.create_status;
+      result.close_status = result.create_status;
+      return result;
+    }
+
+    CreateGamepadOptions options;
+    options.profile = profiles::steam_controller_2026();
+    options.metadata.stable_id = "steam-controller-2026-roundtrip";
+    options.metadata.has_battery = true;
+
+    UhidGamepad gamepad {descriptors[0]};
+    auto event = create_started_profile_uhid_gamepad(gamepad, 14, options, descriptors[1], BUS_BLUETOOTH, result);
+    result.creation.saw_create = result.creation.saw_create &&
+                                 event.u.create2.rd_size == options.profile.report_descriptor.size();
+
+    event = {};
+    event.type = UHID_SET_REPORT;
+    event.u.set_report.id = 20;
+    event.u.set_report.rnum = 1;
+    event.u.set_report.rtype = UHID_FEATURE_REPORT;
+    event.u.set_report.size = static_cast<__u16>(steam_controller_protocol::feature_report_size);
+    event.u.set_report.data[0] = 1;
+    event.u.set_report.data[1] = 0x83;
+    static_cast<void>(write_uhid_event(descriptors[1], event));
+    if (read_uhid_event_type(descriptors[1], UHID_SET_REPORT_REPLY, event)) {
+      result.saw_set_report_reply = event.u.set_report_reply.id == 20 && event.u.set_report_reply.err == 0;
+    }
+
+    event = {};
+    event.type = UHID_GET_REPORT;
+    event.u.get_report.id = 21;
+    event.u.get_report.rnum = 1;
+    event.u.get_report.rtype = UHID_FEATURE_REPORT;
+    static_cast<void>(write_uhid_event(descriptors[1], event));
+    if (read_uhid_event_type(descriptors[1], UHID_GET_REPORT_REPLY, event)) {
+      result.saw_get_report_reply = event.u.get_report_reply.id == 21 && event.u.get_report_reply.err == 0;
+      result.steam_controller.saw_attribute_feature_reply =
+        result.saw_get_report_reply &&
+        event.u.get_report_reply.size == steam_controller_protocol::feature_report_size &&
+        event.u.get_report_reply.data[0] == 1 && event.u.get_report_reply.data[1] == 0x83 &&
+        event.u.get_report_reply.data[2] == 15;
+    }
+
+    std::atomic_size_t callback_count {0};
+    gamepad.set_output_callback([&result, &callback_count](const GamepadOutput &output) {
+      result.output.last = output;
+      if (output.kind == GamepadOutputKind::rumble) {
+        result.output.rumble = output;
+      } else if (output.kind == GamepadOutputKind::haptics) {
+        result.output.haptics = output;
+      }
+      ++callback_count;
+    });
+
+    event = {};
+    event.type = UHID_OPEN;
+    static_cast<void>(write_uhid_event(descriptors[1], event));
+
+    GamepadState state;
+    state.buttons.set(GamepadButton::a);
+    state.buttons.set(GamepadButton::paddle4);
+    state.buttons.set(GamepadButton::right_touchpad);
+    state.touchpad_contacts[0] = {.id = 1, .active = true, .x = 0.25F, .y = 0.75F, .pressure = 0.5F};
+    state.touchpad_contacts[1] = {.id = 2, .active = true, .x = 0.75F, .y = 0.25F, .pressure = 1.0F};
+    state.battery = GamepadBattery {
+      .state = GamepadBatteryState::charging,
+      .percentage = 73,
+    };
+    const auto report = reports::pack_input_report(options.profile, state);
+    result.submit_status = gamepad.submit(state, report);
+
+    const auto input_deadline = std::chrono::steady_clock::now() + std::chrono::seconds {1};
+    while (
+      std::chrono::steady_clock::now() < input_deadline &&
+      (!result.steam_controller.saw_state_input || !result.steam_controller.saw_battery_input)) {
+      if (!read_uhid_event(descriptors[1], event) || event.type != UHID_INPUT2) {
+        continue;
+      }
+      const auto input = std::span {event.u.input2.data, event.u.input2.size};
+      if (input.size() == steam_controller_protocol::state_report_size && input[0] == 0x42U) {
+        const auto buttons = read_u32_le(input.data() + 2U);
+        result.steam_controller.saw_state_input =
+          (buttons & 0x00000001U) != 0U && (buttons & 0x00040000U) != 0U &&
+          (buttons & 0x00400000U) != 0U && (buttons & 0x02200000U) == 0x02200000U;
+      } else if (input.size() == steam_controller_protocol::battery_report_size && input[0] == 0x43U) {
+        result.steam_controller.saw_battery_input = input[1] == 2U && input[2] == 73U;
+      }
+    }
+    result.saw_input = result.steam_controller.saw_state_input;
+
+    constexpr std::array<std::uint8_t, 10> rumble_report {
+      0x80,
+      0x00,
+      0x00,
+      0x00,
+      0x34,
+      0x12,
+      0x00,
+      0x78,
+      0x56,
+      0x00,
+    };
+    event = {};
+    event.type = UHID_OUTPUT;
+    event.u.output.rtype = UHID_OUTPUT_REPORT;
+    event.u.output.size = static_cast<__u16>(rumble_report.size());
+    std::ranges::copy(rumble_report, event.u.output.data);
+    static_cast<void>(write_uhid_event(descriptors[1], event));
+
+    constexpr std::array<std::uint8_t, 8> pulse_report {
+      0x81,
+      0x03,
+      0x20,
+      0x00,
+      0x10,
+      0x00,
+      0x02,
+      0x00,
+    };
+    event = {};
+    event.type = UHID_OUTPUT;
+    event.u.output.rtype = UHID_OUTPUT_REPORT;
+    event.u.output.size = static_cast<__u16>(pulse_report.size());
+    std::ranges::copy(pulse_report, event.u.output.data);
+    static_cast<void>(write_uhid_event(descriptors[1], event));
+
+    finish_uhid_output_roundtrip(gamepad, descriptors[1], callback_count, result, event);
     return result;
   }
 

@@ -92,6 +92,7 @@ namespace lvh::detail {
           return OperationStatus::failure(backend_failure, "unexpected submit session token");
         }
         submit_reports_.push_back(report);
+        submit_threads_.push_back(std::this_thread::get_id());
         return submit_status_;
       }
 
@@ -146,6 +147,11 @@ namespace lvh::detail {
         return submit_reports_;
       }
 
+      std::vector<std::thread::id> submit_threads() const {
+        std::lock_guard lock {mutex_};
+        return submit_threads_;
+      }
+
     private:
       bool session_token_matches(const LvhWindowsSessionToken &session_token) const {
         return std::ranges::equal(session_token.bytes, session_token_.bytes);
@@ -171,6 +177,7 @@ namespace lvh::detail {
       OperationStatus destroy_status_ = OperationStatus::success();
       std::vector<LvhWindowsCreateDeviceRequest> create_requests_;
       std::vector<std::vector<std::uint8_t>> submit_reports_;
+      std::vector<std::thread::id> submit_threads_;
       std::vector<std::uint64_t> destroyed_ids_;
       std::vector<LvhWindowsOutputReportEvent> output_events_;
     };
@@ -551,6 +558,120 @@ namespace lvh::detail {
         });
         result.close_status = created.gamepad->close();
         result.submitted_reports = command_state->submit_reports();
+      }
+
+      return result;
+    }
+
+    WindowsSteamControllerReportStreamResult windows_backend_steam_controller_report_stream() {
+      WindowsSteamControllerReportStreamResult result;
+      const auto caller_thread = std::this_thread::get_id();
+      auto command_state = std::make_shared<FakeWindowsControlChannelState>();
+      auto event_state = std::make_shared<FakeWindowsControlChannelState>();
+      auto backend = make_fake_windows_backend(command_state, event_state);
+
+      CreateGamepadOptions options;
+      options.profile = profiles::steam_controller_2026();
+      options.metadata.stable_id = "steam-controller-2026";
+      options.metadata.has_battery = true;
+      auto created = backend->create_gamepad(10, options);
+      result.create_status = created.status;
+      capture_created_hid_device(command_state, result.device);
+      if (created) {
+        GamepadState state;
+        state.buttons.set(GamepadButton::a);
+        state.buttons.set(GamepadButton::paddle1);
+        state.touchpad_contacts[0] = {.id = 1, .active = true, .x = 0.25F, .y = 0.75F, .pressure = 0.5F};
+        state.battery = GamepadBattery {
+          .state = GamepadBatteryState::discharging,
+          .percentage = 61,
+        };
+        const auto report = reports::pack_input_report(options.profile, state);
+        result.submit_status = created.gamepad->submit(state, report);
+        result.repeated_state_report = wait_until([&command_state] {
+          const auto reports = command_state->submit_reports();
+          return std::ranges::count_if(reports, [](const auto &submitted) {
+                   if (submitted.size() != steam_controller_protocol::state_report_size || submitted[0] != 0x42U) {
+                     return false;
+                   }
+                   const auto buttons = static_cast<std::uint32_t>(submitted[2]) |
+                                        (static_cast<std::uint32_t>(submitted[3]) << 8U) |
+                                        (static_cast<std::uint32_t>(submitted[4]) << 16U) |
+                                        (static_cast<std::uint32_t>(submitted[5]) << 24U);
+                   return (buttons & 0x00000081U) == 0x00000081U;
+                 }) >= 2;
+        });
+
+        state.touchpad_contacts[1] = {.id = 2, .active = true, .x = 0.8F, .y = 0.3F, .pressure = 0.5F};
+        result.right_pad_down_status = created.gamepad->submit(state, reports::pack_input_report(options.profile, state));
+        result.saw_right_pad_touch = wait_until([&command_state] {
+          const auto submitted_reports = command_state->submit_reports();
+          return std::ranges::any_of(submitted_reports, [](const auto &submitted) {
+            return submitted.size() == steam_controller_protocol::state_report_size &&
+                   submitted[0] == 0x42U && (submitted[4] & 0x20U) != 0U;
+          });
+        });
+
+        state.touchpad_contacts[1].active = false;
+        state.touchpad_contacts[1].pressure = 0.0F;
+        const auto released_report = reports::pack_input_report(options.profile, state);
+        result.right_pad_up_status = created.gamepad->submit(state, released_report);
+        result.saw_right_pad_release = wait_until([&command_state, &released_report] {
+          const auto submitted_reports = command_state->submit_reports();
+          return std::ranges::any_of(submitted_reports, [&released_report](const auto &submitted) {
+            return submitted.size() == steam_controller_protocol::state_report_size &&
+                   submitted[0] == 0x42U && (submitted[4] & 0x20U) == 0U &&
+                   std::equal(submitted.begin() + 24, submitted.begin() + 30, released_report.begin() + 24);
+          });
+        });
+
+        std::atomic_bool haptic_output_seen {false};
+        created.gamepad->set_output_callback([&result, &haptic_output_seen](const GamepadOutput &output) {
+          if (output.kind == GamepadOutputKind::haptics) {
+            result.saw_haptic_output = true;
+            result.haptic_output = output;
+            haptic_output_seen = true;
+          }
+        });
+        LvhWindowsOutputReportEvent event {};
+        event.version = LVH_WINDOWS_CONTROL_PROTOCOL_VERSION;
+        event.size = sizeof(event);
+        event.driver_device_id = last_created_driver_id(command_state);
+        event.report_size = 8;
+        constexpr std::array<std::uint8_t, 8> pulse_report {
+          0x81,
+          0x03,
+          0x20,
+          0x00,
+          0x10,
+          0x00,
+          0x02,
+          0x00,
+        };
+        std::ranges::copy(pulse_report, event.report.begin());
+        event_state->enqueue_output_event(event);
+        static_cast<void>(wait_until([&haptic_output_seen] {
+          return haptic_output_seen.load();
+        }));
+
+        result.close_status = created.gamepad->close();
+        result.submitted_reports = command_state->submit_reports();
+        const auto submit_threads = command_state->submit_threads();
+        for (std::size_t index = 0; index < result.submitted_reports.size(); ++index) {
+          const auto &submitted = result.submitted_reports[index];
+          if (submit_threads[index] != caller_thread || submitted.empty()) {
+            continue;
+          }
+          if (submitted[0] == 0x42U) {
+            result.state_report_submitted_on_caller_thread = true;
+          } else if (submitted[0] == 0x43U) {
+            result.battery_report_submitted_on_caller_thread = true;
+          }
+        }
+        result.saw_battery_report = std::ranges::any_of(result.submitted_reports, [](const auto &submitted) {
+          return submitted.size() == steam_controller_protocol::battery_report_size &&
+                 submitted[0] == 0x43U && submitted[1] == 1U && submitted[2] == 61U;
+        });
       }
 
       return result;

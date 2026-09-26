@@ -125,6 +125,7 @@ TEST_F(LinuxBackendTest, TranslatesMouseButtonsAndBusTypes) {
   EXPECT_EQ(lvh::detail::test::linux_gamepad_uhid_bus(lvh::GamepadProfileKind::xbox_one), BUS_BLUETOOTH);
   EXPECT_EQ(lvh::detail::test::linux_gamepad_uhid_bus(lvh::GamepadProfileKind::xbox_series), BUS_BLUETOOTH);
   EXPECT_EQ(lvh::detail::test::linux_gamepad_uhid_bus(lvh::GamepadProfileKind::switch_pro), BUS_BLUETOOTH);
+  EXPECT_EQ(lvh::detail::test::linux_gamepad_uhid_bus(lvh::GamepadProfileKind::steam_controller_2026), BUS_BLUETOOTH);
   EXPECT_EQ(lvh::detail::test::linux_uinput_bus(lvh::BusType::bluetooth), BUS_BLUETOOTH);
 
   EXPECT_EQ(lvh::detail::test::linux_pen_tool(lvh::PenToolType::pen), BTN_TOOL_PEN);
@@ -880,6 +881,8 @@ TEST_F(LinuxBackendTest, XboxOneAndSeriesPreferBluetoothUhidWithUinputFallback) 
   EXPECT_TRUE(lvh::detail::test::linux_gamepad_prefers_uhid(switch_pro));
   EXPECT_TRUE(lvh::detail::test::linux_gamepad_prefers_uhid(dualshock4));
   EXPECT_TRUE(lvh::detail::test::linux_gamepad_prefers_uhid(dualsense));
+  EXPECT_TRUE(lvh::detail::test::linux_gamepad_prefers_uhid(steam_controller_2026));
+  EXPECT_FALSE(lvh::detail::test::linux_gamepad_uses_uinput(steam_controller_2026));
 
   for (const auto kind : {xbox_one, xbox_series}) {
     EXPECT_TRUE(lvh::detail::test::linux_gamepad_prefers_uhid(kind));
@@ -958,6 +961,37 @@ TEST_F(LinuxBackendTest, SocketpairBackedSwitchProUsesNativeUhidProtocol) {
   EXPECT_TRUE(result.switch_pro.saw_player_leds);
   ASSERT_EQ(result.output.callback_count, 2U);
   EXPECT_EQ(result.output.last.kind, lvh::GamepadOutputKind::player_leds);
+}
+
+TEST_F(LinuxBackendTest, SocketpairBackedSteamControllerUsesNativeUhidProtocol) {
+  const auto result = lvh::detail::test::linux_steam_controller_uhid_socketpair_reports();
+  EXPECT_TRUE(result.create_status.ok()) << result.create_status.message();
+  EXPECT_TRUE(result.submit_status.ok()) << result.submit_status.message();
+  EXPECT_TRUE(result.close_status.ok()) << result.close_status.message();
+  EXPECT_TRUE(result.creation.saw_create);
+  EXPECT_TRUE(result.creation.waited_for_start);
+  EXPECT_EQ(result.creation.bus, BUS_BLUETOOTH);
+  EXPECT_EQ(result.creation.vendor_id, 0x28DE);
+  EXPECT_EQ(result.creation.product_id, 0x1302);
+  EXPECT_EQ(result.creation.name, "Steam Controller");
+  EXPECT_TRUE(result.saw_set_report_reply);
+  EXPECT_TRUE(result.saw_get_report_reply);
+  EXPECT_TRUE(result.steam_controller.saw_attribute_feature_reply);
+  EXPECT_TRUE(result.steam_controller.saw_state_input);
+  EXPECT_TRUE(result.steam_controller.saw_battery_input);
+  EXPECT_TRUE(result.saw_destroy);
+
+  ASSERT_TRUE(result.output.rumble.has_value());
+  EXPECT_EQ(result.output.rumble->low_frequency_rumble, 0x1234);
+  EXPECT_EQ(result.output.rumble->high_frequency_rumble, 0x5678);
+  ASSERT_TRUE(result.output.haptics.has_value());
+  EXPECT_EQ(result.output.haptics->kind, lvh::GamepadOutputKind::haptics);
+  ASSERT_TRUE(result.output.haptics->haptic_effect.has_value());
+  EXPECT_EQ(result.output.haptics->haptic_effect->target, lvh::GamepadHapticTarget::both);
+  EXPECT_EQ(result.output.haptics->haptic_effect->kind, lvh::GamepadHapticEffectKind::pulse);
+  EXPECT_EQ(result.output.haptics->haptic_effect->duration_us, 32);
+  EXPECT_EQ(result.output.haptics->haptic_effect->interval_us, 16U);
+  EXPECT_EQ(result.output.haptics->haptic_effect->repeat_count, 2U);
 }
 
 TEST_F(LinuxBackendTest, SocketpairBackedDualSenseRepliesToFeatureReports) {

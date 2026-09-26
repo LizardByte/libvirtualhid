@@ -8,7 +8,7 @@
 #include <array>
 #include <stdint.h>
 
-inline constexpr uint32_t LVH_WINDOWS_CONTROL_PROTOCOL_VERSION = 5u;
+inline constexpr uint32_t LVH_WINDOWS_CONTROL_PROTOCOL_VERSION = 6u;
 inline constexpr char LVH_WINDOWS_CONTROL_DEVICE_PATH[] = R"(\\.\LibVirtualHid)";
 inline constexpr char LVH_WINDOWS_GLOBAL_CONTROL_DEVICE_PATH[] = R"(\\.\Global\LibVirtualHid)";
 
@@ -72,6 +72,7 @@ inline constexpr uint32_t LVH_WINDOWS_GAMEPAD_FLAG_SUPPORTS_TOUCHPAD = 0x0000000
 inline constexpr uint32_t LVH_WINDOWS_GAMEPAD_FLAG_SUPPORTS_RGB_LED = 0x00000008u;
 inline constexpr uint32_t LVH_WINDOWS_GAMEPAD_FLAG_SUPPORTS_BATTERY = 0x00000010u;
 inline constexpr uint32_t LVH_WINDOWS_GAMEPAD_FLAG_SUPPORTS_ADAPTIVE_TRIGGERS = 0x00000020u;
+inline constexpr uint32_t LVH_WINDOWS_GAMEPAD_FLAG_SUPPORTS_HAPTICS = 0x00000040u;
 
 enum class LvhWindowsProtocolStatus : uint32_t {
   success = 0,
@@ -101,6 +102,7 @@ enum class LvhWindowsGamepadProfileKind : uint32_t {
   dualsense = 4,
   switch_pro = 5,
   dualshock4 = 6,
+  steam_controller_2026 = 7,
 };
 
 namespace lvh_windows_protocol_detail {
@@ -133,6 +135,7 @@ namespace lvh_windows_protocol_detail {
   inline constexpr uint32_t gamepad_dualsense = to_uint32(dualsense);
   inline constexpr uint32_t gamepad_switch_pro = to_uint32(switch_pro);
   inline constexpr uint32_t gamepad_dualshock4 = to_uint32(dualshock4);
+  inline constexpr uint32_t gamepad_steam_controller_2026 = to_uint32(steam_controller_2026);
 }  // namespace lvh_windows_protocol_detail
 
 inline constexpr uint32_t LVH_WINDOWS_STATUS_SUCCESS = lvh_windows_protocol_detail::status_success;
@@ -163,6 +166,8 @@ inline constexpr uint32_t LVH_WINDOWS_GAMEPAD_DUALSENSE = lvh_windows_protocol_d
 inline constexpr uint32_t LVH_WINDOWS_GAMEPAD_SWITCH_PRO = lvh_windows_protocol_detail::gamepad_switch_pro;
 inline constexpr uint32_t LVH_WINDOWS_GAMEPAD_DUALSHOCK4 =
   lvh_windows_protocol_detail::gamepad_dualshock4;
+inline constexpr uint32_t LVH_WINDOWS_GAMEPAD_STEAM_CONTROLLER_2026 =
+  lvh_windows_protocol_detail::gamepad_steam_controller_2026;
 
 #pragma pack(push, 1)
 

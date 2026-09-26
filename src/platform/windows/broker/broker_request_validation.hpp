@@ -29,7 +29,8 @@ namespace lvh::windows::broker_validation {
     LVH_WINDOWS_GAMEPAD_FLAG_SUPPORTS_TOUCHPAD |
     LVH_WINDOWS_GAMEPAD_FLAG_SUPPORTS_RGB_LED |
     LVH_WINDOWS_GAMEPAD_FLAG_SUPPORTS_BATTERY |
-    LVH_WINDOWS_GAMEPAD_FLAG_SUPPORTS_ADAPTIVE_TRIGGERS;
+    LVH_WINDOWS_GAMEPAD_FLAG_SUPPORTS_ADAPTIVE_TRIGGERS |
+    LVH_WINDOWS_GAMEPAD_FLAG_SUPPORTS_HAPTICS;
 
   template<typename Value, std::size_t Size>
   bool all_zero(const std::array<Value, Size> &values) {
@@ -85,7 +86,7 @@ namespace lvh::windows::broker_validation {
     const auto known_bus = request.bus_type == LVH_WINDOWS_BUS_UNKNOWN ||
                            request.bus_type == LVH_WINDOWS_BUS_USB ||
                            request.bus_type == LVH_WINDOWS_BUS_BLUETOOTH;
-    const auto known_profile = request.gamepad_kind <= LVH_WINDOWS_GAMEPAD_DUALSHOCK4;
+    const auto known_profile = request.gamepad_kind <= LVH_WINDOWS_GAMEPAD_STEAM_CONTROLLER_2026;
     const auto valid_driver_descriptor =
       request.device_type == LVH_WINDOWS_DEVICE_GAMEPAD ||
       (request.device_type == LVH_WINDOWS_DEVICE_KEYBOARD &&

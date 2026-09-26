@@ -105,6 +105,18 @@ namespace lvh::profiles {
   DeviceProfile switch_pro();
 
   /**
+   * @brief Create the Valve Steam Controller (2026)-compatible gamepad profile.
+   *
+   * This wired USB profile exposes the controller's native report protocol,
+   * including both pressure-sensitive touchpads, motion sensors, battery
+   * reports, four rear buttons, capacitive sensors, rumble, and addressable
+   * touchpad haptics.
+   *
+   * @return Steam Controller (2026)-compatible device profile.
+   */
+  DeviceProfile steam_controller_2026();
+
+  /**
    * @brief Create the generic keyboard profile.
    *
    * @return Generic keyboard device profile.

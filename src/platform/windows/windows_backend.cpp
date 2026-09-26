@@ -33,6 +33,7 @@
 #include "platform/windows/shared/keyboard_protocol.hpp"
 #include "platform/windows/shared/mouse_protocol.hpp"
 #include "platform/windows/windows_broker_client.hpp"
+#include "shared/steam_controller_protocol.hpp"
 
 #include <libvirtualhid/profiles.hpp>
 #include <libvirtualhid/report.hpp>
@@ -1059,6 +1060,7 @@ namespace lvh::detail {
       bool uses_generic_pid = false;
       windows::GenericPidRumbleState generic_pid_rumble;
       std::vector<std::uint8_t> switch_pro_input_report;
+      GamepadState steam_controller_state;
     };
 
     class WindowsGamepad final: public BackendGamepad {
@@ -1075,16 +1077,16 @@ namespace lvh::detail {
       OperationStatus close() override;
 
     private:
-      void stream_switch_pro_reports(std::stop_token stop_token);
-      void stop_switch_pro_report_stream();
+      void stream_periodic_reports(std::stop_token stop_token);
+      void stop_periodic_report_stream();
 
       std::shared_ptr<WindowsBackendContext> context_;
       std::shared_ptr<WindowsVhfDeviceState> state_;
       std::mutex input_report_mutex_;
       std::optional<std::vector<std::uint8_t>> last_input_report_;
-      std::condition_variable switch_pro_report_ready_;
-      std::mutex switch_pro_report_mutex_;
-      std::jthread switch_pro_report_thread_;
+      std::condition_variable periodic_report_ready_;
+      std::mutex periodic_report_mutex_;
+      std::jthread periodic_report_thread_;
       UniqueHandle xbox360_output_stop_event_ {make_unique_handle(nullptr)};
       std::jthread xbox360_output_thread_;
 
@@ -1432,9 +1434,12 @@ namespace lvh::detail {
     ):
         context_ {std::move(context)},
         state_ {std::move(state)} {
-      if (state_->profile.gamepad_kind == GamepadProfileKind::switch_pro) {
-        switch_pro_report_thread_ = std::jthread {[this](std::stop_token stop_token) {
-          stream_switch_pro_reports(stop_token);
+      if (
+        state_->profile.gamepad_kind == GamepadProfileKind::switch_pro ||
+        state_->profile.gamepad_kind == GamepadProfileKind::steam_controller_2026
+      ) {
+        periodic_report_thread_ = std::jthread {[this](std::stop_token stop_token) {
+          stream_periodic_reports(stop_token);
         }};
       }
       if (state_->xbox360_transport) {
@@ -1448,15 +1453,18 @@ namespace lvh::detail {
     }
 
     WindowsGamepad::~WindowsGamepad() {
-      stop_switch_pro_report_stream();
+      stop_periodic_report_stream();
       stop_xbox360_output_stream();
     }
 
-    void WindowsGamepad::stream_switch_pro_reports(std::stop_token stop_token) {
-      auto next_report = std::chrono::steady_clock::now() + switch_pro_report_interval;
-      std::unique_lock report_lock {switch_pro_report_mutex_};
+    void WindowsGamepad::stream_periodic_reports(std::stop_token stop_token) {
+      const auto interval = state_->profile.gamepad_kind == GamepadProfileKind::steam_controller_2026 ?
+                              std::chrono::microseconds {steam_controller_protocol::input_interval_us} :
+                              std::chrono::duration_cast<std::chrono::microseconds>(switch_pro_report_interval);
+      auto next_report = std::chrono::steady_clock::now() + interval;
+      std::unique_lock report_lock {periodic_report_mutex_};
       while (!stop_token.stop_requested()) {
-        static_cast<void>(switch_pro_report_ready_.wait_until(report_lock, next_report, [&stop_token] {
+        static_cast<void>(periodic_report_ready_.wait_until(report_lock, next_report, [&stop_token] {
           return stop_token.stop_requested();
         }));
         if (stop_token.stop_requested()) {
@@ -1470,29 +1478,31 @@ namespace lvh::detail {
           if (!state_->open) {
             return;
           }
-          report = state_->switch_pro_input_report;
+          report = state_->profile.gamepad_kind == GamepadProfileKind::steam_controller_2026 ?
+                     reports::pack_input_report(state_->profile, state_->steam_controller_state) :
+                     state_->switch_pro_input_report;
         }
         if (!report.empty()) {
           static_cast<void>(context_->submit_device_report(state_, report));
         }
         report_lock.lock();
 
-        next_report += switch_pro_report_interval;
+        next_report += interval;
         const auto now = std::chrono::steady_clock::now();
         if (next_report <= now) {
-          next_report = now + switch_pro_report_interval;
+          next_report = now + interval;
         }
       }
     }
 
-    void WindowsGamepad::stop_switch_pro_report_stream() {
-      if (!switch_pro_report_thread_.joinable()) {
+    void WindowsGamepad::stop_periodic_report_stream() {
+      if (!periodic_report_thread_.joinable()) {
         return;
       }
 
-      switch_pro_report_thread_.request_stop();
-      switch_pro_report_ready_.notify_all();
-      switch_pro_report_thread_.join();
+      periodic_report_thread_.request_stop();
+      periodic_report_ready_.notify_all();
+      periodic_report_thread_.join();
     }
 
     void WindowsGamepad::stream_xbox360_output(std::stop_token stop_token) {
@@ -1550,6 +1560,7 @@ namespace lvh::detail {
       using enum ErrorCode;
 
       auto suppress_unchanged_report = false;
+      auto steam_controller_state_queued = false;
 
       {
         std::lock_guard lock {state_->mutex_};
@@ -1564,6 +1575,11 @@ namespace lvh::detail {
         if (state_->profile.gamepad_kind == GamepadProfileKind::switch_pro) {
           state_->switch_pro_input_report = report;
           return OperationStatus::success();
+        }
+
+        if (state_->profile.gamepad_kind == GamepadProfileKind::steam_controller_2026) {
+          state_->steam_controller_state = state;
+          steam_controller_state_queued = true;
         }
 
         if (state_->uses_generic_pid) {
@@ -1582,6 +1598,18 @@ namespace lvh::detail {
         suppress_unchanged_report =
           state_->profile.gamepad_kind == GamepadProfileKind::xbox_one ||
           state_->profile.gamepad_kind == GamepadProfileKind::xbox_series;
+      }
+
+      if (steam_controller_state_queued) {
+        // The periodic stream matches the controller's native report cadence.
+        // Interleaving event-driven state reports can distort pad motion at
+        // touch release in downstream consumers such as Steam Input.
+        if (state.battery) {
+          if (const auto battery_report = reports::pack_battery_report(state_->profile, *state.battery); battery_report) {
+            return context_->submit_device_report(state_, *battery_report);
+          }
+        }
+        return OperationStatus::success();
       }
 
       if (suppress_unchanged_report) {
@@ -1617,7 +1645,7 @@ namespace lvh::detail {
     }
 
     OperationStatus WindowsGamepad::close() {
-      stop_switch_pro_report_stream();
+      stop_periodic_report_stream();
       stop_xbox360_output_stream();
       return context_->close_device(state_);
     }

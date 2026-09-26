@@ -7,6 +7,7 @@
 #include "fixtures/fixtures.hpp"
 #include "generic_pid_rumble.hpp"
 #include "platform/windows/control_protocol.hpp"
+#include "shared/steam_controller_protocol.hpp"
 
 // standard includes
 #include <algorithm>
@@ -60,7 +61,7 @@ TEST(WindowsProtocolTest, ExposesStableProtocolConstants) {
   EXPECT_STREQ(lvh::detail::windows::default_control_device_path.data(), R"(\\.\LibVirtualHid)");
   EXPECT_STREQ(lvh::detail::windows::global_control_device_path.data(), R"(\\.\Global\LibVirtualHid)");
 
-  EXPECT_EQ(LVH_WINDOWS_CONTROL_PROTOCOL_VERSION, 5U);
+  EXPECT_EQ(LVH_WINDOWS_CONTROL_PROTOCOL_VERSION, 6U);
   EXPECT_EQ(LVH_WINDOWS_IOCTL_CREATE_DEVICE, 0x8000E000U);
   EXPECT_EQ(LVH_WINDOWS_IOCTL_DESTROY_DEVICE, 0x8000E004U);
   EXPECT_EQ(LVH_WINDOWS_IOCTL_SUBMIT_INPUT_REPORT, 0x8000E008U);
@@ -129,6 +130,10 @@ TEST(WindowsProtocolTest, MapsBusTypesAndGamepadKinds) {
     LVH_WINDOWS_GAMEPAD_SWITCH_PRO
   );
   EXPECT_EQ(
+    lvh::detail::windows::protocol_gamepad_kind(lvh::GamepadProfileKind::steam_controller_2026),
+    LVH_WINDOWS_GAMEPAD_STEAM_CONTROLLER_2026
+  );
+  EXPECT_EQ(
     lvh::detail::windows::protocol_gamepad_kind(static_cast<lvh::GamepadProfileKind>(255)),
     LVH_WINDOWS_GAMEPAD_GENERIC
   );
@@ -144,6 +149,7 @@ TEST(WindowsProtocolTest, BuildsCapabilityFlags) {
   capabilities.supports_rgb_led = true;
   capabilities.supports_battery = true;
   capabilities.supports_adaptive_triggers = true;
+  capabilities.supports_haptics = true;
 
   const auto flags = lvh::detail::windows::gamepad_flags(capabilities);
   EXPECT_NE(flags & LVH_WINDOWS_GAMEPAD_FLAG_SUPPORTS_RUMBLE, 0U);
@@ -152,6 +158,7 @@ TEST(WindowsProtocolTest, BuildsCapabilityFlags) {
   EXPECT_NE(flags & LVH_WINDOWS_GAMEPAD_FLAG_SUPPORTS_RGB_LED, 0U);
   EXPECT_NE(flags & LVH_WINDOWS_GAMEPAD_FLAG_SUPPORTS_BATTERY, 0U);
   EXPECT_NE(flags & LVH_WINDOWS_GAMEPAD_FLAG_SUPPORTS_ADAPTIVE_TRIGGERS, 0U);
+  EXPECT_NE(flags & LVH_WINDOWS_GAMEPAD_FLAG_SUPPORTS_HAPTICS, 0U);
 }
 
 TEST(WindowsProtocolTest, CopyHelpersTruncateAndZeroFill) {
@@ -185,6 +192,33 @@ TEST(WindowsProtocolTest, CopyHelpersTruncateAndZeroFill) {
   EXPECT_EQ(submit_request.report[2], 0U);
   EXPECT_EQ(submit_request.report[3], 0U);
   EXPECT_EQ(submit_request.report[4], 0U);
+}
+
+TEST(WindowsProtocolTest, SteamControllerFeatureStateRepliesToNativeQueries) {
+  lvh::detail::steam_controller_protocol::FeatureState state;
+  const std::array<std::uint8_t, 64> attributes_request {0x01, 0x83};
+  ASSERT_TRUE(state.handle_set_feature(1U, attributes_request));
+
+  const auto attributes = state.get_feature_report(1U);
+  ASSERT_TRUE(attributes.has_value());
+  ASSERT_EQ(attributes->size(), 64U);
+  EXPECT_EQ((*attributes)[0], 0x01U);
+  EXPECT_EQ((*attributes)[1], 0x83U);
+  EXPECT_EQ((*attributes)[2], 15U);
+  EXPECT_EQ((*attributes)[3], 0x01U);
+  EXPECT_EQ((*attributes)[4], 0x02U);
+  EXPECT_EQ((*attributes)[5], 0x13U);
+
+  auto string_request = std::array<std::uint8_t, 64> {0x01, 0xAE};
+  string_request[3] = 1U;
+  ASSERT_TRUE(state.handle_set_feature(1U, string_request));
+  const auto string_response = state.get_feature_report(1U);
+  ASSERT_TRUE(string_response.has_value());
+  EXPECT_EQ((*string_response)[1], 0xAEU);
+  EXPECT_EQ((*string_response)[2], 21U);
+  EXPECT_EQ((*string_response)[3], 1U);
+  EXPECT_FALSE(state.handle_set_feature(3U, string_request));
+  EXPECT_FALSE(state.get_feature_report(3U).has_value());
 }
 
 TEST(WindowsProtocolTest, PacksGamepadCreateRequest) {

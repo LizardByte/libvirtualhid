@@ -41,6 +41,12 @@ namespace lvh::profiles {
 
     constexpr std::size_t switch_pro_output_report_size = 64;
 
+    constexpr std::uint8_t steam_controller_2026_report_id = 0x42;
+
+    constexpr std::size_t steam_controller_2026_input_report_size = 54;
+
+    constexpr std::size_t steam_controller_2026_output_report_size = 10;
+
     constexpr std::size_t dualshock4_usb_input_report_size = 64;
 
     constexpr std::size_t dualshock4_usb_output_report_size = 32;
@@ -267,6 +273,22 @@ namespace lvh::profiles {
         "953f9183858009057508953f9183858209067508953f9183c0";
 
       return bytes_from_hex(descriptor);
+    }
+
+    std::vector<std::uint8_t> make_steam_controller_2026_report_descriptor() {
+      // Native Valve Triton wired descriptor. It includes the lizard-mode mouse
+      // and keyboard collections, native state/battery reports, six haptic
+      // output reports, and the two 64-byte feature-report channels.
+      return bytes_from_hex(
+        "05010902a10185400901a100050919012902150025017501950281027506950181010501093009311581257f750895028106"
+        "950109388106050c0a380295018106c0c005010906a1018541050719e029e715002501750195088102810119002965150025"
+        "65750895068100c00600ff0901a1018542150026ff0075089535094281028544150026ff0075089505094481028579150026"
+        "ff0075089501097981028543150026ff007508950e09438102857b150026ff007508950c097b81028545150026ff00750895"
+        "2d094581028580150026ff0075089509098091028581150026ff0075089507098191028582150026ff007508950309829102"
+        "8583150026ff0075089509098391028584150026ff0075089508098491028585150026ff0075089503098591028586150026"
+        "ff0075089503098691028587150026ff007508953f098791028589150026ff007508953f098991028588150026ff00750895"
+        "3f098891028501953f0901b1028502953f0901b102c0"
+      );
     }
 
     std::vector<std::uint8_t> make_gamepad_report_descriptor(std::uint8_t report_id, bool supports_rumble) {
@@ -1988,6 +2010,7 @@ namespace lvh::profiles {
         .supports_touchpad = true,
         .supports_rgb_led = true,
         .supports_battery = true,
+        .supported_touchpad_count = 1,
       };
       profile.report_descriptor =
         bus_type == BusType::bluetooth ? make_dualshock4_bluetooth_report_descriptor() : make_dualshock4_usb_report_descriptor();
@@ -2016,6 +2039,7 @@ namespace lvh::profiles {
         .supports_rgb_led = true,
         .supports_battery = true,
         .supports_adaptive_triggers = true,
+        .supported_touchpad_count = 1,
       };
       profile.report_descriptor =
         bus_type == BusType::bluetooth ? make_dualsense_bluetooth_report_descriptor() : make_dualsense_usb_report_descriptor();
@@ -2043,6 +2067,32 @@ namespace lvh::profiles {
         .supports_player_leds = true,
       };
       profile.report_descriptor = make_switch_pro_report_descriptor();
+      return profile;
+    }
+
+    DeviceProfile make_steam_controller_2026_profile() {
+      DeviceProfile profile;
+      profile.device_type = DeviceType::gamepad;
+      profile.gamepad_kind = GamepadProfileKind::steam_controller_2026;
+      profile.bus_type = BusType::usb;
+      profile.vendor_id = 0x28DE;
+      profile.product_id = 0x1302;
+      profile.version = 0x0001;
+      profile.report_id = steam_controller_2026_report_id;
+      profile.input_report_size = steam_controller_2026_input_report_size;
+      profile.output_report_size = steam_controller_2026_output_report_size;
+      profile.name = "Steam Controller";
+      profile.manufacturer = "Valve Software";
+      profile.capabilities = {
+        .supports_rumble = true,
+        .supports_motion = true,
+        .supports_touchpad = true,
+        .supports_battery = true,
+        .supports_haptics = true,
+        .supported_touchpad_count = 2,
+        .supported_rear_paddle_count = 4,
+      };
+      profile.report_descriptor = make_steam_controller_2026_report_descriptor();
       return profile;
     }
 
@@ -2134,6 +2184,10 @@ namespace lvh::profiles {
     return make_switch_pro_profile();
   }
 
+  DeviceProfile steam_controller_2026() {
+    return make_steam_controller_2026_profile();
+  }
+
   DeviceProfile keyboard() {
     return make_simple_profile(DeviceType::keyboard, "libvirtualhid Keyboard", 0x0002);
   }
@@ -2170,6 +2224,8 @@ namespace lvh::profiles {
         return dualsense();
       case GamepadProfileKind::switch_pro:
         return switch_pro();
+      case GamepadProfileKind::steam_controller_2026:
+        return steam_controller_2026();
     }
 
     return std::nullopt;
@@ -2184,6 +2240,7 @@ namespace lvh::profiles {
       dualshock4(),
       dualsense(),
       switch_pro(),
+      steam_controller_2026(),
     };
   }
 

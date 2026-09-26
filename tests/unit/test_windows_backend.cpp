@@ -118,6 +118,37 @@ TEST_F(WindowsBackendTest, SwitchReportsStreamAtTheNativeCadence) {
   }));
 }
 
+TEST_F(WindowsBackendTest, SteamControllerStreamsNativeStateAndBatteryReports) {
+  const auto result = lvh::detail::test::windows_backend_steam_controller_report_stream();
+
+  expect_ok(result.create_status);
+  expect_ok(result.submit_status);
+  EXPECT_TRUE(result.repeated_state_report);
+  expect_ok(result.right_pad_down_status);
+  expect_ok(result.right_pad_up_status);
+  EXPECT_TRUE(result.saw_right_pad_touch);
+  EXPECT_TRUE(result.saw_right_pad_release);
+  EXPECT_FALSE(result.state_report_submitted_on_caller_thread);
+  EXPECT_TRUE(result.battery_report_submitted_on_caller_thread);
+  EXPECT_TRUE(result.saw_battery_report);
+  expect_ok(result.close_status);
+  EXPECT_EQ(result.device.device_type, LVH_WINDOWS_DEVICE_GAMEPAD);
+  EXPECT_EQ(result.device.bus_type, LVH_WINDOWS_BUS_USB);
+  EXPECT_EQ(result.device.flags & LVH_WINDOWS_GAMEPAD_FLAG_SUPPORTS_HAPTICS, LVH_WINDOWS_GAMEPAD_FLAG_SUPPORTS_HAPTICS);
+  EXPECT_EQ(result.device.vendor_id, 0x28DEU);
+  EXPECT_EQ(result.device.product_id, 0x1302U);
+  EXPECT_EQ(result.device.report_id, 0x42U);
+  EXPECT_EQ(result.device.input_report_size, 54U);
+  EXPECT_EQ(result.device.output_report_size, 10U);
+  EXPECT_EQ(result.device.name, "Steam Controller");
+  EXPECT_EQ(result.device.manufacturer, "Valve Software");
+  EXPECT_EQ(result.device.stable_id, "steam-controller-2026");
+  EXPECT_TRUE(result.saw_haptic_output);
+  ASSERT_TRUE(result.haptic_output.haptic_effect.has_value());
+  EXPECT_EQ(result.haptic_output.haptic_effect->target, lvh::GamepadHapticTarget::both);
+  EXPECT_EQ(result.haptic_output.haptic_effect->kind, lvh::GamepadHapticEffectKind::pulse);
+}
+
 TEST_F(WindowsBackendTest, XboxReportsOnlySubmitShoulderStateTransitions) {
   for (const auto kind : {lvh::GamepadProfileKind::xbox_one, lvh::GamepadProfileKind::xbox_series}) {
     SCOPED_TRACE(static_cast<int>(kind));

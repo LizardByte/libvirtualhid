@@ -104,11 +104,21 @@ streams native `0x30` reports every 15 milliseconds. This coalesces separate
 acceleration and gyroscope API updates into the three-sample report cadence used
 by a physical USB controller.
 
+The 2026 Steam Controller profile uses Valve's native wired USB identity and HID
+descriptor. The Windows client caches normalized controller state and streams
+native `0x42` reports at the controller's 4.032-millisecond cadence so sequence
+and sensor timestamps advance while controls are held. Separate `0x43` battery
+reports carry charge state and percentage. The driver accepts both native
+feature-report channels, including the lizard-mode settings request, and can
+return native-shaped attribute and string replies when queried. Native ordinary
+rumble and the controller's targeted pulse, command, tone, logarithmic-sweep,
+and script outputs are normalized into the creating runtime's callbacks.
+
 For every gamepad report ID, the VHF driver caches the newest complete input
 report and answers synchronous `GetInputReport` requests from that cache. This
 lets Windows HID consumers retrieve the current battery state for Xbox One,
-Xbox Series, DualShock 4, DualSense, and Switch Pro instead of relying only on
-the asynchronous input stream.
+Xbox Series, DualShock 4, DualSense, Switch Pro, and Steam Controller instead of
+relying only on the asynchronous input stream.
 
 That HID report does not change the XInput battery classification of the Xbox
 One and Xbox Series VHF devices. On a Windows desktop where XInput enumerated
@@ -145,8 +155,8 @@ and signing details.
 
 The Linux backend uses standard user-space kernel interfaces:
 
-- `uhid` for descriptor-driven PlayStation, Switch Pro, Xbox One, and Xbox
-  Series gamepads.
+- `uhid` for descriptor-driven PlayStation, Switch Pro, Steam Controller, Xbox
+  One, and Xbox Series gamepads.
 - `uinput` for Generic and Xbox 360 gamepads, for Xbox One and Xbox Series when
   `uhid` is unavailable, and for keyboard, mouse, touchscreen, trackpad, and pen
   tablet devices.
@@ -286,6 +296,22 @@ The public acceleration and gyroscope units remain meters per second squared
 and degrees per second; the packer converts them to Nintendo's coordinate
 system and sensor scales.
 
+Steam Controller (2026) also remains on Linux `uhid` so the kernel exposes its
+native Valve `0x28DE:0x1302` identity, full descriptor, raw feature channels,
+separate battery report, and output reports. As with Switch Pro, the Linux-only
+UHID identity uses the Bluetooth bus so SDL/HIDAPI does not require a physical
+USB parent; the public profile and native wired report framing stay unchanged.
+State report `0x42`
+carries ordinary controls, four rear buttons, digital trigger clicks,
+capacitive stick and grip touch, two pressure-sensitive trackpads and their
+clicks, motion, sequence, and sensor timestamp fields. The backend republishes
+the latest complete state every 4.032 milliseconds and serializes periodic and
+application submissions. Report `0x80` becomes ordinary two-channel rumble;
+reports `0x81` through `0x85` become targeted `haptics` callbacks while keeping
+their raw bytes available. The layouts and initialization behavior follow
+SDL's [Steam Controller report definitions](https://github.com/libsdl-org/SDL/blob/main/src/joystick/hidapi/steam/controller_structs.h)
+and [Triton HIDAPI driver](https://github.com/libsdl-org/SDL/blob/main/src/joystick/hidapi/SDL_hidapi_steam_triton.c).
+
 Linux touchscreen and trackpad contacts use the lowest available multitouch
 slot while they are active. A newly placed contact receives a new tracking ID,
 including when it reuses a slot released by another contact, so replacing one
@@ -314,6 +340,11 @@ Tab or the arrow keys to highlight them and Space or Enter to activate them.
 Mouse buttons are momentary. A delayed browser-test mode queues an action long
 enough to switch focus to an external event tester, sending button actions as a
 single press-and-release click.
+
+Gamepad navigation is disabled, and keyboard navigation is enabled only while
+the mouse controls are selected. Losing focus or pointer presence releases any
+momentary UI-controlled buttons so virtual input cannot remain held while a
+system overlay is active.
 
 ### Permissions
 
@@ -401,8 +432,8 @@ The FreeBSD backend uses the native evdev compatibility stack through
 FreeBSD path, and `/dev/uinput` for environments that provide the Linux-style
 alias. It supports the same uinput device categories as the Linux backend:
 
-- Generic, Xbox 360, Xbox One, Xbox Series, DualShock 4, DualSense, and Switch
-  Pro gamepads.
+- Generic, Xbox 360, Xbox One, Xbox Series, DualShock 4, DualSense, Switch Pro,
+  and Steam Controller gamepads.
 - Keyboard and mouse devices, with X11/XTest available as a fallback.
 - Touchscreen, trackpad, and pen tablet devices.
 
@@ -414,16 +445,18 @@ with the kernel HID bus. FreeBSD CUSE applications such as
 a `uhid(4)`-compatible character device for direct consumers, but that is a
 different integration surface and is not used by the current backend.
 
-Generic, Xbox-family, Switch Pro, DualShock 4, and DualSense behavior therefore
-uses uinput. Ordinary buttons, sticks, analog triggers, and rumble are available,
-but raw HID reports and descriptor-driven features are not.
+Generic, Xbox-family, Switch Pro, Steam Controller, DualShock 4, and DualSense
+behavior therefore uses uinput. Ordinary buttons, sticks, analog triggers, and
+rumble are available, but raw HID reports and descriptor-driven features are not.
 
 For each created gamepad, `Gamepad::profile()` reports the effective FreeBSD
 uinput capability subset. Motion, touchpad contacts and click, battery state,
 RGB LED output, adaptive-trigger output, and raw HID output reports are disabled.
-This includes Switch Pro motion and battery state as well as the
-PlayStation-specific features. Streaming-host adapters can reject those
-operations instead of silently accepting state that uinput cannot expose.
+This includes Switch Pro and Steam Controller motion and battery state, Steam
+Controller trackpads, rear buttons, trigger clicks, capacitive sensors and
+haptics, and the PlayStation-specific features. Streaming-host adapters can
+reject those operations instead of silently accepting state that uinput cannot
+expose.
 
 The `uinput` kernel module and a writable uinput device node are required.
 
