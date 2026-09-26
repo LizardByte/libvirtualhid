@@ -86,12 +86,9 @@ namespace lvh::detail::windows_broker_service {
     L"Accept: application/json\r\n"
     L"Content-Type: application/json\r\n"
     L"Polar-Version: 2026-04\r\n";
-  constexpr auto license_validation_interval = std::chrono::days {1};
-  constexpr auto license_validation_retry_interval = std::chrono::seconds {60};
-  constexpr auto license_outage_device_retention = std::chrono::hours {1};
-  constexpr auto subscription_validation_max_age =
-    license_validation_interval + license_outage_device_retention;
-  constexpr std::size_t unvalidated_active_device_limit = 1U;
+  constexpr auto license_validation_interval = lvh::broker_license::validation_interval;
+  constexpr auto license_validation_retry_interval = lvh::broker_license::validation_retry_interval;
+  constexpr std::size_t unvalidated_active_device_limit = lvh::broker_license::unvalidated_active_device_limit;
   constexpr auto boot_session_registry_path =
     L"SYSTEM\\CurrentControlSet\\Services\\libvirtualhid_broker\\Runtime";
   constexpr auto boot_session_registry_value = L"BootMarker";
@@ -243,14 +240,7 @@ namespace lvh::detail::windows_broker_service {
     std::uint64_t validated_at,
     std::uint64_t effective_timestamp
   ) {
-    const auto maximum_age = static_cast<std::uint64_t>(
-      std::chrono::duration_cast<std::chrono::seconds>(
-        subscription_validation_max_age
-      )
-        .count()
-    );
-    return validated_at != 0U && effective_timestamp >= validated_at &&
-           effective_timestamp - validated_at < maximum_age;
+    return lvh::broker_license::subscription_current(validated_at, effective_timestamp);
   }
 
   bool unvalidated_device_creation_allowed(
@@ -262,7 +252,7 @@ namespace lvh::detail::windows_broker_service {
   bool license_outage_retention_elapsed(
     LicenseValidationClock::duration elapsed
   ) {
-    return elapsed >= license_outage_device_retention;
+    return lvh::broker_license::outage_retention_elapsed(elapsed);
   }
 
   bool license_outage_device_should_be_revoked(
@@ -1066,20 +1056,11 @@ namespace lvh::detail::windows_broker_service {
   const lvh::windows::broker_config::PolarBenefit *polar_benefit(
     std::string_view benefit_id
   ) {
-    const auto benefit = std::ranges::find_if(
-      lvh::windows::broker_config::allowed_benefits,
-      [benefit_id](const auto &candidate) {
-        return candidate.id == benefit_id;
-      }
-    );
-    return benefit == lvh::windows::broker_config::allowed_benefits.end() ?
-             nullptr :
-             std::to_address(benefit);
+    return lvh::broker_license::benefit(benefit_id);
   }
 
   std::string_view plan_name_for_benefit(std::string_view benefit_id) {
-    const auto *benefit = polar_benefit(benefit_id);
-    return benefit == nullptr ? std::string_view {} : benefit->plan_name;
+    return lvh::broker_license::plan_name(benefit_id);
   }
 
   bool session_token_matches(

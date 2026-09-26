@@ -1,0 +1,131 @@
+---
+name: CI-macOS-Broker
+permissions: {}
+
+on:
+  workflow_call:
+    inputs:
+      publish_release:
+        required: true
+        type: string
+      release_version:
+        required: true
+        type: string
+    secrets:
+      APPLE_ID:
+        required: false
+      APPLE_TEAM_ID:
+        required: false
+      APPLE_NOTARYTOOL_PASSWORD:
+        required: false
+      APPLE_CODESIGN_IDENTITY:
+        required: false
+      APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_BASE64:
+        required: false
+      APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_P12_PASSWORD:
+        required: false
+      APPLE_MACOS_VIRTUAL_HID_PROVISIONING_PROFILE_BASE64:
+        required: false
+
+env:
+  MACOSX_DEPLOYMENT_TARGET: '14.2'
+
+jobs:
+  macos_broker:
+    name: Universal macOS broker
+    permissions:
+      contents: read
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: brew install cmake
+
+      - name: Configure universal build
+        env:
+          BUILD_VERSION: ${{ inputs.release_version }}
+        run: |
+          cmake -B cmake-build-macos-universal -S . \
+            -DCMAKE_OSX_ARCHITECTURES='arm64;x86_64' \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_DOCS=OFF \
+            -DBUILD_TESTS=ON \
+            -DLIBVIRTUALHID_BUILD_TOOLS=ON \
+            -DLIBVIRTUALHID_WARNINGS_AS_ERRORS=ON
+
+      - name: Build and inspect architectures
+        run: |
+          cmake --build cmake-build-macos-universal --parallel "$(sysctl -n hw.ncpu)"
+          for binary in \
+            cmake-build-macos-universal/src/platform/macos/broker/VirtualHIDBroker.app/Contents/MacOS/VirtualHIDBroker \
+            cmake-build-macos-universal/tools/VirtualHIDControl.app/Contents/MacOS/VirtualHIDControl \
+            cmake-build-macos-universal/src/platform/macos/broker/libvirtualhid-license \
+            cmake-build-macos-universal/src/libvirtualhid.a; do
+            xcrun lipo "${binary}" -verify_arch arm64
+            xcrun lipo "${binary}" -verify_arch x86_64
+          done
+
+      - name: Test broker policy and protocol
+        run: |
+          cmake-build-macos-universal/tests/test_libvirtualhid \
+            '--gtest_filter=BrokerLicensePolicyTest.*:GitHubActionsEvaluationTest.*:MacosBrokerProtocolTest.*'
+
+      - name: Smoke test broker and license IPC
+        run: |
+          broker=cmake-build-macos-universal/src/platform/macos/broker/VirtualHIDBroker.app/Contents/MacOS/VirtualHIDBroker
+          license_cli=cmake-build-macos-universal/src/platform/macos/broker/libvirtualhid-license
+          sudo -n env GITHUB_ACTIONS=true "${broker}" &
+          broker_pid=$!
+          trap 'sudo -n kill "${broker_pid}" 2>/dev/null || true' EXIT
+          ready=false
+          for (( attempt = 0; attempt < 20; ++attempt )); do
+            if status_output="$("${license_cli}" status 2>&1)"; then
+              ready=true
+              break
+            fi
+            sleep 1
+          done
+          if [[ "${ready}" != true ]]; then
+            echo 'Broker did not become ready' >&2
+            exit 1
+          fi
+          grep -F 'Plan: GitHub Actions Evaluation' <<< "${status_output}"
+          if "${license_cli}" validate >/dev/null 2>&1; then
+            echo 'Unlicensed validation unexpectedly succeeded' >&2
+            exit 1
+          fi
+
+      - name: Import Developer ID certificate
+        if: inputs.publish_release == 'true'
+        uses: apple-actions/import-codesign-certs@5142e029c445c10ffc7149d172e540235a065466  # v7.0.0
+        with:
+          p12-file-base64: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_BASE64 }}
+          p12-password: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_P12_PASSWORD }}
+
+      - name: Sign, notarize, and package
+        if: inputs.publish_release == 'true'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_NOTARYTOOL_PASSWORD: ${{ secrets.APPLE_NOTARYTOOL_PASSWORD }}
+          APPLE_CODESIGN_IDENTITY: ${{ secrets.APPLE_CODESIGN_IDENTITY }}
+          PROFILE_BASE64: ${{ secrets.APPLE_MACOS_VIRTUAL_HID_PROVISIONING_PROFILE_BASE64 }}
+        run: |
+          test -n "${PROFILE_BASE64}" || { echo 'Approved macOS virtual HID provisioning profile is required'; exit 1; }
+          test -n "${APPLE_ID}" && test -n "${APPLE_TEAM_ID}" && test -n "${APPLE_NOTARYTOOL_PASSWORD}"
+          profile_path="${RUNNER_TEMP}/libvirtualhid-broker.provisionprofile"
+          printf '%s' "${PROFILE_BASE64}" | base64 -D > "${profile_path}"
+          export APPLE_MACOS_VIRTUAL_HID_PROVISIONING_PROFILE="${profile_path}"
+          bash scripts/macos/package-dmg.sh cmake-build-macos-universal cmake-build-macos-universal/artifacts
+
+      - name: Upload disk image
+        if: inputs.publish_release == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: macos-virtual-hid-installer
+          path: cmake-build-macos-universal/artifacts/libvirtualhid-macOS-universal.dmg
+          if-no-files-found: error

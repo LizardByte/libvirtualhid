@@ -7,7 +7,7 @@
 #include <gtest/gtest.h>
 
 // local includes
-#include "lvh_windows_github_actions_evaluation.hpp"
+#include "platform/shared/lvh_broker_license_policy.hpp"
 
 // lib includes
 #include <libvirtualhid/license.hpp>
@@ -31,11 +31,36 @@ TEST(LicenseStatusTest, LicensedReflectsCurrentState) {
   EXPECT_FALSE(status.licensed());
 }
 
+TEST(BrokerLicensePolicyTest, AcceptsOnlyConfiguredBenefits) {
+  const auto *yearly = lvh::broker_license::benefit(lvh::broker_license::allowed_benefits[0].id);
+  const auto *lifetime = lvh::broker_license::benefit(lvh::broker_license::allowed_benefits[1].id);
+  ASSERT_NE(yearly, nullptr);
+  ASSERT_NE(lifetime, nullptr);
+  EXPECT_TRUE(yearly->subscription_backed);
+  EXPECT_FALSE(lifetime->subscription_backed);
+  EXPECT_EQ(lvh::broker_license::plan_name(yearly->id), "Yearly");
+  EXPECT_EQ(lvh::broker_license::plan_name(lifetime->id), "Lifetime");
+  EXPECT_EQ(lvh::broker_license::benefit("unrecognized-benefit"), nullptr);
+}
+
+TEST(BrokerLicensePolicyTest, EnforcesSubscriptionAndOutageBoundaries) {
+  using namespace std::chrono_literals;
+  constexpr auto start = 1000U;
+  constexpr auto max_age = std::chrono::duration_cast<std::chrono::seconds>(lvh::broker_license::subscription_max_age).count();
+  EXPECT_TRUE(lvh::broker_license::subscription_current(start, start));
+  EXPECT_TRUE(lvh::broker_license::subscription_current(start, start + max_age - 1));
+  EXPECT_FALSE(lvh::broker_license::subscription_current(start, start + max_age));
+  EXPECT_FALSE(lvh::broker_license::subscription_current(start, start - 1));
+  EXPECT_FALSE(lvh::broker_license::subscription_current(0, start));
+  EXPECT_FALSE(lvh::broker_license::outage_retention_elapsed(1h - 1ms));
+  EXPECT_TRUE(lvh::broker_license::outage_retention_elapsed(1h));
+}
+
 TEST(GitHubActionsEvaluationTest, IsActiveOnlyInsideFiveMinuteWindow) {
   using namespace std::chrono_literals;
-  using lvh::windows::github_actions_evaluation::active;
+  using lvh::broker_license::github_actions_evaluation::active;
 
-  const auto started_at = lvh::windows::github_actions_evaluation::Clock::time_point {1000s};
+  const auto started_at = lvh::broker_license::github_actions_evaluation::Clock::time_point {1000s};
   EXPECT_TRUE(active(started_at, started_at));
   EXPECT_TRUE(active(started_at, started_at + 5min - 1s));
   EXPECT_FALSE(active(started_at, started_at + 5min));
@@ -44,9 +69,9 @@ TEST(GitHubActionsEvaluationTest, IsActiveOnlyInsideFiveMinuteWindow) {
 
 TEST(GitHubActionsEvaluationTest, RemainingTimeClampsAtWindowBoundaries) {
   using namespace std::chrono_literals;
-  using lvh::windows::github_actions_evaluation::remaining;
+  using lvh::broker_license::github_actions_evaluation::remaining;
 
-  const auto started_at = lvh::windows::github_actions_evaluation::Clock::time_point {1000s};
+  const auto started_at = lvh::broker_license::github_actions_evaluation::Clock::time_point {1000s};
   EXPECT_EQ(remaining(started_at, started_at), 5min);
   EXPECT_EQ(remaining(started_at, started_at + 4min), 1min);
   EXPECT_EQ(remaining(started_at, started_at + 5min - 500ms), 1s);

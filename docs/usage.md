@@ -47,7 +47,7 @@ FetchContent_MakeAvailable(libvirtualhid)
 target_link_libraries(your_app PRIVATE libvirtualhid::libvirtualhid)
 ```
 
-Examples, tests, docs, and the Windows driver package are top-level or opt-in
+Examples, tests, docs, and the Windows driver and macOS broker packages are top-level or opt-in
 builds. Normal vendored and `FetchContent` consumers only get the library target
 unless they explicitly enable additional options.
 
@@ -59,6 +59,9 @@ unless they explicitly enable additional options.
   level project.
 - `BUILD_DOCS`: build Doxygen documentation when this repository is the top
   level project.
+- `LIBVIRTUALHID_BUILD_MACOS_BROKER`: build the entitlement-bearing macOS
+  broker app. Enabled for top-level macOS builds; see
+  [macOS gamepad setup](macos-gamepad.md) for provisioning and installation.
 - `LIBVIRTUALHID_BUILD_TOOLS`: build diagnostic tool binaries, including
   `virtualhid_control`, when this repository is the top level project.
 - `LIBVIRTUALHID_TOOLS_STATIC_RUNTIME`: link diagnostic tools against static
@@ -98,7 +101,7 @@ artifact.
 virtualhid_control
 ```
 
-The UI is built from the repository CPM lockfile so Windows, Linux, and future
+The UI is built from the repository CPM lockfile so Windows, Linux, and
 macOS builds share the same frontend stack. Builds prefer static SDL3 by
 default when a static target is available.
 
@@ -108,7 +111,7 @@ capabilities, list device nodes reported for UI-created devices, and display
 normalized gamepad output such as rumble, RGB LED, player LED, adaptive trigger,
 trigger rumble, and raw report events delivered through the normal callback path. Button
 controls are momentary by default, so they behave like physical gamepad buttons;
-on Windows, the UI also displays broker license status and can activate,
+on Windows and macOS, the UI also displays broker license status and can activate,
 refresh, or deactivate a machine license without elevation. Windows UMDF
 virtual HID device creation requires a current machine authorization, but does
 not perform an online request per device. The broker validates in the
@@ -153,10 +156,11 @@ The API centers on portable device concepts:
   shutdown.
 - `get_license_status`, `activate_license`, `validate_license`, and
   `deactivate_license`: provider-neutral machine license operations for host
-  applications. On Windows these call the installed local broker; license keys
-  are not retained by the client library or returned to the application. The
-  client verifies that the named-pipe server is the SCM-registered running
-  broker before sending any request.
+  applications. On Windows and macOS these call the installed local broker;
+  license keys are not retained by the client library or returned to the
+  application. The Windows client verifies that the named-pipe server is the
+  SCM-registered running broker. The macOS client verifies that its Unix socket
+  and peer are owned by root before sending any request.
 - `VirtualDevice`: common lifecycle for created devices.
 - `Gamepad`: submits normalized gamepad state and receives output callbacks.
 - `Keyboard`: submits key press/release and UTF-8 text input.

@@ -127,15 +127,15 @@ TEST_F(MacosBackendTest, SelectsMouseMotionMetadataForHeldButtons) {
 TEST_F(MacosBackendTest, ReportsCapabilitiesAndUnsupportedDevices) {
   const auto result = lvh::detail::test::macos_backend_utilities();
 
-  EXPECT_EQ(result.capabilities.backend_name, "macos-coregraphics");
-  EXPECT_FALSE(result.capabilities.supports_virtual_hid);
-  EXPECT_FALSE(result.capabilities.supports_gamepad);
+  EXPECT_EQ(result.capabilities.backend_name, "macos-virtual-hid-coregraphics");
+  EXPECT_TRUE(result.capabilities.supports_virtual_hid);
+  EXPECT_TRUE(result.capabilities.supports_gamepad);
   EXPECT_TRUE(result.capabilities.supports_keyboard);
   EXPECT_TRUE(result.capabilities.supports_mouse);
   EXPECT_FALSE(result.capabilities.supports_touchscreen);
   EXPECT_FALSE(result.capabilities.supports_trackpad);
   EXPECT_FALSE(result.capabilities.supports_pen_tablet);
-  EXPECT_FALSE(result.capabilities.supports_output_reports);
+  EXPECT_TRUE(result.capabilities.supports_output_reports);
   EXPECT_FALSE(result.capabilities.requires_installed_driver);
 
   ASSERT_TRUE(result.keyboard_create_status.ok()) << result.keyboard_create_status.message();

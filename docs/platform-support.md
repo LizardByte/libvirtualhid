@@ -429,35 +429,21 @@ The `uinput` kernel module and a writable uinput device node are required.
 
 ## macOS
 
-The macOS backend currently uses CoreGraphics event injection for keyboard and
-mouse input. It keeps the same public device model as the other backends:
-consumers create keyboard and mouse devices through the runtime and submit the
-same normalized event types. Platform details such as macOS virtual key-code
-translation, modifier flag tracking, display coordinate scaling, scroll-wheel
-preference handling, and CoreGraphics event posting stay inside the backend.
+Gamepads use a licensed, signed user-space `IOHIDUserDevice` broker installed
+as a LaunchDaemon. The public C++ API and packed reports stay platform-neutral;
+only the broker owns the Apple virtual HID entitlement. All built-in gamepad
+profile descriptors are accepted, including Xbox-family, DualShock 4,
+DualSense, and Switch Pro. The broker handles input, output, PlayStation
+feature reports, and Switch Pro initialization replies. macOS presents Xbox
+360 as HID rather than Windows XInput/XUSB. Consumer recognition still depends
+on each game's macOS controller stack and needs installed validation.
 
-This first backend is not a virtual HID implementation. It does not require a
-driver package, but consuming applications still need the normal macOS
-permission path for synthetic input, such as Accessibility/Input Monitoring
-approval when the host environment enforces it.
+Keyboard and mouse input use CoreGraphics for UTF-8 text,
+portable key translation, modifier state, relative and absolute motion, and
+pixel-based scrolling. The host process needs macOS synthetic-input permission
+when the system requires it. Touchscreen, trackpad, and pen tablet creation
+return `unsupported_profile`.
 
-Current macOS capabilities:
-
-- Keyboard key press and release using the existing Windows-style portable key
-  codes.
-- UTF-8 keyboard text input, converted to the UTF-16 strings expected by
-  CoreGraphics keyboard events.
-- Mouse relative movement, absolute movement on the main display, left/middle/
-  right button transitions, and pixel-based vertical/horizontal scroll.
-- Shared keyboard modifier state on mouse events, so combinations such as
-  shift-click continue to work.
-
-Unsupported macOS capabilities currently return `unsupported_profile`:
-
-- Gamepad devices and output reports.
-- Touchscreen, trackpad, and pen tablet devices.
-
-Native macOS virtual-HID gamepad support is planned. A future backend may use
-`IOHIDUserDevice`, DriverKit/HIDDriverKit, or a combination that preserves the
-same public API while documenting any signing, entitlement, and installer
-requirements.
+Gamepad creation requires a machine license. The broker accepts the Yearly and
+Lifetime Polar benefits. See [macOS gamepad setup](macos-gamepad.md) for the
+universal build, signing, installation, and diagnostics.

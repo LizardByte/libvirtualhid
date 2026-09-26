@@ -3,51 +3,13 @@
 
 /**
  * @file src/platform/windows/shared/lvh_windows_github_actions_evaluation.hpp
- * @brief Time-window helpers for the GitHub Actions gamepad evaluation exception.
+ * @brief Windows alias for the shared GitHub Actions evaluation policy.
  */
+
 #pragma once
 
-// standard includes
-#include <chrono>
+#include "../../shared/lvh_broker_license_policy.hpp"
 
-namespace lvh::windows::github_actions_evaluation {
-
-  using Clock = std::chrono::system_clock;
-
-  /**
-   * @brief Maximum unlicensed gamepad evaluation window on GitHub-hosted CI.
-   */
-  inline constexpr auto duration = std::chrono::minutes {5};
-
-  /**
-   * @brief Check whether an evaluation window is active.
-   *
-   * A clock earlier than the persisted start is treated as expired so rolling
-   * the system clock backward cannot extend the window.
-   *
-   * @param started_at Persisted start of the evaluation window.
-   * @param now Current wall-clock time.
-   * @return `true` from the start instant until, but not including, its deadline.
-   */
-  constexpr bool active(Clock::time_point started_at, Clock::time_point now) noexcept {
-    return now >= started_at && now < started_at + duration;
-  }
-
-  /**
-   * @brief Calculate display seconds remaining in an evaluation window.
-   *
-   * @param started_at Persisted start of the evaluation window.
-   * @param now Current wall-clock time.
-   * @return Remaining seconds rounded up, or zero when the window is inactive.
-   */
-  constexpr std::chrono::seconds remaining(
-    Clock::time_point started_at,
-    Clock::time_point now
-  ) noexcept {
-    if (!active(started_at, now)) {
-      return std::chrono::seconds::zero();
-    }
-    return std::chrono::ceil<std::chrono::seconds>(started_at + duration - now);
-  }
-
-}  // namespace lvh::windows::github_actions_evaluation
+namespace lvh::windows {
+  namespace github_actions_evaluation = ::lvh::broker_license::github_actions_evaluation;
+}
