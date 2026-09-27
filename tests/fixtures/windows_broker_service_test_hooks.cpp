@@ -6,6 +6,8 @@
 // local includes
 #include "fixtures/windows_broker_service_test_hooks.hpp"
 
+#include "platform/shared/lvh_broker_license_policy.hpp"
+
 #ifndef NOMINMAX
   #define NOMINMAX
 #endif
@@ -500,7 +502,7 @@ namespace lvh::detail::test {
     using namespace lvh::detail::windows_broker_service;
     const auto subscription_validation_seconds = static_cast<std::uint64_t>(
       std::chrono::duration_cast<std::chrono::seconds>(
-        subscription_validation_max_age
+        lvh::broker_license::subscription_max_age
       )
         .count()
     );
@@ -557,10 +559,10 @@ namespace lvh::detail::test {
       .second_unvalidated_device_is_rejected = !unvalidated_device_creation_allowed(1U),
       .existing_gamepads_are_retained_before_one_hour =
         !license_outage_retention_elapsed(
-          license_outage_device_retention - std::chrono::milliseconds {1}
+          lvh::broker_license::outage_retention - std::chrono::milliseconds {1}
         ),
       .outage_limit_applies_at_one_hour = license_outage_retention_elapsed(
-        license_outage_device_retention
+        lvh::broker_license::outage_retention
       ),
       .first_gamepad_is_retained_after_one_hour =
         !license_outage_device_should_be_revoked(false, true, 0U),

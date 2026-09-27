@@ -26,6 +26,7 @@ inputs = [
   "docs/usage.md",
   "docs/platform-support.md",
   "docs/windows-driver.md",
+  "docs/macos-gamepad.md",
   "docs/todo.md",
   "docs/streaming-host-integration.md",
   "docs/development.md",

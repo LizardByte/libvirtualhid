@@ -85,7 +85,7 @@ jobs:
           libvirtualhid_broker
           gamepad_adapter
           virtualhid_control
-          --parallel 2
+          --parallel $([Environment]::ProcessorCount)
 
       - name: Validate Windows driver setup helper
         shell: pwsh
