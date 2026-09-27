@@ -972,7 +972,11 @@ namespace lvh::detail::test {
   }
 
   int linux_key_code(KeyboardKeyCode key_code) {
-    return key_code_to_linux(key_code);
+    return key_code_to_linux(key_code, true, 0);
+  }
+
+  int linux_key_code_with_options(KeyboardKeyCode key_code, bool uses_normalized_key_code, std::uint8_t stream_flags) {
+    return key_code_to_linux(key_code, uses_normalized_key_code, stream_flags);
   }
 
   int linux_mouse_button(MouseButton button) {
@@ -2935,11 +2939,13 @@ namespace lvh::detail::test {
   #endif
   }
 
-  unsigned long linux_xtest_keysym(KeyboardKeyCode key_code) {
+  unsigned long linux_xtest_keysym(KeyboardKeyCode key_code, bool uses_normalized_key_code, std::uint8_t stream_flags) {
   #if defined(LIBVIRTUALHID_HAVE_XTEST)
-    return key_code_to_keysym(key_code);
+    return key_code_to_keysym(key_code, uses_normalized_key_code, stream_flags);
   #else
     static_cast<void>(key_code);
+    static_cast<void>(uses_normalized_key_code);
+    static_cast<void>(stream_flags);
     return 0;
   #endif
   }

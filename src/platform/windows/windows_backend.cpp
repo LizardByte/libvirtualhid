@@ -480,6 +480,30 @@ namespace lvh::detail {
       }
     }
 
+    /**
+     * @brief Map a virtual key to a scan code using the active keyboard layout.
+     *
+     * @param key_code Windows virtual key code.
+     * @return Scan code and extended-prefix flag from `MapVirtualKeyExW`.
+     */
+    struct MappedScanCode {
+      WORD scan_code = 0;
+      bool extended = false;
+    };
+
+    MappedScanCode map_virtual_key_to_scan_code(KeyboardKeyCode key_code) {
+      const auto mapped = ::MapVirtualKeyExW(key_code, MAPVK_VK_TO_VSC_EX, nullptr);
+      if (mapped == 0U) {
+        return {};
+      }
+
+      const auto prefix = static_cast<UINT>((mapped >> 8U) & 0xFFU);
+      return {
+        .scan_code = static_cast<WORD>(mapped & 0xFFU),
+        .extended = prefix == 0xE0U || prefix == 0xE1U,
+      };
+    }
+
     bool can_map_virtual_key_to_scan_code(KeyboardKeyCode key_code) {
       return key_code != VK_LWIN && key_code != VK_RWIN && key_code != VK_PAUSE;
     }
@@ -1634,23 +1658,33 @@ namespace lvh::detail {
         INPUT input {};
         input.type = INPUT_KEYBOARD;
         input.ki.wVk = event.key_code;
+        auto use_extended_key = false;
+
         if (event.scan_code != 0U) {
           input.ki.wVk = 0;
           input.ki.wScan = event.scan_code;
           input.ki.dwFlags |= KEYEVENTF_SCANCODE;
+          use_extended_key = event.scan_code_extended;
         } else {
+          WORD scan_code = 0;
           if (event.uses_normalized_key_code) {
-            input.ki.wScan = windows_us_english_scan_code(event.key_code);
-          } else if (event.prefer_native_scan_code && can_map_virtual_key_to_scan_code(event.key_code)) {
-            input.ki.wScan = static_cast<WORD>(::MapVirtualKeyW(event.key_code, MAPVK_VK_TO_VSC));
+            scan_code = windows_us_english_scan_code(event.key_code);
+            use_extended_key = extended_key(event.key_code);
+          } else if (can_map_virtual_key_to_scan_code(event.key_code)) {
+            // Non-normalized keys use the host's active keyboard layout.
+            const auto mapped = map_virtual_key_to_scan_code(event.key_code);
+            scan_code = mapped.scan_code;
+            use_extended_key = mapped.extended;
           }
 
-          if (input.ki.wScan != 0U) {
+          if (scan_code != 0U) {
             input.ki.wVk = 0;
+            input.ki.wScan = scan_code;
             input.ki.dwFlags |= KEYEVENTF_SCANCODE;
           }
         }
-        if (extended_key(event.key_code)) {
+
+        if (use_extended_key) {
           input.ki.dwFlags |= KEYEVENTF_EXTENDEDKEY;
         }
         if (!event.pressed) {

@@ -604,6 +604,16 @@ namespace lvh::detail::test {
   int linux_key_code(KeyboardKeyCode key_code);
 
   /**
+   * @brief Translate a portable keyboard key code with normalization and stream flags.
+   */
+  int linux_key_code_with_options(KeyboardKeyCode key_code, bool uses_normalized_key_code, std::uint8_t stream_flags);
+
+  /**
+   * @brief Translate a portable keyboard key code to an X11 keysym for XTest fallback.
+   */
+  unsigned long linux_xtest_keysym(KeyboardKeyCode key_code, bool uses_normalized_key_code, std::uint8_t stream_flags);
+
+  /**
    * @brief Translate a mouse button to a Linux input button code.
    *
    * @param button Mouse button.
@@ -1457,14 +1467,6 @@ namespace lvh::detail::test {
    * @return Creation status.
    */
   OperationStatus linux_xtest_mouse_create_query_failure();
-
-  /**
-   * @brief Translate a portable key code to an XTest keysym.
-   *
-   * @param key_code Portable keyboard key code.
-   * @return X11 keysym, or `0` when unsupported or XTest is disabled.
-   */
-  unsigned long linux_xtest_keysym(KeyboardKeyCode key_code);
 
   /**
    * @brief Translate a mouse button to an XTest button code.
