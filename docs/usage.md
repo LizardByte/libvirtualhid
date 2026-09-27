@@ -161,6 +161,10 @@ The API centers on portable device concepts:
   application. The Windows client verifies that the named-pipe server is the
   SCM-registered running broker. The macOS client verifies that its Unix socket
   and peer are owned by root before sending any request.
+  `LicenseStatus::activation_limit` is the license-wide machine limit.
+  `LicenseStatus::activation_usage` reports whether this machine has an
+  activation (0 or 1); Polar does not return the license-wide activation count
+  to the broker. Use the customer portal to view activations across machines.
 - `VirtualDevice`: common lifecycle for created devices.
 - `Gamepad`: submits normalized gamepad state and receives output callbacks.
 - `Keyboard`: submits key press/release and UTF-8 text input.

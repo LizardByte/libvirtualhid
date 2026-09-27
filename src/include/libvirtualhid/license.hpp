@@ -34,7 +34,7 @@ namespace lvh {
     LicenseState state = LicenseState::unavailable;  ///< Current machine license state.
     std::uint32_t active_devices = 0;  ///< Virtual devices currently tracked by the license service.
     std::uint32_t activation_limit = 0;  ///< Maximum machine activations allowed by the license.
-    std::uint32_t activation_usage = 0;  ///< Machine activations currently used by the license.
+    std::uint32_t activation_usage = 0;  ///< Activations on this machine (0 or 1), not the license-wide total.
     std::string plan_name;  ///< Human-readable plan name, when available.
     std::string customer_email;  ///< Customer email associated with the license, when available.
     std::string message;  ///< Human-readable license service status.
