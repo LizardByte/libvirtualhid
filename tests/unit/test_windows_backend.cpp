@@ -220,10 +220,14 @@ TEST_F(WindowsBackendTest, HidKeyboardPreservesIdentityTracksStateAndUsesNarrowF
   expect_ok(result.operations.modifier_press_status);
   expect_ok(result.operations.extended_press_status);
   expect_ok(result.operations.letter_release_status);
+  expect_ok(result.operations.enter_press_status);
+  expect_ok(result.operations.enter_release_status);
+  expect_ok(result.operations.keypad_enter_press_status);
+  expect_ok(result.operations.keypad_enter_release_status);
   expect_ok(result.operations.unmapped_submit_status);
   expect_ok(result.operations.text_status);
   expect_ok(result.operations.close_status);
-  ASSERT_EQ(result.observations.reports.size(), 4U);
+  ASSERT_EQ(result.observations.reports.size(), 8U);
   for (const auto &report : result.observations.reports) {
     EXPECT_EQ(report.size(), LVH_WINDOWS_KEYBOARD_INPUT_REPORT_SIZE);
   }
@@ -236,6 +240,12 @@ TEST_F(WindowsBackendTest, HidKeyboardPreservesIdentityTracksStateAndUsesNarrowF
   EXPECT_EQ(result.observations.reports[2][3], 0x4FU);
   EXPECT_EQ(result.observations.reports[3][0], 0x02U);
   EXPECT_EQ(result.observations.reports[3][2], 0x4FU);
+  EXPECT_EQ(result.observations.reports[4][2], 0x28U);
+  EXPECT_EQ(result.observations.reports[4][3], 0x4FU);
+  EXPECT_EQ(result.observations.reports[5][2], 0x4FU);
+  EXPECT_EQ(result.observations.reports[6][2], 0x4FU);
+  EXPECT_EQ(result.observations.reports[6][3], 0x58U);
+  EXPECT_EQ(result.observations.reports[7][2], 0x4FU);
   EXPECT_EQ(result.observations.destroy_requests, 1U);
   EXPECT_EQ(result.observations.fallback_send_inputs, 3U);
 
@@ -334,6 +344,12 @@ TEST_F(WindowsBackendTest, SendInputDevicesTranslateKeyboardMouseFailuresAndUnsu
   EXPECT_EQ(result.keyboard.normalized_input.virtual_key, 0U);
   EXPECT_EQ(result.keyboard.normalized_input.scan_code, 30U);
   EXPECT_EQ(result.keyboard.normalized_input.key_flags, KEYEVENTF_SCANCODE);
+  expect_ok(result.keyboard.enter_status);
+  expect_ok(result.keyboard.keypad_enter_status);
+  EXPECT_EQ(result.keyboard.enter_input.scan_code, 0x1CU);
+  EXPECT_EQ(result.keyboard.enter_input.key_flags, KEYEVENTF_SCANCODE);
+  EXPECT_EQ(result.keyboard.keypad_enter_input.scan_code, 0x1CU);
+  EXPECT_EQ(result.keyboard.keypad_enter_input.key_flags, KEYEVENTF_SCANCODE | KEYEVENTF_EXTENDEDKEY);
 
   expect_ok(result.mouse.relative_status);
   expect_ok(result.mouse.absolute_status);

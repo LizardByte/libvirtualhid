@@ -748,6 +748,14 @@ namespace lvh {
      * @brief Whether the backend should prefer a native scan-code translation when `scan_code` is not provided.
      */
     bool prefer_native_scan_code = false;
+
+    /**
+     * @brief Whether this is an extended key, such as keypad Enter.
+     *
+     * A false value leaves backend key classification unchanged for clients
+     * that do not report extended keys.
+     */
+    bool extended = false;
   };
 
   /**
