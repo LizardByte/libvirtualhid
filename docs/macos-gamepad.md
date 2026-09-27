@@ -40,20 +40,6 @@ certificate and notarization credentials can be reused for this Apple team. A
 profile for another bundle ID cannot authorize the broker. Apple explains the
 [restricted entitlement bundle and embedded profile](https://developer.apple.com/documentation/xcode/signing-a-daemon-with-a-restricted-entitlement).
 
-Release CI reads the profile from the
-`APPLE_MACOS_VIRTUAL_HID_PROVISIONING_PROFILE_BASE64` secret. The profile is a
-binary file; on Windows, encode it with PowerShell and paste the clipboard
-contents into that secret:
-
-```powershell
-[Convert]::ToBase64String([IO.File]::ReadAllBytes("C:\path\to\broker.provisionprofile")) | Set-Clipboard
-```
-
-Release CI also uses `APPLE_CODESIGN_IDENTITY`,
-`APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_BASE64`,
-`APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_P12_PASSWORD`, `APPLE_ID`,
-`APPLE_TEAM_ID`, and `APPLE_NOTARYTOOL_PASSWORD`.
-
 ## Build and distribute
 
 On macOS with Xcode and CMake installed:
@@ -97,9 +83,9 @@ its own bundle ID and does not need the broker's restricted entitlement. Release
 CI performs these steps with the corresponding certificate, profile, and
 notarization secrets.
 
-### Test a PR on macOS
+### Test locally
 
-Check out the PR branch on a Mac, install Xcode, and copy
+Check out the branch of interest on a Mac, install Xcode, and copy
 `.env.example` to `.env` in the repository root. Fill in the Apple ID,
 notarization app-specific password, Developer ID Application `.p12` file path
 and export password, and the provisioning profile path. Paths must be absolute.
