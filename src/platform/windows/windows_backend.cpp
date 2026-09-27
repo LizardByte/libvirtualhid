@@ -1650,7 +1650,7 @@ namespace lvh::detail {
             input.ki.dwFlags |= KEYEVENTF_SCANCODE;
           }
         }
-        if (extended_key(event.key_code)) {
+        if (event.extended || extended_key(event.key_code)) {
           input.ki.dwFlags |= KEYEVENTF_EXTENDEDKEY;
         }
         if (!event.pressed) {
@@ -1755,25 +1755,26 @@ namespace lvh::detail {
       return profile;
     }
 
-    bool hid_scan_code_is_extended(std::uint16_t scan_code, KeyboardKeyCode key_code) {
+    bool hid_scan_code_is_extended(std::uint16_t scan_code, KeyboardKeyCode key_code, bool extended) {
       const auto prefix = scan_code & 0xFF00U;
-      return prefix == 0xE000U || prefix == 0xE100U || extended_key(key_code);
+      return extended || prefix == 0xE000U || prefix == 0xE100U || extended_key(key_code);
     }
 
     std::optional<unsigned> hid_modifier_bit_from_scan_code(
       std::uint16_t scan_code,
-      KeyboardKeyCode key_code
+      KeyboardKeyCode key_code,
+      bool extended
     ) {
-      const auto extended = hid_scan_code_is_extended(scan_code, key_code);
+      const auto is_extended = hid_scan_code_is_extended(scan_code, key_code, extended);
       switch (scan_code & 0xFFU) {
         case 0x1DU:
-          return extended ? 4U : 0U;
+          return is_extended ? 4U : 0U;
         case 0x2AU:
           return 1U;
         case 0x36U:
           return 5U;
         case 0x38U:
-          return extended ? 6U : 2U;
+          return is_extended ? 6U : 2U;
         case 0x5BU:
           return 3U;
         case 0x5CU:
@@ -1828,7 +1829,8 @@ namespace lvh::detail {
 
     std::optional<std::uint8_t> hid_usage_from_scan_code(
       std::uint16_t scan_code,
-      KeyboardKeyCode key_code
+      KeyboardKeyCode key_code,
+      bool extended
     ) {
       static constexpr auto extended_usages = std::to_array<HidUsageMapping<std::uint8_t>>({
         {0x1CU, 0x58U},  // Keypad Enter
@@ -1927,7 +1929,7 @@ namespace lvh::detail {
       });
 
       const auto code = static_cast<std::uint8_t>(scan_code & 0xFFU);
-      if (hid_scan_code_is_extended(scan_code, key_code)) {
+      if (hid_scan_code_is_extended(scan_code, key_code, extended)) {
         return mapped_hid_usage(code, extended_usages);
       }
       if (code >= 0x3BU && code <= 0x44U) {
@@ -2017,7 +2019,7 @@ namespace lvh::detail {
       if (event.uses_normalized_key_code) {
         return windows_us_english_scan_code(event.key_code);
       }
-      if (event.prefer_native_scan_code && can_map_virtual_key_to_scan_code(event.key_code)) {
+      if ((event.prefer_native_scan_code || event.extended) && can_map_virtual_key_to_scan_code(event.key_code)) {
         return static_cast<std::uint16_t>(::MapVirtualKeyW(event.key_code, MAPVK_VK_TO_VSC));
       }
       return 0U;
@@ -2025,14 +2027,14 @@ namespace lvh::detail {
 
     std::optional<unsigned> hid_keyboard_modifier_bit(const KeyboardEvent &event) {
       if (const auto scan_code = hid_keyboard_scan_code(event); scan_code != 0U) {
-        return hid_modifier_bit_from_scan_code(scan_code, event.key_code);
+        return hid_modifier_bit_from_scan_code(scan_code, event.key_code, event.extended);
       }
       return hid_modifier_bit_from_virtual_key(event.key_code);
     }
 
     std::optional<std::uint8_t> hid_keyboard_usage(const KeyboardEvent &event) {
       if (const auto scan_code = hid_keyboard_scan_code(event); scan_code != 0U) {
-        return hid_usage_from_scan_code(scan_code, event.key_code);
+        return hid_usage_from_scan_code(scan_code, event.key_code, event.extended);
       }
       return hid_usage_from_virtual_key(event.key_code);
     }

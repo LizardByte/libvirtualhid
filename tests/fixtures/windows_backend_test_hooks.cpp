@@ -703,6 +703,26 @@ namespace lvh::detail {
             .scan_code = 0x4DU,
           });
           result.operations.letter_release_status = created.keyboard->submit({.key_code = 'A', .pressed = false});
+          result.operations.enter_press_status = created.keyboard->submit({
+            .key_code = VK_RETURN,
+            .pressed = true,
+            .uses_normalized_key_code = true,
+          });
+          result.operations.enter_release_status = created.keyboard->submit({
+            .key_code = VK_RETURN,
+            .pressed = false,
+            .uses_normalized_key_code = true,
+          });
+          result.operations.keypad_enter_press_status = created.keyboard->submit({
+            .key_code = VK_RETURN,
+            .pressed = true,
+            .extended = true,
+          });
+          result.operations.keypad_enter_release_status = created.keyboard->submit({
+            .key_code = VK_RETURN,
+            .pressed = false,
+            .extended = true,
+          });
           result.operations.unmapped_submit_status =
             created.keyboard->submit({.key_code = VK_BROWSER_BACK, .pressed = true});
           result.operations.text_status = created.keyboard->type_text({.text = "A"});
@@ -1127,6 +1147,27 @@ namespace lvh::detail {
           keyboard.keyboard->submit({.key_code = 0x41, .pressed = true, .uses_normalized_key_code = true});
         if (fake_send_input.sent_inputs.size() > prior_input_count) {
           result.keyboard.normalized_input = fake_send_input.sent_inputs.back();
+          fake_send_input.sent_inputs.resize(prior_input_count);
+        }
+
+        result.keyboard.enter_status = keyboard.keyboard->submit({
+          .key_code = VK_RETURN,
+          .pressed = true,
+          .uses_normalized_key_code = true,
+        });
+        if (fake_send_input.sent_inputs.size() > prior_input_count) {
+          result.keyboard.enter_input = fake_send_input.sent_inputs.back();
+          fake_send_input.sent_inputs.resize(prior_input_count);
+        }
+
+        result.keyboard.keypad_enter_status = keyboard.keyboard->submit({
+          .key_code = VK_RETURN,
+          .pressed = true,
+          .uses_normalized_key_code = true,
+          .extended = true,
+        });
+        if (fake_send_input.sent_inputs.size() > prior_input_count) {
+          result.keyboard.keypad_enter_input = fake_send_input.sent_inputs.back();
           fake_send_input.sent_inputs.resize(prior_input_count);
         }
       } else {

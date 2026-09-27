@@ -31,6 +31,11 @@ a per-controller XUSB software device plus a correlated VHF child; other
 profiles use the root control driver and Windows Virtual HID Framework.
 Keyboard text input, absolute mouse input, and the keyboard and mouse fallbacks
 use Win32 APIs.
+Set `KeyboardEvent::extended` when the input source positively identifies an
+extended key, such as keypad Enter. The Windows HID keyboard maps it to the
+corresponding HID usage, and the Win32 fallback sets the extended-key input
+flag. Leave it unset when the input source does not report this detail; existing
+key-code and scan-code classification still applies.
 
 The C++ library communicates with the driver through fixed-size protocol
 structures and `DeviceIoControl`, not C++ STL types. This keeps the public API

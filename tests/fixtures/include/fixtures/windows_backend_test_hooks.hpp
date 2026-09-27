@@ -93,6 +93,10 @@ namespace lvh::detail::test {
       OperationStatus modifier_press_status;
       OperationStatus extended_press_status;
       OperationStatus letter_release_status;
+      OperationStatus enter_press_status;
+      OperationStatus enter_release_status;
+      OperationStatus keypad_enter_press_status;
+      OperationStatus keypad_enter_release_status;
       OperationStatus unmapped_submit_status;
       OperationStatus text_status;
       OperationStatus close_status;
@@ -195,8 +199,12 @@ namespace lvh::detail::test {
     OperationStatus invalid_text_status;
     OperationStatus failure_status;
     OperationStatus normalized_status;
+    OperationStatus enter_status;
+    OperationStatus keypad_enter_status;
     OperationStatus invalid_profile_status;
     WindowsSendInputRecord normalized_input;
+    WindowsSendInputRecord enter_input;
+    WindowsSendInputRecord keypad_enter_input;
   };
 
   struct WindowsMouseSendInputResult {
