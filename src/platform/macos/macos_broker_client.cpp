@@ -8,6 +8,7 @@
 #include "platform/macos/broker/io.hpp"
 #include "platform/macos/macos_xbox_transport.hpp"
 #include "platform/shared/lvh_broker_license_policy.hpp"
+#include "shared/steam_controller_protocol.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -59,13 +60,33 @@ namespace lvh::detail {
           }},
           callback_thread_ {[state = callback_state_, profile = profile_] {
             callback_loop(state, profile);
-          }} {}
+          }} {
+        if (profile_.gamepad_kind == GamepadProfileKind::steam_triton) {
+          periodic_reporter_ = std::jthread {[this](std::stop_token stop_token) {
+            stream_steam_reports(stop_token);
+          }};
+        }
+      }
 
       ~MacosGamepad() override {
         static_cast<void>(close());
       }
 
       OperationStatus submit(const GamepadState &state, const std::vector<std::uint8_t> &report) override {
+        if (profile_.gamepad_kind == GamepadProfileKind::steam_triton) {
+          {
+            std::lock_guard lock {steam_state_mutex_};
+            steam_state_ = state;
+          }
+          // Keep state reports on the controller's native cadence. Mixing
+          // event-driven reports into that stream can distort pad release.
+          if (state.battery) {
+            if (const auto battery_report = reports::pack_battery_report(profile_, *state.battery); battery_report) {
+              return send_input_report(*battery_report);
+            }
+          }
+          return OperationStatus::success();
+        }
         std::vector<std::uint8_t> xbox_report;
         if (xbox_transport_) {
           xbox_report = profile_.gamepad_kind == GamepadProfileKind::xbox_360 ?
@@ -73,14 +94,7 @@ namespace lvh::detail {
                           macos::xbox_gip_transport_input_report(state, report, profile_.gamepad_kind == GamepadProfileKind::xbox_series);
         }
         const auto &transport_report = xbox_transport_ ? xbox_report : report;
-        if (transport_report.empty() || transport_report.size() > macos_broker::max_report_size) {
-          return OperationStatus::failure(ErrorCode::invalid_argument, "macOS gamepad report exceeds broker limit");
-        }
-        macos_broker::Message request;
-        request.type = macos_broker::MessageType::submit;
-        request.size = static_cast<std::uint32_t>(transport_report.size());
-        std::ranges::copy(transport_report, request.data.begin());
-        return call(request);
+        return send_input_report(transport_report);
       }
 
       void set_output_callback(OutputCallback callback) override {
@@ -89,6 +103,8 @@ namespace lvh::detail {
       }
 
       OperationStatus close() override {
+        periodic_reporter_.request_stop();
+        steam_state_ready_.notify_all();
         {
           std::lock_guard lock {call_mutex_};
           if (fd_ < 0) {
@@ -100,6 +116,9 @@ namespace lvh::detail {
           ::shutdown(fd_, SHUT_RDWR);
           ::close(fd_);
           fd_ = -1;
+        }
+        if (periodic_reporter_.joinable()) {
+          periodic_reporter_.join();
         }
         if (reader_.joinable()) {
           reader_.join();
@@ -121,6 +140,42 @@ namespace lvh::detail {
       }
 
     private:
+      OperationStatus send_input_report(const std::vector<std::uint8_t> &transport_report) {
+        if (transport_report.empty() || transport_report.size() > macos_broker::max_report_size) {
+          return OperationStatus::failure(ErrorCode::invalid_argument, "macOS gamepad report exceeds broker limit");
+        }
+        macos_broker::Message request;
+        request.type = macos_broker::MessageType::submit;
+        request.size = static_cast<std::uint32_t>(transport_report.size());
+        std::ranges::copy(transport_report, request.data.begin());
+        return call(request);
+      }
+
+      void stream_steam_reports(std::stop_token stop_token) {
+        const auto interval = std::chrono::microseconds {steam_controller_protocol::input_interval_us};
+        auto next_report = std::chrono::steady_clock::now() + interval;
+        std::unique_lock state_lock {steam_state_mutex_};
+        while (!stop_token.stop_requested()) {
+          static_cast<void>(steam_state_ready_.wait_until(state_lock, next_report, [&stop_token] {
+            return stop_token.stop_requested();
+          }));
+          if (stop_token.stop_requested()) {
+            break;
+          }
+          const auto state = steam_state_;
+          state_lock.unlock();
+          if (const auto report = reports::pack_input_report(profile_, state); !report.empty()) {
+            static_cast<void>(send_input_report(report));
+          }
+          state_lock.lock();
+          next_report += interval;
+          const auto now = std::chrono::steady_clock::now();
+          if (next_report <= now) {
+            next_report = now + interval;
+          }
+        }
+      }
+
       struct CallbackState {
         std::mutex mutex;
         std::condition_variable condition;
@@ -226,6 +281,10 @@ namespace lvh::detail {
       std::shared_ptr<CallbackState> callback_state_ = std::make_shared<CallbackState>();
       std::jthread reader_;
       std::jthread callback_thread_;
+      std::jthread periodic_reporter_;
+      std::mutex steam_state_mutex_;
+      std::condition_variable steam_state_ready_;
+      GamepadState steam_state_;
       std::mutex call_mutex_;
       std::mutex mutex_;
       std::condition_variable response_condition_;

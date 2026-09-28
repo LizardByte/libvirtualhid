@@ -12,8 +12,8 @@ The root-owned broker directory permits local clients to reach its socket, and
 the broker checks the machine license before gamepad creation.
 
 The built-in generic, Xbox 360, Xbox One, Xbox Series, DualShock 4, DualSense,
-and Switch Pro profiles, including the explicit USB and Bluetooth PlayStation
-variants, are accepted. The macOS broker receives the selected transport's HID
+Switch Pro, and Steam Controller (2nd generation) profiles, including the explicit USB and
+Bluetooth PlayStation variants, are accepted. The macOS broker receives the selected transport's HID
 descriptor and reports. Xbox 360 uses a USB HID identity (`045e:028e`, version
 `0114`) with numbered D-pad buttons that match Steam's macOS mapping. Xbox One
 and Xbox Series use distinct HID identities (`045e:0b20` and `045e:0b13`).
@@ -27,6 +27,15 @@ were validated with Steam's controller tester on an installed, notarized build.
 Windows uses a separate XUSB/XInput personality. Individual games may use
 Apple's Game Controller framework or their own HID mappings, so each profile
 still needs testing in the intended consumer.
+
+The Steam Controller (2nd generation) uses its native USB identity and descriptor, not an
+Xbox translation. Its state reports run at the native 4,032-microsecond interval
+so a touch release does not insert an extra event-driven position change.
+Battery reports use the separate `0x43` channel, and the broker answers the
+controller's two feature-report channels. Native haptic output is forwarded to
+the ordinary library output callback. The broker accepts the separate battery
+report only for the Steam Controller profile. This path is implemented but has
+not yet been validated with a signed macOS broker and a physical controller.
 
 When metadata omits a stable ID, the client derives a locally administered
 `02:00:xx:xx:xx:xx` identifier from the device ID.
@@ -157,7 +166,7 @@ While it is running, use another Terminal window to inspect HID enumeration:
 hidutil list
 ```
 
-Repeat with `x360`, `xone`, `xseries`, `ds4`, `ds5`, and `switch`. Check each
+Repeat with `x360`, `xone`, `xseries`, `ds4`, `ds5`, `switch`, and `steam_triton`. Check each
 device in the intended macOS game or streaming client; enumeration alone does
 not prove that a particular consumer recognizes its profile.
 

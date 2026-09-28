@@ -44,11 +44,13 @@ companion stay behind backend implementations.
 ## 🎮 Capabilities
 
 - Gamepad profiles for generic HID, Xbox 360, Xbox One, Xbox Series,
-  DualShock 4, DualSense, and Nintendo Switch Pro-style controllers.
-- Descriptor-driven PlayStation, Switch Pro, Xbox One, and Xbox Series gamepads
-  through Linux `uhid`; Generic and Xbox 360 gamepads plus keyboard, mouse,
-  touchscreen, trackpad, and pen tablet devices through `uinput`. Xbox One and
-  Xbox Series fall back to `uinput` when `uhid` is unavailable.
+  DualShock 4, DualSense, Nintendo Switch Pro-style, and 2nd-generation Steam
+  controllers.
+- Descriptor-driven PlayStation, Switch Pro, Steam Controller, Xbox One, and
+  Xbox Series gamepads through Linux `uhid`; Generic and Xbox 360 gamepads plus
+  keyboard, mouse, touchscreen, trackpad, and pen tablet devices through
+  `uinput`. Xbox One and Xbox Series fall back to `uinput` when `uhid` is
+  unavailable.
 - Windows gamepads, keyboards, and Raw Input-visible mice through user-mode
   UMDF2 drivers. Xbox 360 uses a broker-owned XUSB software-device personality;
   the other profiles use Virtual HID Framework. Win32 keyboard and mouse
@@ -57,8 +59,8 @@ companion stay behind backend implementations.
   The generic, Xbox, PlayStation, and Switch Pro HID profiles use the same
   public API; keyboard and mouse input use CoreGraphics.
 - Output callbacks for profile-specific feedback such as ordinary and trigger
-  rumble, RGB and player LEDs, adaptive triggers, and raw HID output reports
-  when available.
+  rumble, addressable haptics, RGB and player LEDs, adaptive triggers, and raw
+  HID output reports when available.
 - An optional `virtualhid_control` native UI tool for creating, removing,
   controlling, and inspecting test gamepads and mice through the public C++ API.
   The macOS installer includes it as **Virtual HID Control** in Applications.
@@ -159,6 +161,7 @@ Alternatives exist if `libvirtualhid` does not meet your needs.
 | DualShock 4 gamepad               | ✅                                                | ✅                                                | ✅                                                       | ❌                                                        | ✅<sup><a href="#alternatives-note-4">4</a></sup> |
 | DualSense gamepad                 | ✅                                                | ❌                                                | ✅                                                       | ✅                                                        | ✅<sup><a href="#alternatives-note-4">4</a></sup> |
 | Nintendo Switch Pro-style gamepad | ✅                                                | ❌                                                | ✅                                                       | ✅                                                        | ✅<sup><a href="#alternatives-note-4">4</a></sup> |
+| Steam Controller (2nd generation) | ✅                                                | ❌                                                | ✅                                                       | ❌                                                        | ✅<sup><a href="#alternatives-note-4">4</a></sup> |
 | Rumble or output callbacks        | ✅                                                | ❌                                                | ✅                                                       | ✅                                                        | ✅<sup><a href="#alternatives-note-4">4</a></sup> |
 | Data-driven profiles              | ❌                                                | ❌                                                | ✅                                                       | ❌                                                        | ❌                                                |
 | Actively developed                | ✅                                                | ❌                                                | ✅                                                       | ✅                                                        | ✅                                                |

@@ -5,6 +5,7 @@
 
 #include "platform/macos/broker/io.hpp"
 #include "platform/macos/macos_xbox_transport.hpp"
+#include "shared/steam_controller_protocol.hpp"
 
 #include <array>
 #include <bitset>
@@ -14,6 +15,7 @@
 #include <sys/socket.h>
 #include <thread>
 #include <unistd.h>
+#include <utility>
 #include <vector>
 
 TEST(MacosBrokerProtocolTest, BuiltInProfilesFitBrokerTransport) {
@@ -35,6 +37,49 @@ TEST(MacosBrokerProtocolTest, BuiltInProfilesFitBrokerTransport) {
     EXPECT_LE(transport.input_report_size, lvh::detail::macos_broker::max_report_size);
     EXPECT_LE(transport.output_report_size, lvh::detail::macos_broker::max_report_size);
   }
+}
+
+TEST(MacosBrokerProtocolTest, SteamControllerKeepsItsNativeMacosTransport) {
+  const auto profile = lvh::profiles::steam_triton();
+  EXPECT_TRUE(lvh::detail::macos_broker::valid_gamepad_kind(static_cast<std::uint32_t>(profile.gamepad_kind)));
+  EXPECT_FALSE(lvh::detail::macos_broker::valid_gamepad_kind(static_cast<std::uint32_t>(profile.gamepad_kind) + 1U));
+  EXPECT_FALSE(lvh::detail::macos::uses_xbox_transport(profile));
+  const auto transport = lvh::detail::macos::xbox_transport_profile(profile);
+  EXPECT_EQ(transport.vendor_id, 0x28DE);
+  EXPECT_EQ(transport.product_id, 0x1302);
+  EXPECT_EQ(transport.report_descriptor, profile.report_descriptor);
+  EXPECT_EQ(transport.input_report_size, lvh::detail::steam_controller_protocol::state_report_size);
+
+  lvh::GamepadState state;
+  state.touchpad_contacts[1].active = true;
+  const auto report = lvh::reports::pack_input_report(profile, state);
+  EXPECT_EQ(report.size(), lvh::detail::steam_controller_protocol::state_report_size);
+}
+
+TEST(MacosBrokerProtocolTest, SteamControllerAcceptsBatteryChannelOnlyForItsProfile) {
+  using lvh::detail::macos_broker::Message;
+  using lvh::detail::macos_broker::MessageType;
+  using lvh::detail::macos_broker::valid_submit_request;
+
+  Message profile;
+  profile.kind = static_cast<std::uint32_t>(std::to_underlying(lvh::GamepadProfileKind::steam_triton));
+  profile.input_report_size = lvh::detail::steam_controller_protocol::state_report_size;
+  Message report;
+  report.type = MessageType::submit;
+  report.size = profile.input_report_size;
+  report.data[0] = lvh::detail::steam_controller_protocol::state_report_id;
+  EXPECT_TRUE(valid_submit_request(profile, report));
+
+  report.size = lvh::detail::steam_controller_protocol::battery_report_size;
+  report.data[0] = lvh::detail::steam_controller_protocol::battery_report_id;
+  EXPECT_TRUE(valid_submit_request(profile, report));
+  report.data[0] = lvh::detail::steam_controller_protocol::state_report_id;
+  EXPECT_FALSE(valid_submit_request(profile, report));
+  profile.kind = static_cast<std::uint32_t>(std::to_underlying(lvh::GamepadProfileKind::dualshock4));
+  report.data[0] = lvh::detail::steam_controller_protocol::battery_report_id;
+  EXPECT_FALSE(valid_submit_request(profile, report));
+  report.type = MessageType::status;
+  EXPECT_FALSE(valid_submit_request(profile, report));
 }
 
 TEST(MacosBrokerProtocolTest, TransfersVersionedMessagesWithoutTruncation) {
