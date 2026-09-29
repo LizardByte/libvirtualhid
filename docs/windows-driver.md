@@ -411,6 +411,9 @@ portal URL changes, then rebuild the Windows package. No Polar access token or
 webhook secret is compiled into the client:
 activation, validation, and deactivation use Polar's
 [public customer license-key API](https://polar.sh/docs/features/benefits/license-keys).
+Successful licensed gamepad creations are counted in the protected broker state
+and reported through `increment_usage` on the next license validation. The
+create request still completes without an online Polar request.
 Those requests pin Polar's date-based API contract to `2026-04` with the
 `Polar-Version` header. Before Polar removes that version, update
 `polar_request_headers` in

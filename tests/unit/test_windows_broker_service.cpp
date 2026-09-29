@@ -405,6 +405,13 @@ TEST(WindowsBrokerImplementationTest, BoundsOfflineSubscriptionValidation) {
   EXPECT_TRUE(policy.subscription_validation_at_deadline_is_stale);
 }
 
+TEST(WindowsBrokerImplementationTest, ReportsOnlyPendingGamepadUsage) {
+  const auto result = lvh::detail::test::broker_usage_policy();
+  EXPECT_TRUE(result.pending_usage_round_trips);
+  EXPECT_TRUE(result.routine_validation_omits_increment);
+  EXPECT_TRUE(result.pending_validation_increments_usage);
+}
+
 TEST(WindowsBrokerImplementationTest, EnforcesLimitedUnvalidatedFallback) {
   const auto policy = lvh::detail::test::broker_license_fallback_policy();
   EXPECT_TRUE(policy.same_boot_anchor_is_accepted);

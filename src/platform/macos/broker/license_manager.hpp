@@ -15,6 +15,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <thread>
 
 namespace lvh::detail::macos_broker {
@@ -27,9 +28,9 @@ namespace lvh::detail::macos_broker {
     LicenseManager &operator=(const LicenseManager &) = delete;
 
     Message handle(const Message &request);
-    bool authorize_create(Message &response, bool &evaluation);
+    bool authorize_create(Message &response, bool &evaluation, std::string &authorized_key);
     bool device_is_authorized(bool evaluation);
-    void add_device(bool evaluation);
+    void add_device(bool evaluation, std::string_view authorized_key);
     void remove_device(bool evaluation);
 
   private:
@@ -41,6 +42,7 @@ namespace lvh::detail::macos_broker {
       std::string benefit_id;
       std::string customer_email;
       std::uint32_t activation_limit = 0;
+      std::uint32_t pending_usage = 0;
     };
 
     Message activate(const Message &request);
@@ -48,6 +50,7 @@ namespace lvh::detail::macos_broker {
     Message deactivate();
     Message status();
     bool licensed_locked() const;
+    bool save_state(const State &state) const;
     void fill_status_locked(Message &response) const;
     void background_validation(std::stop_token stop);
 

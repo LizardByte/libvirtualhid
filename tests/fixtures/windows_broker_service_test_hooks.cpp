@@ -498,6 +498,26 @@ namespace lvh::detail::test {
     };
   }
 
+  BrokerUsageResult broker_usage_policy() {
+    using namespace lvh::detail::windows_broker_service;
+    PolarLicenseState state {
+      .license_key = "test-key",
+      .activation_id = "test-activation",
+      .pending_usage = 2U,
+    };
+    const auto restored = deserialize_license_state(serialize_license_state(state));
+    const auto pending_body = polar_validation_body(restored);
+    state.pending_usage = 0U;
+    const auto routine_body = polar_validation_body(state);
+    return {
+      .pending_usage_round_trips = restored.pending_usage == 2U,
+      .routine_validation_omits_increment = !routine_body.contains("increment_usage"),
+      .pending_validation_increments_usage =
+        pending_body.value("increment_usage", 0U) == 2U &&
+        pending_body.value("activation_id", std::string {}) == "test-activation",
+    };
+  }
+
   BrokerSubscriptionValidationResult broker_subscription_validation_policy() {
     using namespace lvh::detail::windows_broker_service;
     const auto subscription_validation_seconds = static_cast<std::uint64_t>(

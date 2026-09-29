@@ -633,6 +633,7 @@ namespace lvh::detail::windows_broker_service {
     std::string benefit_id;
     std::string customer_email;
     std::uint32_t activation_limit = 0;
+    std::uint32_t pending_usage = 0;
     // Audit timestamp supplied by Polar, not the local machine clock.
     std::uint64_t validated_at = 0;
     // The boot-session marker and uptime at validation let the broker advance
@@ -640,6 +641,18 @@ namespace lvh::detail::windows_broker_service {
     std::string boot_marker;
     std::uint64_t validated_uptime_ms = 0;
   };
+
+  nlohmann::json polar_validation_body(const PolarLicenseState &state) {
+    nlohmann::json body {
+      {"key", state.license_key},
+      {"organization_id", std::string {lvh::windows::broker_config::polar_organization_id}},
+      {"activation_id", state.activation_id},
+    };
+    if (state.pending_usage != 0U) {
+      body["increment_usage"] = state.pending_usage;
+    }
+    return body;
+  }
 
   std::string serialize_license_state(const PolarLicenseState &state) {
     std::ostringstream serialized;
@@ -652,6 +665,7 @@ namespace lvh::detail::windows_broker_service {
     serialized << "benefit_id=" << state.benefit_id << "\n";
     serialized << "customer_email=" << state.customer_email << "\n";
     serialized << "activation_limit=" << state.activation_limit << "\n";
+    serialized << "pending_usage=" << state.pending_usage << "\n";
     serialized << "validated_at=" << state.validated_at << "\n";
     serialized << "boot_marker=" << state.boot_marker << "\n";
     serialized << "validated_uptime_ms=" << state.validated_uptime_ms << "\n";
@@ -791,6 +805,11 @@ namespace lvh::detail::windows_broker_service {
           state.customer_email = value;
         } else if (key == "activation_limit") {
           state.activation_limit = static_cast<std::uint32_t>(parse_uint64(value).value_or(0));
+        } else if (key == "pending_usage") {
+          state.pending_usage = static_cast<std::uint32_t>(std::min(
+            parse_uint64(value).value_or(0),
+            static_cast<std::uint64_t>(std::numeric_limits<std::uint32_t>::max())
+          ));
         } else if (key == "validated_at") {
           state.validated_at = parse_uint64(value).value_or(0);
         } else if (key == "boot_marker") {
@@ -1389,9 +1408,11 @@ namespace lvh::detail::windows_broker_service {
         return response;
       }
 
+      std::string authorized_license_id;
       const auto [authorization_status, github_actions_evaluation] = authorize_device_create(
         response.license,
-        response.message
+        response.message,
+        authorized_license_id
       );
       if (authorization_status != LvhWindowsBrokerStatusCode::success) {
         response.status = std::to_underlying(authorization_status);
@@ -1471,6 +1492,9 @@ namespace lvh::detail::windows_broker_service {
       }
 
       response.status = std::to_underlying(LvhWindowsBrokerStatusCode::success);
+      if (!github_actions_evaluation && request.device.device_type == LVH_WINDOWS_DEVICE_GAMEPAD) {
+        record_gamepad_creation(authorized_license_id);
+      }
       copy_c_string(
         response.message,
         github_actions_evaluation ?
@@ -1683,6 +1707,13 @@ namespace lvh::detail::windows_broker_service {
         copy_c_string(response.message, "License organization or benefit is not allowed for this driver.");
         fill_license_status(response.license);
         return response;
+      }
+
+      {
+        std::lock_guard lock {mutex_};
+        if (license_state_ && license_state_->license_key_id == new_state.license_key_id) {
+          new_state.pending_usage = license_state_->pending_usage;
+        }
       }
 
       std::string authorization_error;
@@ -2031,6 +2062,21 @@ namespace lvh::detail::windows_broker_service {
       ));
     }
 
+    void record_gamepad_creation(std::string_view authorized_license_id) {
+      std::lock_guard operation_lock {license_operation_mutex_};
+      PolarLicenseState state;
+      {
+        std::lock_guard lock {mutex_};
+        if (!license_state_ || license_state_->license_key_id != authorized_license_id || license_state_->pending_usage == std::numeric_limits<std::uint32_t>::max()) {
+          return;
+        }
+        ++license_state_->pending_usage;
+        state = *license_state_;
+      }
+      std::string save_error;
+      static_cast<void>(save_license_state(state, save_error));
+    }
+
     bool license_is_active_locked() const {
       return license_state_ &&
              license_allowed(*license_state_) &&
@@ -2066,11 +2112,7 @@ namespace lvh::detail::windows_broker_service {
 
       auto api_result = post_polar_license_request(
         L"/v1/customer-portal/license-keys/validate",
-        nlohmann::json {
-          {"key", state.license_key},
-          {"organization_id", std::string {lvh::windows::broker_config::polar_organization_id}},
-          {"activation_id", state.activation_id},
-        }
+        polar_validation_body(state)
       );
       if (!api_result.transport_ok) {
         mark_license_validation_unavailable();
@@ -2167,7 +2209,8 @@ namespace lvh::detail::windows_broker_service {
 
     std::pair<LvhWindowsBrokerStatusCode, bool> authorize_device_create(
       LvhWindowsBrokerLicenseStatus &license,
-      std::array<char, LVH_WINDOWS_BROKER_MAX_MESSAGE_SIZE> &message
+      std::array<char, LVH_WINDOWS_BROKER_MAX_MESSAGE_SIZE> &message,
+      std::string &authorized_license_id
     ) {
       {
         std::lock_guard lock {mutex_};
@@ -2214,6 +2257,8 @@ namespace lvh::detail::windows_broker_service {
           copy_c_string(message, license.message.data());
           return {LvhWindowsBrokerStatusCode::license_invalid, false};
         }
+
+        authorized_license_id = license_state_->license_key_id;
 
         if (license_online_confirmed_) {
           fill_license_status_locked(license);

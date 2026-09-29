@@ -189,6 +189,9 @@ gamepad while authorization remains current. Existing virtual gamepads close
 when their authorization expires or is revoked. A yearly activation needs
 online validation after the broker restarts; this deliberately fails closed
 when trusted elapsed time cannot be reconstructed.
+Successful licensed gamepad creations are saved as pending usage and reported
+through Polar's `increment_usage` field on the next license validation.
+Validation with no new gamepads leaves Polar usage unchanged.
 
 If creation returns `backend_unavailable`, inspect the launchd job with
 `sudo launchctl print system/dev.lizardbyte.app.libvirtualhid`. If it returns

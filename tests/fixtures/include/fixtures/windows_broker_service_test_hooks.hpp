@@ -55,6 +55,14 @@ namespace lvh::detail::test {
 
   BrokerPolarResult broker_polar_scenario(BrokerPolarScenario scenario);
 
+  struct BrokerUsageResult {
+    bool pending_usage_round_trips = false;
+    bool routine_validation_omits_increment = false;
+    bool pending_validation_increments_usage = false;
+  };
+
+  BrokerUsageResult broker_usage_policy();
+
   struct BrokerSubscriptionValidationResult {
     bool yearly_benefit_is_subscription_backed = false;
     bool subscription_validation_before_deadline_is_current = false;

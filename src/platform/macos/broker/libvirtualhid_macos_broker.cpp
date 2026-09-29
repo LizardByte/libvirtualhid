@@ -332,7 +332,8 @@ namespace lvh::detail::macos_broker {
       }
       Message response;
       bool evaluation = false;
-      if (!licenses.authorize_create(response, evaluation)) {
+      std::string authorized_key;
+      if (!licenses.authorize_create(response, evaluation, authorized_key)) {
         static_cast<void>(send_message(fd, response));
         ::close(fd);
         return;
@@ -346,7 +347,7 @@ namespace lvh::detail::macos_broker {
         ::close(fd);
         return;
       }
-      licenses.add_device(evaluation);
+      licenses.add_device(evaluation, authorized_key);
       response.type = MessageType::response;
       response.status = 0;
       static_cast<void>(session.send(response));
