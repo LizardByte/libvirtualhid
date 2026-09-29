@@ -5,6 +5,13 @@ root-owned broker. The broker alone calls Apple's `IOHIDUserDevice` API and hold
 the virtual HID entitlement. The ordinary C++ library has no Apple entitlement
 and uses CoreGraphics for keyboard and mouse input.
 
+The broker's gamepad report thread and `IOHIDUserDevice` callback queue request
+user-interactive QoS to reduce scheduling delay in the input path. License
+validation and other broker work keep their normal scheduling. This is a
+best-effort priority hint, not a real-time latency guarantee. The virtual HID
+device is provided by macOS, so there is no separate libvirtualhid driver
+process to prioritize.
+
 The client checks root ownership of the broker directory, socket, and
 connected peer before exchanging versioned messages. Socket transfers handle
 partial reads and writes so truncated messages are not treated as complete.
