@@ -27,6 +27,7 @@
 #include <memory>
 #include <mutex>
 #include <poll.h>
+#include <pthread/qos.h>
 #include <span>
 #include <string>
 #include <string_view>
@@ -263,7 +264,7 @@ namespace lvh::detail::macos_broker {
         *size = static_cast<CFIndex>(report.size());
         return kIOReturnSuccess;
       });
-      IOHIDUserDeviceSetDispatchQueue(device, dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0));
+      IOHIDUserDeviceSetDispatchQueue(device, dispatch_get_global_queue(QOS_CLASS_USER_INTERACTIVE, 0));
       IOHIDUserDeviceSetCancelHandler(device, ^{
         dispatch_semaphore_signal(cancelled);
       });
@@ -276,6 +277,8 @@ namespace lvh::detail::macos_broker {
     }
 
     void receive_reports(DeviceSession &session, LicenseManager &licenses, bool evaluation, std::uint32_t expected_input_size) {
+      // Only the HID input path needs interactive scheduling; licensing stays at its normal QoS.
+      static_cast<void>(::pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0));
       Message request;
       for (;;) {
         pollfd descriptor {.fd = session.fd, .events = POLLIN, .revents = 0};
