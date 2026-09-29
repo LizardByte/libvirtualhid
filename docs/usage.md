@@ -135,6 +135,15 @@ a yearly subscription must reconnect to Polar before device creation; a lifetime
 license can use the one-device outage fallback. A confirmed missing, revoked,
 disabled, or mismatched entitlement invalidates the license and removes all
 licensed virtual HID devices.
+Each successful licensed gamepad creation adds one pending Polar usage unit.
+The broker saves the pending count locally and sends it as `increment_usage`
+with its next successful license validation (normally within 24 hours, or on
+manual refresh). Routine validations do not increment usage when no gamepad
+was created. Keyboard and mouse creation and GitHub Actions evaluation do not
+count. Reporting is best effort: a lost response after Polar accepts an
+increment can cause a later retry to count it twice, while a local state-write
+failure or license deactivation before a pending count is sent can lose counts.
+Do not use Polar's usage limit as an exact device-creation quota.
 Purchase and account-management buttons use the compiled URLs in
 `src/platform/windows/shared/lvh_windows_broker_config.hpp`.
 Enable `Lock buttons` to click-to-toggle behavior for held inputs.

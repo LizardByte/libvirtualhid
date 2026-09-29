@@ -15,6 +15,7 @@
 #include <cstring>
 #import <Foundation/Foundation.h>
 #include <libvirtualhid/license.hpp>
+#include <limits>
 #include <string_view>
 #include <sys/stat.h>
 #include <utility>
@@ -178,6 +179,7 @@ namespace lvh::detail::macos_broker {
         state.benefit_id = from_ns(json_string(saved, @"benefit_id"));
         state.customer_email = from_ns(json_string(saved, @"customer_email"));
         state.activation_limit = [saved[@"activation_limit"] unsignedIntValue];
+        state.pending_usage = [saved[@"pending_usage"] unsignedIntValue];
         if (!state.key.empty() && !state.activation_id.empty() && state.status == "granted" && state.organization_id == broker_license::polar_organization_id && broker_license::benefit(state.benefit_id)) {
           state_ = std::move(state);
         }
@@ -215,6 +217,19 @@ namespace lvh::detail::macos_broker {
     }
     return !benefit->subscription_backed ||
            (validated_at_ && std::chrono::steady_clock::now() - *validated_at_ < broker_license::subscription_max_age);
+  }
+
+  bool LicenseManager::save_state(const State &state) const {
+    @autoreleasepool {
+      return write_protected_json(state_path, @{@"key": to_ns(state.key),
+                                                @"activation_id": to_ns(state.activation_id),
+                                                @"status": to_ns(state.status),
+                                                @"organization_id": to_ns(state.organization_id),
+                                                @"benefit_id": to_ns(state.benefit_id),
+                                                @"customer_email": to_ns(state.customer_email),
+                                                @"activation_limit": @(state.activation_limit),
+                                                @"pending_usage": @(state.pending_usage)});
+    }
   }
 
   void LicenseManager::fill_status_locked(Message &response) const {
@@ -292,13 +307,13 @@ namespace lvh::detail::macos_broker {
         set_text(response.message, "License organization, benefit, or activation is not allowed");
         return response;
       }
-      if (!write_protected_json(state_path, @{@"key": to_ns(state.key),
-                                              @"activation_id": to_ns(state.activation_id),
-                                              @"status": to_ns(state.status),
-                                              @"organization_id": to_ns(state.organization_id),
-                                              @"benefit_id": to_ns(state.benefit_id),
-                                              @"customer_email": to_ns(state.customer_email),
-                                              @"activation_limit": @(state.activation_limit)})) {
+      {
+        std::lock_guard lock {mutex_};
+        if (state_ && state_->key == state.key) {
+          state.pending_usage = state_->pending_usage;
+        }
+      }
+      if (!save_state(state)) {
         response.status = static_cast<int>(ErrorCode::backend_failure);
         set_text(response.message, "Unable to securely save machine license");
         return response;
@@ -332,11 +347,15 @@ namespace lvh::detail::macos_broker {
       state = *state_;
     }
     @autoreleasepool {
-      auto result = polar_request(@"/v1/customer-portal/license-keys/validate", @ {
+      NSMutableDictionary *request_body = [@ {
         @"key": to_ns(state.key),
         @"organization_id": to_ns(broker_license::polar_organization_id),
         @"activation_id": to_ns(state.activation_id)
-      });
+      } mutableCopy];
+      if (state.pending_usage != 0) {
+        request_body[@"increment_usage"] = @(state.pending_usage);
+      }
+      auto result = polar_request(@"/v1/customer-portal/license-keys/validate", request_body);
       if (!result.transport_ok || result.status != 200 || !result.body || !result.trusted_time) {
         {
           std::lock_guard lock {mutex_};
@@ -378,17 +397,12 @@ namespace lvh::detail::macos_broker {
       state.status = new_status;
       state.benefit_id = new_benefit;
       state.activation_limit = [result.body[@"limit_activations"] unsignedIntValue];
+      state.pending_usage = 0;
       NSDictionary *customer = result.body[@"customer"];
       if ([customer isKindOfClass:[NSDictionary class]]) {
         state.customer_email = from_ns(json_string(customer, @"email"));
       }
-      if (!write_protected_json(state_path, @{@"key": to_ns(state.key),
-                                              @"activation_id": to_ns(state.activation_id),
-                                              @"status": to_ns(state.status),
-                                              @"organization_id": to_ns(state.organization_id),
-                                              @"benefit_id": to_ns(state.benefit_id),
-                                              @"customer_email": to_ns(state.customer_email),
-                                              @"activation_limit": @(state.activation_limit)})) {
+      if (!save_state(state)) {
         auto response = status();
         response.status = static_cast<int>(ErrorCode::backend_failure);
         set_text(response.message, "Unable to securely save validated license");
@@ -466,13 +480,14 @@ namespace lvh::detail::macos_broker {
     }
   }
 
-  bool LicenseManager::authorize_create(Message &response, bool &evaluation) {
+  bool LicenseManager::authorize_create(Message &response, bool &evaluation, std::string &authorized_key) {
     response.type = MessageType::response;
     std::lock_guard lock {mutex_};
     fill_status_locked(response);
     if (licensed_locked()) {
       if (online_confirmed_ || active_licensed_devices_ == 0) {
         evaluation = false;
+        authorized_key = state_->key;
         return true;
       }
       response.status = static_cast<int>(ErrorCode::network_unavailable);
@@ -516,11 +531,22 @@ namespace lvh::detail::macos_broker {
     return !unavailable_since_ || !broker_license::outage_retention_elapsed(std::chrono::steady_clock::now() - *unavailable_since_);
   }
 
-  void LicenseManager::add_device(bool evaluation) {
-    std::lock_guard lock {mutex_};
-    ++active_devices_;
-    if (!evaluation) {
-      ++active_licensed_devices_;
+  void LicenseManager::add_device(bool evaluation, std::string_view authorized_key) {
+    std::lock_guard operation_lock {operation_mutex_};
+    std::optional<State> state;
+    {
+      std::lock_guard lock {mutex_};
+      ++active_devices_;
+      if (!evaluation) {
+        ++active_licensed_devices_;
+        if (state_ && state_->key == authorized_key && state_->pending_usage < std::numeric_limits<std::uint32_t>::max()) {
+          ++state_->pending_usage;
+          state = *state_;
+        }
+      }
+    }
+    if (state) {
+      static_cast<void>(save_state(*state));
     }
   }
 
