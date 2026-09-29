@@ -70,6 +70,7 @@ TEST_F(LinuxBackendTest, TranslatesKeyboardKeys) {
   EXPECT_EQ(lvh::detail::test::linux_key_code(0x2E), KEY_DELETE);
   EXPECT_EQ(lvh::detail::test::linux_key_code(0x5B), KEY_LEFTMETA);
   EXPECT_EQ(lvh::detail::test::linux_key_code(0x5C), KEY_RIGHTMETA);
+  EXPECT_EQ(lvh::detail::test::linux_key_code(0x5D), KEY_COMPOSE);
   EXPECT_EQ(lvh::detail::test::linux_key_code(0x90), KEY_NUMLOCK);
   EXPECT_EQ(lvh::detail::test::linux_key_code(0x91), KEY_SCROLLLOCK);
   EXPECT_EQ(lvh::detail::test::linux_key_code(0xA0), KEY_LEFTSHIFT);
@@ -357,6 +358,19 @@ TEST_F(LinuxBackendTest, PipeBackedUinputKeyboardEmitsEvents) {
 
   EXPECT_EQ(lvh::detail::test::linux_uinput_user_device_invalid_fd().code(), lvh::ErrorCode::backend_failure);
   EXPECT_EQ(lvh::detail::test::linux_uinput_user_device_pipe().code(), lvh::ErrorCode::backend_failure);
+}
+
+TEST_F(LinuxBackendTest, PipeBackedUinputKeyboardEmitsComposeKey) {
+  for (const auto pressed : {true, false}) {
+    const auto result = lvh::detail::test::linux_uinput_keyboard_submit_pipe({.key_code = 0x5D, .pressed = pressed});
+    ASSERT_TRUE(result.status.ok()) << result.status.message();
+    ASSERT_EQ(result.events.size(), 2U);
+    EXPECT_EQ(result.events[0].type, EV_KEY);
+    EXPECT_EQ(result.events[0].code, KEY_COMPOSE);
+    EXPECT_EQ(result.events[0].value, pressed ? 1 : 0);
+    EXPECT_EQ(result.events[1].type, EV_SYN);
+    EXPECT_EQ(result.events[1].code, SYN_REPORT);
+  }
 }
 
 TEST_F(LinuxBackendTest, PipeBackedUinputGamepadsUseCanonicalLinuxEvents) {
@@ -1357,6 +1371,13 @@ TEST_F(LinuxBackendTest, XTestFallbackCoversKeyboardAndMousePaths) {
   const auto keyboard_status = lvh::detail::test::linux_xtest_keyboard_submit_success();
   EXPECT_TRUE(keyboard_status.ok() || keyboard_status.code() == lvh::ErrorCode::backend_unavailable);
 
+  const auto compose_status = lvh::detail::test::linux_xtest_keyboard_submit_compose_fallback();
+#if defined(LIBVIRTUALHID_HAVE_XTEST)
+  EXPECT_TRUE(compose_status.ok()) << compose_status.message();
+#else
+  EXPECT_EQ(compose_status.code(), lvh::ErrorCode::backend_unavailable);
+#endif
+
   const auto keyboard_invalid_status = lvh::detail::test::linux_xtest_keyboard_submit_invalid();
   EXPECT_TRUE(keyboard_invalid_status.code() == lvh::ErrorCode::invalid_argument || keyboard_invalid_status.code() == lvh::ErrorCode::backend_unavailable);
 
@@ -1405,6 +1426,7 @@ TEST_F(LinuxBackendTest, XTestFallbackCoversKeyboardAndMousePaths) {
   EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x2E), XK_Delete);
   EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x5B), XK_Super_L);
   EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x5C), XK_Super_R);
+  EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x5D), XK_Menu);
   EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x90), XK_Num_Lock);
   EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0x91), XK_Scroll_Lock);
   EXPECT_EQ(lvh::detail::test::linux_xtest_keysym(0xA1), XK_Shift_R);

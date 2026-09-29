@@ -630,7 +630,7 @@ namespace lvh::detail {
     }
 
     int key_code_to_linux(KeyboardKeyCode key_code) {
-      static constexpr std::array<std::pair<KeyboardKeyCode, int>, 47> special_keys {{
+      static constexpr std::array<std::pair<KeyboardKeyCode, int>, 48> special_keys {{
         {0x08, KEY_BACKSPACE},
         {0x09, KEY_TAB},
         {0x0D, KEY_ENTER},
@@ -656,6 +656,7 @@ namespace lvh::detail {
         {0x2E, KEY_DELETE},
         {0x5B, KEY_LEFTMETA},
         {0x5C, KEY_RIGHTMETA},
+        {0x5D, KEY_COMPOSE},
         {0x6A, KEY_KPASTERISK},
         {0x6B, KEY_KPPLUS},
         {0x6D, KEY_KPMINUS},
@@ -2283,7 +2284,7 @@ namespace lvh::detail {
 
 #if defined(LIBVIRTUALHID_HAVE_XTEST)
     KeySym key_code_to_keysym(KeyboardKeyCode key_code) {
-      static constexpr std::array<std::pair<KeyboardKeyCode, KeySym>, 45> special_keysyms {{
+      static constexpr std::array<std::pair<KeyboardKeyCode, KeySym>, 46> special_keysyms {{
         {0x08, XK_BackSpace},
         {0x09, XK_Tab},
         {0x0D, XK_Return},
@@ -2308,6 +2309,7 @@ namespace lvh::detail {
         {0x2E, XK_Delete},
         {0x5B, XK_Super_L},
         {0x5C, XK_Super_R},
+        {0x5D, XK_Menu},
         {0x6A, XK_KP_Multiply},
         {0x6B, XK_KP_Add},
         {0x6D, XK_KP_Subtract},
@@ -2422,7 +2424,10 @@ namespace lvh::detail {
           return OperationStatus::failure(ErrorCode::invalid_argument, "keyboard key code is not supported by XTest fallback");
         }
 
-        const auto keycode = XKeysymToKeycode(display_, keysym);
+        auto keycode = XKeysymToKeycode(display_, keysym);
+        if (keycode == 0 && event.key_code == 0x5D) {
+          keycode = XKeysymToKeycode(display_, XK_Multi_key);
+        }
         if (keycode == 0) {
           return OperationStatus::failure(ErrorCode::invalid_argument, "keyboard key code has no X11 keycode");
         }
