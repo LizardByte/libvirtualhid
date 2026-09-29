@@ -2812,6 +2812,23 @@ namespace lvh::detail::test {
   #endif
   }
 
+  OperationStatus linux_xtest_keyboard_submit_compose_fallback() {
+  #if defined(LIBVIRTUALHID_HAVE_XTEST)
+    LinuxTestSyscalls syscalls;
+    syscalls.override_x_keycode = true;
+    syscalls.fail_x_keycode_call = 1;
+    ScopedLinuxTestSyscalls scoped_syscalls {syscalls};
+
+    XTestKeyboard keyboard;
+    if (const auto status = keyboard.create(); !status.ok()) {
+      return status;
+    }
+    return keyboard.submit({.key_code = 0x5D, .pressed = true});
+  #else
+    return OperationStatus::failure(ErrorCode::backend_unavailable, "XTest fallback is not enabled");
+  #endif
+  }
+
   OperationStatus linux_xtest_keyboard_submit_invalid() {
   #if defined(LIBVIRTUALHID_HAVE_XTEST)
     XTestKeyboard keyboard;

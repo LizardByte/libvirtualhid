@@ -1402,6 +1402,13 @@ namespace lvh::detail::test {
   OperationStatus linux_xtest_keyboard_submit_success();
 
   /**
+   * @brief Submit the Menu key when XTest can resolve only its Compose keysym.
+   *
+   * @return Submit status.
+   */
+  OperationStatus linux_xtest_keyboard_submit_compose_fallback();
+
+  /**
    * @brief Submit unsupported keyboard input through the XTest fallback.
    *
    * @return Submit status.
