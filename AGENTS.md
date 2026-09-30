@@ -60,8 +60,7 @@ accounting for wide Unicode characters such as emoji.
 When asked to create an issue or pull request, use the applicable templates
 from LizardByte/.github, or this repository if it has a more specific template.
 At the end of the body, add an attribution naming the AI agent, model, and
-thinking level used to generate it. Repeat that attribution in a separate
-comment on the created issue or pull request.
+thinking level used to generate it.
 
 When asked only to create an issue, investigate enough to verify and accurately
 describe the observed behavior, expected behavior, and reproduction or
