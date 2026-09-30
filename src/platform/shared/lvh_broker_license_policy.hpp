@@ -73,7 +73,7 @@ namespace lvh::broker_license {
      * @return Whether this device is the retained device.
      */
     bool keep(std::uint64_t device_id) noexcept {
-      if (!retained_device_id_) {
+      if (!retained_device_id_.has_value()) {
         retained_device_id_ = device_id;
       }
       return retained_device_id_ == device_id;
