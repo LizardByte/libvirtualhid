@@ -1197,6 +1197,14 @@ TEST_F(LinuxConsumerTest, LibinputSeesSplitUinputMouseMotionAndButtons) {
   EXPECT_NEAR(libinput_event_pointer_get_absolute_x_transformed(pointer_event, 100), 50.0, 0.1);
   EXPECT_NEAR(libinput_event_pointer_get_absolute_y_transformed(pointer_event, 100), 25.0, 0.1);
 
+  ASSERT_TRUE(created.mouse->move_absolute(2580, 1080, 3440, 1440).ok());
+  event = wait_for_libinput_event(absolute_context.get(), {LIBINPUT_EVENT_POINTER_MOTION_ABSOLUTE});
+  ASSERT_NE(event.get(), nullptr);
+  pointer_event = libinput_event_get_pointer_event(event.get());
+  ASSERT_NE(pointer_event, nullptr);
+  EXPECT_NEAR(libinput_event_pointer_get_absolute_x_transformed(pointer_event, 100), 75.0, 0.1);
+  EXPECT_NEAR(libinput_event_pointer_get_absolute_y_transformed(pointer_event, 100), 75.0, 0.1);
+
   ASSERT_TRUE(created.mouse->button(lvh::MouseButton::middle, true).ok());
   event = wait_for_libinput_event(absolute_context.get(), {LIBINPUT_EVENT_POINTER_BUTTON});
   ASSERT_NE(event.get(), nullptr);

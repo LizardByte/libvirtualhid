@@ -606,6 +606,21 @@ TEST_F(LinuxBackendTest, PipeBackedUinputMouseEmitsEvents) {
   EXPECT_EQ(result.events[1].value, 65535);
   EXPECT_EQ(result.events[2].type, EV_SYN);
 
+  event.x = 2580;
+  event.y = 1080;
+  event.width = 3440;
+  event.height = 1440;
+  result = lvh::detail::test::linux_uinput_mouse_submit_pipe(event);
+  ASSERT_TRUE(result.status.ok()) << result.status.message();
+  ASSERT_EQ(result.events.size(), 3U);
+  EXPECT_EQ(result.events[0].type, EV_ABS);
+  EXPECT_EQ(result.events[0].code, ABS_X);
+  EXPECT_EQ(result.events[0].value, 49151);
+  EXPECT_EQ(result.events[1].type, EV_ABS);
+  EXPECT_EQ(result.events[1].code, ABS_Y);
+  EXPECT_EQ(result.events[1].value, 49151);
+  EXPECT_EQ(result.events[2].type, EV_SYN);
+
   event = {};
   event.kind = lvh::MouseEventKind::button;
   event.button = lvh::MouseButton::extra;
