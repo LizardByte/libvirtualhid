@@ -32,6 +32,20 @@ status or `deactivate` to release this machine's activation. Open **Virtual
 HID Control** to create and inspect a test controller. The host application
 runs in the normal user session; the broker runs as a LaunchDaemon.
 
+## License validation during outages
+
+The broker validates the machine license when it starts and every 24 hours,
+retrying temporary failures about once a minute. While Polar validation is
+unavailable, new creation is limited to one active virtual gamepad. Existing
+gamepads remain for up to one hour; then the broker closes all but one. A yearly
+license must validate within 25 hours of its last successful validation or the
+remaining gamepad closes. After the broker restarts, including after a macOS
+reboot, a yearly license needs online validation before gamepad creation. A
+previously activated lifetime license can keep or create one gamepad while
+Polar is unreachable, with no offline time limit. The broker keeps retrying
+validation about once a minute and returns to the normal 24-hour schedule
+after success. Confirmed revocation or deactivation closes existing gamepads.
+
 ## Troubleshoot
 
 If creation reports `license_required`, activate or validate the license.

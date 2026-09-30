@@ -56,6 +56,22 @@ TEST(BrokerLicensePolicyTest, EnforcesSubscriptionAndOutageBoundaries) {
   EXPECT_TRUE(lvh::broker_license::outage_retention_elapsed(1h));
 }
 
+TEST(BrokerLicensePolicyTest, RetainsOneDeviceAfterAnOutage) {
+  lvh::broker_license::OutageDeviceSelector selector;
+
+  EXPECT_TRUE(selector.keep(1));
+  EXPECT_TRUE(selector.keep(1));
+  EXPECT_FALSE(selector.keep(2));
+  selector.remove(2);
+  EXPECT_FALSE(selector.keep(2));
+
+  selector.remove(1);
+  EXPECT_TRUE(selector.keep(2));
+  selector.reset();
+  EXPECT_TRUE(selector.keep(3));
+  EXPECT_FALSE(selector.keep(2));
+}
+
 TEST(GitHubActionsEvaluationTest, IsActiveOnlyInsideFiveMinuteWindow) {
   using namespace std::chrono_literals;
   using lvh::broker_license::github_actions_evaluation::active;

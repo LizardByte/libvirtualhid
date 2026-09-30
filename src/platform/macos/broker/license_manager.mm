@@ -324,6 +324,7 @@ namespace lvh::detail::macos_broker {
         validated_at_ = std::chrono::steady_clock::now();
         unavailable_since_.reset();
         online_confirmed_ = true;
+        outage_device_selector_.reset();
         fill_status_locked(response);
       }
       set_text(response.message, "License activated on this machine.");
@@ -414,6 +415,7 @@ namespace lvh::detail::macos_broker {
         validated_at_ = std::chrono::steady_clock::now();
         unavailable_since_.reset();
         online_confirmed_ = true;
+        outage_device_selector_.reset();
       }
       auto response = status();
       set_text(response.message, "License validated.");
@@ -519,7 +521,7 @@ namespace lvh::detail::macos_broker {
     return false;
   }
 
-  bool LicenseManager::device_is_authorized(bool evaluation) {
+  bool LicenseManager::device_is_authorized(bool evaluation, std::uint64_t device_id) {
     std::lock_guard lock {mutex_};
     if (evaluation) {
       const auto now = std::chrono::system_clock::now();
@@ -528,14 +530,19 @@ namespace lvh::detail::macos_broker {
     if (!licensed_locked()) {
       return false;
     }
-    return !unavailable_since_ || !broker_license::outage_retention_elapsed(std::chrono::steady_clock::now() - *unavailable_since_);
+    if (!unavailable_since_ || !broker_license::outage_retention_elapsed(std::chrono::steady_clock::now() - *unavailable_since_)) {
+      return true;
+    }
+    return outage_device_selector_.keep(device_id);
   }
 
-  void LicenseManager::add_device(bool evaluation, std::string_view authorized_key) {
+  std::uint64_t LicenseManager::add_device(bool evaluation, std::string_view authorized_key) {
     std::lock_guard operation_lock {operation_mutex_};
     std::optional<State> state;
+    std::uint64_t device_id = 0;
     {
       std::lock_guard lock {mutex_};
+      device_id = ++next_device_id_;
       ++active_devices_;
       if (!evaluation) {
         ++active_licensed_devices_;
@@ -548,10 +555,12 @@ namespace lvh::detail::macos_broker {
     if (state) {
       static_cast<void>(save_state(*state));
     }
+    return device_id;
   }
 
-  void LicenseManager::remove_device(bool evaluation) {
+  void LicenseManager::remove_device(bool evaluation, std::uint64_t device_id) {
     std::lock_guard lock {mutex_};
+    outage_device_selector_.remove(device_id);
     --active_devices_;
     if (!evaluation) {
       --active_licensed_devices_;

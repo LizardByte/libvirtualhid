@@ -33,6 +33,19 @@ gamepads, keyboards, and mice on that machine. Successful licensed gamepad
 creations are reported as usage on a later validation; routine license checks
 do not count as gamepad creation.
 
+The broker validates the license at startup and every 24 hours, retrying
+temporary failures about once a minute. While Polar validation is unavailable,
+new driver-backed creation is limited to one active licensed device in total,
+whether gamepad, keyboard, or mouse. Existing licensed devices remain for up
+to one hour; then the broker removes all but one. A yearly license must
+validate within 25 hours of its last successful validation or the remaining
+device is removed. After Windows restarts, a yearly license needs online
+validation before device creation. A previously activated lifetime license
+can keep or create one licensed device while Polar is unreachable, with no
+offline time limit. The broker keeps retrying validation about once a minute
+and returns to the normal 24-hour schedule after success. Confirmed revocation
+or deactivation removes existing licensed devices.
+
 Keyboard and mouse have Win32 fallbacks when the driver or license is
 unavailable. Those fallback inputs are not Raw Input-visible virtual HID
 devices. Unicode text and absolute mouse positioning always use the Win32
