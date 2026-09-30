@@ -1,194 +1,30 @@
 # Usage and API
 
-This page covers how consumers bring `libvirtualhid` into a CMake project and
-which public API concepts they should build around.
+This page is for developers embedding `libvirtualhid`. If you use Sunshine,
+start with the [end-user guide](end-user-gamepad-guide.md).
 
-If you use Sunshine or another application that already embeds the library,
-see the [end-user gamepad guide](end-user-gamepad-guide.md) instead.
+## Add the CMake target
 
-## CMake Consumption
-
-The library exports `libvirtualhid::libvirtualhid`.
-
-For an installed package, install this project into a prefix and point the
-consumer configure at that prefix:
-
-```bash
-cmake --install cmake-build-release --prefix /opt/libvirtualhid
-cmake -S your-app -B cmake-build-your-app -DCMAKE_PREFIX_PATH=/opt/libvirtualhid
-```
-
-Then link the exported package from the consuming project:
+An installed package exports `libvirtualhid::libvirtualhid`:
 
 ```cmake
 find_package(libvirtualhid CONFIG REQUIRED)
 target_link_libraries(your_app PRIVATE libvirtualhid::libvirtualhid)
 ```
 
-For a vendored checkout, add the project directly and link the same target:
+Point `CMAKE_PREFIX_PATH` at the installation prefix if CMake cannot find it.
+For a vendored checkout, use:
 
 ```cmake
 add_subdirectory(third-party/libvirtualhid)
 target_link_libraries(your_app PRIVATE libvirtualhid::libvirtualhid)
 ```
 
-For `FetchContent`, pin a tag or commit and make the project available:
+`FetchContent` consumers can use the same target after pinning a release tag or
+commit. Tests, examples, documentation, and platform packages are top-level or
+opt-in builds; ordinary subdirectory consumers get the library.
 
-```cmake
-include(FetchContent)
-
-FetchContent_Declare(
-  libvirtualhid
-  GIT_REPOSITORY https://github.com/LizardByte/libvirtualhid.git
-  GIT_TAG <tag-or-commit>
-)
-FetchContent_MakeAvailable(libvirtualhid)
-
-target_link_libraries(your_app PRIVATE libvirtualhid::libvirtualhid)
-```
-
-Examples, tests, docs, and the Windows driver and macOS broker packages are top-level or opt-in
-builds. Normal vendored and `FetchContent` consumers only get the library target
-unless they explicitly enable additional options.
-
-## Build Options
-
-- `BUILD_EXAMPLES`: build example executables when this repository is the top
-  level project.
-- `BUILD_TESTS`: build the GoogleTest suite when this repository is the top
-  level project.
-- `BUILD_DOCS`: build Doxygen documentation when this repository is the top
-  level project.
-- `LIBVIRTUALHID_BUILD_MACOS_BROKER`: build the entitlement-bearing macOS
-  broker app. Enabled for top-level macOS builds; see
-  [macOS gamepad setup](macos-gamepad.md) for provisioning and installation.
-- `LIBVIRTUALHID_BUILD_TOOLS`: build diagnostic tool binaries, including
-  `virtualhid_control`, when this repository is the top level project.
-- `LIBVIRTUALHID_TOOLS_STATIC_RUNTIME`: link diagnostic tools against static
-  compiler runtimes where supported. This is enabled by default so the Windows
-  MinGW/UCRT64 `virtualhid_control.exe` does not need adjacent MinGW runtime
-  DLLs. MSVC uses the static runtime for tools in the Windows driver package
-  build, where the packaged library, examples, and tools are all built with the
-  same runtime setting.
-- `LIBVIRTUALHID_TOOLS_FULLY_STATIC`: pass full static link flags for
-  diagnostic tools. On Linux this also requires static archives for backend
-  dependencies such as `libevdev`, and may not be supported by every distro.
-- `LIBVIRTUALHID_TOOLS_STATIC_SDL3`: prefer SDL3's static library target for
-  the diagnostic UI when it is available. This defaults to on.
-- `LIBVIRTUALHID_INSTALL`: install targets, headers, and CMake package files.
-  This defaults to on for direct builds and off when consumed by another CMake
-  project.
-- `LIBVIRTUALHID_ENABLE_XTEST`: enable the Linux X11/XTest keyboard and mouse
-  fallback.
-- `LIBVIRTUALHID_BUILD_WINDOWS_DRIVER`: build the Windows UMDF2 driver package
-  with the Microsoft WDK/MSVC toolchain.
-- `LIBVIRTUALHID_BUILD_WINDOWS_BROKER`: build the Windows broker service used by
-  the driver package for licensed virtual HID device creation, active-device
-  limits, and license state.
-- `LIBVIRTUALHID_ENABLE_PACKAGING`: enable CPack package metadata.
-- `LIBVIRTUALHID_WARNINGS_AS_ERRORS`: treat project warnings as errors.
-
-Linux consumers need the backend development packages used by the build, such as
-`libevdev` and `pkg-config`. Windows consumers can build the normal C++ library
-with MSVC or MinGW/UCRT64; the UMDF driver package is a separate WDK/MSVC build
-artifact.
-
-## Diagnostic UI
-
-`virtualhid_control` is an optional SDL3 and Dear ImGui diagnostic UI binary:
-
-```bash
-virtualhid_control
-```
-
-The UI is built from the repository CPM lockfile so Windows, Linux, and
-macOS builds share the same frontend stack. Builds prefer static SDL3 by
-default when a static target is available.
-
-The UI can create and remove gamepads from the built-in profiles, submit
-buttons, sticks, triggers, and battery state, show backend and profile
-capabilities, list device nodes reported for UI-created devices, and display
-normalized gamepad output such as rumble, RGB LED, player LED, adaptive trigger,
-trigger rumble, and raw report events delivered through the normal callback path. Button
-controls are momentary by default, so they behave like physical gamepad buttons;
-on Windows and macOS, the UI also displays broker license status and can activate,
-refresh, or deactivate a machine license without elevation. Windows UMDF
-virtual HID device creation requires a current machine authorization, but does
-not perform an online request per device. The broker validates in the
-background at startup and once per day. If Polar cannot be reached, it retries
-every 60 seconds. Existing devices are retained for one hour, but a new device
-can be created only when no licensed device is active. When the outage reaches one
-hour, the broker removes excess licensed devices and retains at most one. A
-yearly subscription must validate successfully within 25 hours of its previous
-validation, so the remaining device is removed when that deadline passes. A
-lifetime license can retain the one-device fallback until validation succeeds.
-If the broker service restarts, it removes devices left by the previous broker
-instance before accepting new creation requests. Failed removals are retried.
-Both supported plans rely on Polar's entitlement status rather than a locally
-enforced calendar expiration. A granted yearly license follows its subscription
-benefit, which Polar revokes when the entitlement ends. Polar's public license
-response does not include the subscription renewal date; the linked Polar account
-portal remains authoritative instead of the broker estimating a date. Polar
-server time, Windows uptime, and a per-boot marker track subscription validation
-age without relying on the user-adjustable Windows date. After Windows restarts,
-a yearly subscription must reconnect to Polar before device creation; a lifetime
-license can use the one-device outage fallback. A confirmed missing, revoked,
-disabled, or mismatched entitlement invalidates the license and removes all
-licensed virtual HID devices.
-Each successful licensed gamepad creation adds one pending Polar usage unit.
-The broker saves the pending count locally and sends it as `increment_usage`
-with its next successful license validation (normally within 24 hours, or on
-manual refresh). Routine validations do not increment usage when no gamepad
-was created. Keyboard and mouse creation and GitHub Actions evaluation do not
-count. Reporting is best effort: a lost response after Polar accepts an
-increment can cause a later retry to count it twice, while a local state-write
-failure or license deactivation before a pending count is sent can lose counts.
-Do not use Polar's usage limit as an exact device-creation quota.
-Purchase and account-management buttons use the compiled URLs in
-`src/platform/windows/shared/lvh_windows_broker_config.hpp`.
-Enable `Lock buttons` to click-to-toggle behavior for held inputs.
-The resizable window supports a compact width. Its device and control panels
-stack, and the button grid reflows to keep controls usable when it is narrowed.
-The UI intentionally does not use gamepad navigation, so virtual devices created
-by the tool cannot drive the tool's own controls.
-
-External devices created by another process, such as Sunshine, are not
-enumerated yet. That requires backend protocol support, so the Windows driver or
-Linux backend can expose cross-process device snapshots without letting two
-processes race to control the same virtual device.
-
-## Public API Shape
-
-The API centers on portable device concepts:
-
-- `Runtime`: owns backend discovery, initialization, device creation, and
-  shutdown.
-- `get_license_status`, `activate_license`, `validate_license`, and
-  `deactivate_license`: provider-neutral machine license operations for host
-  applications. On Windows and macOS these call the installed local broker;
-  license keys are not retained by the client library or returned to the
-  application. The Windows client verifies that the named-pipe server is the
-  SCM-registered running broker. The macOS client verifies that its Unix socket
-  and peer are owned by root before sending any request.
-  `LicenseStatus::activation_limit` is the license-wide machine limit.
-  `LicenseStatus::activation_usage` reports whether this machine has an
-  activation (0 or 1); Polar does not return the license-wide activation count
-  to the broker. Use the customer portal to view activations across machines.
-- `VirtualDevice`: common lifecycle for created devices.
-- `Gamepad`: submits normalized gamepad state and receives output callbacks.
-- `Keyboard`: submits key press/release and UTF-8 text input.
-- `Mouse`: submits relative motion, absolute motion, buttons, vertical scroll,
-  and horizontal scroll.
-- `Touchscreen`, `Trackpad`, and `PenTablet`: expose touch and tablet device
-  primitives where the backend supports them.
-- `DeviceProfile`: describes device identity, HID descriptors, report layout,
-  and profile capabilities.
-- `DeviceNode`: reports backend-visible device nodes and paths for diagnostics
-  or handoff to SDL, libinput, HIDAPI, and similar consumers.
-- `BackendCapabilities`: reports runtime/backend limits such as virtual HID,
-  output report, keyboard, mouse, XTest fallback, and installed-driver support.
-
-## Gamepad Example
+## Create and update a gamepad
 
 ```cpp
 #include <libvirtualhid/libvirtualhid.hpp>
@@ -202,7 +38,7 @@ if (!created) {
 auto &gamepad = *created.gamepad;
 gamepad.set_output_callback([](const lvh::GamepadOutput &output) {
   if (output.kind == lvh::GamepadOutputKind::rumble) {
-    // Route rumble back to the physical client controller.
+    // Forward feedback to the client controller.
   }
 });
 
@@ -210,58 +46,35 @@ lvh::GamepadState state;
 state.buttons.set(lvh::GamepadButton::a, true);
 state.left_stick = {0.25F, -0.5F};
 state.right_trigger = 1.0F;
-
 gamepad.submit(state);
 ```
 
-The `examples/gamepad_adapter.cpp` example shows the
-streaming-host-oriented adapter path. It maps incremental button, axis, trigger,
-touch, motion, battery, feedback, and lifecycle updates onto the platform-neutral
-`Runtime` and `Gamepad` APIs.
+Keep the `Gamepad` alive for the session and destroy it when the client
+disconnects. Query runtime and effective profile capabilities before exposing
+optional inputs or feedback. The
+[gamepad adapter example](../examples/gamepad_adapter.cpp) shows incremental
+updates, metadata, output callbacks, and lifecycle handling.
 
-## Built-In Profiles
+Built-in profiles cover Generic HID, Xbox 360, Xbox One, Xbox Series,
+DualShock 4, DualSense, and Switch Pro. PlayStation profiles offer explicit USB
+and Bluetooth variants. Device names can be customized through
+`DeviceProfile::name`.
 
-Built-in gamepad profiles and their platform-neutral default device names are:
+The API also exposes `Keyboard`, `Mouse`, `Touchscreen`, `Trackpad`, and
+`PenTablet` where supported. `DeviceNode` provides paths for diagnostics or
+handoff to another local input consumer.
 
-| Profile                       | Default device name                       |
-|-------------------------------|-------------------------------------------|
-| Generic HID gamepad           | `(libvirtualhid) Generic Controller`      |
-| Xbox 360                      | `(libvirtualhid) X-Box 360 Controller`    |
-| Xbox One                      | `(libvirtualhid) X-Box One Controller`    |
-| Xbox Series                   | `(libvirtualhid) X-Box Series Controller` |
-| DualShock 4 USB and Bluetooth | `(libvirtualhid) PS4 Controller`          |
-| DualSense USB and Bluetooth   | `(libvirtualhid) PS5 Controller`          |
-| Nintendo Switch Pro           | `(libvirtualhid) Nintendo Pro Controller` |
+## License and diagnostic tool
 
-Consumers may replace `DeviceProfile::name` before creating a gamepad, for
-example, to prepend an application name while preserving the default controller
-identity across platform backends.
+On Windows and macOS, `get_license_status`, `activate_license`,
+`validate_license`, and `deactivate_license` manage the machine license through
+the installed broker. Treat activation keys as transient secrets; do not log or
+persist them. The broker, not the application, maintains the activation.
 
-`profiles::dualshock4()` and `profiles::dualsense()` select Bluetooth framing
-for reliable native-controller discovery. Consumers can use the corresponding
-`_usb()` or `_bluetooth()` factory when the transport must be explicit.
+The optional `virtualhid_control` tool creates test devices, displays
+capabilities and feedback, and manages the broker license on Windows and
+macOS. It lists devices created by that tool, not devices owned by other
+processes.
 
-The platform-neutral Generic HID descriptor reports the D-pad as buttons 13
-through 16 in the input report. Linux may still route that profile through
-`uinput`, where the backend exposes those same logical directions through the
-standard `ABS_HAT0X` and `ABS_HAT0Y` axes.
-
-Profiles advertise support for features such as rumble, trigger rumble, RGB and
-player LEDs, adaptive triggers, motion sensors, touchpads, battery state,
-profile-specific buttons, and raw output reports. Consumers should query
-profile and backend capabilities before warning users about unsupported client
-features. Xbox One and Xbox Series advertise `supports_trigger_rumble` and
-`supports_battery`; the Linux UHID Bluetooth transport preserves both
-capabilities, while the uinput fallback clears them and retains ordinary
-rumble. The Linux Xbox transport includes its battery descriptor only when
-`CreateGamepadOptions::metadata.has_battery` is true, and it emits battery
-reports only for submitted states that contain battery data. On Windows, the
-Xbox HID report carries battery strength, but consumers
-that prefer XInput do not receive the submitted remote value. The current Steam
-client also hides its controller battery indicator for devices it does not
-classify as Bluetooth or wireless; Windows VHF exposes a wired virtual transport
-for every profile.
-
-The `misc1` button represents Share/Capture/Mic Mute-style controls and is
-available on the generic, Xbox Series, DualSense, and Switch Pro profiles; Xbox
-360 and Xbox One do not advertise that extra button.
+See [platform support](platform-support.md) for availability and
+[development](development.md) for build commands and optional targets.

@@ -1,101 +1,47 @@
-# Microsoft Store Review Validation
+# Microsoft Store review validation
 
-These instructions are intended for Microsoft Store certification review of the
-libvirtualhid Windows driver installer. The reviewer does not need to build the
-project, install the Windows SDK/WDK, or write a consumer application.
+Use these steps for certification review of the Windows driver MSI. Reviewers
+do not need the Windows SDK/WDK or a consuming application. Supply an active
+review license key separately through Partner Center; do not embed it in the
+package or this document.
 
-The Windows package installs a user-mode UMDF/VHF virtual HID driver. The
-libvirtualhid-specific driver binary is a UMDF DLL installed through the Windows
-Driver Store. It is not a kernel-mode `.sys` driver.
-
-## Submission Notes
-
-Paste this into the Partner Center certification notes field:
+## Partner Center notes
 
 ```text
-This package installs the libvirtualhid Windows user-mode UMDF/VHF virtual HID driver and local broker service. Applications consume it through the libvirtualhid client API, and the MSI includes a native diagnostic UI for local validation.
+Install the production-signed libvirtualhid Windows AMD64 driver MSI. Reboot
+only if Windows requests it.
 
-Every virtual gamepad, driver-backed keyboard, or driver-backed Raw Input mouse creation requires an active license. A currently granted review license key with an available device activation is supplied separately in the Partner Center certification credentials or notes. The key is not embedded in the package or this document.
-
-Launch the validation tool below.
-
-Default install root:
-C:\Program Files\libvirtualhid
-
-Installed validation files:
-C:\Program Files\libvirtualhid\tools\windows\virtualhid_control.exe
-C:\Program Files\libvirtualhid\tools\windows\gamepad_adapter.exe
-C:\Program Files\libvirtualhid\services\windows\libvirtualhid_broker.exe
-
-Required validation:
+Open PowerShell and run:
 $installRoot = Join-Path $env:ProgramFiles "libvirtualhid"
 Start-Process "$installRoot\tools\windows\virtualhid_control.exe"
 
-In the libvirtualhid control window, paste the supplied review key into the License key field and click Activate license. Confirm the status changes to Licensed. Then leave the default Xbox Series profile selected and click Create. Use the button and axis controls in the UI to submit input to the virtual controller. Next, change Device type to Mouse and click Create. Use Tab or the arrow keys to highlight the mouse controls and Space or Enter to activate relative movement, momentary button, and wheel input without using the physical mouse.
+In Virtual HID Control, paste the supplied review key and click Activate
+license. Confirm the status is Licensed. Leave Xbox Series selected and click
+Create. Use the UI to press buttons and move axes. Then select Mouse, click
+Create, and use Tab or the arrow keys to highlight a mouse control. Press
+Space or Enter to test movement, buttons, and scrolling.
 
-Expected result:
-- The backend status reports windows-umdf with gamepad, keyboard, and mouse support available
-- The libvirtualhid_broker service is running
-- License validation succeeds and the license status reports Licensed
-- A virtual HID gamepad is created and appears in the device list
-- A virtual HID gamepad child device starts with the Xbox Series HID ID
-  HID\VID_045E&PID_0B12&IG_00
-- Button, axis, and Share values in the UI can be pressed or moved without
-  errors
-- A driver-backed virtual HID mouse is created and appears in the device list
-- Keyboard activation of the mouse controls moves the pointer, changes button
-  state, and scrolls without errors
+Expected: the broker is running; gamepad and mouse creation succeed; the
+controller appears in the device list; button and axis values change; the
+mouse pointer, buttons, and wheel respond.
 
-Optional browser validation:
-$installRoot = Join-Path $env:ProgramFiles "libvirtualhid"
-& "$installRoot\tools\windows\virtualhid_control.exe"
-
-Create the default Xbox Series gamepad, then open:
-https://hardwaretester.com/gamepad
-
-Use the libvirtualhid control window to press buttons or move axes while the browser page is open.
-
-Expected result:
-- The browser Gamepad API sees an Xbox-compatible controller
-- Button and axis values change while controls are used in the validation UI
-
-For a browser mouse-event tester, create a mouse in the validation UI and enable Delayed browser test. Leave the pointer over the browser test target, activate a movement, button, or wheel action with the keyboard, then switch to the browser before the displayed countdown expires.
-
-Expected result:
-- The browser receives the queued mouse action while it owns focus
-- A queued button action produces one press followed by one release
+Optional browser test: with the Xbox Series gamepad created, open
+https://hardwaretester.com/gamepad and use the UI to press a button. The
+browser should detect the controller and show changing input values.
 ```
 
-## Manual Review Steps
+If the MSI was installed elsewhere, replace `$env:ProgramFiles\libvirtualhid`
+with the chosen installation directory. The installed UI can manage the
+machine license and exercise devices without administrator privileges.
 
-1. Install the released, production-signed
-   `libvirtualhid-Windows-AMD64-driver-installer.msi`.
-2. Reboot only if Windows reports that a reboot is required.
-3. Open PowerShell.
-4. Run the required validation tool from the submission notes.
-5. Activate the review key supplied through Partner Center.
-6. Create the default gamepad and exercise its controls.
-7. Create a mouse and exercise its controls with keyboard navigation.
-8. Optionally, run the browser validation steps.
+## Release scope and diagnostics
 
-If the default install location was changed during MSI installation, replace
-`$env:ProgramFiles\libvirtualhid` with the selected install directory.
+The default review flow exercises Xbox Series. Before claiming Xbox 360
+compatibility for a release, also run
+`scripts/windows/test-installed-driver.ps1 -GamepadProfile x360` and the
+installed-driver `Xbox360PublishesXInputStateAndRumble` integration test.
 
-The MSI writes the driver-install transcript to:
-
-```text
-C:\ProgramData\libvirtualhid\install-driver.log
-```
-
-## Scope Notes
-
-The default Store-review path still uses Xbox Series and does not exercise the
-`x360` profile. The package also installs the separate Xbox 360 XUSB companion;
-validate that path with `test-installed-driver.ps1 -GamepadProfile x360` and the
-installed-driver `Xbox360PublishesXInputStateAndRumble` integration test before
-claiming Xbox 360 compatibility for a release.
-
-The reviewer-visible success signal is the installed `ROOT\LIBVIRTUALHID`
-control device, the `\\.\LibVirtualHid` control path, the running
-`libvirtualhid_broker` service, and started HID child devices while
-`virtualhid_control.exe` has a gamepad and mouse created.
+The MSI writes its install log to
+`C:\ProgramData\libvirtualhid\install-driver.log`. The driver log is
+`%WINDIR%\Temp\libvirtualhid-umdf-driver.log`. Include these logs when
+reporting installation or device-creation failures.
