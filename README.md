@@ -16,15 +16,14 @@
   <a href="https://sonarcloud.io/project/overview?id=LizardByte_libvirtualhid"><img src="https://img.shields.io/sonar/quality_gate/LizardByte_libvirtualhid.svg?server=https%3A%2F%2Fsonarcloud.io&style=for-the-badge&logo=sonarqubecloud&label=sonarcloud" alt="SonarCloud"></a>
 </div>
 
-<div align="center">
-  <h2>🎮 Virtual HID Gamepad License</h2>
-  <p>
-    <strong>A license is required for Windows driver-backed devices and macOS virtual gamepads.</strong><br>
-    Linux and FreeBSD backends do not require a license.<br>
-    Yearly and lifetime options are available.
-  </p>
-  <a href="https://buy.polar.sh/polar_cl_zj6Io5NVukXfZSl97ULtFvImfI5L1jbL2cSnc0Y72Pt"><img src="https://img.shields.io/badge/Buy_a_virtual_HID_license-0078D4?style=for-the-badge" alt="Buy a virtual HID license"></a>
-</div>
+> [!IMPORTANT]
+> **🎮 Virtual HID Gamepad License**
+>
+> A license is required for Windows driver-backed devices and macOS virtual
+> gamepads. Linux and FreeBSD backends do not require a license. Yearly and
+> lifetime options are available.
+>
+> [![Buy a virtual HID license](https://img.shields.io/badge/Buy_a_virtual_HID_license-0078D4?style=for-the-badge)](https://buy.polar.sh/polar_cl_zj6Io5NVukXfZSl97ULtFvImfI5L1jbL2cSnc0Y72Pt)
 
 # Overview
 
@@ -96,14 +95,12 @@ More complete examples live in `examples/`, including the streaming-host-oriente
 
 - [End-user gamepad guide](docs/end-user-gamepad-guide.md): Sunshine and Moonlight setup, feature caveats,
   troubleshooting, and controller support references.
-- [Usage and API](docs/usage.md): CMake consumption, build options, public API overview, profiles, and examples.
-- [Platform support](docs/platform-support.md): backend capability model, Windows, Linux, macOS,
-  and Linux permission setup.
-- [Windows driver package](docs/windows-driver.md): UMDF/VHF package build, installation, validation, diagnostics,
-  and signing notes.
-- [Streaming-host integration](docs/streaming-host-integration.md): integration contract.
-- [Development](docs/development.md): local build/test commands, repository layout, docs generation, and roadmap.
-- [TODO](docs/todo.md): known larger compatibility gaps and proposed solution paths.
+- [Usage and API](docs/usage.md): CMake consumption, profiles, and API examples.
+- [Platform support](docs/platform-support.md): device availability, platform limits, and Linux permissions.
+- [Windows driver package](docs/windows-driver.md): installation, licensing, diagnostics, and contributor builds.
+- [macOS gamepad setup](docs/macos-gamepad.md): installation, licensing, and signed builds.
+- [Streaming-host integration](docs/streaming-host-integration.md): integration pattern.
+- [Development](docs/development.md): build, test, and documentation commands.
 
 ## 🎯 Scope
 

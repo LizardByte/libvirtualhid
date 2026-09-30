@@ -11,6 +11,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string_view>
 
 namespace lvh::broker_license {
@@ -60,6 +61,44 @@ namespace lvh::broker_license {
   constexpr bool outage_retention_elapsed(Duration elapsed) noexcept {
     return elapsed >= outage_retention;
   }
+
+  /**
+   * @brief Select one active device to retain after an outage grace period.
+   */
+  class OutageDeviceSelector {
+  public:
+    /**
+     * @brief Retain the first device checked and reject other devices.
+     * @param device_id Unique ID of an active device.
+     * @return Whether this device is the retained device.
+     */
+    bool keep(std::uint64_t device_id) noexcept {
+      if (!retained_device_id_.has_value()) {
+        retained_device_id_ = device_id;
+      }
+      return retained_device_id_ == device_id;
+    }
+
+    /**
+     * @brief Release the selected device when it is removed.
+     * @param device_id ID of the removed device.
+     */
+    void remove(std::uint64_t device_id) noexcept {
+      if (retained_device_id_ == device_id) {
+        retained_device_id_.reset();
+      }
+    }
+
+    /**
+     * @brief Clear the selection after successful online validation.
+     */
+    void reset() noexcept {
+      retained_device_id_.reset();
+    }
+
+  private:
+    std::optional<std::uint64_t> retained_device_id_;
+  };
 
   namespace github_actions_evaluation {
 

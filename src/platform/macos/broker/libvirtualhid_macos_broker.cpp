@@ -276,14 +276,14 @@ namespace lvh::detail::macos_broker {
       return request.type == MessageType::create && request.descriptor_size != 0 && request.descriptor_size <= max_descriptor_size && request.input_report_size != 0 && request.input_report_size <= max_report_size && request.output_report_size <= max_report_size && terminated(request.name) && terminated(request.manufacturer) && terminated(request.stable_id) && request.kind <= static_cast<std::uint32_t>(std::to_underlying(lvh::GamepadProfileKind::dualshock4)) && request.bus <= static_cast<std::uint32_t>(std::to_underlying(lvh::BusType::bluetooth));
     }
 
-    void receive_reports(DeviceSession &session, LicenseManager &licenses, bool evaluation, std::uint32_t expected_input_size) {
+    void receive_reports(DeviceSession &session, LicenseManager &licenses, bool evaluation, std::uint64_t device_id, std::uint32_t expected_input_size) {
       // Only the HID input path needs interactive scheduling; licensing stays at its normal QoS.
       static_cast<void>(::pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0));
       Message request;
       for (;;) {
         pollfd descriptor {.fd = session.fd, .events = POLLIN, .revents = 0};
         const int polled = ::poll(&descriptor, 1, 1000);
-        if (!licenses.device_is_authorized(evaluation) || (polled < 0 && errno != EINTR)) {
+        if (!licenses.device_is_authorized(evaluation, device_id) || (polled < 0 && errno != EINTR)) {
           return;
         }
         if (polled == 0 || polled < 0) {
@@ -347,16 +347,16 @@ namespace lvh::detail::macos_broker {
         ::close(fd);
         return;
       }
-      licenses.add_device(evaluation, authorized_key);
+      const auto device_id = licenses.add_device(evaluation, authorized_key);
       response.type = MessageType::response;
       response.status = 0;
       static_cast<void>(session.send(response));
-      receive_reports(session, licenses, evaluation, request.input_report_size);
+      receive_reports(session, licenses, evaluation, device_id, request.input_report_size);
       session.open = false;
       IOHIDUserDeviceCancel(device);
       static_cast<void>(dispatch_semaphore_wait(cancelled, DISPATCH_TIME_FOREVER));
       CFRelease(device);
-      licenses.remove_device(evaluation);
+      licenses.remove_device(evaluation, device_id);
       ::close(fd);
     }
 

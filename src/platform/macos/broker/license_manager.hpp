@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include "platform/shared/lvh_broker_license_policy.hpp"
 #include "protocol.hpp"
 
 #include <chrono>
@@ -29,9 +30,28 @@ namespace lvh::detail::macos_broker {
 
     Message handle(const Message &request);
     bool authorize_create(Message &response, bool &evaluation, std::string &authorized_key);
-    bool device_is_authorized(bool evaluation);
-    void add_device(bool evaluation, std::string_view authorized_key);
-    void remove_device(bool evaluation);
+    /**
+     * @brief Check whether an active device may remain during license validation.
+     * @param evaluation Whether the device belongs to the CI evaluation.
+     * @param device_id Unique ID returned by add_device.
+     * @return Whether the device remains authorized.
+     */
+    bool device_is_authorized(bool evaluation, std::uint64_t device_id);
+
+    /**
+     * @brief Register a created device and return its unique ID.
+     * @param evaluation Whether the device belongs to the CI evaluation.
+     * @param authorized_key License key used for a licensed gamepad.
+     * @return Unique ID for later authorization checks and removal.
+     */
+    std::uint64_t add_device(bool evaluation, std::string_view authorized_key);
+
+    /**
+     * @brief Unregister a device when its session ends.
+     * @param evaluation Whether the device belongs to the CI evaluation.
+     * @param device_id Unique ID returned by add_device.
+     */
+    void remove_device(bool evaluation, std::uint64_t device_id);
 
   private:
     struct State {
@@ -62,6 +82,8 @@ namespace lvh::detail::macos_broker {
     std::optional<std::chrono::system_clock::time_point> evaluation_started_at_;
     std::uint32_t active_devices_ = 0;
     std::uint32_t active_licensed_devices_ = 0;
+    std::uint64_t next_device_id_ = 0;
+    broker_license::OutageDeviceSelector outage_device_selector_;
     bool github_actions_ = false;
     bool online_confirmed_ = false;
     std::jthread validator_;

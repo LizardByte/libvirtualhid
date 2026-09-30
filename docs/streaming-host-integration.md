@@ -1,70 +1,24 @@
-# Streaming-Host Integration
+# Streaming-host integration
 
-Remote streaming hosts are the first consumer class for `libvirtualhid`.
-Integration should preserve a host application's existing network protocol,
-client input parsing, configuration, feedback queue, and device lifecycle while
-moving local virtual device creation behind the `libvirtualhid` API.
+`libvirtualhid` creates local virtual devices for a streaming host. The host
+keeps its network protocol, client input mapping, controller assignment,
+configuration, and feedback transport.
 
-## Integration Contract
+Use [`GamepadStateAdapter` in the example](../examples/gamepad_adapter.cpp)
+as the integration pattern:
 
-A streaming host should be able to:
+1. Choose a built-in profile and stable controller metadata.
+2. Create one gamepad per active client controller and submit an initial
+   neutral state.
+3. Apply button, axis, trigger, touch, motion, and battery updates as the
+   client sends them.
+4. Forward output callbacks, such as rumble and LEDs, to the client when the
+   selected profile and backend support them.
+5. Destroy the gamepad on disconnect; recreate it after a broker restart or
+   other loss of the local device.
 
-- Create stable per-client gamepad handles with both client-relative and global
-  indexes.
-- Submit incremental button, axis, trigger, touchpad, motion, and battery
-  updates without recreating a device.
-- Receive output callbacks for rumble, RGB and player LEDs, adaptive triggers,
-  trigger rumble, and raw output reports where the selected profile supports
-  them.
-- Query profile and backend capabilities before warning users about unsupported
-  client features.
-- Read device nodes and platform paths when a downstream consumer or diagnostic
-  needs to inspect SDL, HIDAPI, libinput, `hidraw`, or system device state.
-- Use keyboard and mouse APIs for relative mouse, absolute mouse, buttons,
-  wheel, horizontal wheel, key events, and Unicode text input.
-
-On Linux and FreeBSD, one mouse handle may represent separate relative and
-absolute uinput nodes. Consumers should keep using the platform-neutral mouse
-API; the backend routes motion and matching button transitions to the correct
-node.
-
-`libvirtualhid` should not own the host application's network transport, packet
-schema, configuration model, controller assignment policy, or status API.
-
-## Adapter Pattern
-
-The `examples/gamepad_adapter.cpp` example demonstrates the
-intended shape:
-
-- Choose a built-in `DeviceProfile` from a host-facing profile name.
-- Fill `CreateGamepadOptions` with stable controller metadata.
-- Create a `GamepadStateAdapter` from a `Runtime`.
-- Cache state inside the adapter as separate input events arrive.
-- Submit an initial neutral report so operating-system consumers can enumerate
-  the virtual controller before the first client input packet.
-- Forward output callbacks back to the physical client controller or feedback
-  queue.
-
-This keeps one public code path for Linux, Windows, and future platforms while
-still letting each backend report real capability limits.
-
-## Current Readiness
-
-The core API and adapter shape cover the major streaming-host requirements:
-
-- Multiple controller lifecycles.
-- Built-in profiles for common controller classes.
-- Rich controller metadata.
-- Gamepad output callbacks.
-- Keyboard and mouse input paths.
-- Linux PlayStation, Switch Pro, Xbox One, and Xbox Series gamepads through
-  descriptor-driven `uhid`, Generic and Xbox 360 gamepads through `uinput`,
-  Xbox One and Xbox Series uinput fallbacks, and `uinput` keyboard/pointer
-  devices.
-- Native Switch Pro motion, initialization replies, rumble, HOME-light, and
-  player-light output handling on Linux and Windows descriptor-driven backends.
-- Linux DualSense and DualShock 4 USB/Bluetooth report handling.
-- Linux touchscreen, trackpad, and pen tablet device types.
-- FreeBSD uinput gamepads and pointer devices, with basic PlayStation input and
-  rumble but without Linux UHID-only PlayStation features.
-- Windows UMDF/VHF gamepad creation through an installed driver package.
+Check runtime and effective profile capabilities before advertising optional
+features. `DeviceNode` paths can help diagnose host-side enumeration; client
+feature support still depends on the physical controller, connection, client,
+and game. See the [end-user compatibility matrix](end-user-gamepad-guide.md#compatibility-matrix)
+for observed streaming behavior.
