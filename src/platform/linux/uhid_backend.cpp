@@ -114,6 +114,7 @@ namespace lvh::detail {
 #if defined(__linux__)
     namespace ps = playstation_feature_reports;
     constexpr auto playstation_periodic_report_ms = 10;
+    constexpr auto switch_pro_periodic_report_ms = 15;
     constexpr auto uhid_start_timeout = std::chrono::seconds {5};
 
     constexpr std::uint16_t xbox_bluetooth_version = 0x0513;
@@ -3104,7 +3105,7 @@ namespace lvh::detail {
           return status;
         }
 
-        if (is_playstation_profile(profile_.gamepad_kind)) {
+        if (is_playstation_profile(profile_.gamepad_kind) || profile_.gamepad_kind == GamepadProfileKind::switch_pro) {
           periodic_reporter_ = std::jthread {[this](std::stop_token stop_token) {
             periodic_report_loop(stop_token);
           }};
@@ -3147,6 +3148,11 @@ namespace lvh::detail {
         return nodes;
       }
 
+      /**
+       * @brief Stop report and output workers before destroying the UHID device.
+       *
+       * @return Status of UHID destruction and file descriptor closure.
+       */
       OperationStatus close() override {
         if (!open_.exchange(false)) {
           return OperationStatus::success();
@@ -3160,18 +3166,18 @@ namespace lvh::detail {
           reader_.request_stop();
         }
 
-        auto status = OperationStatus::success();
-        if (fd_ >= 0) {
-          uhid_event event {};
-          event.type = UHID_DESTROY;
-          status = write_event(event);
-        }
-
         if (periodic_reporter_.joinable()) {
           periodic_reporter_.join();
         }
         if (reader_.joinable()) {
           reader_.join();
+        }
+
+        auto status = OperationStatus::success();
+        if (fd_ >= 0) {
+          uhid_event event {};
+          event.type = UHID_DESTROY;
+          status = write_event(event);
         }
 
         if (fd_ >= 0) {
@@ -3316,9 +3322,22 @@ namespace lvh::detail {
         return OperationStatus::success();
       }
 
+      /**
+       * @brief Stream the latest state at the profile's native interval, including while idle.
+       *
+       * Switch Pro HIDAPI clients need continuous full-state reports to avoid an idle disconnect.
+       * Repacking each report advances its packet timer and preserves the latest buttons and IMU samples.
+       *
+       * @param stop_token Cancellation token signalled when the UHID device closes.
+       */
       void periodic_report_loop(std::stop_token stop_token) {
+        const auto interval = std::chrono::milliseconds {
+          profile_.gamepad_kind == GamepadProfileKind::switch_pro ?
+            switch_pro_periodic_report_ms :
+            playstation_periodic_report_ms
+        };
         while (!stop_token.stop_requested() && running_) {
-          std::this_thread::sleep_for(std::chrono::milliseconds {playstation_periodic_report_ms});
+          std::this_thread::sleep_for(interval);
           if (stop_token.stop_requested() || !running_ || !open_) {
             break;
           }
