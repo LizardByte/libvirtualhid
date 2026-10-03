@@ -980,13 +980,35 @@ TEST_F(LinuxBackendTest, SocketpairBackedSwitchProUsesNativeUhidProtocol) {
   EXPECT_TRUE(result.switch_pro.saw_motion_input);
   ASSERT_TRUE(result.switch_pro.subcommand_reply_packet_timer.has_value());
   ASSERT_TRUE(result.switch_pro.motion_input_packet_timer.has_value());
-  EXPECT_EQ(
+  EXPECT_NE(
     *result.switch_pro.motion_input_packet_timer,
-    static_cast<std::uint8_t>(*result.switch_pro.subcommand_reply_packet_timer + 1U)
+    *result.switch_pro.subcommand_reply_packet_timer
   );
   EXPECT_TRUE(result.switch_pro.saw_player_leds);
   ASSERT_EQ(result.output.callback_count, 2U);
   EXPECT_EQ(result.output.last.kind, lvh::GamepadOutputKind::player_leds);
+}
+
+TEST_F(LinuxBackendTest, SwitchProStreamsIdleAndLatestStateUntilClosed) {
+  const auto result = lvh::detail::test::linux_switch_pro_uhid_socketpair_reports();
+  ASSERT_TRUE(result.create_status.ok()) << result.create_status.message();
+  ASSERT_TRUE(result.submit_status.ok()) << result.submit_status.message();
+  ASSERT_TRUE(result.switch_pro.clear_status.ok()) << result.switch_pro.clear_status.message();
+  EXPECT_TRUE(result.close_status.ok()) << result.close_status.message();
+
+  for (const auto &reports : {
+         result.switch_pro.idle_input_reports,
+         result.switch_pro.repeated_input_reports,
+         result.switch_pro.cleared_input_reports,
+       }) {
+    ASSERT_EQ(reports.size(), 2U);
+    EXPECT_EQ(reports[0].size(), lvh::profiles::switch_pro().input_report_size);
+    EXPECT_EQ(reports[0][0], 0x30U);
+    EXPECT_NE(reports[0][1], reports[1][1]);
+    EXPECT_TRUE(std::equal(reports[0].begin() + 2, reports[0].end(), reports[1].begin() + 2));
+  }
+  EXPECT_TRUE(result.saw_destroy);
+  EXPECT_TRUE(result.switch_pro.stopped_after_destroy);
 }
 
 TEST_F(LinuxBackendTest, SocketpairBackedDualSenseRepliesToFeatureReports) {

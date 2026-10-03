@@ -675,17 +675,44 @@ namespace lvh::detail::test {
       return true;
     }
 
-    bool read_uhid_event_type(int fd, unsigned int event_type, uhid_event &event) {
+    template<class Predicate>
+    bool read_uhid_event_matching(int fd, Predicate matches, uhid_event &event) {
       const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds {1};
       while (std::chrono::steady_clock::now() < deadline) {
         if (!read_uhid_event(fd, event)) {
           return false;
         }
-        if (event.type == event_type) {
+        if (matches(event)) {
           return true;
         }
       }
       return false;
+    }
+
+    bool read_uhid_event_type(int fd, unsigned int event_type, uhid_event &event) {
+      return read_uhid_event_matching(fd, [event_type](const uhid_event &candidate) {
+        return candidate.type == event_type;
+      },
+                                      event);
+    }
+
+    std::vector<std::vector<std::uint8_t>> read_switch_input_reports(int fd, const std::vector<std::uint8_t> &expected) {
+      std::vector<std::vector<std::uint8_t>> reports;
+      uhid_event event {};
+      for (auto index = 0; index < 2; ++index) {
+        const auto received = read_uhid_event_matching(fd, [&expected](const uhid_event &candidate) {
+          return candidate.type == UHID_INPUT2 && candidate.u.input2.size == expected.size() &&
+                 candidate.u.input2.data[0] == expected[0] &&
+                 std::equal(expected.begin() + 2, expected.end(), candidate.u.input2.data + 2U);
+        },
+                                                       event);
+        if (!received) {
+          break;
+        }
+        const auto *data = event.u.input2.data;
+        reports.emplace_back(data, data + event.u.input2.size);
+      }
+      return reports;
     }
 
     OperationStatus create_started_uhid_gamepad(
@@ -1851,6 +1878,9 @@ namespace lvh::detail::test {
     result.creation.saw_create = result.creation.saw_create &&
                                  event.u.create2.rd_size == options.profile.report_descriptor.size();
 
+    const auto idle_report = reports::pack_input_report(options.profile, {});
+    result.switch_pro.idle_input_reports = read_switch_input_reports(descriptors[1], idle_report);
+
     gamepad.set_output_callback([&result](const GamepadOutput &output) {
       ++result.output.callback_count;
       result.output.last = output;
@@ -1874,7 +1904,10 @@ namespace lvh::detail::test {
     event.u.output.data[10] = 0x30;
     event.u.output.data[11] = 0xA5;
     static_cast<void>(write_uhid_event(descriptors[1], event));
-    if (read_uhid_event_type(descriptors[1], UHID_INPUT2, event)) {
+    if (read_uhid_event_matching(descriptors[1], [](const uhid_event &candidate) {
+          return candidate.type == UHID_INPUT2 && candidate.u.input2.size > 0U && candidate.u.input2.data[0] == 0x21;
+        },
+                                 event)) {
       if (event.u.input2.size > 1U) {
         result.switch_pro.subcommand_reply_packet_timer = static_cast<std::uint8_t>(event.u.input2.data[1]);
       }
@@ -1890,17 +1923,20 @@ namespace lvh::detail::test {
     state.gyroscope = Vector3 {.x = 1.0F, .y = 2.0F, .z = -3.0F};
     const auto report = reports::pack_input_report(options.profile, state);
     result.submit_status = gamepad.submit(state, report);
-    if (read_uhid_event_type(descriptors[1], UHID_INPUT2, event)) {
-      if (event.u.input2.size > 1U) {
-        result.switch_pro.motion_input_packet_timer = static_cast<std::uint8_t>(event.u.input2.data[1]);
-      }
-      result.switch_pro.saw_motion_input = event.u.input2.size == report.size() &&
-                                           event.u.input2.data[0] == 0x30 &&
-                                           (event.u.input2.data[3] & 0x08U) != 0U &&
-                                           std::equal(report.begin() + 13, report.begin() + 49, event.u.input2.data + 13U);
+    result.switch_pro.repeated_input_reports = read_switch_input_reports(descriptors[1], report);
+    if (!result.switch_pro.repeated_input_reports.empty()) {
+      const auto &motion_report = result.switch_pro.repeated_input_reports.front();
+      result.switch_pro.motion_input_packet_timer = motion_report[1];
+      result.switch_pro.saw_motion_input = motion_report[0] == 0x30 && (motion_report[3] & 0x08U) != 0U &&
+                                           std::equal(report.begin() + 13, report.begin() + 49, motion_report.begin() + 13);
     }
 
+    result.switch_pro.clear_status = gamepad.submit({}, reports::pack_input_report(options.profile, {}));
+    result.switch_pro.cleared_input_reports = read_switch_input_reports(descriptors[1], idle_report);
+
     result.close_status = gamepad.close();
+    result.saw_destroy = read_uhid_event_type(descriptors[1], UHID_DESTROY, event);
+    result.switch_pro.stopped_after_destroy = result.saw_destroy && !read_uhid_event(descriptors[1], event);
     static_cast<void>(::close(descriptors[1]));
     return result;
   }
