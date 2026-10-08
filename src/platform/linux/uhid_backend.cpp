@@ -1122,6 +1122,10 @@ namespace lvh::detail {
       }
 
       for (auto code = 1; code < KEY_MAX; ++code) {
+        const auto *name = libevdev_event_code_get_name(EV_KEY, code);
+        if (name == nullptr || !std::string_view {name}.starts_with("KEY_")) {
+          continue;
+        }
         if (const auto status = enable_evdev_code(device, EV_KEY, code, "keyboard key"); !status.ok()) {
           return status;
         }
