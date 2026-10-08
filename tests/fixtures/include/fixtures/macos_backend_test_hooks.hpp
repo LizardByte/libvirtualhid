@@ -68,7 +68,7 @@ namespace lvh::detail::test {
     std::uint32_t event_type {};  ///< CoreGraphics event type.
     std::int64_t button {};  ///< CoreGraphics mouse button number.
     std::int64_t click_count {};  ///< Number of clicks in the button sequence.
-    std::uint64_t timestamp {};  ///< Event timestamp in nanoseconds since startup.
+    std::uint64_t timestamp {};  ///< Native event timestamp, which may be unset before posting.
     std::uint64_t flags {};  ///< Keyboard modifier flags applied to the event.
     std::optional<double> suppression_interval;  ///< Local-event suppression copied into the event source.
     MacosPoint location;  ///< Clamped cursor position.
