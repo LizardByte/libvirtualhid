@@ -5,6 +5,7 @@
 #pragma once
 
 // standard includes
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <utility>
@@ -29,6 +30,30 @@ namespace lvh::detail::test {
   struct MacosMouseMotionResult {
     std::uint32_t button {};  ///< CoreGraphics mouse button value.
     std::uint32_t event_type {};  ///< CoreGraphics mouse event type value.
+  };
+
+  /**
+   * @brief Metadata captured from a CoreGraphics mouse event at submission time.
+   */
+  struct MacosMouseEventResult {
+    std::uint32_t tap_location {};  ///< CoreGraphics event tap used for posting.
+    std::uint32_t event_type {};  ///< CoreGraphics event type.
+    std::int64_t button {};  ///< CoreGraphics mouse button number.
+    std::int64_t click_count {};  ///< Number of clicks in the button sequence.
+    std::uint64_t timestamp {};  ///< Native event timestamp, which may be unset before posting.
+    std::uint64_t flags {};  ///< Keyboard modifier flags applied to the event.
+    MacosPoint location;  ///< Clamped cursor position.
+    MacosPoint delta;  ///< Requested movement delta before clamping.
+  };
+
+  /**
+   * @brief Results of mouse submissions with posting and cursor warping intercepted.
+   */
+  struct MacosMouseSubmissionResult {
+    std::vector<OperationStatus> statuses;  ///< Status of each requested submission.
+    std::vector<MacosMouseEventResult> events;  ///< Events captured before posting.
+    std::size_t creation_attempts {};  ///< Calls to create a new CoreGraphics mouse event.
+    std::size_t cursor_warps {};  ///< Calls to update the cursor after posting.
   };
 
   /**
@@ -141,6 +166,23 @@ namespace lvh::detail::test {
    * @return CoreGraphics button and motion event type values.
    */
   MacosMouseMotionResult macos_backend_mouse_motion(bool left_down, bool right_down, bool middle_down);
+
+  /**
+   * @brief Submit mouse events using aged cursor snapshots without changing the desktop.
+   *
+   * Cursor snapshots have timestamp 1 and location (40, 60) on a display with
+   * bounds (10, 20, 400, 200). Shift and Control modifiers are held throughout.
+   *
+   * @param events Mouse events to submit through the production backend.
+   * @param fail_first_creation Whether the first mouse event allocation should fail.
+   * @param source_available Whether the mouse event source remains available.
+   * @return Submission statuses, posted event metadata, and allocation and warp counts.
+   */
+  MacosMouseSubmissionResult macos_backend_mouse_events(
+    const std::vector<MouseEvent> &events,
+    bool fail_first_creation = false,
+    bool source_available = true
+  );
 
   /**
    * @brief Exercise macOS backend creation and unsupported-device paths.

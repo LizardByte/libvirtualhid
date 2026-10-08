@@ -6,9 +6,170 @@
 // local includes
 #include "fixtures/macos_backend_test_hooks.hpp"
 
+// platform includes
+#include <ApplicationServices/ApplicationServices.h>
+
+namespace {
+
+  /**
+   * @brief Thread-local context for intercepted native mouse calls.
+   */
+  struct MouseCaptureState {
+    lvh::detail::test::MacosMouseSubmissionResult *result = nullptr;  ///< Active mouse capture.
+    bool fail_creation = false;  ///< Whether the next mouse allocation should fail.
+  };
+
+  /**
+   * @brief Access the capture context for the current test thread.
+   * @return Thread-local mouse capture state.
+   */
+  MouseCaptureState &mouse_capture_state() {
+    static thread_local MouseCaptureState state;
+    return state;
+  }
+
+  /**
+   * @brief Replace cursor snapshots with deterministic, aged events during mouse tests.
+   * @param source CoreGraphics event source.
+   * @return Cursor snapshot, or null when allocation fails.
+   */
+  CGEventRef test_create_event(CGEventSourceRef source) {
+    const auto event = CGEventCreate(source);
+    if (event && mouse_capture_state().result) {
+      CGEventSetTimestamp(event, 1);
+      CGEventSetLocation(event, CGPoint {40, 60});
+    }
+    return event;
+  }
+
+  /**
+   * @brief Count mouse event allocations and optionally fail one allocation.
+   * @param source CoreGraphics event source.
+   * @param type Requested event type.
+   * @param location Cursor location.
+   * @param button CoreGraphics button number.
+   * @return Newly created native mouse event, or null for the injected failure.
+   */
+  CGEventRef test_create_mouse_event(CGEventSourceRef source, CGEventType type, CGPoint location, CGMouseButton button) {
+    if (mouse_capture_state().result) {
+      ++mouse_capture_state().result->creation_attempts;
+      if (mouse_capture_state().fail_creation) {
+        mouse_capture_state().fail_creation = false;
+        return nullptr;
+      }
+    }
+    return CGEventCreateMouseEvent(source, type, location, button);
+  }
+
+  /**
+   * @brief Use fixed display bounds during mouse tests.
+   * @param display CoreGraphics display identifier.
+   * @return Deterministic test bounds or the native display bounds.
+   */
+  CGRect test_display_bounds(CGDirectDisplayID display) {
+    return mouse_capture_state().result ? CGRect {CGPoint {10, 20}, CGSize {400, 200}} : CGDisplayBounds(display);
+  }
+
+  /**
+   * @brief Capture native mouse event metadata without posting input to the desktop.
+   * @param tap Event tap requested by the backend.
+   * @param event Event that would be posted.
+   */
+  void test_post_event(CGEventTapLocation tap, CGEventRef event) {
+    if (!mouse_capture_state().result) {
+      return;
+    }
+    const auto location = CGEventGetLocation(event);
+    mouse_capture_state().result->events.push_back({
+      .tap_location = static_cast<std::uint32_t>(tap),
+      .event_type = static_cast<std::uint32_t>(CGEventGetType(event)),
+      .button = CGEventGetIntegerValueField(event, kCGMouseEventButtonNumber),
+      .click_count = CGEventGetIntegerValueField(event, kCGMouseEventClickState),
+      .timestamp = CGEventGetTimestamp(event),
+      .flags = static_cast<std::uint64_t>(CGEventGetFlags(event)),
+      .location = {location.x, location.y},
+      .delta = {CGEventGetDoubleValueField(event, kCGMouseEventDeltaX), CGEventGetDoubleValueField(event, kCGMouseEventDeltaY)},
+    });
+  }
+
+  /**
+   * @brief Count cursor updates without moving the physical cursor.
+   * @param location Requested cursor position.
+   * @return Success without changing the desktop.
+   */
+  CGError test_warp_cursor([[maybe_unused]] CGPoint location) {
+    if (mouse_capture_state().result) {
+      ++mouse_capture_state().result->cursor_warps;
+    }
+    return kCGErrorSuccess;
+  }
+
+  /**
+   * @brief Restore the previous capture state after a mouse test, including on exceptions.
+   */
+  class MouseEventCapture {
+  public:
+    /**
+     * @brief Activate one mouse capture.
+     * @param result Result storage for the intercepted native calls.
+     * @param fail_first_creation Whether to fail the next mouse event allocation.
+     */
+    MouseEventCapture(lvh::detail::test::MacosMouseSubmissionResult &result, bool fail_first_creation) {
+      mouse_capture_state() = {&result, fail_first_creation};
+    }
+
+    /**
+     * @brief Prevent copying a scope-bound capture.
+     * @param other Capture that cannot be copied.
+     */
+    MouseEventCapture(const MouseEventCapture &other) = delete;
+
+    /**
+     * @brief Prevent replacing a scope-bound capture by copying.
+     * @param other Capture that cannot be copied.
+     * @return Copy assignment is unavailable.
+     */
+    MouseEventCapture &operator=(const MouseEventCapture &other) = delete;
+
+    /**
+     * @brief Prevent moving a scope-bound capture.
+     * @param other Capture that cannot be moved.
+     */
+    MouseEventCapture(MouseEventCapture &&other) = delete;
+
+    /**
+     * @brief Prevent replacing a scope-bound capture by moving.
+     * @param other Capture that cannot be moved.
+     * @return Move assignment is unavailable.
+     */
+    MouseEventCapture &operator=(MouseEventCapture &&other) = delete;
+
+    /**
+     * @brief Restore the enclosing capture state.
+     */
+    ~MouseEventCapture() {
+      mouse_capture_state() = previous_state_;
+    }
+
+  private:
+    const MouseCaptureState previous_state_ = mouse_capture_state();  ///< Enclosing capture and failure setting.
+  };
+
+}  // namespace
+
+#define CGEventCreate test_create_event
+#define CGEventCreateMouseEvent test_create_mouse_event
+#define CGDisplayBounds test_display_bounds
+#define CGEventPost test_post_event
+#define CGWarpMouseCursorPosition test_warp_cursor
 #define create_platform_backend create_platform_backend_for_macos_backend_test_hooks
 #include "../../src/platform/macos/macos_backend.cpp"
 #undef create_platform_backend
+#undef CGWarpMouseCursorPosition
+#undef CGEventPost
+#undef CGDisplayBounds
+#undef CGEventCreateMouseEvent
+#undef CGEventCreate
 
 namespace lvh::detail::test {
 
@@ -99,6 +260,23 @@ namespace lvh::detail::test {
       .button = static_cast<std::uint32_t>(motion.button),
       .event_type = static_cast<std::uint32_t>(motion.event_type),
     };
+  }
+
+  MacosMouseSubmissionResult macos_backend_mouse_events(const std::vector<MouseEvent> &events, bool fail_first_creation, bool source_available) {
+    MacosMouseSubmissionResult result;
+    MouseEventCapture capture {result, fail_first_creation};
+    auto state = std::make_shared<macos::MacosInputState>();
+    state->keyboard_flags = kCGEventFlagMaskShift | kCGEventFlagMaskControl;
+    if (!source_available && state->source) {
+      CFRelease(state->source);
+      state->source = nullptr;
+    }
+
+    macos::MacosMouse mouse {std::move(state)};
+    for (const auto &event : events) {
+      result.statuses.push_back(mouse.submit(event));
+    }
+    return result;
   }
 
   MacosBackendUtilityResult macos_backend_utilities() {
