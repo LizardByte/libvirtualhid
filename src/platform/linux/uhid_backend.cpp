@@ -1116,6 +1116,14 @@ namespace lvh::detail {
       );
     }
 
+    /**
+     * @brief Enable only named KEY_ codes to keep the device classified as a keyboard.
+     *
+     * BTN_ and unnamed codes are excluded.
+     *
+     * @param device The evdev device to configure
+     * @return Success if all capabilities were enabled, otherwise the operation failure
+     */
     OperationStatus configure_evdev_keyboard(libevdev *device) {
       if (const auto status = enable_evdev_type(device, EV_KEY, "keyboard key events"); !status.ok()) {
         return status;
