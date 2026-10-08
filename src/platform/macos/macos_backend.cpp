@@ -462,8 +462,8 @@ namespace lvh::detail {
     /**
      * @brief Resolve a portable pointer viewport to CoreGraphics desktop bounds.
      *
-     * @param viewport Consumer-selected viewport, or zero dimensions for the main display.
-     * @return CoreGraphics bounds used for mouse mapping and confinement.
+     * @param viewport Consumer-selected viewport in CoreGraphics screen points, or zero dimensions for the main display.
+     * @return Current CoreGraphics bounds used for mouse mapping and confinement.
      */
     inline CGRect mouse_viewport_bounds(const PointerViewport &viewport) {
       if (viewport.width > 0 && viewport.height > 0) {
@@ -726,7 +726,7 @@ namespace lvh::detail {
     public:
       MacosMouse(std::shared_ptr<MacosInputState> state, const PointerViewport &viewport):
           state_ {std::move(state)},
-          viewport_bounds_ {mouse_viewport_bounds(viewport)} {}
+          viewport_ {viewport} {}
 
       ~MacosMouse() override {
         static_cast<void>(close());
@@ -741,6 +741,13 @@ namespace lvh::detail {
         }
         if (!state_->source || !state_->mouse_event) {
           return OperationStatus::failure(ErrorCode::backend_failure, "macOS mouse event source is unavailable");
+        }
+
+        if (event.kind == relative_motion || event.kind == absolute_motion || event.kind == button) {
+          viewport_bounds_ = mouse_viewport_bounds(viewport_);
+          if (viewport_bounds_.size.width < 1 || viewport_bounds_.size.height < 1) {
+            return OperationStatus::failure(ErrorCode::backend_failure, "macOS mouse viewport is unavailable");
+          }
         }
 
         switch (event.kind) {
@@ -859,7 +866,8 @@ namespace lvh::detail {
       }
 
       std::shared_ptr<MacosInputState> state_;
-      CGRect viewport_bounds_ {};  ///< Native desktop bounds receiving mouse input.
+      PointerViewport viewport_;  ///< Requested screen geometry, with zero dimensions selecting the current main display.
+      CGRect viewport_bounds_ {};  ///< CoreGraphics bounds resolved for the current mouse submission.
       std::array<bool, 3> mouse_down_ {};
       std::array<std::array<std::chrono::steady_clock::time_point, 2>, 3> last_mouse_event_ {};
       std::mutex mutex_;

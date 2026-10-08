@@ -3,14 +3,125 @@
  * @brief macOS backend test hook definitions.
  */
 
-// local includes
-#include "fixtures/macos_backend_test_hooks.hpp"
+// standard includes
+#include <algorithm>
+#include <array>
+#include <chrono>
+#include <cmath>
+#include <cstdint>
+#include <memory>
+#include <mutex>
+#include <optional>
+#include <vector>
 
+// local includes
+#include "core/backend.hpp"
+#include "fixtures/macos_backend_test_hooks.hpp"
+#include "platform/macos/macos_broker_client.hpp"
+
+// platform includes
+#include <ApplicationServices/ApplicationServices.h>
+#include <Carbon/Carbon.h>
+#include <CoreFoundation/CoreFoundation.h>
+#include <IOKit/hidsystem/IOLLEvent.h>
+
+namespace {
+
+  struct MouseEnvironment;
+
+  /**
+   * @brief Access the active mouse environment for the calling thread.
+   *
+   * @return Reference to the scoped environment pointer, or a null pointer when no environment is active.
+   */
+  MouseEnvironment *&mouse_environment() {
+    static thread_local MouseEnvironment *environment = nullptr;
+    return environment;
+  }
+
+  /**
+   * @brief Scoped display geometry and captured mouse delivery for backend submission tests.
+   */
+  struct MouseEnvironment {
+    explicit MouseEnvironment(const lvh::detail::test::MacosViewportBounds &bounds):
+        display_bounds {bounds} {
+      mouse_environment() = this;
+    }
+
+    MouseEnvironment(const MouseEnvironment &) = delete;
+    MouseEnvironment &operator=(const MouseEnvironment &) = delete;
+    MouseEnvironment(MouseEnvironment &&) = delete;
+    MouseEnvironment &operator=(MouseEnvironment &&) = delete;
+
+    ~MouseEnvironment() {
+      mouse_environment() = nullptr;
+    }
+
+    lvh::detail::test::MacosViewportBounds display_bounds;
+    lvh::detail::test::MacosPoint cursor_location;
+    std::optional<lvh::detail::test::MacosPoint> posted_location;
+    std::optional<lvh::detail::test::MacosPoint> warped_location;
+  };
+
+  CGDirectDisplayID mouse_main_display_id() {
+    return mouse_environment() ? 42 : CGMainDisplayID();
+  }
+
+  CGRect mouse_display_bounds(CGDirectDisplayID display) {
+    if (!mouse_environment()) {
+      return CGDisplayBounds(display);
+    }
+    const auto &bounds = mouse_environment()->display_bounds;
+    return CGRect {{bounds.origin_x, bounds.origin_y}, {bounds.width, bounds.height}};
+  }
+
+  CGPoint mouse_event_location(CGEventRef event) {
+    if (!mouse_environment()) {
+      return CGEventGetLocation(event);
+    }
+    return CGPoint {mouse_environment()->cursor_location.x, mouse_environment()->cursor_location.y};
+  }
+
+  void mouse_event_post(CGEventTapLocation tap, CGEventRef event) {
+    if (!mouse_environment()) {
+      CGEventPost(tap, event);
+      return;
+    }
+    const auto point = CGEventGetLocation(event);
+    mouse_environment()->posted_location = {.x = point.x, .y = point.y};
+  }
+
+  CGError mouse_warp_cursor_position(CGPoint point) {
+    if (!mouse_environment()) {
+      return CGWarpMouseCursorPosition(point);
+    }
+    mouse_environment()->warped_location = {.x = point.x, .y = point.y};
+    return kCGErrorSuccess;
+  }
+
+}  // namespace
+
+// Load the backend's dependencies before these macros, then compile it in a
+// separate namespace so instrumented inline symbols remain isolated.
+#define macos macos_backend_test
+#define CGMainDisplayID mouse_main_display_id
+#define CGDisplayBounds mouse_display_bounds
+#define CGEventGetLocation mouse_event_location
+#define CGEventPost mouse_event_post
+#define CGWarpMouseCursorPosition mouse_warp_cursor_position
 #define create_platform_backend create_platform_backend_for_macos_backend_test_hooks
 #include "../../src/platform/macos/macos_backend.cpp"
 #undef create_platform_backend
+#undef CGWarpMouseCursorPosition
+#undef CGEventPost
+#undef CGEventGetLocation
+#undef CGDisplayBounds
+#undef CGMainDisplayID
+#undef macos
 
 namespace lvh::detail::test {
+
+  namespace macos = lvh::detail::macos_backend_test;
 
   std::optional<std::uint16_t> macos_backend_key_code(KeyboardKeyCode key_code) {
     const auto mapped = macos::macos_key_code(key_code);
@@ -101,6 +212,33 @@ namespace lvh::detail::test {
       .width = bounds.size.width,
       .height = bounds.size.height,
     };
+  }
+
+  std::vector<MacosMouseSubmissionResult> macos_backend_mouse_submissions(
+    const PointerViewport &viewport,
+    const MacosViewportBounds &initial_display_bounds,
+    const std::vector<MacosMouseSubmission> &submissions
+  ) {
+    MouseEnvironment environment {initial_display_bounds};
+    auto backend = create_platform_backend_for_macos_backend_test_hooks();
+    CreateMouseOptions options;
+    options.profile.device_type = DeviceType::mouse;
+    options.viewport = viewport;
+    auto created = backend->create_mouse(1, options);
+    if (!created) {
+      return {{.status = created.status, .posted_location = std::nullopt, .warped_location = std::nullopt}};
+    }
+
+    std::vector<MacosMouseSubmissionResult> results;
+    for (const auto &submission : submissions) {
+      environment.display_bounds = submission.display_bounds;
+      environment.cursor_location = submission.cursor_location;
+      environment.posted_location.reset();
+      environment.warped_location.reset();
+      const auto status = created.mouse->submit(submission.event);
+      results.emplace_back(status, environment.posted_location, environment.warped_location);
+    }
+    return results;
   }
 
   MacosMouseMotionResult macos_backend_mouse_motion(bool left_down, bool right_down, bool middle_down) {

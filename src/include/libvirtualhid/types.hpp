@@ -466,26 +466,31 @@ namespace lvh {
   };
 
   /**
-   * @brief Pixel viewport used by backends that need screen-local pointer coordinates.
+   * @brief Viewport in the platform's native screen coordinate space.
+   *
+   * Mouse desktop and viewport geometry use screen points on macOS and desktop
+   * pixels on Windows, Linux, and FreeBSD. Use the same units for offsets and
+   * dimensions; source coordinates supplied to Mouse::move_absolute() remain
+   * in the caller's source coordinate space and are scaled into this viewport.
    */
   struct PointerViewport {
     /**
-     * @brief Horizontal viewport offset in native desktop pixels.
+     * @brief Horizontal viewport offset in native screen coordinates.
      */
     std::int32_t offset_x = 0;
 
     /**
-     * @brief Vertical viewport offset in native desktop pixels.
+     * @brief Vertical viewport offset in native screen coordinates.
      */
     std::int32_t offset_y = 0;
 
     /**
-     * @brief Viewport width in native desktop pixels, or `0` to use the platform default.
+     * @brief Viewport width in native screen units, or `0` to use the platform default.
      */
     std::int32_t width = 0;
 
     /**
-     * @brief Viewport height in native desktop pixels, or `0` to use the platform default.
+     * @brief Viewport height in native screen units, or `0` to use the platform default.
      */
     std::int32_t height = 0;
   };
@@ -508,7 +513,8 @@ namespace lvh {
      * @brief Native virtual-desktop bounds used to normalize the target viewport.
      *
      * Set this together with `viewport`; leave both dimensions at zero to use
-     * the platform-default pointer area.
+     * the platform-default pointer area. Use screen points on macOS and desktop
+     * pixels on Windows, Linux, and FreeBSD.
      */
     PointerViewport desktop;
 
@@ -516,7 +522,9 @@ namespace lvh {
      * @brief Native desktop viewport that receives absolute mouse input.
      *
      * Set this together with `desktop`; leave both dimensions at zero to use
-     * the platform-default pointer area.
+     * the platform-default pointer area. On macOS the default follows the current
+     * main display bounds on each submission; configured geometry remains fixed
+     * for the mouse's lifetime.
      */
     PointerViewport viewport;
   };

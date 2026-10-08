@@ -34,6 +34,24 @@ namespace lvh::detail::test {
   };
 
   /**
+   * @brief Display and cursor state supplied before one mouse submission.
+   */
+  struct MacosMouseSubmission {
+    MacosViewportBounds display_bounds;  ///< Current main-display bounds in screen points.
+    MacosPoint cursor_location;  ///< Cursor location before submission, in screen points.
+    MouseEvent event;  ///< Mouse event submitted to the backend.
+  };
+
+  /**
+   * @brief Mouse submission status and captured CoreGraphics destinations.
+   */
+  struct MacosMouseSubmissionResult {
+    OperationStatus status;  ///< Backend submission status.
+    std::optional<MacosPoint> posted_location;  ///< Location on the posted event, if any.
+    std::optional<MacosPoint> warped_location;  ///< Cursor warp destination, if any.
+  };
+
+  /**
    * @brief Portable representation of CoreGraphics mouse motion metadata for tests.
    */
   struct MacosMouseMotionResult {
@@ -149,6 +167,20 @@ namespace lvh::detail::test {
    * @return CoreGraphics bounds represented with portable scalar fields.
    */
   MacosViewportBounds macos_backend_mouse_viewport_bounds(const PointerViewport &viewport);
+
+  /**
+   * @brief Submit to one backend mouse while simulating changing display geometry without delivering input.
+   *
+   * @param viewport Requested mouse viewport in native screen points, or zero dimensions for the main display.
+   * @param initial_display_bounds Main-display bounds when the mouse is created.
+   * @param submissions Display geometry, cursor location, and event for each submission.
+   * @return Submission statuses and captured event and warp locations.
+   */
+  std::vector<MacosMouseSubmissionResult> macos_backend_mouse_submissions(
+    const PointerViewport &viewport,
+    const MacosViewportBounds &initial_display_bounds,
+    const std::vector<MacosMouseSubmission> &submissions
+  );
 
   /**
    * @brief Select CoreGraphics motion metadata for a mouse button state.

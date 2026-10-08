@@ -28,3 +28,6 @@ failure, and debug-level input coordinate diagnostics. When streaming one
 monitor from a multi-monitor desktop, supply the full desktop bounds and the
 selected viewport in `CreateMouseOptions`. See the
 [mouse viewport setup](usage.md#absolute-mouse-viewports).
+Use native screen units for that geometry: screen points on macOS and desktop
+pixels on Windows, Linux, and FreeBSD. The captured image dimensions supplied
+to `Mouse::move_absolute()` can differ from the viewport dimensions.

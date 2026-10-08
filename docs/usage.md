@@ -87,7 +87,9 @@ subsequent messages so it cannot interrupt input delivery.
 
 Absolute mouse coordinates can target one monitor inside a larger virtual
 desktop. Supply both the desktop bounds and the selected viewport in native
-desktop pixels when creating the mouse:
+screen coordinates when creating the mouse: screen points on macOS, and desktop
+pixels on Windows, Linux, and FreeBSD. Offsets and dimensions must use the same
+units.
 
 ```cpp
 lvh::CreateMouseOptions mouse_options;
@@ -97,6 +99,13 @@ mouse_options.viewport = {.offset_x = 0, .offset_y = 0, .width = 1920, .height =
 auto created = runtime->create_mouse(mouse_options);
 ```
 
+On macOS, use the global screen-point geometry reported by `CGDisplayBounds`
+for the desktop and viewport. A Retina display with 3840×2160 backing pixels
+and 1920×1080 screen points needs a 1920×1080 viewport. Absolute source
+coordinates may still use the 3840×2160 captured image dimensions; the backend
+maps that image's center to (960, 540) screen points. See Apple's
+[coordinate guidance](https://developer.apple.com/library/archive/documentation/GraphicsAnimation/Conceptual/HighResolutionOSX/APIs/APIs.html).
+
 `Mouse::move_absolute()` coordinates are scaled from their supplied source
 dimensions into the target viewport, then normalized against the virtual
 desktop where the platform input API requires it. This contract covers
@@ -104,7 +113,11 @@ CoreGraphics on macOS, `SendInput` on Windows, and the XTest or `uinput` path on
 Linux and FreeBSD, including virtual desktops whose origin is negative. Leave
 both viewport dimensions at zero to retain the platform-default pointer area
 (the main display on macOS and the virtual desktop on other current backends).
-A configured target viewport must be fully contained by its desktop.
+The macOS default refreshes on every mouse submission that uses a location,
+including after display resolution or main-display changes. If its bounds are
+temporarily unavailable, the submission fails and a later submission retries.
+A configured target viewport must be fully contained by its desktop and remains
+fixed for the mouse's lifetime; recreate the mouse when that geometry changes.
 
 ## License and diagnostic tool
 
