@@ -22,6 +22,7 @@
 #endif
 
 // lib includes
+#include <libevdev/libevdev.h>
 #include <libvirtualhid/libvirtualhid.hpp>
 
 // local includes
@@ -1161,7 +1162,15 @@ TEST_F(LinuxBackendTest, FakeUinputConstructionCoversCapabilitiesAndFailureBranc
   EXPECT_EQ(keyboard.name, lvh::profiles::keyboard().name);
   EXPECT_EQ(keyboard.bustype, BUS_USB);
   EXPECT_TRUE(has_type(keyboard, EV_KEY));
-  EXPECT_NE(find_code(keyboard, EV_KEY, KEY_A), nullptr);
+  for (const auto code : {KEY_A, KEY_ENTER, KEY_LEFTSHIFT, KEY_F1, KEY_VOLUMEUP, KEY_OK}) {
+    EXPECT_NE(find_code(keyboard, EV_KEY, code), nullptr) << code;
+  }
+  for (const auto code : {BTN_LEFT, BTN_SOUTH, BTN_TOOL_PEN, BTN_TOUCH}) {
+    EXPECT_EQ(find_code(keyboard, EV_KEY, code), nullptr) << code;
+  }
+  constexpr auto unnamed_code = 0x54;
+  ASSERT_EQ(libevdev_event_code_get_name(EV_KEY, unnamed_code), nullptr);
+  EXPECT_EQ(find_code(keyboard, EV_KEY, unnamed_code), nullptr);
   EXPECT_EQ(keyboard.destroy_count, 1U);
 
   struct GamepadCase {
