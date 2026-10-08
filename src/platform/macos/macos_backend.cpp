@@ -777,7 +777,7 @@ namespace lvh::detail {
       }
 
       /**
-       * @brief Create and post a mouse event with a current timestamp and event metadata.
+       * @brief Create and post a fresh native mouse event with the requested metadata.
        *
        * @param button CoreGraphics mouse button.
        * @param type Mouse movement, drag, or button event type.

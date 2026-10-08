@@ -11,8 +11,22 @@
 
 namespace {
 
-  thread_local lvh::detail::test::MacosMouseSubmissionResult *mouse_submissions = nullptr;  ///< Active mouse capture.
-  thread_local bool fail_mouse_creation = false;  ///< Whether the next mouse allocation should fail.
+  /**
+   * @brief Thread-local context for intercepted native mouse calls.
+   */
+  struct MouseCaptureState {
+    lvh::detail::test::MacosMouseSubmissionResult *result = nullptr;  ///< Active mouse capture.
+    bool fail_creation = false;  ///< Whether the next mouse allocation should fail.
+  };
+
+  /**
+   * @brief Access the capture context for the current test thread.
+   * @return Thread-local mouse capture state.
+   */
+  MouseCaptureState &mouse_capture_state() {
+    static thread_local MouseCaptureState state;
+    return state;
+  }
 
   /**
    * @brief Replace cursor snapshots with deterministic, aged events during mouse tests.
@@ -21,7 +35,7 @@ namespace {
    */
   CGEventRef test_create_event(CGEventSourceRef source) {
     const auto event = CGEventCreate(source);
-    if (event && mouse_submissions) {
+    if (event && mouse_capture_state().result) {
       CGEventSetTimestamp(event, 1);
       CGEventSetLocation(event, CGPoint {40, 60});
     }
@@ -37,10 +51,10 @@ namespace {
    * @return Newly created native mouse event, or null for the injected failure.
    */
   CGEventRef test_create_mouse_event(CGEventSourceRef source, CGEventType type, CGPoint location, CGMouseButton button) {
-    if (mouse_submissions) {
-      ++mouse_submissions->creation_attempts;
-      if (fail_mouse_creation) {
-        fail_mouse_creation = false;
+    if (mouse_capture_state().result) {
+      ++mouse_capture_state().result->creation_attempts;
+      if (mouse_capture_state().fail_creation) {
+        mouse_capture_state().fail_creation = false;
         return nullptr;
       }
     }
@@ -53,7 +67,7 @@ namespace {
    * @return Deterministic test bounds or the native display bounds.
    */
   CGRect test_display_bounds(CGDirectDisplayID display) {
-    return mouse_submissions ? CGRect {CGPoint {10, 20}, CGSize {400, 200}} : CGDisplayBounds(display);
+    return mouse_capture_state().result ? CGRect {CGPoint {10, 20}, CGSize {400, 200}} : CGDisplayBounds(display);
   }
 
   /**
@@ -62,11 +76,11 @@ namespace {
    * @param event Event that would be posted.
    */
   void test_post_event(CGEventTapLocation tap, CGEventRef event) {
-    if (!mouse_submissions) {
+    if (!mouse_capture_state().result) {
       return;
     }
     const auto location = CGEventGetLocation(event);
-    mouse_submissions->events.push_back({
+    mouse_capture_state().result->events.push_back({
       .tap_location = static_cast<std::uint32_t>(tap),
       .event_type = static_cast<std::uint32_t>(CGEventGetType(event)),
       .button = CGEventGetIntegerValueField(event, kCGMouseEventButtonNumber),
@@ -84,8 +98,8 @@ namespace {
    * @return Success without changing the desktop.
    */
   CGError test_warp_cursor([[maybe_unused]] CGPoint location) {
-    if (mouse_submissions) {
-      ++mouse_submissions->cursor_warps;
+    if (mouse_capture_state().result) {
+      ++mouse_capture_state().result->cursor_warps;
     }
     return kCGErrorSuccess;
   }
@@ -100,24 +114,45 @@ namespace {
      * @param result Result storage for the intercepted native calls.
      * @param fail_first_creation Whether to fail the next mouse event allocation.
      */
-    MouseEventCapture(lvh::detail::test::MacosMouseSubmissionResult &result, bool fail_first_creation):
-        previous_result_ {mouse_submissions},
-        previous_failure_ {fail_mouse_creation} {
-      mouse_submissions = &result;
-      fail_mouse_creation = fail_first_creation;
+    MouseEventCapture(lvh::detail::test::MacosMouseSubmissionResult &result, bool fail_first_creation) {
+      mouse_capture_state() = {&result, fail_first_creation};
     }
+
+    /**
+     * @brief Prevent copying a scope-bound capture.
+     * @param other Capture that cannot be copied.
+     */
+    MouseEventCapture(const MouseEventCapture &other) = delete;
+
+    /**
+     * @brief Prevent replacing a scope-bound capture by copying.
+     * @param other Capture that cannot be copied.
+     * @return Copy assignment is unavailable.
+     */
+    MouseEventCapture &operator=(const MouseEventCapture &other) = delete;
+
+    /**
+     * @brief Prevent moving a scope-bound capture.
+     * @param other Capture that cannot be moved.
+     */
+    MouseEventCapture(MouseEventCapture &&other) = delete;
+
+    /**
+     * @brief Prevent replacing a scope-bound capture by moving.
+     * @param other Capture that cannot be moved.
+     * @return Move assignment is unavailable.
+     */
+    MouseEventCapture &operator=(MouseEventCapture &&other) = delete;
 
     /**
      * @brief Restore the enclosing capture state.
      */
     ~MouseEventCapture() {
-      mouse_submissions = previous_result_;
-      fail_mouse_creation = previous_failure_;
+      mouse_capture_state() = previous_state_;
     }
 
   private:
-    lvh::detail::test::MacosMouseSubmissionResult *previous_result_;  ///< Enclosing capture, when present.
-    bool previous_failure_;  ///< Enclosing allocation failure setting.
+    const MouseCaptureState previous_state_ = mouse_capture_state();  ///< Enclosing capture and failure setting.
   };
 
 }  // namespace
