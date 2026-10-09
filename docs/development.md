@@ -4,6 +4,13 @@ Build directories use the `cmake-build-` prefix. The shared GoogleTest binary
 is `tests/test_libvirtualhid` in the build directory. Initialize submodules
 before building.
 
+With `BUILD_TESTS=ON`, the test build compiles a separate copy of the library
+sources and, when enabled, the diagnostic control model. GCC and Clang coverage
+instrumentation is confined to the tests directory. The normal library,
+examples, tools, and brokers remain free of coverage instrumentation, including
+when they are packaged from a build that also runs tests. MSVC coverage uses
+OpenCppCoverage rather than compiler instrumentation.
+
 ## Windows library and tests
 
 Run each command from the repository root through MSYS2/UCRT64:
