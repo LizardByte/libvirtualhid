@@ -25,6 +25,18 @@ The normal library also builds with MSVC. The Windows driver package requires
 the WDK/MSVC toolchain and is built separately; see
 [Windows package](windows-driver.md#build-the-driver-package).
 
+Windows CI checks production objects and static libraries for coverage symbols
+in both compiler builds and before signing the driver package. Inspecting the
+inputs also catches instrumentation when the final executable has no symbol
+table. Run the same check on a local build with MSYS2/UCRT64 binutils installed:
+
+```powershell
+& 'C:\msys64\msys2_shell.cmd' -defterm -here -no-start -ucrt64 -c 'bash scripts/windows/check-package-coverage.sh cmake-build-debug-mingw-ucrt64-ninja'
+```
+
+The script checks all built configurations and excludes the separate test
+targets. Pass the MSVC build directory to check a Visual Studio build.
+
 ## Linux and macOS
 
 ```sh
