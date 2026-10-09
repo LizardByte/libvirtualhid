@@ -18,7 +18,7 @@
     normalized input state, and output feedback callbacks.
 
 - title: "User-mode Windows support"
-  icon_img: "https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/icons/windows.svg"
+  icon_img: "https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.2/icons/windows.svg"
   icon_img_alt: "Windows"
   icon_img_invert: true
   description: >
