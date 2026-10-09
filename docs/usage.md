@@ -64,6 +64,61 @@ The API also exposes `Keyboard`, `Mouse`, `Touchscreen`, `Trackpad`, and
 `PenTablet` where supported. `DeviceNode` provides paths for diagnostics or
 handoff to another local input consumer.
 
+## Diagnostics
+
+Hosts can route libvirtualhid diagnostics into their own logging system by
+installing `RuntimeOptions::log_callback` before creating the runtime:
+
+```cpp
+lvh::RuntimeOptions runtime_options;
+runtime_options.backend = lvh::BackendKind::platform_default;
+runtime_options.log_callback = [](lvh::LogLevel level, const std::string &message) {
+  host_log(level, message);
+};
+auto runtime = lvh::Runtime::create(runtime_options);
+```
+
+The callback receives runtime and device lifecycle messages, operation failures,
+and debug-level mouse coordinate diagnostics. It runs synchronously on the
+calling thread. If a consumer callback throws, libvirtualhid disables it for
+subsequent messages so it cannot interrupt input delivery.
+
+## Absolute Mouse Viewports
+
+Absolute mouse coordinates can target one monitor inside a larger virtual
+desktop. Supply both the desktop bounds and the selected viewport in native
+screen coordinates when creating the mouse: screen points on macOS, and desktop
+pixels on Windows, Linux, and FreeBSD. Offsets and dimensions must use the same
+units.
+
+```cpp
+lvh::CreateMouseOptions mouse_options;
+mouse_options.profile = lvh::profiles::mouse();
+mouse_options.desktop = {.offset_x = -1920, .offset_y = 0, .width = 3840, .height = 1080};
+mouse_options.viewport = {.offset_x = 0, .offset_y = 0, .width = 1920, .height = 1080};
+auto created = runtime->create_mouse(mouse_options);
+```
+
+On macOS, use the global screen-point geometry reported by `CGDisplayBounds`
+for the desktop and viewport. A Retina display with 3840×2160 backing pixels
+and 1920×1080 screen points needs a 1920×1080 viewport. Absolute source
+coordinates may still use the 3840×2160 captured image dimensions; the backend
+maps that image's center to (960, 540) screen points. See Apple's
+[coordinate guidance](https://developer.apple.com/library/archive/documentation/GraphicsAnimation/Conceptual/HighResolutionOSX/APIs/APIs.html).
+
+`Mouse::move_absolute()` coordinates are scaled from their supplied source
+dimensions into the target viewport, then normalized against the virtual
+desktop where the platform input API requires it. This contract covers
+CoreGraphics on macOS, `SendInput` on Windows, and the XTest or `uinput` path on
+Linux and FreeBSD, including virtual desktops whose origin is negative. Leave
+both viewport dimensions at zero to retain the platform-default pointer area
+(the main display on macOS and the virtual desktop on other current backends).
+The macOS default refreshes on every mouse submission that uses a location,
+including after display resolution or main-display changes. If its bounds are
+temporarily unavailable, the submission fails and a later submission retries.
+A configured target viewport must be fully contained by its desktop and remains
+fixed for the mouse's lifetime; recreate the mouse when that geometry changes.
+
 ## License and diagnostic tool
 
 On Windows and macOS, `get_license_status`, `activate_license`,

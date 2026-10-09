@@ -5,9 +5,12 @@
 
 // standard includes
 #include <algorithm>
+#include <atomic>
 #include <cmath>
+#include <format>
 #include <memory>
 #include <mutex>
+#include <sstream>
 #include <utility>
 
 // local includes
@@ -18,6 +21,51 @@
 #include <libvirtualhid/runtime.hpp>
 
 namespace lvh::detail {
+
+  /**
+   * @brief Exception-safe dispatcher for a consumer diagnostic callback.
+   */
+  class Logger {
+  public:
+    /**
+     * @brief Construct a dispatcher for an optional callback.
+     *
+     * @param callback Consumer diagnostic callback.
+     */
+    explicit Logger(LogCallback callback):
+        callback_ {std::move(callback)} {}
+
+    /**
+     * @brief Report whether a callback is installed.
+     *
+     * @return `true` when messages have a destination.
+     */
+    bool enabled() const noexcept {
+      return static_cast<bool>(callback_) && !callback_failed_.load(std::memory_order_relaxed);
+    }
+
+    /**
+     * @brief Emit one diagnostic message without allowing consumer exceptions to escape.
+     *
+     * @param level Message severity.
+     * @param message Diagnostic text.
+     */
+    void emit(LogLevel level, const std::string &message) const noexcept {
+      if (!enabled()) {
+        return;
+      }
+
+      try {
+        callback_(level, message);
+      } catch (...) {
+        callback_failed_.store(true, std::memory_order_relaxed);
+      }
+    }
+
+  private:
+    LogCallback callback_;
+    mutable std::atomic_bool callback_failed_ = false;  ///< Whether the consumer callback threw an exception.
+  };
 
   class SynchronizedState {
   public:
@@ -71,14 +119,21 @@ namespace lvh::detail {
   };
 
   struct MouseDevice: SynchronizedState {
-    explicit MouseDevice(DeviceId device_id, CreateMouseOptions create_options, std::unique_ptr<BackendMouse> backend_mouse):
+    explicit MouseDevice(
+      DeviceId device_id,
+      CreateMouseOptions create_options,
+      std::unique_ptr<BackendMouse> backend_mouse,
+      std::shared_ptr<Logger> device_logger
+    ):
         id {device_id},
         options {std::move(create_options)},
-        backend {std::move(backend_mouse)} {}
+        backend {std::move(backend_mouse)},
+        logger {std::move(device_logger)} {}
 
     DeviceId id;
     CreateMouseOptions options;
     std::unique_ptr<BackendMouse> backend;
+    std::shared_ptr<Logger> logger;
     bool open = true;
     MouseEvent last_event;
     std::size_t submitted_events = 0;
@@ -141,11 +196,15 @@ namespace lvh::detail {
   class RuntimeState: public SynchronizedState {
   public:
     explicit RuntimeState(RuntimeOptions runtime_options):
-        options {runtime_options},
-        backend {create_backend(runtime_options.backend)},
-        caps {backend->capabilities()} {}
+        options {std::move(runtime_options)},
+        logger {std::make_shared<Logger>(options.log_callback)},
+        backend {create_backend(options.backend)},
+        caps {backend->capabilities()} {
+      logger->emit(LogLevel::info, "initialized " + caps.backend_name + " backend");
+    }
 
     RuntimeOptions options;
+    std::shared_ptr<Logger> logger;
     std::unique_ptr<Backend> backend;
     BackendCapabilities caps;
     DeviceId next_device_id = 1;
@@ -199,8 +258,89 @@ namespace lvh {
       if (options.profile.name.empty()) {
         return OperationStatus::failure(ErrorCode::invalid_argument, "device profile name must not be empty");
       }
+      if (const auto valid_dimensions = [](const PointerViewport &viewport) {
+            return viewport.width >= 0 && viewport.height >= 0 &&
+                   ((viewport.width == 0 && viewport.height == 0) || (viewport.width > 0 && viewport.height > 0));
+          };
+          !valid_dimensions(options.desktop) || !valid_dimensions(options.viewport)) {
+        return OperationStatus::failure(
+          ErrorCode::invalid_argument,
+          "mouse viewport dimensions must both be positive or both be zero"
+        );
+      }
+      const auto has_desktop = options.desktop.width > 0;
+      if (const auto has_viewport = options.viewport.width > 0; has_desktop != has_viewport) {
+        return OperationStatus::failure(
+          ErrorCode::invalid_argument,
+          "mouse desktop and target viewport must be configured together"
+        );
+      }
+      if (has_desktop) {
+        const auto desktop_right = static_cast<std::int64_t>(options.desktop.offset_x) + options.desktop.width;
+        const auto desktop_bottom = static_cast<std::int64_t>(options.desktop.offset_y) + options.desktop.height;
+        const auto viewport_right = static_cast<std::int64_t>(options.viewport.offset_x) + options.viewport.width;
+        const auto viewport_bottom = static_cast<std::int64_t>(options.viewport.offset_y) + options.viewport.height;
+        if (options.viewport.offset_x < options.desktop.offset_x || options.viewport.offset_y < options.desktop.offset_y || viewport_right > desktop_right || viewport_bottom > desktop_bottom) {
+          return OperationStatus::failure(
+            ErrorCode::invalid_argument,
+            "mouse target viewport must be contained by the virtual desktop"
+          );
+        }
+      }
 
       return OperationStatus::success();
+    }
+
+    /**
+     * @brief Format a mouse event for the consumer diagnostic callback.
+     *
+     * @param id Runtime mouse identifier.
+     * @param event Mouse event being submitted.
+     * @param desktop Configured virtual desktop bounds.
+     * @param viewport Configured target viewport.
+     * @return Human-readable diagnostic message.
+     */
+    std::string mouse_event_description(
+      DeviceId id,
+      const MouseEvent &event,
+      const PointerViewport &desktop,
+      const PointerViewport &viewport
+    ) {
+      std::ostringstream message;
+      message << "mouse " << id << ' ';
+      switch (event.kind) {
+        using enum MouseEventKind;
+
+        case relative_motion:
+          message << "relative motion x=" << event.x << " y=" << event.y;
+          break;
+        case absolute_motion:
+          message << "absolute motion x=";
+          if (event.has_fractional_absolute_coordinates) {
+            message << event.absolute_x << " y=" << event.absolute_y;
+          } else {
+            message << event.x << " y=" << event.y;
+          }
+          message << " source=" << event.width << 'x' << event.height;
+          if (viewport.width > 0 && viewport.height > 0) {
+            message << " viewport=" << viewport.offset_x << ',' << viewport.offset_y << ' '
+                    << viewport.width << 'x' << viewport.height << " desktop=" << desktop.offset_x << ','
+                    << desktop.offset_y << ' ' << desktop.width << 'x' << desktop.height;
+          } else {
+            message << " viewport=platform-default";
+          }
+          break;
+        case button:
+          message << "button " << static_cast<int>(std::to_underlying(event.button)) << (event.pressed ? " pressed" : " released");
+          break;
+        case vertical_scroll:
+          message << "vertical scroll distance=" << event.high_resolution_scroll;
+          break;
+        case horizontal_scroll:
+          message << "horizontal scroll distance=" << event.high_resolution_scroll;
+          break;
+      }
+      return message.str();
     }
 
     OperationStatus validate_touchscreen_options(const CreateTouchscreenOptions &options) {
@@ -612,10 +752,18 @@ namespace lvh {
 
   OperationStatus Mouse::submit(const MouseEvent &event) {
     if (const auto validation = validate_mouse_event(event); !validation.ok()) {
+      device_->logger->emit(LogLevel::warning, "rejected mouse event: " + validation.message());
       return validation;
     }
 
-    return with_device(device_, [&event](auto &device) {
+    if (device_->logger->enabled()) {
+      device_->logger->emit(
+        LogLevel::debug,
+        mouse_event_description(device_->id, event, device_->options.desktop, device_->options.viewport)
+      );
+    }
+
+    const auto status = with_device(device_, [&event](auto &device) {
       if (!device.open) {
         return OperationStatus::failure(ErrorCode::device_closed, "mouse is closed");
       }
@@ -630,6 +778,10 @@ namespace lvh {
       ++device.submitted_events;
       return OperationStatus::success();
     });
+    if (!status.ok()) {
+      device_->logger->emit(LogLevel::error, "mouse input failed: " + status.message());
+    }
+    return status;
   }
 
   OperationStatus Mouse::move_relative(std::int32_t delta_x, std::int32_t delta_y) {
@@ -1129,6 +1281,7 @@ namespace lvh {
 
   MouseCreationResult Runtime::create_mouse(const CreateMouseOptions &options) {
     if (const auto validation = validate_mouse_options(options); !validation.ok()) {
+      state_->logger->emit(LogLevel::warning, "rejected mouse creation: " + validation.message());
       return {validation, nullptr};
     }
 
@@ -1138,15 +1291,17 @@ namespace lvh {
 
     auto backend_result = state_->backend->create_mouse(id, options);
     if (!backend_result) {
+      state_->logger->emit(LogLevel::error, "mouse creation failed: " + backend_result.status.message());
       return {std::move(backend_result.status), nullptr};
     }
 
-    auto device = std::make_shared<detail::MouseDevice>(id, options, std::move(backend_result.mouse));
+    auto device = std::make_shared<detail::MouseDevice>(id, options, std::move(backend_result.mouse), state_->logger);
     state_->with_lock([this, &device]() {
       state_->mice.emplace_back(device);
     });
 
     auto mouse = std::make_unique<Mouse>(detail::RuntimeConstructionToken {}, std::move(device));
+    state_->logger->emit(LogLevel::info, std::format("created mouse {}", id));
     return {OperationStatus::success(), std::move(mouse)};
   }
 

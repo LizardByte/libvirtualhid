@@ -3,6 +3,9 @@
  * @brief Unit tests for macOS backend internals.
  */
 
+// standard includes
+#include <array>
+
 // lib includes
 #include <libvirtualhid/libvirtualhid.hpp>
 
@@ -187,6 +190,143 @@ TEST_F(MacosBackendTest, ConvertsAbsoluteMouseCoordinates) {
   location = lvh::detail::test::macos_backend_absolute_mouse_location(event, 10.0, 20.0, 400.0, 200.0);
   EXPECT_DOUBLE_EQ(location.x, 110.0);
   EXPECT_DOUBLE_EQ(location.y, 170.0);
+}
+
+TEST_F(MacosBackendTest, UsesConfiguredMouseViewport) {
+  const auto bounds = lvh::detail::test::macos_backend_mouse_viewport_bounds({
+    .offset_x = -1920,
+    .offset_y = 120,
+    .width = 1920,
+    .height = 1080,
+  });
+
+  EXPECT_DOUBLE_EQ(bounds.origin_x, -1920.0);
+  EXPECT_DOUBLE_EQ(bounds.origin_y, 120.0);
+  EXPECT_DOUBLE_EQ(bounds.width, 1920.0);
+  EXPECT_DOUBLE_EQ(bounds.height, 1080.0);
+}
+
+TEST_F(MacosBackendTest, RefreshesDefaultMouseBoundsBetweenSubmissions) {
+  const lvh::MouseEvent center {
+    .kind = lvh::MouseEventKind::absolute_motion,
+    .x = 960,
+    .y = 540,
+    .width = 1920,
+    .height = 1080,
+  };
+  const std::vector<lvh::detail::test::MacosMouseSubmission> submissions {
+    {.display_bounds = {0, 0, 1920, 1080}, .cursor_location = {}, .event = center},
+    {.display_bounds = {0, 0, 2560, 1440}, .cursor_location = {}, .event = center},
+    {.display_bounds = {0, 0, 2560, 1440}, .cursor_location = {2400, 1300}, .event = {.kind = lvh::MouseEventKind::relative_motion, .x = 400, .y = 300}},
+    {.display_bounds = {-1280, -720, 1280, 720}, .cursor_location = {100, 100}, .event = {.kind = lvh::MouseEventKind::button, .button = lvh::MouseButton::left, .pressed = true}},
+  };
+  const auto results = lvh::detail::test::macos_backend_mouse_submissions({}, {0, 0, 1920, 1080}, submissions);
+
+  ASSERT_EQ(results.size(), 4U);
+  const std::array<lvh::detail::test::MacosPoint, 4> expected {{{960, 540}, {1280, 720}, {2559, 1439}, {-1, -1}}};
+  for (std::size_t index = 0; index < results.size(); ++index) {
+    SCOPED_TRACE(index);
+    ASSERT_TRUE(results[index].status.ok()) << results[index].status.message();
+    ASSERT_TRUE(results[index].posted_location);
+    ASSERT_TRUE(results[index].warped_location);
+    EXPECT_DOUBLE_EQ(results[index].posted_location->x, expected[index].x);
+    EXPECT_DOUBLE_EQ(results[index].posted_location->y, expected[index].y);
+    EXPECT_DOUBLE_EQ(results[index].warped_location->x, expected[index].x);
+    EXPECT_DOUBLE_EQ(results[index].warped_location->y, expected[index].y);
+  }
+}
+
+TEST_F(MacosBackendTest, RecoversFromTemporarilyUnavailableDefaultMouseBounds) {
+  const lvh::MouseEvent center {
+    .kind = lvh::MouseEventKind::absolute_motion,
+    .x = 50,
+    .y = 50,
+    .width = 100,
+    .height = 100,
+  };
+  const std::vector<lvh::detail::test::MacosMouseSubmission> submissions {
+    {.display_bounds = {0, 0, 1920, 1080}, .cursor_location = {}, .event = center},
+    {.display_bounds = {0, 0, 0, 1080}, .cursor_location = {}, .event = center},
+    {.display_bounds = {0, 0, 1920, 0}, .cursor_location = {}, .event = center},
+    {.display_bounds = {0, 0, 2560, 1440}, .cursor_location = {}, .event = center},
+  };
+  const auto results = lvh::detail::test::macos_backend_mouse_submissions({}, {0, 0, 0, 0}, submissions);
+
+  ASSERT_EQ(results.size(), 4U);
+  ASSERT_TRUE(results[0].status.ok()) << results[0].status.message();
+  ASSERT_TRUE(results[0].posted_location);
+  EXPECT_DOUBLE_EQ(results[0].posted_location->x, 960);
+  EXPECT_DOUBLE_EQ(results[0].posted_location->y, 540);
+  for (const auto index : {1U, 2U}) {
+    EXPECT_EQ(results[index].status.code(), lvh::ErrorCode::backend_failure);
+    EXPECT_FALSE(results[index].posted_location);
+    EXPECT_FALSE(results[index].warped_location);
+  }
+  ASSERT_TRUE(results[3].status.ok()) << results[3].status.message();
+  ASSERT_TRUE(results[3].posted_location);
+  ASSERT_TRUE(results[3].warped_location);
+  EXPECT_DOUBLE_EQ(results[3].posted_location->x, 1280);
+  EXPECT_DOUBLE_EQ(results[3].posted_location->y, 720);
+  EXPECT_DOUBLE_EQ(results[3].warped_location->x, 1280);
+  EXPECT_DOUBLE_EQ(results[3].warped_location->y, 720);
+}
+
+TEST_F(MacosBackendTest, KeepsConfiguredMouseViewportWhenDefaultDisplayChanges) {
+  const lvh::PointerViewport viewport {.offset_x = -1920, .offset_y = 120, .width = 1920, .height = 1080};
+  const lvh::MouseEvent center {
+    .kind = lvh::MouseEventKind::absolute_motion,
+    .x = 50,
+    .y = 50,
+    .width = 100,
+    .height = 100,
+  };
+  const std::vector<lvh::detail::test::MacosMouseSubmission> submissions {
+    {.display_bounds = {0, 0, 2560, 1440}, .cursor_location = {}, .event = center},
+    {.display_bounds = {0, 0, 0, 0}, .cursor_location = {-100, 200}, .event = {.kind = lvh::MouseEventKind::relative_motion, .x = 400, .y = -300}},
+  };
+  const auto results = lvh::detail::test::macos_backend_mouse_submissions(viewport, {0, 0, 1920, 1080}, submissions);
+
+  ASSERT_EQ(results.size(), 2U);
+  const std::array<lvh::detail::test::MacosPoint, 2> expected {{{-960, 660}, {-1, 120}}};
+  for (std::size_t index = 0; index < results.size(); ++index) {
+    ASSERT_TRUE(results[index].status.ok()) << results[index].status.message();
+    ASSERT_TRUE(results[index].posted_location);
+    ASSERT_TRUE(results[index].warped_location);
+    EXPECT_DOUBLE_EQ(results[index].posted_location->x, expected[index].x);
+    EXPECT_DOUBLE_EQ(results[index].posted_location->y, expected[index].y);
+    EXPECT_DOUBLE_EQ(results[index].warped_location->x, expected[index].x);
+    EXPECT_DOUBLE_EQ(results[index].warped_location->y, expected[index].y);
+  }
+}
+
+TEST_F(MacosBackendTest, ConfiguredAndDefaultRetinaMouseMappingsAgreeInScreenPoints) {
+  const std::vector<lvh::detail::test::MacosMouseSubmission> submissions {
+    {.display_bounds = {0, 0, 1920, 1080}, .cursor_location = {}, .event = {.kind = lvh::MouseEventKind::absolute_motion, .x = 1920, .y = 1080, .width = 3840, .height = 2160}},
+    {.display_bounds = {0, 0, 1920, 1080}, .cursor_location = {}, .event = {.kind = lvh::MouseEventKind::absolute_motion, .x = 3840, .y = 2160, .width = 3840, .height = 2160}},
+  };
+  const auto defaults = lvh::detail::test::macos_backend_mouse_submissions({}, {0, 0, 1920, 1080}, submissions);
+  const auto configured = lvh::detail::test::macos_backend_mouse_submissions({.width = 1920, .height = 1080}, {0, 0, 1920, 1080}, submissions);
+
+  ASSERT_EQ(defaults.size(), 2U);
+  ASSERT_EQ(configured.size(), defaults.size());
+  const std::array<lvh::detail::test::MacosPoint, 2> expected {{{960, 540}, {1919, 1079}}};
+  for (std::size_t index = 0; index < defaults.size(); ++index) {
+    SCOPED_TRACE(index);
+    ASSERT_TRUE(defaults[index].status.ok()) << defaults[index].status.message();
+    ASSERT_TRUE(configured[index].status.ok()) << configured[index].status.message();
+    ASSERT_TRUE(defaults[index].posted_location);
+    ASSERT_TRUE(configured[index].posted_location);
+    ASSERT_TRUE(defaults[index].warped_location);
+    ASSERT_TRUE(configured[index].warped_location);
+    EXPECT_DOUBLE_EQ(defaults[index].posted_location->x, expected[index].x);
+    EXPECT_DOUBLE_EQ(defaults[index].posted_location->y, expected[index].y);
+    EXPECT_DOUBLE_EQ(configured[index].posted_location->x, expected[index].x);
+    EXPECT_DOUBLE_EQ(configured[index].posted_location->y, expected[index].y);
+    EXPECT_DOUBLE_EQ(defaults[index].warped_location->x, expected[index].x);
+    EXPECT_DOUBLE_EQ(defaults[index].warped_location->y, expected[index].y);
+    EXPECT_DOUBLE_EQ(configured[index].warped_location->x, expected[index].x);
+    EXPECT_DOUBLE_EQ(configured[index].warped_location->y, expected[index].y);
+  }
 }
 
 TEST_F(MacosBackendTest, SelectsMouseMotionMetadataForHeldButtons) {

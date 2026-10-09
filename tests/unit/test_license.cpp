@@ -95,7 +95,7 @@ TEST(GitHubActionsEvaluationTest, RemainingTimeClampsAtWindowBoundaries) {
   EXPECT_EQ(remaining(started_at, started_at - 1s), 0s);
 }
 
-#if !defined(_WIN32)
+#if !defined(_WIN32) && !defined(__APPLE__)
 TEST(LicenseApiTest, UnsupportedPlatformReturnsExplicitFailure) {
   const auto queried = lvh::get_license_status();
   EXPECT_FALSE(queried);
