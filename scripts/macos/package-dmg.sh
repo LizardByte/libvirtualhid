@@ -18,6 +18,8 @@ control_app="${image_root}/VirtualHIDControl.app"
 profile_path="${APPLE_MACOS_VIRTUAL_HID_PROVISIONING_PROFILE:-}"
 signing_identity="${APPLE_CODESIGN_IDENTITY:-}"
 
+/bin/bash "${repository_root}/scripts/macos/check-package-coverage.sh" "${build_directory}"
+
 if [[ -z "${signing_identity}" || -z "${profile_path}" || ! -f "${profile_path}" ||
       -z "${APPLE_ID:-}" || -z "${APPLE_TEAM_ID:-}" || -z "${APPLE_NOTARYTOOL_PASSWORD:-}" ]]; then
   echo "A Developer ID identity, approved virtual HID profile, and notarization credentials are required." >&2

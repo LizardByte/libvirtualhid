@@ -23,6 +23,15 @@ elseif(NOT TARGET lizardbyte::test_support)
 endif()
 set(TEST_BINARY test_libvirtualhid)
 
+# Recompile the library for coverage without instrumenting installed targets.
+# MSVC coverage is collected externally with OpenCppCoverage.
+if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    add_compile_options(-fprofile-arcs -ftest-coverage -ggdb -O0)
+    add_link_options(-fprofile-arcs -ftest-coverage)
+endif()
+
+libvirtualhid_add_library(libvirtualhid_test)
+
 set(LIBVIRTUALHID_TEST_SOURCES
   "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_gamepad_adapter.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_gamepad_lifecycle.cpp"
@@ -36,6 +45,7 @@ set(LIBVIRTUALHID_TEST_SOURCES
 
 if(TARGET virtualhid_control_model)
     list(APPEND LIBVIRTUALHID_TEST_SOURCES
+         "$<TARGET_PROPERTY:virtualhid_control_model,SOURCES>"
          "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_virtualhid_control_model.cpp")
 endif()
 
@@ -100,13 +110,13 @@ target_include_directories(${TEST_BINARY}
 target_link_libraries(${TEST_BINARY}
   PRIVATE
   gmock_main
-  libvirtualhid::libvirtualhid
+  libvirtualhid_test
   lizardbyte::test_support)
 
 if(TARGET virtualhid_control_model)
-    target_link_libraries(${TEST_BINARY}
+    target_include_directories(${TEST_BINARY}
       PRIVATE
-      virtualhid_control_model)
+      "$<TARGET_PROPERTY:virtualhid_control_model,INCLUDE_DIRECTORIES>")
 endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
@@ -124,7 +134,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
       "${CMAKE_CURRENT_SOURCE_DIR}/consumers/linux_sdl3_xbox_consumer.cpp")
     target_link_libraries(test_linux_sdl3_xbox_consumer
       PRIVATE
-      libvirtualhid::libvirtualhid
+      libvirtualhid_test
       ${LIBVIRTUALHID_TEST_SDL3_TARGET})
     add_dependencies(${TEST_BINARY} test_linux_sdl3_xbox_consumer)
     target_compile_definitions(${TEST_BINARY}

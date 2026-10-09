@@ -54,6 +54,12 @@ jobs:
         with:
           dotnet-version: '10.x'
 
+      - name: Setup Windows coverage inspection tools
+        uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e  # v2.33.0
+        with:
+          msystem: ucrt64
+          install: mingw-w64-ucrt-x86_64-binutils
+
       - name: Configure Windows driver package
         shell: pwsh
         env:
@@ -86,6 +92,10 @@ jobs:
           gamepad_adapter
           virtualhid_control
           --parallel $([Environment]::ProcessorCount)
+
+      - name: Verify Windows package inputs have no coverage instrumentation
+        shell: msys2 {0}
+        run: bash scripts/windows/check-package-coverage.sh cmake-build-driver
 
       - name: Validate Windows driver setup helper
         shell: pwsh

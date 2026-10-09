@@ -65,15 +65,6 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
 endif()
 set(LIBVIRTUALHID_USES_XTEST OFF)
 
-#
-# Additional setup for coverage
-# https://gcovr.com/en/stable/guide/compiling.html#compiler-options
-#
-if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME AND BUILD_TESTS AND NOT CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-    set(CMAKE_CXX_FLAGS "-fprofile-arcs -ftest-coverage -ggdb -O0")
-    set(CMAKE_C_FLAGS "-fprofile-arcs -ftest-coverage -ggdb -O0")
-endif()
-
 set(LIBVIRTUALHID_USES_LIZARDBYTE_COMMON OFF)
 if(WIN32 AND LIBVIRTUALHID_BUILD_WINDOWS_BROKER)
     set(LIBVIRTUALHID_USES_LIZARDBYTE_COMMON ON)
@@ -121,10 +112,7 @@ function(libvirtualhid_copy_mingw_runtime target_name)
     endforeach()
 endfunction()
 
-#
-# Library code is located here
-# When building tests this must be after the coverage flags are set
-#
+# Production library code is located here. Coverage is confined to tests/.
 add_subdirectory(src)
 
 #
