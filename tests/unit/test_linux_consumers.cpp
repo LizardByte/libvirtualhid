@@ -841,6 +841,31 @@ namespace {
     );
   }
 
+  void exercise_sdl_idle_switch_pro_controller(int joystick_index, lvh::Gamepad &gamepad) {
+    SdlGameController controller {SDL_GameControllerOpen(joystick_index), &SDL_GameControllerClose};
+    ASSERT_NE(controller.get(), nullptr) << SDL_GetError();
+    auto *joystick = SDL_GameControllerGetJoystick(controller.get());
+    ASSERT_NE(joystick, nullptr);
+    const auto *path = SDL_JoystickPath(joystick);
+    ASSERT_NE(path, nullptr);
+    ASSERT_NE(std::string_view {path}.find("hidraw"), std::string_view::npos)
+      << "The idle-disconnect regression requires the HIDAPI controller";
+
+    // Switch HIDAPI treats three seconds without full-state input as a Bluetooth disconnect.
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds {4};
+    while (std::chrono::steady_clock::now() < deadline) {
+      SDL_GameControllerUpdate();
+      pump_sdl_events();
+      ASSERT_EQ(SDL_GameControllerGetAttached(controller.get()), SDL_TRUE);
+      std::this_thread::sleep_for(std::chrono::milliseconds {20});
+    }
+
+    lvh::GamepadState state;
+    state.buttons.set(lvh::GamepadButton::a);
+    ASSERT_TRUE(gamepad.submit(state).ok());
+    EXPECT_TRUE(wait_for_sdl_controller_button(controller.get(), SDL_CONTROLLER_BUTTON_A));
+  }
+
 #if defined(LIBVIRTUALHID_TEST_SDL3_XBOX_CONSUMER_PATH)
   struct ConsumerProcessResult {
     int exit_code = EXIT_FAILURE;
@@ -1054,6 +1079,23 @@ TEST_F(LinuxConsumerTest, SdlSeesSwitchProCanonicalButtons) {
     .require_sdl_rumble = true,
     .require_motion = true,
   });
+}
+
+TEST_F(LinuxConsumerTest, SdlKeepsIdleSwitchProConnected) {
+  ASSERT_TRUE(HasReadableWritableDeviceNode("/dev/uhid"));
+
+  run_sdl_gamepad_test(
+    {
+      .profile = lvh::profiles::switch_pro(),
+      .name_suffix = "SDL Idle Switch Pro",
+      .stable_id = "02:00:00:00:00:06",
+      .require_sdl_rumble = true,
+    },
+    SDL_INIT_GAMECONTROLLER | SDL_INIT_JOYSTICK | SDL_INIT_EVENTS,
+    [](const auto &, int joystick_index, lvh::Gamepad &gamepad) {
+      exercise_sdl_idle_switch_pro_controller(joystick_index, gamepad);
+    }
+  );
 }
 
 TEST_F(LinuxConsumerTest, SdlSeesDualSenseUsbControllerBehavior) {

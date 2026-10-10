@@ -316,6 +316,12 @@ namespace lvh::detail::test {
    * @brief Switch Pro observations from a socketpair-backed UHID test.
    */
   struct LinuxUhidSwitchProObservation {
+    std::vector<std::vector<std::uint8_t>> idle_input_reports;  ///< Reports received before any state submission.
+    std::vector<std::vector<std::uint8_t>> repeated_input_reports;  ///< Reports received after one motion state submission.
+    std::vector<std::vector<std::uint8_t>> cleared_input_reports;  ///< Reports received after clearing the submitted state.
+    OperationStatus clear_status;  ///< Status of the submission that clears buttons and motion.
+    bool stopped_after_destroy = false;  ///< Whether the report stream ended before UHID_DESTROY.
+
     /**
      * @brief Whether the peer observed a subcommand acknowledgement input report.
      */
@@ -1081,9 +1087,9 @@ namespace lvh::detail::test {
   DeviceProfile linux_uinput_effective_gamepad_profile(GamepadProfileKind kind);
 
   /**
-   * @brief Exercise Switch Pro UHID input, output, and subcommand replies over a socketpair.
+   * @brief Exercise Switch Pro UHID streaming, output, subcommand replies, and shutdown over a socketpair.
    *
-   * @return Round-trip result with motion and player-light observations.
+   * @return Round-trip result with idle, motion, cleared-state, and player-light observations.
    */
   LinuxUhidRoundTripResult linux_switch_pro_uhid_socketpair_reports();
 
