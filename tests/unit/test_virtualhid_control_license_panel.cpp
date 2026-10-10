@@ -30,29 +30,40 @@ namespace {
     std::string activated_key;
   };
 
-  LicensePanelClient *license_panel_client = nullptr;
+  /**
+   * @brief Access the fake license client attached to the current test's ImGui context.
+   *
+   * @return Reference to the client owned by the active test fixture.
+   */
+  LicensePanelClient &license_panel_client() {
+    return *static_cast<LicensePanelClient *>(ImGui::GetIO().UserData);
+  }
 }  // namespace
 
 namespace lvh {
   LicenseResult control_test_get_license_status() {
-    ++license_panel_client->status_calls;
-    return license_panel_client->result;
+    auto &client = license_panel_client();
+    ++client.status_calls;
+    return client.result;
   }
 
   LicenseResult control_test_activate_license(std::string_view key) {
-    ++license_panel_client->activation_calls;
-    license_panel_client->activated_key = key;
-    return license_panel_client->result;
+    auto &client = license_panel_client();
+    ++client.activation_calls;
+    client.activated_key = key;
+    return client.result;
   }
 
   LicenseResult control_test_validate_license() {
-    ++license_panel_client->validation_calls;
-    return license_panel_client->result;
+    auto &client = license_panel_client();
+    ++client.validation_calls;
+    return client.result;
   }
 
   LicenseResult control_test_deactivate_license() {
-    ++license_panel_client->deactivation_calls;
-    return license_panel_client->result;
+    auto &client = license_panel_client();
+    ++client.deactivation_calls;
+    return client.result;
   }
 }  // namespace lvh
 
@@ -74,15 +85,17 @@ namespace lvh {
 #undef main
 
 namespace {
+  using lvh::tools::virtualhid_control::ui::LicensePanel;
+
   class VirtualHidControlLicensePanelTest: public testing::Test {
   protected:
     void SetUp() override {
       client_.result.status = lvh::OperationStatus::success();
       client_.result.license.service_available = true;
       client_.result.license.state = lvh::LicenseState::unlicensed;
-      license_panel_client = &client_;
       ImGui::CreateContext();
       auto &io = ImGui::GetIO();
+      io.UserData = &client_;
       io.IniFilename = nullptr;
       io.DisplaySize = {800.0F, 1000.0F};
       io.DeltaTime = 1.0F / 60.0F;
@@ -98,7 +111,6 @@ namespace {
     void TearDown() override {
       panel_.reset();
       ImGui::DestroyContext();
-      license_panel_client = nullptr;
     }
 
     void render() {
@@ -131,6 +143,20 @@ namespace {
       return ImGui::GetCurrentContext()->InputTextState.GetText();
     }
 
+    LicensePanelClient &client() {
+      return client_;
+    }
+
+    const std::vector<std::string> &errors() const {
+      return errors_;
+    }
+
+    void refresh_license() {
+      panel_->refresh();
+      render();
+    }
+
+  private:
     LicensePanelClient client_;
     std::unique_ptr<LicensePanel> panel_;
     std::vector<std::string> errors_;
@@ -141,68 +167,67 @@ TEST_F(VirtualHidControlLicensePanelTest, ActivatesTrimmedKeyAndClearsSuccessful
   enter_key("  test-license-key  ");
   activate_item("Activate license");
 
-  EXPECT_EQ(client_.activation_calls, 1);
-  EXPECT_EQ(client_.activated_key, "test-license-key");
-  EXPECT_TRUE(errors_.empty());
+  EXPECT_EQ(client().activation_calls, 1);
+  EXPECT_EQ(client().activated_key, "test-license-key");
+  EXPECT_TRUE(errors().empty());
   EXPECT_TRUE(key_text().empty());
 }
 
 TEST_F(VirtualHidControlLicensePanelTest, DisablesActivationForEmptyAndWhitespaceKeys) {
   activate_item("Activate license");
-  EXPECT_EQ(client_.activation_calls, 0);
+  EXPECT_EQ(client().activation_calls, 0);
   enter_key("   ");
   activate_item("Activate license");
-  EXPECT_EQ(client_.activation_calls, 0);
-  EXPECT_TRUE(errors_.empty());
+  EXPECT_EQ(client().activation_calls, 0);
+  EXPECT_TRUE(errors().empty());
 }
 
 TEST_F(VirtualHidControlLicensePanelTest, ReportsFailedActivationAndRetainsKeyForRetry) {
-  client_.result.status = lvh::OperationStatus::failure(lvh::ErrorCode::network_unavailable, "License service unavailable.");
+  client().result.status = lvh::OperationStatus::failure(lvh::ErrorCode::network_unavailable, "License service unavailable.");
   enter_key("test-license-key");
   activate_item("Activate license");
 
-  EXPECT_EQ(client_.activation_calls, 1);
-  EXPECT_EQ(errors_, (std::vector<std::string> {"License service unavailable."}));
+  EXPECT_EQ(client().activation_calls, 1);
+  EXPECT_EQ(errors(), (std::vector<std::string> {"License service unavailable."}));
   EXPECT_EQ(key_text(), "test-license-key");
 
-  client_.result.status = lvh::OperationStatus::success();
+  client().result.status = lvh::OperationStatus::success();
   activate_item("Activate license");
-  EXPECT_EQ(client_.activation_calls, 2);
-  EXPECT_EQ(client_.activated_key, "test-license-key");
+  EXPECT_EQ(client().activation_calls, 2);
+  EXPECT_EQ(client().activated_key, "test-license-key");
   EXPECT_TRUE(key_text().empty());
 }
 
 TEST_F(VirtualHidControlLicensePanelTest, RefreshValidatesOnlineAndReportsFailures) {
   activate_item("Refresh");
-  EXPECT_EQ(client_.validation_calls, 1);
-  EXPECT_EQ(client_.status_calls, 1);
-  EXPECT_TRUE(errors_.empty());
+  EXPECT_EQ(client().validation_calls, 1);
+  EXPECT_EQ(client().status_calls, 1);
+  EXPECT_TRUE(errors().empty());
 
-  client_.result.status = lvh::OperationStatus::failure(lvh::ErrorCode::network_unavailable, "Validation unavailable.");
+  client().result.status = lvh::OperationStatus::failure(lvh::ErrorCode::network_unavailable, "Validation unavailable.");
   activate_item("Refresh");
-  EXPECT_EQ(client_.validation_calls, 2);
-  EXPECT_EQ(errors_, (std::vector<std::string> {"Validation unavailable."}));
+  EXPECT_EQ(client().validation_calls, 2);
+  EXPECT_EQ(errors(), (std::vector<std::string> {"Validation unavailable."}));
 }
 
 TEST_F(VirtualHidControlLicensePanelTest, DeactivatesMachineAndReportsFailures) {
   activate_item("Deactivate this machine");
-  EXPECT_EQ(client_.deactivation_calls, 1);
-  EXPECT_TRUE(errors_.empty());
+  EXPECT_EQ(client().deactivation_calls, 1);
+  EXPECT_TRUE(errors().empty());
 
-  client_.result.status = lvh::OperationStatus::failure(lvh::ErrorCode::network_unavailable, "Deactivation unavailable.");
+  client().result.status = lvh::OperationStatus::failure(lvh::ErrorCode::network_unavailable, "Deactivation unavailable.");
   activate_item("Deactivate this machine");
-  EXPECT_EQ(client_.deactivation_calls, 2);
-  EXPECT_EQ(errors_, (std::vector<std::string> {"Deactivation unavailable."}));
+  EXPECT_EQ(client().deactivation_calls, 2);
+  EXPECT_EQ(errors(), (std::vector<std::string> {"Deactivation unavailable."}));
 }
 
 TEST_F(VirtualHidControlLicensePanelTest, DisablesValidationAndDeactivationWithoutBroker) {
-  client_.result.license.service_available = false;
-  panel_->refresh();
-  render();
+  client().result.license.service_available = false;
+  refresh_license();
 
   activate_item("Refresh");
   activate_item("Deactivate this machine");
-  EXPECT_EQ(client_.validation_calls, 0);
-  EXPECT_EQ(client_.deactivation_calls, 0);
-  EXPECT_TRUE(errors_.empty());
+  EXPECT_EQ(client().validation_calls, 0);
+  EXPECT_EQ(client().deactivation_calls, 0);
+  EXPECT_TRUE(errors().empty());
 }

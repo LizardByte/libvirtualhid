@@ -31,7 +31,10 @@
 // local includes
 #include "virtualhid_control_model.hpp"
 
-namespace {
+/**
+ * @brief Implementation of the diagnostic control application's UI.
+ */
+namespace lvh::tools::virtualhid_control::ui {
   using lvh::tools::virtualhid_control::axis_choices;
   using lvh::tools::virtualhid_control::axis_to_slider;
   using lvh::tools::virtualhid_control::battery_choice_index;
@@ -1870,12 +1873,12 @@ namespace {
     return 0;
   }
 
-}  // namespace
+}  // namespace lvh::tools::virtualhid_control::ui
 
 /**
  * @brief Run the libvirtualhid diagnostic control UI.
  * @return Process exit code.
  */
 int main(int, char **) {
-  return run_control_ui();
+  return lvh::tools::virtualhid_control::ui::run_control_ui();
 }
