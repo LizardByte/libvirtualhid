@@ -47,6 +47,10 @@ if(TARGET virtualhid_control_model)
     list(APPEND LIBVIRTUALHID_TEST_SOURCES
          "$<TARGET_PROPERTY:virtualhid_control_model,SOURCES>"
          "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_virtualhid_control_model.cpp")
+    if(WIN32 OR APPLE)
+        list(APPEND LIBVIRTUALHID_TEST_SOURCES
+             "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_virtualhid_control_license_panel.cpp")
+    endif()
 endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
@@ -117,6 +121,9 @@ if(TARGET virtualhid_control_model)
     target_include_directories(${TEST_BINARY}
       PRIVATE
       "$<TARGET_PROPERTY:virtualhid_control_model,INCLUDE_DIRECTORIES>")
+    if(WIN32 OR APPLE)
+        target_link_libraries(${TEST_BINARY} PRIVATE virtualhid_imgui)
+    endif()
 endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")

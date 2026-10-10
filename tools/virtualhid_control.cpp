@@ -31,7 +31,10 @@
 // local includes
 #include "virtualhid_control_model.hpp"
 
-namespace {
+/**
+ * @brief Implementation of the diagnostic control application's UI.
+ */
+namespace lvh::tools::virtualhid_control::ui {
   using lvh::tools::virtualhid_control::axis_choices;
   using lvh::tools::virtualhid_control::axis_to_slider;
   using lvh::tools::virtualhid_control::battery_choice_index;
@@ -343,6 +346,9 @@ namespace {
     return license_snapshot_from(result);
   }
 
+  /**
+   * @brief Display license status and manage machine activation on Windows and macOS.
+   */
   class LicensePanel {
   public:
     LicensePanel() {
@@ -365,7 +371,7 @@ namespace {
         ImGui::TextWrapped("%s", snapshot_.message.c_str());
       }
 
-#if defined(_WIN32)
+#if defined(_WIN32) || defined(__APPLE__)
       ImGui::TextUnformatted("License key");
       ImGui::InputText("##license-key", license_key_input_.data(), license_key_input_.size());
       {
@@ -438,7 +444,7 @@ namespace {
       }
     }
 
-#if defined(_WIN32)
+#if defined(_WIN32) || defined(__APPLE__)
     template<typename ErrorHandler>
     void activate(std::string_view license_key, ErrorHandler &show_error) {
       std::string error;
@@ -470,7 +476,7 @@ namespace {
 #endif
 
     LicenseSnapshot snapshot_;
-#if defined(_WIN32)
+#if defined(_WIN32) || defined(__APPLE__)
     std::array<char, 128> license_key_input_ {};
 #endif
     std::string buy_url_;
@@ -1867,12 +1873,12 @@ namespace {
     return 0;
   }
 
-}  // namespace
+}  // namespace lvh::tools::virtualhid_control::ui
 
 /**
  * @brief Run the libvirtualhid diagnostic control UI.
  * @return Process exit code.
  */
 int main(int, char **) {
-  return run_control_ui();
+  return lvh::tools::virtualhid_control::ui::run_control_ui();
 }
