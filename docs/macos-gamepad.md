@@ -20,17 +20,22 @@ In **System Settings > Privacy & Security > Device Control and Data Access**
 cannot display the permission prompt while creating a gamepad. Review the
 signed application before granting this broad device-control permission.
 
-Activate the purchased license from Terminal:
+Open **Virtual HID Control** from Applications. In the **License** panel,
+paste the purchased license key and click **Activate license**. Use **Refresh**
+to validate the license online or **Deactivate this machine** to release its
+activation. The tool clears the key field after successful activation.
+
+You can also activate from Terminal:
 
 ```sh
 /usr/local/bin/libvirtualhid-license activate
 /usr/local/bin/libvirtualhid-license status
 ```
 
-Activation prompts for the key without echoing it. Use `validate` to refresh
-status or `deactivate` to release this machine's activation. Open **Virtual
-HID Control** to create and inspect a test controller. The host application
-runs in the normal user session; the broker runs as a LaunchDaemon.
+Terminal activation prompts for the key without echoing it. Use `validate` to
+refresh status or `deactivate` to release this machine's activation. Use
+**Virtual HID Control** to create and inspect a test controller. The host
+application runs in the normal user session; the broker runs as a LaunchDaemon.
 
 ## License validation during outages
 

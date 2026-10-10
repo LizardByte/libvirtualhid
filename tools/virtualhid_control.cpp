@@ -343,6 +343,9 @@ namespace {
     return license_snapshot_from(result);
   }
 
+  /**
+   * @brief Display license status and manage machine activation on Windows and macOS.
+   */
   class LicensePanel {
   public:
     LicensePanel() {
@@ -365,7 +368,7 @@ namespace {
         ImGui::TextWrapped("%s", snapshot_.message.c_str());
       }
 
-#if defined(_WIN32)
+#if defined(_WIN32) || defined(__APPLE__)
       ImGui::TextUnformatted("License key");
       ImGui::InputText("##license-key", license_key_input_.data(), license_key_input_.size());
       {
@@ -438,7 +441,7 @@ namespace {
       }
     }
 
-#if defined(_WIN32)
+#if defined(_WIN32) || defined(__APPLE__)
     template<typename ErrorHandler>
     void activate(std::string_view license_key, ErrorHandler &show_error) {
       std::string error;
@@ -470,7 +473,7 @@ namespace {
 #endif
 
     LicenseSnapshot snapshot_;
-#if defined(_WIN32)
+#if defined(_WIN32) || defined(__APPLE__)
     std::array<char, 128> license_key_input_ {};
 #endif
     std::string buy_url_;
