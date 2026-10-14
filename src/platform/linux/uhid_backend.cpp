@@ -384,6 +384,25 @@ namespace lvh::detail {
     }
 
 #if defined(__linux__)
+    /**
+     * @brief Select a kernel HID vendor identity that keeps virtual Xbox devices on hid-generic.
+     *
+     * Linux matches HID drivers and names their sysfs devices using 32-bit vendor
+     * IDs. Mark the upper word so physical Xbox drivers and xpadneo's udev rules
+     * cannot claim these devices and consume Guide chords. The evdev and hidraw
+     * ABIs, including SDL HIDAPI's uevent parser, expose the original lower
+     * 16-bit vendor ID, preserving Xbox discovery, rumble, and battery reports.
+     *
+     * @param profile UHID transport profile.
+     * @return Kernel vendor ID with the virtual marker for Xbox One and Series.
+     */
+    std::uint32_t uhid_vendor_id(const DeviceProfile &profile) {
+      constexpr std::uint32_t virtual_xbox_vendor_marker = 0x00010000U;
+      return is_xbox_uhid_profile(profile.gamepad_kind) ?
+               virtual_xbox_vendor_marker | profile.vendor_id :
+               profile.vendor_id;
+    }
+
     std::uint16_t to_uhid_bus(const DeviceProfile &profile) {
       // Linux SDL2 HIDAPI requires BUS_USB hidraw devices to have a physical USB
       // parent in sysfs. UHID devices do not, so expose transports handled by
@@ -3162,7 +3181,7 @@ namespace lvh::detail {
         copy_string(request.uniq, unique_id_);
         request.rd_size = static_cast<std::uint16_t>(transport_profile.report_descriptor.size());
         request.bus = to_uhid_bus(transport_profile);
-        request.vendor = transport_profile.vendor_id;
+        request.vendor = uhid_vendor_id(transport_profile);
         request.product = transport_profile.product_id;
         request.version = transport_profile.version;
         std::memcpy(

@@ -23,6 +23,10 @@
 #include <utility>
 
 // platform includes
+#include <fcntl.h>
+#include <linux/hidraw.h>
+#include <linux/input.h>
+#include <sys/ioctl.h>
 #include <unistd.h>
 
 // lib includes
@@ -213,6 +217,43 @@ namespace {
     return false;
   }
 
+  /**
+   * @brief Verify kernel driver isolation and the consumer-visible Xbox HID identity.
+   *
+   * @param gamepad Virtual gamepad with an accessible hidraw node.
+   * @param test_case Expected Xbox transport identity.
+   * @return Whether hid-generic owns the marked device and hidraw retains the Xbox IDs.
+   */
+  bool validate_kernel_identity(const lvh::Gamepad &gamepad, const ProfileCase &test_case) {
+    for (const auto &node : gamepad.device_nodes()) {
+      if (node.kind != lvh::DeviceNodeKind::hidraw) {
+        continue;
+      }
+      const auto fd = ::open(node.path.c_str(), O_RDONLY | O_CLOEXEC);
+      if (fd < 0) {
+        return false;
+      }
+      hidraw_devinfo info {};
+      const auto status = ::ioctl(fd, HIDIOCGRAWINFO, &info);
+      ::close(fd);
+      if (status < 0 || info.bustype != BUS_BLUETOOTH || info.vendor != 0x045E || info.product != test_case.product_id) {
+        return false;
+      }
+
+      std::error_code error;
+      const auto hid_device = std::filesystem::canonical(
+        std::filesystem::path {"/sys/class/hidraw"} / std::filesystem::path {node.path}.filename() / "device",
+        error
+      );
+      if (error || !hid_device.filename().string().starts_with("0005:1045E:")) {
+        return false;
+      }
+      const auto driver = std::filesystem::canonical(hid_device / "driver", error);
+      return !error && driver.filename() == "hid-generic";
+    }
+    return false;
+  }
+
   SDL_JoystickID wait_for_gamepad(const ProfileCase &test_case) {
     const auto deadline = std::chrono::steady_clock::now() + 5s;
     while (std::chrono::steady_clock::now() < deadline) {
@@ -362,6 +403,53 @@ namespace {
     return EXIT_SUCCESS;
   }
 
+  /**
+   * @brief Check that SDL receives both chord buttons and their independent releases.
+   *
+   * @param virtual_gamepad Virtual Xbox controller submitting input.
+   * @param gamepad SDL consumer of the virtual controller.
+   * @param logical_button Button held together with Guide.
+   * @param sdl_button Corresponding SDL button.
+   * @return EXIT_SUCCESS when the complete chord sequence is observed.
+   */
+  int validate_guide_chord(
+    lvh::Gamepad &virtual_gamepad,
+    SDL_Gamepad *gamepad,
+    lvh::GamepadButton logical_button,
+    SDL_GamepadButton sdl_button
+  ) {
+    lvh::GamepadState state;
+    state.buttons.set(guide);
+    if (!virtual_gamepad.submit(state).ok() || !wait_for_button(gamepad, SDL_GAMEPAD_BUTTON_GUIDE, true)) {
+      return fail("SDL3 did not receive the held Guide button");
+    }
+
+    state.buttons.set(logical_button);
+    if (!virtual_gamepad.submit(state).ok() || !wait_for_button(gamepad, sdl_button, true) || !SDL_GetGamepadButton(gamepad, SDL_GAMEPAD_BUTTON_GUIDE)) {
+      return fail("SDL3 did not receive both Guide chord buttons");
+    }
+
+    state.buttons.set(guide, false);
+    if (!virtual_gamepad.submit(state).ok() || !wait_for_button(gamepad, SDL_GAMEPAD_BUTTON_GUIDE, false) || !SDL_GetGamepadButton(gamepad, sdl_button)) {
+      return fail("SDL3 did not preserve the other button when Guide was released");
+    }
+
+    state.buttons.set(guide);
+    if (!virtual_gamepad.submit(state).ok() || !wait_for_button(gamepad, SDL_GAMEPAD_BUTTON_GUIDE, true) || !SDL_GetGamepadButton(gamepad, sdl_button)) {
+      return fail("SDL3 did not receive Guide while the other chord button was held");
+    }
+
+    state.buttons.set(logical_button, false);
+    if (!virtual_gamepad.submit(state).ok() || !wait_for_button(gamepad, sdl_button, false) || !SDL_GetGamepadButton(gamepad, SDL_GAMEPAD_BUTTON_GUIDE)) {
+      return fail("SDL3 did not preserve Guide when the other chord button was released");
+    }
+
+    if (!virtual_gamepad.submit({}).ok() || !wait_for_button(gamepad, SDL_GAMEPAD_BUTTON_GUIDE, false)) {
+      return fail("SDL3 did not release Guide at the end of the chord");
+    }
+    return EXIT_SUCCESS;
+  }
+
   int validate_buttons(lvh::Gamepad &virtual_gamepad, SDL_Gamepad *gamepad, const ProfileCase &test_case) {
     for (const auto &[logical_button, sdl_button] : button_cases) {
       lvh::GamepadState state;
@@ -373,6 +461,12 @@ namespace {
         if (other_logical_button != logical_button && SDL_GetGamepadButton(gamepad, other_sdl_button)) {
           return fail(std::format("SDL3 mapped logical button {} to multiple controls", std::to_underlying(logical_button)));
         }
+      }
+    }
+
+    for (const auto &[logical_button, sdl_button] : button_cases) {
+      if (logical_button != guide && validate_guide_chord(virtual_gamepad, gamepad, logical_button, sdl_button) != EXIT_SUCCESS) {
+        return fail(std::format("SDL3 Guide chord failed for logical button {}", std::to_underlying(logical_button)));
       }
     }
 
@@ -495,6 +589,10 @@ namespace {
       log_device_nodes(*created.gamepad);
       log_kernel_hid_state();
       return fail("The Xbox UHID device did not expose an accessible hidraw node");
+    }
+    if (!validate_kernel_identity(*created.gamepad, test_case)) {
+      log_kernel_hid_state();
+      return fail("The virtual Xbox device did not retain hid-generic and the consumer HID identity");
     }
 
     const auto output = std::make_shared<OutputCapture>();

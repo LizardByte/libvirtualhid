@@ -955,6 +955,12 @@ TEST_F(LinuxBackendTest, XboxOneAndSeriesPreferBluetoothUhidWithUinputFallback) 
     EXPECT_TRUE(result.creation.saw_create);
     EXPECT_TRUE(result.creation.waited_for_start);
     EXPECT_TRUE(result.xbox.saw_transport_descriptor);
+    // The kernel must not match Microsoft's physical-device driver IDs, while
+    // the 16-bit input and hidraw identities must still identify an Xbox.
+    EXPECT_EQ(result.creation.vendor_id, 0x0001045EU);
+    EXPECT_NE(result.creation.vendor_id, 0x045EU);
+    EXPECT_EQ(static_cast<std::uint16_t>(result.creation.vendor_id), 0x045EU);
+    EXPECT_EQ(result.creation.product_id, kind == xbox_series ? 0x0B13U : 0x0B20U);
     EXPECT_TRUE(result.xbox.saw_battery_descriptor);
     EXPECT_TRUE(result.xbox.saw_canonical_evdev_axes);
     EXPECT_TRUE(result.xbox.saw_gamepad_application_usage);
@@ -1003,6 +1009,8 @@ TEST_F(LinuxBackendTest, SocketpairBackedSwitchProUsesNativeUhidProtocol) {
   EXPECT_TRUE(result.creation.saw_create);
   EXPECT_TRUE(result.creation.waited_for_start);
   EXPECT_EQ(result.creation.name, lvh::profiles::switch_pro().name);
+  EXPECT_EQ(result.creation.vendor_id, 0x057EU);
+  EXPECT_EQ(result.creation.product_id, 0x2009U);
   EXPECT_EQ(result.creation.physical_id, "libvirtualhid/uhid/057e:2009/12");
   EXPECT_EQ(result.creation.unique_id, "057e:2009/streaming-host-gamepad-0");
   EXPECT_TRUE(result.switch_pro.saw_subcommand_reply);

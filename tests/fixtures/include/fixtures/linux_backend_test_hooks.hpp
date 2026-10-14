@@ -142,14 +142,14 @@ namespace lvh::detail::test {
     std::uint16_t bus = 0;
 
     /**
-     * @brief USB vendor id carried by the observed create event.
+     * @brief Full kernel HID vendor id carried by the observed create event.
      */
-    std::uint16_t vendor_id = 0;
+    std::uint32_t vendor_id = 0;
 
     /**
-     * @brief USB product id carried by the observed create event.
+     * @brief Full kernel HID product id carried by the observed create event.
      */
-    std::uint16_t product_id = 0;
+    std::uint32_t product_id = 0;
 
     /**
      * @brief Device version carried by the observed create event.

@@ -762,7 +762,7 @@ namespace lvh::detail::test {
       );
       if (result.creation.saw_create) {
         const auto transport_profile = uhid_transport_profile(options.profile, options.metadata.has_battery);
-        result.creation.saw_create = event.u.create2.vendor == transport_profile.vendor_id &&
+        result.creation.saw_create = event.u.create2.vendor == uhid_vendor_id(transport_profile) &&
                                      event.u.create2.product == transport_profile.product_id &&
                                      event.u.create2.version == transport_profile.version &&
                                      event.u.create2.bus == expected_bus;
@@ -1790,7 +1790,7 @@ namespace lvh::detail::test {
         event.u.create2.rd_data[1] == 0x01U && event.u.create2.rd_data[2] == 0x09U &&
         event.u.create2.rd_data[3] == 0x05U;
       result.xbox.saw_bluetooth_identity =
-        event.u.create2.vendor == 0x045EU &&
+        static_cast<std::uint16_t>(event.u.create2.vendor) == 0x045EU &&
         event.u.create2.product == (series ? xbox_series_uinput_product_id : xbox_wireless_uinput_product_id) &&
         event.u.create2.version == xbox_bluetooth_version && event.u.create2.bus == BUS_BLUETOOTH;
     }

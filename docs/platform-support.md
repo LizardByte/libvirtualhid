@@ -67,6 +67,12 @@ sudo udevadm trigger --subsystem-match=input
 The consuming user may need membership in the `input` group and a new login
 session. Desktop logins may instead receive access through `uaccess`.
 
+Virtual Xbox One and Series controllers use `uhid` with a kernel-only vendor
+marker so physical-controller drivers such as `xpadneo` cannot intercept
+Guide-button chords. SDL and the evdev/hidraw interfaces retain the Xbox
+vendor and product IDs. Trigger rumble and battery reporting remain available;
+no change to xpadneo's physical-controller settings is required.
+
 ## FreeBSD
 
 The `uinput` kernel module and a writable `/dev/input/uinput` or
