@@ -1346,7 +1346,10 @@ TEST_F(LinuxConsumerTest, LibinputSeesSplitUinputMouseMotionAndButtons) {
   ASSERT_NE(event.get(), nullptr);
   pointer_event = libinput_event_get_pointer_event(event.get());
   ASSERT_NE(pointer_event, nullptr);
-  EXPECT_DOUBLE_EQ(libinput_event_pointer_get_scroll_value_v120(pointer_event, LIBINPUT_POINTER_AXIS_SCROLL_VERTICAL), -120.0);
+  EXPECT_DOUBLE_EQ(
+    libinput_event_pointer_get_scroll_value_v120(pointer_event, LIBINPUT_POINTER_AXIS_SCROLL_VERTICAL),
+    -120.0
+  );
 
   ASSERT_TRUE(created.mouse->button(lvh::MouseButton::middle, true).ok());
   event = wait_for_libinput_event(absolute_context.get(), {LIBINPUT_EVENT_POINTER_BUTTON});
