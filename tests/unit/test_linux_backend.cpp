@@ -762,12 +762,14 @@ TEST_F(LinuxBackendTest, PipeBackedUinputMouseRoutesMotionAndButtonsAcrossSplitD
 }
 
 TEST_F(LinuxBackendTest, PipeBackedUinputMouseScrollsOnLastMotionDevice) {
+  using enum lvh::MouseEventKind;
+
   const std::vector<lvh::MouseEvent> events {
-    {.kind = lvh::MouseEventKind::absolute_motion, .x = 50, .y = 25, .width = 100, .height = 100},
-    {.kind = lvh::MouseEventKind::vertical_scroll, .high_resolution_scroll = 120},
-    {.kind = lvh::MouseEventKind::horizontal_scroll, .high_resolution_scroll = -120},
-    {.kind = lvh::MouseEventKind::relative_motion, .x = 5, .y = -2},
-    {.kind = lvh::MouseEventKind::vertical_scroll, .high_resolution_scroll = -120},
+    {.kind = absolute_motion, .x = 50, .y = 25, .width = 100, .height = 100},
+    {.kind = vertical_scroll, .high_resolution_scroll = 120},
+    {.kind = horizontal_scroll, .high_resolution_scroll = -120},
+    {.kind = relative_motion, .x = 5, .y = -2},
+    {.kind = vertical_scroll, .high_resolution_scroll = -120},
   };
   const auto result = lvh::detail::test::linux_uinput_mouse_submit_split_pipe_sequence(events);
   ASSERT_TRUE(result.status.ok()) << result.status.message();
