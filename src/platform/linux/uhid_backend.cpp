@@ -1742,6 +1742,11 @@ namespace lvh::detail {
 
     /**
      * @brief Backend mouse backed by separate relative and absolute Linux uinput devices.
+     *
+     * Both devices expose legacy and available high-resolution wheel axes.
+     * Relative motion axes are exposed only by the relative device.
+     * Wheel events follow the last successful motion submission, defaulting
+     * to the relative device before any successful motion submission.
      */
     class UinputMouse final: public BackendMouse {
     public:
