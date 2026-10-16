@@ -1204,6 +1204,10 @@ namespace lvh::detail {
         }
       }
 
+      if (const auto status = enable_evdev_type(device, EV_REL, "relative mouse events"); !status.ok()) {
+        return status;
+      }
+
       if (kind == UinputMouseDeviceKind::absolute) {
         if (const auto status = enable_evdev_property(device, INPUT_PROP_DIRECT, "direct input"); !status.ok()) {
           return status;
@@ -1217,16 +1221,14 @@ namespace lvh::detail {
           return status;
         }
         auto y = make_absinfo(0, absolute_axis_max);
-        return enable_evdev_code(device, EV_ABS, ABS_Y, "absolute mouse axis", &y);
-      }
-
-      if (const auto status = enable_evdev_type(device, EV_REL, "relative mouse events"); !status.ok()) {
-        return status;
-      }
-
-      for (const auto code : {REL_X, REL_Y}) {
-        if (const auto status = enable_evdev_code(device, EV_REL, code, "relative mouse axis"); !status.ok()) {
+        if (const auto status = enable_evdev_code(device, EV_ABS, ABS_Y, "absolute mouse axis", &y); !status.ok()) {
           return status;
+        }
+      } else {
+        for (const auto code : {REL_X, REL_Y}) {
+          if (const auto status = enable_evdev_code(device, EV_REL, code, "relative mouse axis"); !status.ok()) {
+            return status;
+          }
         }
       }
 
@@ -1740,6 +1742,11 @@ namespace lvh::detail {
 
     /**
      * @brief Backend mouse backed by separate relative and absolute Linux uinput devices.
+     *
+     * Both devices expose legacy and available high-resolution wheel axes.
+     * Relative motion axes are exposed only by the relative device.
+     * Wheel events follow the last successful motion submission, defaulting
+     * to the relative device before any successful motion submission.
      */
     class UinputMouse final: public BackendMouse {
     public:
@@ -1935,19 +1942,19 @@ namespace lvh::detail {
         std::uint16_t legacy_code,
         std::optional<std::uint16_t> high_resolution_code
       ) {
-        auto &relative = device(UinputMouseDeviceKind::relative);
+        auto &target = device(last_motion_device_);
         const auto converted = accumulated_legacy_scroll(remainder, distance);
         if (converted.detents != 0) {
-          if (const auto status = relative.emit(EV_REL, legacy_code, converted.detents); !status.ok()) {
+          if (const auto status = target.emit(EV_REL, legacy_code, converted.detents); !status.ok()) {
             return status;
           }
         }
         if (high_resolution_code.has_value()) {
-          if (const auto status = relative.emit(EV_REL, *high_resolution_code, distance); !status.ok()) {
+          if (const auto status = target.emit(EV_REL, *high_resolution_code, distance); !status.ok()) {
             return status;
           }
         }
-        if (const auto status = relative.synchronize(); !status.ok()) {
+        if (const auto status = target.synchronize(); !status.ok()) {
           return status;
         }
         remainder = converted.remainder;

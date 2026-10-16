@@ -46,6 +46,19 @@ namespace {
     }
     return pressed_codes;
   }
+
+  std::vector<std::int32_t> relative_axis_values(
+    const std::vector<lvh::detail::test::LinuxInputEventRecord> &events,
+    std::uint16_t code
+  ) {
+    std::vector<std::int32_t> values;
+    for (const auto &event : events) {
+      if (event.type == EV_REL && event.code == code) {
+        values.push_back(event.value);
+      }
+    }
+    return values;
+  }
 }  // namespace
 
 TEST_F(LinuxBackendTest, TranslatesKeyboardKeys) {
@@ -748,6 +761,28 @@ TEST_F(LinuxBackendTest, PipeBackedUinputMouseRoutesMotionAndButtonsAcrossSplitD
   }));
 }
 
+TEST_F(LinuxBackendTest, PipeBackedUinputMouseScrollsOnLastMotionDevice) {
+  using enum lvh::MouseEventKind;
+
+  const std::vector<lvh::MouseEvent> events {
+    {.kind = absolute_motion, .x = 50, .y = 25, .width = 100, .height = 100},
+    {.kind = vertical_scroll, .high_resolution_scroll = 120},
+    {.kind = horizontal_scroll, .high_resolution_scroll = -120},
+    {.kind = relative_motion, .x = 5, .y = -2},
+    {.kind = vertical_scroll, .high_resolution_scroll = -120},
+  };
+  const auto result = lvh::detail::test::linux_uinput_mouse_submit_split_pipe_sequence(events);
+  ASSERT_TRUE(result.status.ok()) << result.status.message();
+
+  EXPECT_EQ(relative_axis_values(result.absolute_events, REL_WHEEL), (std::vector<std::int32_t> {1}));
+  EXPECT_EQ(relative_axis_values(result.absolute_events, REL_HWHEEL), (std::vector<std::int32_t> {-1}));
+  EXPECT_EQ(relative_axis_values(result.relative_events, REL_WHEEL), (std::vector<std::int32_t> {-1}));
+#if defined(REL_WHEEL_HI_RES)
+  EXPECT_EQ(relative_axis_values(result.absolute_events, REL_WHEEL_HI_RES), (std::vector<std::int32_t> {120}));
+  EXPECT_EQ(relative_axis_values(result.relative_events, REL_WHEEL_HI_RES), (std::vector<std::int32_t> {-120}));
+#endif
+}
+
 TEST_F(LinuxBackendTest, PipeBackedUinputMouseAccumulatesLegacyScrollDetentsPerAxis) {
   const std::vector<lvh::MouseEvent> events {
     {.kind = lvh::MouseEventKind::vertical_scroll, .high_resolution_scroll = 60},
@@ -758,23 +793,13 @@ TEST_F(LinuxBackendTest, PipeBackedUinputMouseAccumulatesLegacyScrollDetentsPerA
   const auto result = lvh::detail::test::linux_uinput_mouse_submit_pipe_sequence(events);
   ASSERT_TRUE(result.status.ok()) << result.status.message();
 
-  const auto event_values = [&result](std::uint16_t code) {
-    std::vector<std::int32_t> values;
-    for (const auto &event : result.events) {
-      if (event.type == EV_REL && event.code == code) {
-        values.push_back(event.value);
-      }
-    }
-    return values;
-  };
-
-  EXPECT_EQ(event_values(REL_WHEEL), (std::vector<std::int32_t> {1}));
-  EXPECT_EQ(event_values(REL_HWHEEL), (std::vector<std::int32_t> {-1}));
+  EXPECT_EQ(relative_axis_values(result.events, REL_WHEEL), (std::vector<std::int32_t> {1}));
+  EXPECT_EQ(relative_axis_values(result.events, REL_HWHEEL), (std::vector<std::int32_t> {-1}));
 #if defined(REL_WHEEL_HI_RES)
-  EXPECT_EQ(event_values(REL_WHEEL_HI_RES), (std::vector<std::int32_t> {60, 60}));
+  EXPECT_EQ(relative_axis_values(result.events, REL_WHEEL_HI_RES), (std::vector<std::int32_t> {60, 60}));
 #endif
 #if defined(REL_HWHEEL_HI_RES)
-  EXPECT_EQ(event_values(REL_HWHEEL_HI_RES), (std::vector<std::int32_t> {-60, -60}));
+  EXPECT_EQ(relative_axis_values(result.events, REL_HWHEEL_HI_RES), (std::vector<std::int32_t> {-60, -60}));
 #endif
   EXPECT_EQ(
     std::ranges::count_if(result.events, [](const auto &event) {
@@ -1352,10 +1377,20 @@ TEST_F(LinuxBackendTest, FakeUinputConstructionCoversCapabilitiesAndFailureBranc
   const auto absolute_mouse = lvh::detail::test::linux_uinput_create_fake_absolute_mouse_device();
   ASSERT_TRUE(absolute_mouse.status.ok()) << absolute_mouse.status.message();
   EXPECT_TRUE(has_type(absolute_mouse, EV_KEY));
-  EXPECT_FALSE(has_type(absolute_mouse, EV_REL));
+  EXPECT_TRUE(has_type(absolute_mouse, EV_REL));
   EXPECT_TRUE(has_type(absolute_mouse, EV_ABS));
   EXPECT_TRUE(has_property(absolute_mouse, INPUT_PROP_DIRECT));
   EXPECT_NE(find_code(absolute_mouse, EV_KEY, BTN_LEFT), nullptr);
+  EXPECT_EQ(find_code(absolute_mouse, EV_REL, REL_X), nullptr);
+  EXPECT_EQ(find_code(absolute_mouse, EV_REL, REL_Y), nullptr);
+  EXPECT_NE(find_code(absolute_mouse, EV_REL, REL_WHEEL), nullptr);
+  EXPECT_NE(find_code(absolute_mouse, EV_REL, REL_HWHEEL), nullptr);
+#if defined(REL_WHEEL_HI_RES)
+  EXPECT_NE(find_code(absolute_mouse, EV_REL, REL_WHEEL_HI_RES), nullptr);
+#endif
+#if defined(REL_HWHEEL_HI_RES)
+  EXPECT_NE(find_code(absolute_mouse, EV_REL, REL_HWHEEL_HI_RES), nullptr);
+#endif
   const auto *mouse_x = find_code(absolute_mouse, EV_ABS, ABS_X);
   ASSERT_NE(mouse_x, nullptr);
   EXPECT_TRUE(mouse_x->has_absinfo);
