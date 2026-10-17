@@ -5,6 +5,7 @@
 
 // standard includes
 #include <algorithm>
+#include <string_view>
 #include <utility>
 
 // local includes
@@ -770,7 +771,8 @@ namespace lvh::detail::esp32 {
       return;
     }
 
-    std::vector<std::uint8_t> message {LVHB_AUTH_CONTEXT, LVHB_AUTH_CONTEXT + sizeof(LVHB_AUTH_CONTEXT) - 1U};
+    constexpr std::string_view auth_context {LVHB_AUTH_CONTEXT};
+    std::vector<std::uint8_t> message {auth_context.begin(), auth_context.end()};
     message.insert(message.end(), nonce.begin(), nonce.end());
     message.insert(message.end(), credential->key_id.begin(), credential->key_id.end());
     message.insert(message.end(), device_bytes.begin(), device_bytes.end());

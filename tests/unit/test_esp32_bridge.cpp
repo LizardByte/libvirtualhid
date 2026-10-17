@@ -22,6 +22,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -281,7 +282,8 @@ namespace {
               if (payload.size() < LVHB_KEY_ID_SIZE + LVHB_MAC_SIZE || !std::equal(pairing.key_id.begin(), pairing.key_id.end(), payload.begin())) {
                 continue;
               }
-              std::vector<std::uint8_t> message {LVHB_AUTH_CONTEXT, LVHB_AUTH_CONTEXT + sizeof(LVHB_AUTH_CONTEXT) - 1U};
+              constexpr std::string_view auth_context {LVHB_AUTH_CONTEXT};
+              std::vector<std::uint8_t> message {auth_context.begin(), auth_context.end()};
               message.insert(message.end(), nonce_.begin(), nonce_.end());
               message.insert(message.end(), pairing.key_id.begin(), pairing.key_id.end());
               message.insert(message.end(), device_id.begin(), device_id.end());

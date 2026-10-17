@@ -21,9 +21,26 @@ namespace lvh::detail::esp32 {
     constexpr std::size_t rollover_keys = 6;
 
     /**
+     * @brief Keyboard-page usage of one virtual-key code.
+     */
+    struct VirtualKeyUsage {
+      std::uint8_t virtual_key;  ///< Windows virtual-key code.
+      std::uint8_t usage;  ///< HID keyboard-page usage.
+    };
+
+    /**
+     * @brief Usage and Shift state that type one US-ASCII symbol.
+     */
+    struct SymbolUsage {
+      char character;  ///< Typed character.
+      std::uint8_t usage;  ///< HID keyboard-page usage.
+      bool shift;  ///< Whether Left Shift is held.
+    };
+
+    /**
      * @brief Virtual-key codes with a fixed keyboard-page usage.
      */
-    constexpr auto virtual_key_usages = std::to_array<std::pair<std::uint8_t, std::uint8_t>>({
+    constexpr auto virtual_key_usages = std::to_array<VirtualKeyUsage>({
       {0x08, 0x2A},  // Backspace
       {0x09, 0x2B},  // Tab
       {0x0C, 0x5D},  // Clear (keypad 5 without Num Lock)
@@ -353,12 +370,12 @@ namespace lvh::detail::esp32 {
       }
     }
     const auto it = std::ranges::find_if(virtual_key_usages, [virtual_key](const auto &mapping) {
-      return mapping.first == virtual_key;
+      return mapping.virtual_key == virtual_key;
     });
     if (it == virtual_key_usages.end()) {
       return std::nullopt;
     }
-    return it->second;
+    return it->usage;
   }
 
   std::optional<std::pair<std::uint8_t, bool>> hid_usage_from_ascii(char character) {
@@ -371,51 +388,51 @@ namespace lvh::detail::esp32 {
     if (character >= '1' && character <= '9') {
       return std::pair {static_cast<std::uint8_t>(0x1E + (character - '1')), false};
     }
-    static constexpr auto symbols = std::to_array<std::pair<char, std::pair<std::uint8_t, bool>>>({
-      {'0', {0x27, false}},
-      {' ', {0x2C, false}},
-      {'\n', {0x28, false}},
-      {'\t', {0x2B, false}},
-      {'-', {0x2D, false}},
-      {'_', {0x2D, true}},
-      {'=', {0x2E, false}},
-      {'+', {0x2E, true}},
-      {'[', {0x2F, false}},
-      {'{', {0x2F, true}},
-      {']', {0x30, false}},
-      {'}', {0x30, true}},
-      {'\\', {0x31, false}},
-      {'|', {0x31, true}},
-      {';', {0x33, false}},
-      {':', {0x33, true}},
-      {'\'', {0x34, false}},
-      {'"', {0x34, true}},
-      {'`', {0x35, false}},
-      {'~', {0x35, true}},
-      {',', {0x36, false}},
-      {'<', {0x36, true}},
-      {'.', {0x37, false}},
-      {'>', {0x37, true}},
-      {'/', {0x38, false}},
-      {'?', {0x38, true}},
-      {'!', {0x1E, true}},
-      {'@', {0x1F, true}},
-      {'#', {0x20, true}},
-      {'$', {0x21, true}},
-      {'%', {0x22, true}},
-      {'^', {0x23, true}},
-      {'&', {0x24, true}},
-      {'*', {0x25, true}},
-      {'(', {0x26, true}},
-      {')', {0x27, true}},
+    static constexpr auto symbols = std::to_array<SymbolUsage>({
+      {'0', 0x27, false},
+      {' ', 0x2C, false},
+      {'\n', 0x28, false},
+      {'\t', 0x2B, false},
+      {'-', 0x2D, false},
+      {'_', 0x2D, true},
+      {'=', 0x2E, false},
+      {'+', 0x2E, true},
+      {'[', 0x2F, false},
+      {'{', 0x2F, true},
+      {']', 0x30, false},
+      {'}', 0x30, true},
+      {'\\', 0x31, false},
+      {'|', 0x31, true},
+      {';', 0x33, false},
+      {':', 0x33, true},
+      {'\'', 0x34, false},
+      {'"', 0x34, true},
+      {'`', 0x35, false},
+      {'~', 0x35, true},
+      {',', 0x36, false},
+      {'<', 0x36, true},
+      {'.', 0x37, false},
+      {'>', 0x37, true},
+      {'/', 0x38, false},
+      {'?', 0x38, true},
+      {'!', 0x1E, true},
+      {'@', 0x1F, true},
+      {'#', 0x20, true},
+      {'$', 0x21, true},
+      {'%', 0x22, true},
+      {'^', 0x23, true},
+      {'&', 0x24, true},
+      {'*', 0x25, true},
+      {'(', 0x26, true},
+      {')', 0x27, true},
     });
     const auto it = std::ranges::find_if(symbols, [character](const auto &mapping) {
-      return mapping.first == character;
+      return mapping.character == character;
     });
     if (it == symbols.end()) {
       return std::nullopt;
     }
-    return it->second;
+    return std::pair {it->usage, it->shift};
   }
 
   bool KeyboardReportState::apply(std::uint8_t usage, bool pressed) {
