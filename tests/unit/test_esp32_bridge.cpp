@@ -282,11 +282,7 @@ namespace {
               if (payload.size() < LVHB_KEY_ID_SIZE + LVHB_MAC_SIZE || !std::equal(pairing.key_id.begin(), pairing.key_id.end(), payload.begin())) {
                 continue;
               }
-              constexpr std::string_view auth_context {LVHB_AUTH_CONTEXT};
-              std::vector<std::uint8_t> message {auth_context.begin(), auth_context.end()};
-              message.insert(message.end(), nonce_.begin(), nonce_.end());
-              message.insert(message.end(), pairing.key_id.begin(), pairing.key_id.end());
-              message.insert(message.end(), device_id.begin(), device_id.end());
+              const auto message = lvh::detail::esp32::make_auth_message(nonce_, pairing.key_id, device_id);
               const auto mac = lvh::detail::esp32::hmac_sha256(pairing.secret, message);
               valid = std::equal(mac.begin(), mac.end(), payload.begin() + LVHB_KEY_ID_SIZE);
             }

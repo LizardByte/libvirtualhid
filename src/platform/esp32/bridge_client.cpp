@@ -108,6 +108,20 @@ namespace lvh::detail::esp32 {
     return OperationStatus::success();
   }
 
+  std::array<std::uint8_t, auth_message_size> make_auth_message(
+    const std::array<std::uint8_t, LVHB_NONCE_SIZE> &nonce,
+    const std::array<std::uint8_t, LVHB_KEY_ID_SIZE> &key_id,
+    const std::array<std::uint8_t, LVHB_DEVICE_ID_SIZE> &device_id
+  ) {
+    constexpr std::string_view context {LVHB_AUTH_CONTEXT};
+    std::array<std::uint8_t, auth_message_size> message {};
+    auto out = std::ranges::copy(context, message.begin()).out;
+    out = std::ranges::copy(nonce, out).out;
+    out = std::ranges::copy(key_id, out).out;
+    std::ranges::copy(device_id, out);
+    return message;
+  }
+
   BridgeClient::BridgeClient(SerialPortOpener opener, BridgeLogger logger, BridgeTimings timings, std::shared_ptr<CredentialStore> credentials, std::string client_name):
       opener_ {std::move(opener)},
       logger_ {std::move(logger)},
@@ -771,15 +785,9 @@ namespace lvh::detail::esp32 {
       return;
     }
 
-    constexpr std::string_view auth_context {LVHB_AUTH_CONTEXT};
-    std::vector<std::uint8_t> message {auth_context.begin(), auth_context.end()};
-    message.insert(message.end(), nonce.begin(), nonce.end());
-    message.insert(message.end(), credential->key_id.begin(), credential->key_id.end());
-    message.insert(message.end(), device_bytes.begin(), device_bytes.end());
-    const auto mac = hmac_sha256(credential->secret, message);
-
-    std::vector<std::uint8_t> payload {credential->key_id.begin(), credential->key_id.end()};
-    payload.insert(payload.end(), mac.begin(), mac.end());
+    const auto mac = hmac_sha256(credential->secret, make_auth_message(nonce, credential->key_id, device_bytes));
+    std::array<std::uint8_t, LVHB_KEY_ID_SIZE + LVHB_MAC_SIZE> payload {};
+    std::ranges::copy(mac, std::ranges::copy(credential->key_id, payload.begin()).out);
     static_cast<void>(write_frame(LVHB_MSG_AUTH, payload));
   }
 

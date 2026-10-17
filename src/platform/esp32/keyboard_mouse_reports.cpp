@@ -323,10 +323,10 @@ namespace lvh::detail::esp32 {
   }  // namespace
 
   std::vector<std::uint8_t> keyboard_mouse_report_descriptor() {
-    std::vector<std::uint8_t> descriptor;
-    descriptor.insert(descriptor.end(), keyboard_descriptor.begin(), keyboard_descriptor.end());
-    descriptor.insert(descriptor.end(), relative_mouse_descriptor.begin(), relative_mouse_descriptor.end());
-    descriptor.insert(descriptor.end(), absolute_pointer_descriptor.begin(), absolute_pointer_descriptor.end());
+    std::vector<std::uint8_t> descriptor(keyboard_descriptor.size() + relative_mouse_descriptor.size() + absolute_pointer_descriptor.size());
+    auto out = std::ranges::copy(keyboard_descriptor, descriptor.begin()).out;
+    out = std::ranges::copy(relative_mouse_descriptor, out).out;
+    std::ranges::copy(absolute_pointer_descriptor, out);
     return descriptor;
   }
 

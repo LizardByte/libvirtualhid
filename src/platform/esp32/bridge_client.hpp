@@ -95,6 +95,23 @@ namespace lvh::detail::esp32 {
    */
   OperationStatus validate_layout(const BridgeLayout &layout);
 
+  /// Size of the message the AUTH answer authenticates.
+  inline constexpr std::size_t auth_message_size = sizeof(LVHB_AUTH_CONTEXT) - 1U + LVHB_NONCE_SIZE + LVHB_KEY_ID_SIZE + LVHB_DEVICE_ID_SIZE;
+
+  /**
+   * @brief Build `"LVHB-AUTH" || nonce || key_id || device_id`, the message covered by the AUTH HMAC.
+   *
+   * @param nonce Challenge from HELLO_ACK.
+   * @param key_id Pairing key id.
+   * @param device_id Bridge device id from HELLO_ACK.
+   * @return Message bytes.
+   */
+  std::array<std::uint8_t, auth_message_size> make_auth_message(
+    const std::array<std::uint8_t, LVHB_NONCE_SIZE> &nonce,
+    const std::array<std::uint8_t, LVHB_KEY_ID_SIZE> &key_id,
+    const std::array<std::uint8_t, LVHB_DEVICE_ID_SIZE> &device_id
+  );
+
   /**
    * @brief Owns the bridge port, its reader thread, and layout state.
    *
