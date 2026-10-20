@@ -32,6 +32,7 @@
 #include <cerrno>
 #include <fcntl.h>
 #include <linux/input.h>
+#include <sys/ioctl.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -1283,6 +1284,49 @@ TEST_F(LinuxConsumerTest, LibinputSeesUinputKeyboardKeys) {
   ASSERT_NE(keyboard_event, nullptr);
   EXPECT_EQ(libinput_event_keyboard_get_key(keyboard_event), KEY_A);
   EXPECT_EQ(libinput_event_keyboard_get_key_state(keyboard_event), LIBINPUT_KEY_STATE_RELEASED);
+}
+
+TEST_F(LinuxConsumerTest, UinputKeyboardKeepsReleasedKeyUpUnderRapidTransitions) {
+  ASSERT_TRUE(HasReadableWritableDeviceNode("/dev/uinput"));
+
+  lvh::RuntimeOptions runtime_options;
+  runtime_options.backend = lvh::BackendKind::platform_default;
+  auto runtime = lvh::Runtime::create(runtime_options);
+  lvh::CreateKeyboardOptions options;
+  options.profile = lvh::profiles::keyboard();
+  options.profile.name = unique_device_name("Keyboard Release Stress");
+  options.auto_repeat_interval_ms = 1;
+  auto created = runtime->create_keyboard(options);
+  ASSERT_TRUE(created) << created.status.message();
+
+  const auto node = wait_for_readable_event_node(options.profile.name);
+  ASSERT_TRUE(node) << "Keyboard event node was not readable";
+  const auto descriptor = ::open(node->c_str(), O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+  ASSERT_GE(descriptor, 0) << errno_message(errno);
+  ScopeExit close_keyboard {[descriptor, &created]() {
+    static_cast<void>(created.keyboard->close());
+    static_cast<void>(::close(descriptor));
+  }};
+  ASSERT_EQ(::ioctl(descriptor, EVIOCGRAB, 1), 0) << errno_message(errno);
+
+  std::array<unsigned char, KEY_MAX / 8 + 1> keys {};
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds {2};
+  std::size_t cycles = 0;
+  do {
+    ASSERT_TRUE(created.keyboard->press(0x46).ok());
+    ASSERT_GE(::ioctl(descriptor, EVIOCGKEY(keys.size()), keys.data()), 0) << errno_message(errno);
+    ASSERT_NE(keys[KEY_F / 8] & (1U << (KEY_F % 8)), 0U);
+    ASSERT_TRUE(created.keyboard->release(0x46).ok());
+    ASSERT_GE(::ioctl(descriptor, EVIOCGKEY(keys.size()), keys.data()), 0) << errno_message(errno);
+    ASSERT_EQ(keys[KEY_F / 8] & (1U << (KEY_F % 8)), 0U)
+      << "KEY_F remained pressed after release on cycle " << cycles;
+    ++cycles;
+  } while (std::chrono::steady_clock::now() < deadline);
+
+  std::this_thread::sleep_for(std::chrono::milliseconds {20});
+  ASSERT_GE(::ioctl(descriptor, EVIOCGKEY(keys.size()), keys.data()), 0) << errno_message(errno);
+  EXPECT_EQ(keys[KEY_F / 8] & (1U << (KEY_F % 8)), 0U);
+  EXPECT_TRUE(created.keyboard->close().ok());
 }
 
 TEST_F(LinuxConsumerTest, LibinputSeesSplitUinputMouseMotionAndButtons) {

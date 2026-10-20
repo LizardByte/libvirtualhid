@@ -455,7 +455,10 @@ namespace lvh {
     DeviceProfile profile;
 
     /**
-     * @brief Held-key repeat interval in milliseconds, or `0` to disable repeat.
+     * @brief Requested held-key repeat interval in milliseconds, or `0` to disable backend-generated repeat.
+     *
+     * The uinput backend ignores this value, including zero, and leaves key
+     * repeat to the compositor or X server.
      */
     std::uint32_t auto_repeat_interval_ms = 50;
 

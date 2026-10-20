@@ -394,6 +394,26 @@ TEST_F(LinuxBackendTest, PipeBackedUinputKeyboardEmitsComposeKey) {
   }
 }
 
+TEST_F(LinuxBackendTest, UinputKeyboardEmitsOnlySubmittedKeyTransitions) {
+  const auto default_interval = lvh::CreateKeyboardOptions {}.auto_repeat_interval_ms;
+  for (const auto interval_ms : {0U, 1U, default_interval}) {
+    SCOPED_TRACE(interval_ms);
+    const auto result = lvh::detail::test::linux_uinput_keyboard_held_key_events(interval_ms);
+    ASSERT_TRUE(result.status.ok()) << result.status.message();
+    ASSERT_EQ(result.events.size(), 4U);
+    for (std::size_t index = 0; index < 2; ++index) {
+      const auto &key = result.events[index * 2];
+      EXPECT_EQ(key.type, EV_KEY);
+      EXPECT_EQ(key.code, KEY_F);
+      EXPECT_EQ(key.value, index == 0 ? 1 : 0);
+      const auto &sync = result.events[index * 2 + 1];
+      EXPECT_EQ(sync.type, EV_SYN);
+      EXPECT_EQ(sync.code, SYN_REPORT);
+      EXPECT_EQ(sync.value, 0);
+    }
+  }
+}
+
 TEST_F(LinuxBackendTest, PipeBackedUinputGamepadsUseCanonicalLinuxEvents) {
   using enum lvh::GamepadButton;
   using enum lvh::GamepadProfileKind;
@@ -1464,7 +1484,6 @@ TEST_F(LinuxBackendTest, FakeUinputConstructionCoversCapabilitiesAndFailureBranc
       lvh::ErrorCode::backend_failure
     );
   }
-  EXPECT_TRUE(lvh::detail::test::linux_uinput_keyboard_auto_repeat_fake_success().ok());
   EXPECT_EQ(
     lvh::detail::test::linux_uinput_keyboard_close_fake_close_failure().code(),
     lvh::ErrorCode::backend_failure
