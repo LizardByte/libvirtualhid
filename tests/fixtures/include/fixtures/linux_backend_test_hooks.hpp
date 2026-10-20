@@ -18,7 +18,7 @@
 namespace lvh::detail::test {
 
   /**
-   * @brief Linux input event captured by a pipe-backed backend test.
+   * @brief Linux input event captured by a uinput backend test.
    */
   struct LinuxInputEventRecord {
     /**
@@ -38,7 +38,7 @@ namespace lvh::detail::test {
   };
 
   /**
-   * @brief Result from a pipe-backed uinput submission.
+   * @brief Result from a captured uinput submission.
    */
   struct LinuxInputSubmissionResult {
     /**
@@ -47,7 +47,7 @@ namespace lvh::detail::test {
     OperationStatus status;
 
     /**
-     * @brief Events written to the pipe.
+     * @brief Events emitted by the backend.
      */
     std::vector<LinuxInputEventRecord> events;
   };
@@ -1410,11 +1410,12 @@ namespace lvh::detail::test {
   OperationStatus linux_uinput_keyboard_close_fake_close_failure();
 
   /**
-   * @brief Create a fake uinput keyboard with auto repeat enabled.
+   * @brief Capture uinput events while holding and releasing a key across repeat intervals.
    *
-   * @return Close status after the repeat thread runs.
+   * @param interval_ms Requested keyboard repeat interval in milliseconds.
+   * @return Operation status and events emitted before closing the keyboard.
    */
-  OperationStatus linux_uinput_keyboard_auto_repeat_fake_success();
+  LinuxInputSubmissionResult linux_uinput_keyboard_held_key_events(std::uint32_t interval_ms);
 
   /**
    * @brief Submit a mouse event while fake write fails.

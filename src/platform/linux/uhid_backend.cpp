@@ -24,7 +24,6 @@
 #include <mutex>
 #include <numbers>
 #include <optional>
-#include <set>
 #include <span>
 #include <sstream>
 #include <stop_token>
@@ -1596,6 +1595,9 @@ namespace lvh::detail {
 
     /**
      * @brief Backend keyboard backed by one Linux uinput file descriptor.
+     *
+     * Emits only caller-submitted key transitions. The compositor or X server
+     * handles held-key repeat; replaying presses here can re-press released keys.
      */
     class UinputKeyboard final: public BackendKeyboard, private UinputDevice {
     public:
@@ -1608,11 +1610,7 @@ namespace lvh::detail {
 
       OperationStatus create(DeviceId id, const CreateKeyboardOptions &options) {
         device_name_ = options.profile.name;
-        auto status = create_uinput_device(options.profile, id);
-        if (status.ok() && options.auto_repeat_interval_ms > 0) {
-          start_repeat_thread(options.auto_repeat_interval_ms);
-        }
-        return status;
+        return create_uinput_device(options.profile, id);
       }
 
       OperationStatus submit(const KeyboardEvent &event) override {
@@ -1620,11 +1618,7 @@ namespace lvh::detail {
           return OperationStatus::failure(ErrorCode::device_closed, "uinput keyboard is closed");
         }
 
-        auto status = emit_keyboard_event(event);
-        if (status.ok()) {
-          update_pressed_keys(event);
-        }
-        return status;
+        return emit_keyboard_event(event);
       }
 
       OperationStatus type_text(const KeyboardTextEvent &event) override {
@@ -1634,7 +1628,6 @@ namespace lvh::detail {
       }
 
       OperationStatus close() override {
-        stop_repeat_thread();
         return close_uinput("uinput keyboard");
       }
 
@@ -1655,52 +1648,7 @@ namespace lvh::detail {
         return sync();
       }
 
-      void update_pressed_keys(const KeyboardEvent &event) {
-        std::lock_guard lock {pressed_keys_mutex_};
-        if (event.pressed) {
-          pressed_keys_.insert(event.key_code);
-        } else {
-          pressed_keys_.erase(event.key_code);
-        }
-      }
-
-      std::vector<KeyboardKeyCode> pressed_keys_snapshot() const {
-        std::lock_guard lock {pressed_keys_mutex_};
-        return {pressed_keys_.begin(), pressed_keys_.end()};
-      }
-
-      void start_repeat_thread(std::uint32_t interval_ms) {
-        repeat_running_ = true;
-        repeat_thread_ = std::jthread {[this, interval_ms](std::stop_token stop_token) {
-          while (!stop_token.stop_requested() && repeat_running_) {
-            std::this_thread::sleep_for(std::chrono::milliseconds {interval_ms});
-            if (stop_token.stop_requested() || !repeat_running_ || !is_open()) {
-              break;
-            }
-
-            for (const auto key_code : pressed_keys_snapshot()) {
-              if (stop_token.stop_requested() || !repeat_running_ || !is_open()) {
-                break;
-              }
-              static_cast<void>(emit_keyboard_event({.key_code = key_code, .pressed = true}));
-            }
-          }
-        }};
-      }
-
-      void stop_repeat_thread() {
-        repeat_running_ = false;
-        if (repeat_thread_.joinable()) {
-          repeat_thread_.request_stop();
-          repeat_thread_.join();
-        }
-      }
-
       std::string device_name_;
-      std::atomic_bool repeat_running_ = false;
-      std::jthread repeat_thread_;
-      mutable std::mutex pressed_keys_mutex_;
-      std::set<KeyboardKeyCode> pressed_keys_;
     };
 
     /**

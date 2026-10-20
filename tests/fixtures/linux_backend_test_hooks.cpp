@@ -22,7 +22,6 @@
 #include <mutex>
 #include <numbers>
 #include <optional>
-#include <set>
 #include <span>
 #include <sstream>
 #include <string>
@@ -126,6 +125,8 @@ namespace lvh::detail::test {
       int fail_write_call = -1;
       int short_write_call = -1;
       std::size_t short_write_size = 1;
+      bool capture_input_events = false;
+      std::vector<LinuxInputEventRecord> written_input_events;
       bool override_ioctl = false;
       std::atomic_int ioctl_call_count = 0;
       int fail_ioctl_call = -1;
@@ -234,6 +235,15 @@ std::ptrdiff_t lvh_linux_test_write(int fd, const std::byte *buffer, std::size_t
     }
     if (lvh::detail::test::active_test_syscalls()->short_write_call == call_count) {
       return static_cast<std::ptrdiff_t>(lvh::detail::test::active_test_syscalls()->short_write_size);
+    }
+    if (lvh::detail::test::active_test_syscalls()->capture_input_events && size == sizeof(input_event)) {
+      input_event event {};
+      std::memcpy(&event, buffer, sizeof(event));
+      lvh::detail::test::active_test_syscalls()->written_input_events.push_back({
+        .type = event.type,
+        .code = event.code,
+        .value = event.value,
+      });
     }
     return static_cast<std::ptrdiff_t>(size);
   }
@@ -2831,28 +2841,38 @@ namespace lvh::detail::test {
     return keyboard.close();
   }
 
-  OperationStatus linux_uinput_keyboard_auto_repeat_fake_success() {
+  LinuxInputSubmissionResult linux_uinput_keyboard_held_key_events(std::uint32_t interval_ms) {
     LinuxTestSyscalls syscalls;
     syscalls.override_write = true;
     syscalls.override_ioctl = true;
+    syscalls.override_libevdev = true;
+    syscalls.capture_input_events = true;
     ScopedLinuxTestSyscalls scoped_syscalls {syscalls};
 
     CreateKeyboardOptions options;
     options.profile = profiles::keyboard();
-    options.auto_repeat_interval_ms = 1;
+    options.auto_repeat_interval_ms = interval_ms;
 
     const auto fd = open_test_fd();
     if (fd < 0) {
-      return system_error_status(ErrorCode::backend_failure, "failed to open test file descriptor", errno);
+      return {system_error_status(ErrorCode::backend_failure, "failed to open test file descriptor", errno), {}};
     }
 
     UinputKeyboard keyboard {fd};
     auto status = keyboard.create(1, options);
     if (status.ok()) {
-      status = keyboard.submit({.key_code = 0x41, .pressed = true});
+      status = keyboard.submit({.key_code = 0x46, .pressed = true});
     }
-    std::this_thread::sleep_for(std::chrono::milliseconds {10});
-    return keyboard.close();
+    const auto observation_time = std::chrono::milliseconds {std::max(interval_ms * 2, 20U)};
+    std::this_thread::sleep_for(observation_time);
+    if (status.ok()) {
+      status = keyboard.submit({.key_code = 0x46, .pressed = false});
+    }
+    std::this_thread::sleep_for(observation_time);
+    if (const auto close_status = keyboard.close(); status.ok()) {
+      status = close_status;
+    }
+    return {std::move(status), std::move(syscalls.written_input_events)};
   }
 
   OperationStatus linux_uinput_mouse_submit_fake_write_failure(const MouseEvent &event) {
