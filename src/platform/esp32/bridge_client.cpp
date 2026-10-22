@@ -606,6 +606,7 @@ namespace lvh::detail::esp32 {
   bool BridgeClient::Connection::mark_authorized() {
     connected = true;
     awaiting_pairing = false;
+    confirmed_generation = device_generation;
     return device_generation != 0U && device_generation == desired_generation;
   }
 
@@ -626,6 +627,9 @@ namespace lvh::detail::esp32 {
         case protocol::message::status:
           if (payload.size() >= 6U) {
             state_.device_generation = read_le<std::uint32_t>(payload.subspan(2));
+            if (state_.connected) {
+              state_.confirmed_generation = state_.device_generation;
+            }
           }
           break;
         case protocol::message::confirm_result:
@@ -806,9 +810,9 @@ namespace lvh::detail::esp32 {
   bool BridgeClient::wait_for_generation(std::uint32_t generation, std::chrono::milliseconds timeout) {
     std::unique_lock lock {state_mutex_};
     state_changed_.wait_for(lock, timeout, [this, generation]() {
-      return (state_.connected && state_.device_generation == generation) || stopping_;
+      return state_.confirmed_generation == generation || stopping_;
     });
-    return state_.connected && state_.device_generation == generation;
+    return state_.confirmed_generation == generation;
   }
 
   void BridgeClient::replay_inputs() {

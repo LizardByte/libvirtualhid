@@ -247,6 +247,7 @@ namespace lvh::detail::esp32 {
       bool connected = false;  ///< Handshake done and the bridge accepts layout and input frames.
       bool version_mismatch = false;  ///< The bridge rejected the protocol version.
       std::uint32_t device_generation = 0;  ///< Layout generation the bridge reported.
+      std::uint32_t confirmed_generation = 0;  ///< Last generation the bridge reported in a usable session; survives later resets.
       std::uint32_t desired_generation = 0;  ///< Generation of the desired layout, 0 when none.
       std::string firmware_version;  ///< Firmware version from the last handshake.
       PendingAck pending_ack;  ///< ACK transact() waits for.
@@ -455,7 +456,7 @@ namespace lvh::detail::esp32 {
      *
      * @param generation Expected generation.
      * @param timeout Maximum wait.
-     * @return `true` when the bridge is connected with that generation.
+     * @return `true` once a usable session reported that generation, even if the bridge reset again since.
      */
     bool wait_for_generation(std::uint32_t generation, std::chrono::milliseconds timeout);
 
