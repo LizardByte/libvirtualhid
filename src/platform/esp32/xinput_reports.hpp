@@ -11,7 +11,7 @@
 #include <vector>
 
 // local includes
-#include "platform/esp32/esp32_bridge_protocol.h"
+#include "platform/esp32/esp32_bridge_protocol.hpp"
 
 #include <libvirtualhid/types.hpp>
 
@@ -23,7 +23,7 @@ namespace lvh::detail::esp32 {
    * @param state Gamepad state.
    * @return 20-byte XUSB report.
    */
-  std::array<std::uint8_t, LVHB_XINPUT_REPORT_SIZE> pack_xinput_report(const GamepadState &state);
+  std::array<std::uint8_t, protocol::xinput_report_size> pack_xinput_report(const GamepadState &state);
 
   /**
    * @brief Translate an XUSB interrupt OUT report into gamepad outputs.

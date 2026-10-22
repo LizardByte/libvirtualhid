@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <string_view>
 #include <system_error>
 #include <utility>
 
@@ -24,7 +25,7 @@
   #ifndef WIN32_LEAN_AND_MEAN
     #define WIN32_LEAN_AND_MEAN
   #endif
-  #include <windows.h>
+  #include <Windows.h>
 // clang-format off
   #include <sddl.h>
 // clang-format on
@@ -43,7 +44,7 @@ namespace lvh::detail::esp32 {
      * @param contents File contents.
      * @return `true` when the file was written.
      */
-    bool write_private_file(const std::filesystem::path &path, const std::string &contents) {
+    bool write_private_file(const std::filesystem::path &path, std::string_view contents) {
       auto temporary = path;
       temporary += ".tmp";
 #ifdef _WIN32
@@ -103,8 +104,8 @@ namespace lvh::detail::esp32 {
         if (!(file >> key_id_text >> secret_text)) {
           return std::nullopt;
         }
-        const auto key_id = hex_decode<LVHB_KEY_ID_SIZE>(key_id_text);
-        const auto secret = hex_decode<LVHB_SECRET_SIZE>(secret_text);
+        const auto key_id = hex_decode<protocol::key_id_size>(key_id_text);
+        const auto secret = hex_decode<protocol::secret_size>(secret_text);
         if (!key_id.has_value() || !secret.has_value()) {
           return std::nullopt;
         }
@@ -146,7 +147,9 @@ namespace lvh::detail::esp32 {
         return false;
       }
 
-      void erase(const std::string &) override {}
+      void erase(const std::string &) override {
+        // Nothing is stored, so there is nothing to remove.
+      }
     };
 
   }  // namespace

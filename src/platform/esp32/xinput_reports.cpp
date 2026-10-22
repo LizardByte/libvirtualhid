@@ -4,6 +4,7 @@
  */
 
 // standard includes
+#include <cstddef>
 #include <utility>
 
 // local includes
@@ -14,22 +15,22 @@
 
 namespace lvh::detail::esp32 {
 
-  std::array<std::uint8_t, LVHB_XINPUT_REPORT_SIZE> pack_xinput_report(const GamepadState &state) {
+  std::array<std::uint8_t, protocol::xinput_report_size> pack_xinput_report(const GamepadState &state) {
     const auto normalized = reports::normalize_state(state);
     const auto &buttons = normalized.buttons;
     const auto bit = [&buttons](GamepadButton button, std::uint8_t mask) {
-      return buttons.test(button) ? mask : std::uint8_t {0};
+      return buttons.test(button) ? std::byte {mask} : std::byte {0};
     };
 
-    std::array<std::uint8_t, LVHB_XINPUT_REPORT_SIZE> report {};
+    std::array<std::uint8_t, protocol::xinput_report_size> report {};
     report[0] = 0x00;
-    report[1] = LVHB_XINPUT_REPORT_SIZE;
-    report[2] = static_cast<std::uint8_t>(
+    report[1] = protocol::xinput_report_size;
+    report[2] = std::to_integer<std::uint8_t>(
       bit(GamepadButton::dpad_up, 0x01) | bit(GamepadButton::dpad_down, 0x02) | bit(GamepadButton::dpad_left, 0x04) |
       bit(GamepadButton::dpad_right, 0x08) | bit(GamepadButton::start, 0x10) | bit(GamepadButton::back, 0x20) |
       bit(GamepadButton::left_stick, 0x40) | bit(GamepadButton::right_stick, 0x80)
     );
-    report[3] = static_cast<std::uint8_t>(
+    report[3] = std::to_integer<std::uint8_t>(
       bit(GamepadButton::left_shoulder, 0x01) | bit(GamepadButton::right_shoulder, 0x02) | bit(GamepadButton::guide, 0x04) |
       bit(GamepadButton::a, 0x10) | bit(GamepadButton::b, 0x20) | bit(GamepadButton::x, 0x40) | bit(GamepadButton::y, 0x80)
     );
@@ -57,8 +58,7 @@ namespace lvh::detail::esp32 {
       // XUSB LED patterns: 0x01 blink all, 0x02-0x05 flash then hold player N, 0x06-0x09 hold player N.
       GamepadOutput output;
       output.kind = GamepadOutputKind::player_leds;
-      const auto pattern = report[2];
-      if (pattern == 0x01U) {
+      if (const auto pattern = report[2]; pattern == 0x01U) {
         output.player_leds.fill(true);
         output.flashing_player_leds.fill(true);
       } else if (pattern >= 0x02U && pattern <= 0x05U) {

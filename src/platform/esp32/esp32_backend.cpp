@@ -10,6 +10,10 @@
 
 // standard includes
 #include <algorithm>
+#include <array>
+#include <cstddef>
+#include <format>
+#include <functional>
 #include <limits>
 #include <mutex>
 #include <utility>
@@ -35,7 +39,7 @@
   #ifndef WIN32_LEAN_AND_MEAN
     #define WIN32_LEAN_AND_MEAN
   #endif
-  #include <windows.h>
+  #include <Windows.h>
 #else
   #include <unistd.h>
 #endif
@@ -89,7 +93,7 @@ namespace lvh::detail::esp32 {
      * @brief Live state of one occupied slot, shared with output dispatch.
      */
     struct SlotState {
-      std::uint8_t kind = LVHB_SLOT_NONE;  ///< #lvhb_slot_kind.
+      std::uint8_t kind = protocol::slot::none;  ///< protocol::slot.
       std::shared_ptr<KeyboardMouseState> keyboard_mouse;  ///< Set for keyboard/mouse slots.
       DeviceProfile profile;  ///< Effective gamepad profile.
       SlotLayout layout;  ///< Slot configuration sent to the bridge.
@@ -122,7 +126,7 @@ namespace lvh::detail::esp32 {
 
     SlotPlan plan_hid(DeviceProfile profile) {
       SlotPlan plan;
-      plan.layout.kind = LVHB_SLOT_HID;
+      plan.layout.kind = protocol::slot::hid;
       plan.layout.interval_ms = hid_interval_ms;
       plan.layout.report_descriptor = profile.report_descriptor;
       plan.layout.neutral_report = reports::pack_input_report(profile, GamepadState {});
@@ -160,7 +164,7 @@ namespace lvh::detail::esp32 {
           {
             // XInput reaches nearly every Windows game through the inbox xusb22 driver.
             SlotPlan plan;
-            plan.layout.kind = LVHB_SLOT_XINPUT;
+            plan.layout.kind = protocol::slot::xinput;
             plan.layout.interval_ms = xinput_interval_ms;
             plan.layout.neutral_report = to_vector(pack_xinput_report(GamepadState {}));
             plan.effective_profile = profiles::xbox_360();
@@ -299,11 +303,11 @@ namespace lvh::detail::esp32 {
        * @return Device node.
        */
       std::vector<DeviceNode> device_nodes(std::size_t slot, std::string_view suffix = {}) const {
-        return {DeviceNode {DeviceNodeKind::other, "esp32-bridge:" + client_->port_path() + "#slot" + std::to_string(slot) + std::string {suffix}}};
+        return {DeviceNode {DeviceNodeKind::other, std::format("esp32-bridge:{}#slot{}{}", client_->port_path(), slot, suffix)}};
       }
 
     private:
-      using SlotArray = std::array<std::shared_ptr<SlotState>, LVHB_MAX_SLOTS>;
+      using SlotArray = std::array<std::shared_ptr<SlotState>, protocol::max_slots>;
 
       /**
        * @brief Remove a slot and ask the bridge to drop it; layout_mutex_ must be held.
@@ -429,13 +433,13 @@ namespace lvh::detail::esp32 {
           std::lock_guard lock {slots_mutex_};
           slot = slots_[output.slot];
         }
-        if (slot == nullptr || slot->kind == LVHB_SLOT_KEYBOARD_MOUSE) {
+        if (slot == nullptr || slot->kind == protocol::slot::keyboard_mouse) {
           // Keyboard LED reports have no consumer-facing output API.
           return;
         }
 
         std::vector<GamepadOutput> outputs;
-        if (slot->kind == LVHB_SLOT_XINPUT) {
+        if (slot->kind == protocol::slot::xinput) {
           outputs = parse_xinput_output(output.report);
         } else {
           if (slot->profile.gamepad_kind == GamepadProfileKind::switch_pro) {
@@ -484,7 +488,7 @@ namespace lvh::detail::esp32 {
         if (closed_) {
           return OperationStatus::failure(ErrorCode::device_closed, "gamepad is closed");
         }
-        if (state_->kind == LVHB_SLOT_XINPUT) {
+        if (state_->kind == protocol::slot::xinput) {
           const auto xinput = pack_xinput_report(state);
           core_->submit(slot_, xinput);
         } else {
@@ -577,9 +581,9 @@ namespace lvh::detail::esp32 {
           return {OperationStatus::failure(ErrorCode::unsupported_profile, std::string {slots_full_message}), nullptr};
         }
         state = std::make_shared<SlotState>();
-        state->kind = LVHB_SLOT_KEYBOARD_MOUSE;
+        state->kind = protocol::slot::keyboard_mouse;
         state->keyboard_mouse = std::make_shared<KeyboardMouseState>();
-        state->layout.kind = LVHB_SLOT_KEYBOARD_MOUSE;
+        state->layout.kind = protocol::slot::keyboard_mouse;
         state->layout.interval_ms = hid_interval_ms;
         state->layout.report_descriptor = keyboard_mouse_report_descriptor();
         state->layout.neutral_report = keyboard_mouse_neutral_reports();
@@ -632,7 +636,7 @@ namespace lvh::detail::esp32 {
         }
         const auto usage = hid_usage_from_virtual_key(event.key_code, event.extended);
         if (!usage.has_value()) {
-          return OperationStatus::failure(ErrorCode::invalid_argument, "key code " + std::to_string(event.key_code) + " has no HID keyboard usage");
+          return OperationStatus::failure(ErrorCode::invalid_argument, std::format("key code {} has no HID keyboard usage", event.key_code));
         }
         auto &km = *state_->keyboard_mouse;
         std::lock_guard lock {km.mutex};
@@ -646,10 +650,10 @@ namespace lvh::detail::esp32 {
         if (closed_) {
           return OperationStatus::failure(ErrorCode::device_closed, "keyboard is closed");
         }
-        const auto ascii = std::ranges::all_of(event.text, [](char character) {
-          return hid_usage_from_ascii(character).has_value();
-        });
-        if (!ascii) {
+        if (const auto ascii = std::ranges::all_of(event.text, [](char character) {
+              return hid_usage_from_ascii(character).has_value();
+            });
+            !ascii) {
           // A HID keyboard can only press keys; Unicode text needs the host's text input API.
           return type_text_with_fallback(event);
         }
@@ -754,8 +758,9 @@ namespace lvh::detail::esp32 {
             }
           case button:
             {
-              const auto bit = static_cast<std::uint8_t>(1U << static_cast<unsigned>(event.button));
-              km.buttons = static_cast<std::uint8_t>(event.pressed ? (km.buttons | bit) : (km.buttons & ~bit));
+              const auto bit = std::byte {1} << std::to_underlying(event.button);
+              const auto buttons = std::byte {km.buttons};
+              km.buttons = std::to_integer<std::uint8_t>(event.pressed ? (buttons | bit) : (buttons & ~bit));
               send_buttons(km);
               break;
             }
@@ -791,7 +796,7 @@ namespace lvh::detail::esp32 {
       }
 
     private:
-      void send_relative_motion(KeyboardMouseState &km, std::int32_t x, std::int32_t y) {
+      void send_relative_motion(const KeyboardMouseState &km, std::int32_t x, std::int32_t y) {
         constexpr std::int32_t limit = std::numeric_limits<std::int16_t>::max();
         // Split motion beyond the 16-bit report range instead of clipping it.
         do {
@@ -803,7 +808,7 @@ namespace lvh::detail::esp32 {
         } while (x != 0 || y != 0);
       }
 
-      void send_buttons(KeyboardMouseState &km) {
+      void send_buttons(const KeyboardMouseState &km) {
         if (km.last_motion_absolute) {
           core_->submit(slot_, make_absolute_mouse_report(km.buttons, km.absolute_x, km.absolute_y));
         } else {
@@ -811,7 +816,7 @@ namespace lvh::detail::esp32 {
         }
       }
 
-      void send_scroll(KeyboardMouseState &km, std::int64_t &remainder, std::int32_t amount, bool vertical) {
+      void send_scroll(const KeyboardMouseState &km, std::int64_t &remainder, std::int32_t amount, bool vertical) {
         remainder += amount;
         auto detents = remainder / wheel_detent;
         remainder -= detents * wheel_detent;
@@ -931,12 +936,12 @@ namespace lvh::detail::esp32 {
        * @param options Creation options.
        * @return Fallback result, or `backend_unavailable` without a fallback.
        */
-      template<typename Result, typename Options>
-      Result forward(std::string_view device, Result (Backend::*create)(DeviceId, const Options &), DeviceId id, const Options &options) {
+      template<typename Result, typename Create, typename Options>
+      Result forward(std::string_view device, Create create, DeviceId id, const Options &options) {
         if (fallback_ == nullptr) {
           return {OperationStatus::failure(ErrorCode::backend_unavailable, "ESP32-S3 bridge has no " + std::string {device} + " fallback backend"), nullptr};
         }
-        return ((*fallback_).*create)(id, options);
+        return std::invoke(create, *fallback_, id, options);
       }
 
       std::shared_ptr<BridgeCore> core_;  ///< Bridge slots and connection.
@@ -968,12 +973,12 @@ namespace lvh::detail::esp32 {
 
   std::string local_host_name() {
 #ifdef _WIN32
-    char buffer[MAX_COMPUTERNAME_LENGTH + 1] {};
-    DWORD size = sizeof(buffer);
-    return ::GetComputerNameA(buffer, &size) ? std::string {buffer, size} : std::string {};
+    std::array<char, MAX_COMPUTERNAME_LENGTH + 1> buffer {};
+    auto size = static_cast<DWORD>(buffer.size());
+    return ::GetComputerNameA(buffer.data(), &size) ? std::string {buffer.data(), size} : std::string {};
 #else
-    char buffer[256] {};
-    return ::gethostname(buffer, sizeof(buffer) - 1U) == 0 ? std::string {buffer} : std::string {};
+    std::array<char, 256> buffer {};
+    return ::gethostname(buffer.data(), buffer.size() - 1U) == 0 ? std::string {buffer.data()} : std::string {};
 #endif
   }
 
@@ -982,8 +987,8 @@ namespace lvh::detail::esp32 {
     if (!host.empty()) {
       name += " on " + host;
     }
-    if (name.size() > LVHB_MAX_PAIRING_NAME) {
-      name.resize(LVHB_MAX_PAIRING_NAME);
+    if (name.size() > protocol::max_pairing_name) {
+      name.resize(protocol::max_pairing_name);
     }
     return name;
   }

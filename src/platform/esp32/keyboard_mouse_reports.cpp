@@ -6,6 +6,7 @@
 // standard includes
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <utility>
 
 // local includes
@@ -85,18 +86,18 @@ namespace lvh::detail::esp32 {
       {0xAD, 0x7F},  // Volume Mute
       {0xAE, 0x81},  // Volume Down
       {0xAF, 0x80},  // Volume Up
-      {0xBA, 0x33},  // ;:
-      {0xBB, 0x2E},  // =+
-      {0xBC, 0x36},  // ,<
-      {0xBD, 0x2D},  // -_
-      {0xBE, 0x37},  // .>
-      {0xBF, 0x38},  // /?
-      {0xC0, 0x35},  // `~
-      {0xDB, 0x2F},  // [{
-      {0xDC, 0x31},  // \|
-      {0xDD, 0x30},  // ]}
-      {0xDE, 0x34},  // '"
-      {0xE2, 0x64},  // Non-US \|
+      {0xBA, 0x33},  // Semicolon
+      {0xBB, 0x2E},  // Equals
+      {0xBC, 0x36},  // Comma
+      {0xBD, 0x2D},  // Minus
+      {0xBE, 0x37},  // Period
+      {0xBF, 0x38},  // Slash
+      {0xC0, 0x35},  // Grave accent
+      {0xDB, 0x2F},  // Left bracket
+      {0xDC, 0x31},  // Backslash
+      {0xDD, 0x30},  // Right bracket
+      {0xDE, 0x34},  // Apostrophe
+      {0xE2, 0x64},  // Non-US backslash
       {0x2F, 0x75},  // Help
       {0x29, 0x77},  // Select
       {0x2B, 0x74},  // Execute
@@ -116,7 +117,7 @@ namespace lvh::detail::esp32 {
       0xA1,
       0x01,  // Collection (Application)
       0x85,
-      LVHB_KM_KEYBOARD_REPORT_ID,  // Report ID
+      protocol::km::keyboard_report_id,  // Report ID
       0x05,
       0x07,  // Usage Page (Keyboard/Keypad)
       0x19,
@@ -184,7 +185,7 @@ namespace lvh::detail::esp32 {
       0xA1,
       0x01,  // Collection (Application)
       0x85,
-      LVHB_KM_RELATIVE_REPORT_ID,  // Report ID
+      protocol::km::relative_report_id,  // Report ID
       0x09,
       0x01,  // Usage (Pointer)
       0xA1,
@@ -268,7 +269,7 @@ namespace lvh::detail::esp32 {
       0xA1,
       0x01,  // Collection (Application)
       0x85,
-      LVHB_KM_ABSOLUTE_REPORT_ID,  // Report ID
+      protocol::km::absolute_report_id,  // Report ID
       0x09,
       0x01,  // Usage (Pointer)
       0xA1,
@@ -437,8 +438,9 @@ namespace lvh::detail::esp32 {
 
   bool KeyboardReportState::apply(std::uint8_t usage, bool pressed) {
     if (is_modifier(usage)) {
-      const auto bit = static_cast<std::uint8_t>(1U << (usage - usage_left_control));
-      const auto updated = static_cast<std::uint8_t>(pressed ? (modifiers_ | bit) : (modifiers_ & ~bit));
+      const auto bit = std::byte {1} << (usage - usage_left_control);
+      const auto modifiers = std::byte {modifiers_};
+      const auto updated = std::to_integer<std::uint8_t>(pressed ? (modifiers | bit) : (modifiers & ~bit));
       const auto changed = updated != modifiers_;
       modifiers_ = updated;
       return changed;
@@ -468,8 +470,9 @@ namespace lvh::detail::esp32 {
 
   KeyboardReport KeyboardReportState::report_with(std::uint8_t usage, bool shift) const {
     KeyboardReport report {};
-    report[0] = LVHB_KM_KEYBOARD_REPORT_ID;
-    report[1] = static_cast<std::uint8_t>(modifiers_ | (shift ? (1U << (usage_left_shift - usage_left_control)) : 0U));
+    report[0] = protocol::km::keyboard_report_id;
+    const auto shift_bit = shift ? std::byte {1} << (usage_left_shift - usage_left_control) : std::byte {0};
+    report[1] = std::to_integer<std::uint8_t>(std::byte {modifiers_} | shift_bit);
     std::size_t index = 3;
     for (const auto key : keys_) {
       report[index++] = key;
@@ -482,7 +485,7 @@ namespace lvh::detail::esp32 {
   }
 
   RelativeMouseReport make_relative_mouse_report(std::uint8_t buttons, std::int16_t x, std::int16_t y, std::int8_t wheel, std::int8_t pan) {
-    RelativeMouseReport report {LVHB_KM_RELATIVE_REPORT_ID, buttons};
+    RelativeMouseReport report {protocol::km::relative_report_id, buttons};
     write_le(std::span<std::uint8_t> {report}, 2, static_cast<std::uint16_t>(x));
     write_le(std::span<std::uint8_t> {report}, 4, static_cast<std::uint16_t>(y));
     report[6] = static_cast<std::uint8_t>(wheel);
@@ -491,7 +494,7 @@ namespace lvh::detail::esp32 {
   }
 
   AbsoluteMouseReport make_absolute_mouse_report(std::uint8_t buttons, std::uint16_t x, std::uint16_t y) {
-    AbsoluteMouseReport report {LVHB_KM_ABSOLUTE_REPORT_ID, buttons};
+    AbsoluteMouseReport report {protocol::km::absolute_report_id, buttons};
     write_le(std::span<std::uint8_t> {report}, 2, x);
     write_le(std::span<std::uint8_t> {report}, 4, y);
     return report;

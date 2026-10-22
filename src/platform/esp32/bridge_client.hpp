@@ -21,7 +21,7 @@
 
 // local includes
 #include "platform/esp32/credential_store.hpp"
-#include "platform/esp32/esp32_bridge_protocol.h"
+#include "platform/esp32/esp32_bridge_protocol.hpp"
 #include "platform/esp32/serial_port.hpp"
 
 #include <libvirtualhid/esp32_bridge.hpp>
@@ -33,7 +33,7 @@ namespace lvh::detail::esp32 {
    * @brief Configuration of one enumerated bridge slot.
    */
   struct SlotLayout {
-    std::uint8_t kind = LVHB_SLOT_NONE;  ///< #lvhb_slot_kind.
+    std::uint8_t kind = protocol::slot::none;  ///< protocol::slot.
     std::uint8_t interval_ms = 1;  ///< Interrupt IN polling interval.
     std::vector<std::uint8_t> report_descriptor;  ///< HID report descriptor, empty for XInput.
     std::vector<std::uint8_t> neutral_report;  ///< Report used at enumeration and when the host goes quiet.
@@ -49,7 +49,7 @@ namespace lvh::detail::esp32 {
     std::uint16_t bcd_device = 0x0100;  ///< USB bcdDevice.
     std::string manufacturer = "libvirtualhid";  ///< Manufacturer string.
     std::string product = "ESP32-S3 HID Bridge";  ///< Product string.
-    std::array<std::optional<SlotLayout>, LVHB_MAX_SLOTS> slots {};  ///< Slot configuration.
+    std::array<std::optional<SlotLayout>, protocol::max_slots> slots {};  ///< Slot configuration.
   };
 
   /**
@@ -57,7 +57,7 @@ namespace lvh::detail::esp32 {
    */
   struct BridgeOutput {
     std::uint8_t slot = 0;  ///< Slot index.
-    std::uint8_t kind = LVHB_REPORT_OUTPUT;  ///< #lvhb_report_kind.
+    std::uint8_t kind = protocol::report_kind::output;  ///< protocol::report_kind.
     std::vector<std::uint8_t> report;  ///< Report bytes, starting with the report id when the slot uses ids.
   };
 
@@ -69,7 +69,7 @@ namespace lvh::detail::esp32 {
     std::chrono::milliseconds connect_timeout {3000};  ///< Wait for the first handshake.
     std::chrono::milliseconds reenumerate_timeout {20000};  ///< Wait for the bridge to come back after a layout change.
     std::chrono::milliseconds reopen_interval {100};  ///< Delay between attempts to reopen the port.
-    std::chrono::milliseconds keepalive_interval {LVHB_KEEPALIVE_MS};  ///< Ping period.
+    std::chrono::milliseconds keepalive_interval {protocol::keepalive_interval};  ///< Ping period.
     std::chrono::milliseconds silence_timeout {4000};  ///< Reopen the port after this long without any frame.
     std::chrono::milliseconds commit_settle {100};  ///< Delay between a commit ACK and reopening the port.
   };
@@ -96,7 +96,7 @@ namespace lvh::detail::esp32 {
   OperationStatus validate_layout(const BridgeLayout &layout);
 
   /// Size of the message the AUTH answer authenticates.
-  inline constexpr std::size_t auth_message_size = sizeof(LVHB_AUTH_CONTEXT) - 1U + LVHB_NONCE_SIZE + LVHB_KEY_ID_SIZE + LVHB_DEVICE_ID_SIZE;
+  inline constexpr std::size_t auth_message_size = protocol::auth_context.size() + protocol::nonce_size + protocol::key_id_size + protocol::device_id_size;
 
   /**
    * @brief Build `"LVHB-AUTH" || nonce || key_id || device_id`, the message covered by the AUTH HMAC.
@@ -107,9 +107,9 @@ namespace lvh::detail::esp32 {
    * @return Message bytes.
    */
   std::array<std::uint8_t, auth_message_size> make_auth_message(
-    const std::array<std::uint8_t, LVHB_NONCE_SIZE> &nonce,
-    const std::array<std::uint8_t, LVHB_KEY_ID_SIZE> &key_id,
-    const std::array<std::uint8_t, LVHB_DEVICE_ID_SIZE> &device_id
+    const std::array<std::uint8_t, protocol::nonce_size> &nonce,
+    const std::array<std::uint8_t, protocol::key_id_size> &key_id,
+    const std::array<std::uint8_t, protocol::device_id_size> &device_id
   );
 
   /**
@@ -136,7 +136,7 @@ namespace lvh::detail::esp32 {
      * @param credentials Pairing secret storage, may be empty when the bridge does not require pairing.
      * @param client_name Label the bridge shows for this host's pairing.
      */
-    BridgeClient(SerialPortOpener opener, BridgeLogger logger, BridgeTimings timings = {}, std::shared_ptr<CredentialStore> credentials = nullptr, std::string client_name = "libvirtualhid");
+    BridgeClient(SerialPortOpener opener, BridgeLogger logger, const BridgeTimings &timings = {}, std::shared_ptr<CredentialStore> credentials = nullptr, std::string client_name = "libvirtualhid");
 
     BridgeClient(const BridgeClient &) = delete;
     BridgeClient &operator=(const BridgeClient &) = delete;
@@ -225,7 +225,7 @@ namespace lvh::detail::esp32 {
       bool received = false;  ///< The ACK arrived.
       std::uint8_t type = 0;  ///< Acknowledged message type.
       std::uint8_t sequence = 0;  ///< Acknowledged sequence number.
-      std::uint8_t status = 0;  ///< #lvhb_status from the ACK.
+      std::uint8_t status = 0;  ///< protocol::status from the ACK.
     };
 
     /**
@@ -241,7 +241,102 @@ namespace lvh::detail::esp32 {
     };
 
     /**
-     * @brief Unregister, wake every wait, join the workers, and close the port; threads_mutex_ must be held.
+     * @brief Connection and pairing state; guarded by state_mutex_.
+     */
+    struct Connection {
+      bool connected = false;  ///< Handshake done and the bridge accepts layout and input frames.
+      bool version_mismatch = false;  ///< The bridge rejected the protocol version.
+      std::uint32_t device_generation = 0;  ///< Layout generation the bridge reported.
+      std::uint32_t desired_generation = 0;  ///< Generation of the desired layout, 0 when none.
+      std::string firmware_version;  ///< Firmware version from the last handshake.
+      PendingAck pending_ack;  ///< ACK transact() waits for.
+      std::chrono::steady_clock::time_point last_frame_time;  ///< Arrival of the last frame, or the port open time.
+      bool awaiting_pairing = false;  ///< Handshake done, waiting for the BOOT press.
+      bool pairing_required = false;  ///< Pairing flag from the last HELLO_ACK.
+      bool pairing_announced = false;  ///< The "press BOOT" hint was logged for this bridge.
+      std::optional<std::chrono::steady_clock::time_point> pairing_retry_at;  ///< When to send PAIR again.
+      std::array<std::uint8_t, protocol::nonce_size> nonce {};  ///< Challenge from the last HELLO_ACK.
+      std::array<std::uint8_t, protocol::device_id_size> device_id_bytes {};  ///< Bridge identity from the last HELLO_ACK.
+      std::string device_id;  ///< Upper-case hex of device_id_bytes.
+
+      /**
+       * @brief Record a successful handshake.
+       *
+       * @return True when the bridge already runs the desired layout, so inputs can be replayed.
+       */
+      bool mark_authorized();
+
+      /**
+       * @brief Apply HELLO_ACK.
+       *
+       * @param payload Frame payload.
+       * @param follow_up Work to do after the state lock is released.
+       */
+      void on_hello_ack(std::span<const std::uint8_t> payload, FrameFollowUp &follow_up);
+
+      /**
+       * @brief Apply ACK.
+       *
+       * @param payload Frame payload.
+       * @param follow_up Work to do after the state lock is released.
+       */
+      void on_ack(std::span<const std::uint8_t> payload, FrameFollowUp &follow_up);
+
+      /**
+       * @brief Apply CONFIRM_RESULT.
+       *
+       * @param payload Frame payload.
+       * @param follow_up Work to do after the state lock is released.
+       */
+      void on_confirm_result(std::span<const std::uint8_t> payload, FrameFollowUp &follow_up);
+    };
+
+    /**
+     * @brief Open port and frame sequence; writes stay under the mutex so frames never interleave.
+     */
+    struct Link {
+      mutable std::mutex mutex;  ///< Guards the members below.
+      std::shared_ptr<SerialPort> port;  ///< Open port; the reader reads from a copy.
+      std::uint8_t next_sequence = 0;  ///< Sequence number of the next frame.
+    };
+
+    /**
+     * @brief Desired layout; the mutex also serializes layout changes.
+     */
+    struct LayoutState {
+      std::mutex mutex;  ///< Guards the members below.
+      std::optional<BridgeLayout> desired;  ///< Layout the bridge should have.
+      std::uint32_t next_generation = 0;  ///< Generation assigned to the next layout.
+    };
+
+    /**
+     * @brief Latest input per slot, resent after the bridge comes back.
+     */
+    struct InputState {
+      std::mutex mutex;  ///< Guards the members below.
+      std::array<std::vector<std::uint8_t>, protocol::max_slots> latest {};  ///< Latest report per slot for replay.
+      std::array<bool, protocol::max_slots> replayable {};  ///< Event slots (keyboard/mouse) must never be replayed.
+    };
+
+    /**
+     * @brief Output report sink.
+     */
+    struct OutputSink {
+      std::mutex mutex;  ///< Guards handler.
+      std::function<void(const BridgeOutput &)> handler;  ///< Receives output reports.
+    };
+
+    /**
+     * @brief Worker threads.
+     */
+    struct Workers {
+      std::mutex mutex;  ///< Serializes start() and stop().
+      std::jthread reader;  ///< Reads frames and reopens the port.
+      std::jthread supervisor;  ///< Sends keepalives and restores the layout.
+    };
+
+    /**
+     * @brief Unregister, wake every wait, join the workers, and close the port; workers_.mutex must be held.
      */
     void stop_threads();
 
@@ -250,14 +345,14 @@ namespace lvh::detail::esp32 {
      *
      * @param stop_token Stops the loop.
      */
-    void reader_loop(std::stop_token stop_token);
+    void reader_loop(const std::stop_token &stop_token);
 
     /**
      * @brief Send keepalives, retry pairing, reopen silent ports, and restore the desired layout.
      *
      * @param stop_token Stops the loop.
      */
-    void supervisor_loop(std::stop_token stop_token);
+    void supervisor_loop(const std::stop_token &stop_token);
 
     /**
      * @brief Open the port and send HELLO.
@@ -299,28 +394,13 @@ namespace lvh::detail::esp32 {
     void handle_frame(std::span<const std::uint8_t> frame);
 
     /**
-     * @brief Record a handshake; state_mutex_ must be held.
+     * @brief Run the work a frame left for after the state lock: storage, logging, and writes.
      *
-     * @param payload HELLO_ACK payload.
-     * @param follow_up Receives the work to do after unlocking.
+     * @param type Message type.
+     * @param payload Frame payload.
+     * @param follow_up Work recorded while the state lock was held.
      */
-    void on_hello_ack(std::span<const std::uint8_t> payload, FrameFollowUp &follow_up);
-
-    /**
-     * @brief Record an acknowledgement; state_mutex_ must be held.
-     *
-     * @param payload ACK payload.
-     * @param follow_up Receives the work to do after unlocking.
-     */
-    void on_ack(std::span<const std::uint8_t> payload, FrameFollowUp &follow_up);
-
-    /**
-     * @brief Record the outcome of a BOOT confirmation; state_mutex_ must be held.
-     *
-     * @param payload CONFIRM_RESULT payload.
-     * @param follow_up Receives the work to do after unlocking.
-     */
-    void on_confirm_result(std::span<const std::uint8_t> payload, FrameFollowUp &follow_up);
+    void finish_frame(std::uint8_t type, std::span<const std::uint8_t> payload, const FrameFollowUp &follow_up);
 
     /**
      * @brief Pass an OUTPUT_REPORT to the registered handler.
@@ -328,13 +408,6 @@ namespace lvh::detail::esp32 {
      * @param payload OUTPUT_REPORT payload.
      */
     void dispatch_output(std::span<const std::uint8_t> payload);
-
-    /**
-     * @brief Mark the session usable; state_mutex_ must be held.
-     *
-     * @return `true` when the bridge still has the desired layout and its inputs should be replayed.
-     */
-    bool mark_authorized_locked();
 
     /**
      * @brief Send a request and wait for its ACK.
@@ -346,7 +419,14 @@ namespace lvh::detail::esp32 {
     OperationStatus transact(std::uint8_t type, std::span<const std::uint8_t> payload);
 
     /**
-     * @brief Implement apply_layout(); layout_mutex_ must be held.
+     * @brief Wait until the bridge answered a handshake.
+     *
+     * @return Empty when it did not answer in time or the client stopped; otherwise whether pairing is still pending.
+     */
+    std::optional<bool> wait_until_reachable();
+
+    /**
+     * @brief Implement apply_layout(); layout_.mutex must be held.
      *
      * @param layout New layout.
      * @param commit Whether the layout must take effect now.
@@ -364,7 +444,7 @@ namespace lvh::detail::esp32 {
     OperationStatus send_layout(const BridgeLayout &layout, std::uint32_t generation);
 
     /**
-     * @brief Replace the desired layout and forget inputs of slots that changed; layout_mutex_ must be held.
+     * @brief Replace the desired layout and forget inputs of slots that changed; layout_.mutex must be held.
      *
      * @param layout Desired layout, or empty for none.
      * @param generation Its generation.
@@ -386,7 +466,7 @@ namespace lvh::detail::esp32 {
     void replay_inputs();
 
     /**
-     * @brief Allocate the next non-zero layout generation; layout_mutex_ must be held.
+     * @brief Allocate the next non-zero layout generation; layout_.mutex must be held.
      *
      * @return Generation.
      */
@@ -408,42 +488,14 @@ namespace lvh::detail::esp32 {
     std::shared_ptr<CredentialStore> credentials_;  ///< Pairing secrets.
     std::string client_name_;  ///< Pairing label.
     std::atomic_bool stopping_ = false;  ///< stop() was called; waits return early.
-
-    mutable std::mutex port_mutex_;  ///< Guards port_ and next_sequence_.
-    std::shared_ptr<SerialPort> port_;  ///< Open port; the reader reads from a copy.
-    std::uint8_t next_sequence_ = 0;  ///< Sequence number of the next frame.
-
-    mutable std::mutex state_mutex_;  ///< Guards the connection state below.
-    std::condition_variable state_changed_;  ///< Signals changes of the connection state.
-    bool connected_ = false;  ///< Handshake done and the bridge accepts layout and input frames.
-    bool version_mismatch_ = false;  ///< The bridge rejected the protocol version.
-    std::uint32_t device_generation_ = 0;  ///< Layout generation the bridge reported.
-    std::uint32_t desired_generation_ = 0;  ///< Generation of the desired layout, 0 when none.
-    std::string firmware_version_;  ///< Firmware version from the last handshake.
-    PendingAck pending_ack_;  ///< ACK transact() waits for.
-    std::chrono::steady_clock::time_point last_frame_time_;  ///< Arrival of the last frame, or the port open time.
-    bool awaiting_pairing_ = false;  ///< Handshake done, waiting for the BOOT press.
-    bool pairing_required_ = false;  ///< Pairing flag from the last HELLO_ACK.
-    bool pairing_announced_ = false;  ///< The "press BOOT" hint was logged for this bridge.
-    std::optional<std::chrono::steady_clock::time_point> pairing_retry_at_;  ///< When to send PAIR again.
-    std::array<std::uint8_t, LVHB_NONCE_SIZE> nonce_ {};  ///< Challenge from the last HELLO_ACK.
-    std::array<std::uint8_t, LVHB_DEVICE_ID_SIZE> device_id_bytes_ {};  ///< Bridge identity from the last HELLO_ACK.
-    std::string device_id_;  ///< Upper-case hex of device_id_bytes_.
-
-    std::mutex layout_mutex_;  ///< Serializes layout changes; guards desired_layout_ and next_generation_.
-    std::optional<BridgeLayout> desired_layout_;  ///< Layout the bridge should have.
-    std::uint32_t next_generation_;  ///< Generation assigned to the next layout.
-
-    std::mutex input_mutex_;  ///< Guards latest_inputs_ and replayable_.
-    std::array<std::vector<std::uint8_t>, LVHB_MAX_SLOTS> latest_inputs_ {};  ///< Latest report per slot for replay.
-    std::array<bool, LVHB_MAX_SLOTS> replayable_ {};  ///< Event slots (keyboard/mouse) must never be replayed.
-
-    std::mutex handler_mutex_;  ///< Guards output_handler_.
-    std::function<void(const BridgeOutput &)> output_handler_;  ///< Output report sink.
-
-    std::mutex threads_mutex_;  ///< Serializes start() and stop().
-    std::jthread reader_;  ///< Reads frames and reopens the port.
-    std::jthread supervisor_;  ///< Sends keepalives and restores the layout.
+    Link link_;  ///< Port and sequence numbers.
+    mutable std::mutex state_mutex_;  ///< Guards state_.
+    std::condition_variable state_changed_;  ///< Signals changes of state_.
+    Connection state_;  ///< Connection and pairing state.
+    LayoutState layout_;  ///< Desired layout.
+    InputState inputs_;  ///< Inputs to replay.
+    OutputSink output_;  ///< Output report sink.
+    Workers workers_;  ///< Reader and supervisor threads.
   };
 
   /**

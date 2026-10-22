@@ -5,6 +5,7 @@
 
 // standard includes
 #include <algorithm>
+#include <cstddef>
 #include <vector>
 
 // local includes
@@ -152,19 +153,19 @@ namespace lvh::detail::esp32 {
     std::array<std::uint8_t, 64> block {};
     if (key.size() > block.size()) {
       const auto hashed = sha256(key);
-      std::copy(hashed.begin(), hashed.end(), block.begin());
+      std::ranges::copy(hashed, block.begin());
     } else {
-      std::copy(key.begin(), key.end(), block.begin());
+      std::ranges::copy(key, block.begin());
     }
     std::vector<std::uint8_t> inner(block.size() + message.size());
     std::vector<std::uint8_t> outer(block.size() + 32U);
     for (std::size_t index = 0; index < block.size(); ++index) {
-      inner[index] = static_cast<std::uint8_t>(block[index] ^ 0x36U);
-      outer[index] = static_cast<std::uint8_t>(block[index] ^ 0x5cU);
+      inner[index] = std::to_integer<std::uint8_t>(std::byte {block[index]} ^ std::byte {0x36});
+      outer[index] = std::to_integer<std::uint8_t>(std::byte {block[index]} ^ std::byte {0x5c});
     }
-    std::copy(message.begin(), message.end(), inner.begin() + static_cast<std::ptrdiff_t>(block.size()));
+    std::ranges::copy(message, inner.begin() + static_cast<std::ptrdiff_t>(block.size()));
     const auto inner_hash = sha256(inner);
-    std::copy(inner_hash.begin(), inner_hash.end(), outer.begin() + static_cast<std::ptrdiff_t>(block.size()));
+    std::ranges::copy(inner_hash, outer.begin() + static_cast<std::ptrdiff_t>(block.size()));
     return sha256(outer);
   }
 

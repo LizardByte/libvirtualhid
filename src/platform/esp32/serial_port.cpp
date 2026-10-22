@@ -5,10 +5,12 @@
 
 // standard includes
 #include <algorithm>
+#include <array>
+#include <string_view>
 #include <utility>
 
 // local includes
-#include "platform/esp32/esp32_bridge_protocol.h"
+#include "platform/esp32/esp32_bridge_protocol.hpp"
 #include "platform/esp32/serial_port.hpp"
 
 #if defined(_WIN32)
@@ -20,12 +22,12 @@
   #endif
 
   // platform includes
-  #include <windows.h>
+  #include <Windows.h>
   // initguid must precede devguid so GUID_DEVCLASS_PORTS is defined here.
   #include <cfgmgr32.h>
   #include <devguid.h>
   #include <initguid.h>
-  #include <setupapi.h>
+  #include <SetupAPI.h>
 #else
   // standard includes
   #include <cerrno>
@@ -54,9 +56,7 @@ namespace lvh::detail::esp32 {
     public:
       Win32SerialPort(HANDLE handle, std::string path):
           handle_ {handle},
-          path_ {std::move(path)},
-          read_event_ {CreateEventA(nullptr, TRUE, FALSE, nullptr)},
-          write_event_ {CreateEventA(nullptr, TRUE, FALSE, nullptr)} {}
+          path_ {std::move(path)} {}
 
       ~Win32SerialPort() override {
         CancelIoEx(handle_, nullptr);
@@ -70,10 +70,8 @@ namespace lvh::detail::esp32 {
           OVERLAPPED overlapped {};
           overlapped.hEvent = write_event_;
           DWORD written = 0;
-          if (!WriteFile(handle_, data.data(), static_cast<DWORD>(data.size()), &written, &overlapped)) {
-            if (GetLastError() != ERROR_IO_PENDING || !GetOverlappedResult(handle_, &overlapped, &written, TRUE)) {
-              return false;
-            }
+          if (!WriteFile(handle_, data.data(), static_cast<DWORD>(data.size()), &written, &overlapped) && (GetLastError() != ERROR_IO_PENDING || !GetOverlappedResult(handle_, &overlapped, &written, TRUE))) {
+            return false;
           }
           if (written == 0) {
             return false;
@@ -84,8 +82,7 @@ namespace lvh::detail::esp32 {
       }
 
       std::ptrdiff_t read(std::span<std::uint8_t> buffer, std::chrono::milliseconds timeout) override {
-        const auto timeout_ms = static_cast<DWORD>(std::max<std::chrono::milliseconds::rep>(timeout.count(), 1));
-        if (timeout_ms != configured_timeout_ms_) {
+        if (const auto timeout_ms = static_cast<DWORD>(std::max<std::chrono::milliseconds::rep>(timeout.count(), 1)); timeout_ms != configured_timeout_ms_) {
           // MAXDWORD interval and multiplier: complete as soon as any byte
           // arrives, otherwise after the constant timeout.
           COMMTIMEOUTS timeouts {};
@@ -101,10 +98,8 @@ namespace lvh::detail::esp32 {
         OVERLAPPED overlapped {};
         overlapped.hEvent = read_event_;
         DWORD read = 0;
-        if (!ReadFile(handle_, buffer.data(), static_cast<DWORD>(buffer.size()), &read, &overlapped)) {
-          if (GetLastError() != ERROR_IO_PENDING || !GetOverlappedResult(handle_, &overlapped, &read, TRUE)) {
-            return -1;
-          }
+        if (!ReadFile(handle_, buffer.data(), static_cast<DWORD>(buffer.size()), &read, &overlapped) && (GetLastError() != ERROR_IO_PENDING || !GetOverlappedResult(handle_, &overlapped, &read, TRUE))) {
+          return -1;
         }
         return static_cast<std::ptrdiff_t>(read);
       }
@@ -125,8 +120,8 @@ namespace lvh::detail::esp32 {
     private:
       HANDLE handle_;
       std::string path_;
-      HANDLE read_event_;
-      HANDLE write_event_;
+      HANDLE read_event_ {CreateEventA(nullptr, TRUE, FALSE, nullptr)};
+      HANDLE write_event_ {CreateEventA(nullptr, TRUE, FALSE, nullptr)};
       DWORD configured_timeout_ms_ = 0;
     };
 
@@ -135,12 +130,12 @@ namespace lvh::detail::esp32 {
       if (key == INVALID_HANDLE_VALUE) {
         return {};
       }
-      char name[64] {};
-      DWORD size = sizeof(name) - 1U;
+      std::array<char, 64> name {};
+      auto size = static_cast<DWORD>(name.size() - 1U);
       DWORD type = 0;
-      const auto status = RegQueryValueExA(key, "PortName", nullptr, &type, reinterpret_cast<LPBYTE>(name), &size);
+      const auto status = RegQueryValueExA(key, "PortName", nullptr, &type, reinterpret_cast<LPBYTE>(name.data()), &size);
       RegCloseKey(key);
-      return status == ERROR_SUCCESS && type == REG_SZ ? std::string {name} : std::string {};
+      return status == ERROR_SUCCESS && type == REG_SZ ? std::string {name.data()} : std::string {};
     }
 
     bool parent_has_bridge_serial(DEVINST instance) {
@@ -148,15 +143,15 @@ namespace lvh::detail::esp32 {
       if (CM_Get_Parent(&parent, instance, 0) != CR_SUCCESS) {
         return false;
       }
-      char id[MAX_DEVICE_ID_LEN] {};
-      if (CM_Get_Device_IDA(parent, id, MAX_DEVICE_ID_LEN, 0) != CR_SUCCESS) {
+      std::array<char, MAX_DEVICE_ID_LEN> id {};
+      if (CM_Get_Device_IDA(parent, id.data(), static_cast<ULONG>(id.size()), 0) != CR_SUCCESS) {
         return false;
       }
       // Composite parent instance ids end in the USB serial number:
       // USB\VID_303A&PID_40F0\LVHB-0123456789AB
-      const std::string parent_id {id};
+      const std::string_view parent_id {id.data()};
       const auto separator = parent_id.rfind('\\');
-      return separator != std::string::npos && parent_id.compare(separator + 1U, std::char_traits<char>::length(LVHB_SERIAL_PREFIX), LVHB_SERIAL_PREFIX) == 0;
+      return separator != std::string_view::npos && parent_id.substr(separator + 1U).starts_with(protocol::serial_prefix);
     }
 #else
     /**
@@ -225,7 +220,8 @@ namespace lvh::detail::esp32 {
 
   std::unique_ptr<SerialPort> open_serial_port(const std::string &path) {
 #if defined(_WIN32)
-    const auto device_path = path.starts_with("\\\\.\\") ? path : "\\\\.\\" + path;
+    constexpr std::string_view device_namespace = R"(\\.\)";
+    const auto device_path = path.starts_with(device_namespace) ? path : std::string {device_namespace} + path;
     HANDLE handle = CreateFileA(device_path.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, nullptr);
     if (handle == INVALID_HANDLE_VALUE) {
       return nullptr;
@@ -324,7 +320,7 @@ namespace lvh::detail::esp32 {
       std::ifstream serial_file {interface_path.parent_path() / "serial"};
       std::string serial;
       std::getline(serial_file, serial);
-      if (serial.starts_with(LVHB_SERIAL_PREFIX)) {
+      if (serial.starts_with(protocol::serial_prefix)) {
         ports.push_back("/dev/" + name);
       }
     }

@@ -80,12 +80,12 @@ namespace lvh::detail::esp32 {
    * @return Hex string, two characters per byte.
    */
   inline std::string hex_encode(std::span<const std::uint8_t> bytes, bool upper_case = false) {
-    const char *digits = upper_case ? "0123456789ABCDEF" : "0123456789abcdef";
+    const std::string_view digits = upper_case ? "0123456789ABCDEF" : "0123456789abcdef";
     std::string text;
     text.reserve(bytes.size() * 2U);
     for (const auto byte : bytes) {
-      text.push_back(digits[byte >> 4U]);
-      text.push_back(digits[byte & 0x0FU]);
+      text.push_back(digits[byte / 16U]);
+      text.push_back(digits[byte % 16U]);
     }
     return text;
   }
@@ -98,7 +98,7 @@ namespace lvh::detail::esp32 {
    */
   template<std::size_t N>
   std::optional<std::array<std::uint8_t, N>> hex_decode(std::string_view text) {
-    const auto nibble = [](char c) -> int {
+    const auto nibble = [](char c) {
       if (c >= '0' && c <= '9') {
         return c - '0';
       }
@@ -120,7 +120,7 @@ namespace lvh::detail::esp32 {
       if (high < 0 || low < 0) {
         return std::nullopt;
       }
-      bytes[index] = static_cast<std::uint8_t>((high << 4) | low);
+      bytes[index] = static_cast<std::uint8_t>(high * 16 + low);
     }
     return bytes;
   }

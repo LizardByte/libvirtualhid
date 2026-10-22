@@ -72,7 +72,7 @@ namespace lvh::detail::esp32 {
    *
    * @param application Application name, `libvirtualhid` when empty.
    * @param host Host name, omitted when empty.
-   * @return `<application> on <host>`, at most #LVHB_MAX_PAIRING_NAME bytes.
+   * @return `<application> on <host>`, at most #protocol::max_pairing_name bytes.
    */
   std::string pairing_client_name(const std::string &application, const std::string &host);
 

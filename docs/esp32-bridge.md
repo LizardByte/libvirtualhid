@@ -8,8 +8,8 @@ kernel HID drivers for HID).
 
 Firmware, a browser flasher, and supported boards are maintained in
 [esp32s3-hid-bridge](https://github.com/cheetahdotcat/esp32s3-hid-bridge). The
-wire protocol is `src/platform/esp32/esp32_bridge_protocol.h`, shared by the
-backend and the firmware.
+wire protocol is defined in `src/platform/esp32/esp32_bridge_protocol.hpp`; the
+firmware keeps a C copy of it.
 
 ## Selecting the backend
 

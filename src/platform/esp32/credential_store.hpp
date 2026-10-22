@@ -12,7 +12,7 @@
 #include <string>
 
 // local includes
-#include "platform/esp32/esp32_bridge_protocol.h"
+#include "platform/esp32/esp32_bridge_protocol.hpp"
 
 namespace lvh::detail::esp32 {
 
@@ -20,8 +20,8 @@ namespace lvh::detail::esp32 {
    * @brief Secret the bridge issued when this host was paired.
    */
   struct BridgeCredential {
-    std::array<std::uint8_t, LVHB_KEY_ID_SIZE> key_id {};  ///< Public pairing id.
-    std::array<std::uint8_t, LVHB_SECRET_SIZE> secret {};  ///< Shared secret.
+    std::array<std::uint8_t, protocol::key_id_size> key_id {};  ///< Public pairing id.
+    std::array<std::uint8_t, protocol::secret_size> secret {};  ///< Shared secret.
   };
 
   /**

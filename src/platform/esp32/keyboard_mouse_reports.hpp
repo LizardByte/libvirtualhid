@@ -12,15 +12,15 @@
 #include <vector>
 
 // local includes
-#include "platform/esp32/esp32_bridge_protocol.h"
+#include "platform/esp32/esp32_bridge_protocol.hpp"
 
 #include <libvirtualhid/types.hpp>
 
 namespace lvh::detail::esp32 {
 
-  using KeyboardReport = std::array<std::uint8_t, LVHB_KM_KEYBOARD_REPORT_SIZE>;  ///< id, modifiers, reserved, 6 keys.
-  using RelativeMouseReport = std::array<std::uint8_t, LVHB_KM_RELATIVE_REPORT_SIZE>;  ///< id, buttons, x, y, wheel, pan.
-  using AbsoluteMouseReport = std::array<std::uint8_t, LVHB_KM_ABSOLUTE_REPORT_SIZE>;  ///< id, buttons, x, y.
+  using KeyboardReport = std::array<std::uint8_t, protocol::km::keyboard_report_size>;  ///< id, modifiers, reserved, 6 keys.
+  using RelativeMouseReport = std::array<std::uint8_t, protocol::km::relative_report_size>;  ///< id, buttons, x, y, wheel, pan.
+  using AbsoluteMouseReport = std::array<std::uint8_t, protocol::km::absolute_report_size>;  ///< id, buttons, x, y.
 
   inline constexpr std::uint16_t absolute_pointer_max = 32767;  ///< Logical maximum of the absolute pointer axes.
   inline constexpr std::int32_t wheel_detent = 120;  ///< High-resolution scroll units per wheel detent.

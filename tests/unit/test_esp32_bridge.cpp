@@ -4,16 +4,16 @@
  */
 
 // standard includes
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cerrno>
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
-#include <cstdio>
-#include <cstdlib>
 #include <deque>
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <functional>
 #include <map>
@@ -28,8 +28,10 @@
 
 // local includes
 #include "fixtures/fixtures.hpp"
+#include "platform/esp32/bytes.hpp"
 #include "platform/esp32/credential_store.hpp"
 #include "platform/esp32/esp32_backend.hpp"
+#include "platform/esp32/esp32_bridge_protocol.hpp"
 #include "platform/esp32/hmac_sha256.hpp"
 #include "platform/esp32/keyboard_mouse_reports.hpp"
 #include "platform/esp32/xinput_reports.hpp"
@@ -42,6 +44,8 @@
   #include <stdlib.h>
   #include <unistd.h>
 #endif
+
+namespace protocol = lvh::detail::esp32::protocol;
 
 namespace {
 
@@ -58,7 +62,7 @@ namespace {
   class FakeBridgeDevice: public std::enable_shared_from_this<FakeBridgeDevice> {
   public:
     struct Slot {
-      std::uint8_t kind = LVHB_SLOT_NONE;
+      std::uint8_t kind = protocol::slot::none;
       std::vector<std::uint8_t> descriptor;
       std::vector<std::uint8_t> neutral;
       std::vector<std::vector<std::uint8_t>> features;
@@ -68,7 +72,7 @@ namespace {
       std::uint16_t vendor_id = 0;
       std::uint16_t product_id = 0;
       std::uint32_t generation = 0;
-      std::array<Slot, LVHB_MAX_SLOTS> slots {};
+      std::array<Slot, protocol::max_slots> slots {};
     };
 
     bool present() {
@@ -91,11 +95,11 @@ namespace {
           rx_.push_back(byte);
           continue;
         }
-        std::array<std::uint8_t, LVHB_MAX_FRAME> frame {};
-        const auto size = lvhb_decode_frame(rx_.data(), rx_.size(), frame.data());
+        std::array<std::uint8_t, protocol::max_frame> frame {};
+        const auto size = protocol::decode_frame(rx_, frame);
         rx_.clear();
-        if (size >= 0) {
-          handle(std::span<const std::uint8_t> {frame.data(), static_cast<std::size_t>(size) + 2U});
+        if (size.has_value()) {
+          handle(std::span<const std::uint8_t> {frame}.first(*size + 2));
         }
       }
       changed_.notify_all();
@@ -123,10 +127,10 @@ namespace {
     }
 
     void emit_output(std::uint8_t slot, std::vector<std::uint8_t> report) {
-      std::vector<std::uint8_t> payload {slot, static_cast<std::uint8_t>(LVHB_REPORT_OUTPUT)};
+      std::vector payload {slot, protocol::report_kind::output};
       payload.insert(payload.end(), report.begin(), report.end());
       std::lock_guard lock {mutex_};
-      send_locked(LVHB_MSG_OUTPUT_REPORT, payload);
+      send_locked(protocol::message::output_report, payload);
     }
 
     /**
@@ -148,12 +152,12 @@ namespace {
 
     void require_pairing(bool required) {
       std::lock_guard lock {mutex_};
-      require_pairing_ = required;
+      behavior_.require_pairing = required;
     }
 
     bool pairing_pending() {
       std::lock_guard lock {mutex_};
-      return pending_pair_;
+      return pairing_.pending;
     }
 
     /**
@@ -161,39 +165,39 @@ namespace {
      */
     void press_boot() {
       std::lock_guard lock {mutex_};
-      if (!pending_pair_) {
+      if (!pairing_.pending) {
         return;
       }
-      pending_pair_ = false;
+      pairing_.pending = false;
       BridgeCredential credential;
-      credential.key_id.fill(static_cast<std::uint8_t>(0x10U + pairings_.size()));
-      credential.secret.fill(static_cast<std::uint8_t>(0xA0U + pairings_.size()));
-      pairings_.push_back(credential);
-      authorized_ = true;
-      std::vector<std::uint8_t> result {LVHB_MSG_PAIR, LVHB_STATUS_OK};
+      credential.key_id.fill(static_cast<std::uint8_t>(0x10U + pairing_.pairings.size()));
+      credential.secret.fill(static_cast<std::uint8_t>(0xA0U + pairing_.pairings.size()));
+      pairing_.pairings.push_back(credential);
+      pairing_.authorized = true;
+      std::vector<std::uint8_t> result {protocol::message::pair, protocol::status::ok};
       result.insert(result.end(), credential.key_id.begin(), credential.key_id.end());
       result.insert(result.end(), credential.secret.begin(), credential.secret.end());
-      send_locked(LVHB_MSG_CONFIRM_RESULT, result);
+      send_locked(protocol::message::confirm_result, result);
     }
 
     void revoke_all() {
       std::lock_guard lock {mutex_};
-      pairings_.clear();
+      pairing_.pairings.clear();
     }
 
     void reject_version(bool reject) {
       std::lock_guard lock {mutex_};
-      reject_version_ = reject;
+      behavior_.reject_version = reject;
     }
 
     void pair_status(std::uint8_t status) {
       std::lock_guard lock {mutex_};
-      pair_status_ = status;
+      behavior_.pair_status = status;
     }
 
     int pair_requests() {
       std::lock_guard lock {mutex_};
-      return pair_requests_;
+      return counters_.pair_requests;
     }
 
     /**
@@ -201,23 +205,23 @@ namespace {
      */
     void confirm_timeout() {
       std::lock_guard lock {mutex_};
-      if (!pending_pair_) {
+      if (!pairing_.pending) {
         return;
       }
-      pending_pair_ = false;
-      send_locked(LVHB_MSG_CONFIRM_RESULT, std::vector<std::uint8_t> {LVHB_MSG_PAIR, LVHB_STATUS_TIMEOUT});
+      pairing_.pending = false;
+      send_locked(protocol::message::confirm_result, std::vector<std::uint8_t> {protocol::message::pair, protocol::status::timeout});
     }
 
     int auth_attempts() {
       std::lock_guard lock {mutex_};
-      return auth_attempts_;
+      return counters_.auth_attempts;
     }
 
-    static constexpr std::array<std::uint8_t, LVHB_DEVICE_ID_SIZE> device_id {0xA4, 0xCB, 0x8F, 0x00, 0x00, 0x01};
+    static constexpr std::array<std::uint8_t, protocol::device_id_size> device_id {0xA4, 0xCB, 0x8F, 0x00, 0x00, 0x01};
 
     int commits() {
       std::lock_guard lock {mutex_};
-      return commits_;
+      return counters_.commits;
     }
 
     std::vector<std::pair<std::uint8_t, std::vector<std::uint8_t>>> inputs() {
@@ -226,7 +230,7 @@ namespace {
     }
 
     template<typename Predicate>
-    bool wait_until(Predicate predicate, std::chrono::milliseconds timeout = 3000ms) {
+    bool wait_until(Predicate predicate, std::chrono::milliseconds timeout = 3000ms) const {
       const auto deadline = std::chrono::steady_clock::now() + timeout;
       while (std::chrono::steady_clock::now() < deadline) {
         if (predicate()) {
@@ -238,125 +242,172 @@ namespace {
     }
 
   private:
+    /**
+     * @brief Behavior a test configures.
+     */
+    struct Behavior {
+      bool require_pairing = false;
+      bool reject_version = false;
+      std::uint8_t pair_status = protocol::status::ok;
+    };
+
+    /**
+     * @brief Pairing and authentication state.
+     */
+    struct PairingState {
+      bool authorized = false;
+      bool pending = false;
+      std::uint8_t nonce_counter = 0;
+      std::array<std::uint8_t, protocol::nonce_size> nonce {};
+      std::vector<BridgeCredential> pairings;
+    };
+
+    /**
+     * @brief Request counters tests assert on.
+     */
+    struct Counters {
+      int commits = 0;
+      int pair_requests = 0;
+      int auth_attempts = 0;
+    };
+
+    static bool is_layout_message(std::uint8_t type) {
+      return type == protocol::message::layout_begin || type == protocol::message::layout_slot || type == protocol::message::layout_feature || type == protocol::message::layout_commit;
+    }
+
+    void ack_locked(std::uint8_t type, std::uint8_t sequence, std::uint8_t status) {
+      send_locked(protocol::message::ack, std::vector {type, sequence, status});
+    }
+
     void handle(std::span<const std::uint8_t> frame) {
       const auto type = frame[0];
       const auto sequence = frame[1];
       const auto payload = frame.subspan(2);
-      const auto ack = [this, type, sequence](std::uint8_t status) {
-        const std::vector<std::uint8_t> reply {type, sequence, status};
-        send_locked(LVHB_MSG_ACK, reply);
-      };
-
-      if (!authorized_ && (type == LVHB_MSG_LAYOUT_BEGIN || type == LVHB_MSG_LAYOUT_SLOT || type == LVHB_MSG_LAYOUT_FEATURE || type == LVHB_MSG_LAYOUT_COMMIT)) {
-        ack(LVHB_STATUS_UNAUTHORIZED);
+      if (!pairing_.authorized && is_layout_message(type)) {
+        ack_locked(type, sequence, protocol::status::unauthorized);
         return;
       }
 
       switch (type) {
-        case LVHB_MSG_HELLO:
-          {
-            if (reject_version_) {
-              ack(LVHB_STATUS_VERSION_MISMATCH);
-              break;
-            }
-            authorized_ = !require_pairing_;
-            nonce_.fill(static_cast<std::uint8_t>(++nonce_counter_));
-            std::vector<std::uint8_t> reply {LVHB_PROTOCOL_VERSION, 0, LVHB_MAX_SLOTS, 1};
-            for (unsigned shift = 0; shift < 32U; shift += 8U) {
-              reply.push_back(static_cast<std::uint8_t>(active_.generation >> shift));
-            }
-            reply.push_back(0x00);
-            reply.push_back(0x02);
-            reply.push_back(static_cast<std::uint8_t>((require_pairing_ ? static_cast<unsigned>(LVHB_AUTH_PAIRING_REQUIRED) : 0U) | (authorized_ ? static_cast<unsigned>(LVHB_AUTH_AUTHORIZED) : 0U)));
-            reply.insert(reply.end(), nonce_.begin(), nonce_.end());
-            reply.insert(reply.end(), device_id.begin(), device_id.end());
-            reply.insert(reply.end(), {'t', 'e', 's', 't'});
-            send_locked(LVHB_MSG_HELLO_ACK, reply);
-            break;
-          }
-        case LVHB_MSG_AUTH:
-          {
-            ++auth_attempts_;
-            bool valid = false;
-            for (const auto &pairing : pairings_) {
-              if (payload.size() < LVHB_KEY_ID_SIZE + LVHB_MAC_SIZE || !std::equal(pairing.key_id.begin(), pairing.key_id.end(), payload.begin())) {
-                continue;
-              }
-              const auto message = lvh::detail::esp32::make_auth_message(nonce_, pairing.key_id, device_id);
-              const auto mac = lvh::detail::esp32::hmac_sha256(pairing.secret, message);
-              valid = std::equal(mac.begin(), mac.end(), payload.begin() + LVHB_KEY_ID_SIZE);
-            }
-            authorized_ = authorized_ || valid;
-            ack(valid ? LVHB_STATUS_OK : LVHB_STATUS_UNAUTHORIZED);
-            break;
-          }
-        case LVHB_MSG_PAIR:
-          ++pair_requests_;
-          pending_pair_ = pair_status_ == LVHB_STATUS_OK;
-          ack(pair_status_);
+        case protocol::message::hello:
+          handle_hello(sequence);
           break;
-        case LVHB_MSG_LAYOUT_BEGIN:
+        case protocol::message::auth:
+          ack_locked(type, sequence, handle_auth(payload) ? protocol::status::ok : protocol::status::unauthorized);
+          break;
+        case protocol::message::pair:
+          ++counters_.pair_requests;
+          pairing_.pending = behavior_.pair_status == protocol::status::ok;
+          ack_locked(type, sequence, behavior_.pair_status);
+          break;
+        case protocol::message::layout_begin:
           staged_ = Layout {};
-          staged_->vendor_id = static_cast<std::uint16_t>(payload[0] | (payload[1] << 8U));
-          staged_->product_id = static_cast<std::uint16_t>(payload[2] | (payload[3] << 8U));
-          ack(LVHB_STATUS_OK);
+          staged_->vendor_id = lvh::detail::esp32::read_le<std::uint16_t>(payload);
+          staged_->product_id = lvh::detail::esp32::read_le<std::uint16_t>(payload.subspan(2));
+          ack_locked(type, sequence, protocol::status::ok);
           break;
-        case LVHB_MSG_LAYOUT_SLOT:
-          {
-            auto &slot = staged_->slots[payload[0]];
-            slot.kind = payload[1];
-            const auto descriptor_size = static_cast<std::size_t>(payload[3] | (payload[4] << 8U));
-            slot.descriptor.assign(payload.begin() + 5, payload.begin() + 5 + static_cast<std::ptrdiff_t>(descriptor_size));
-            slot.neutral.assign(payload.begin() + 5 + static_cast<std::ptrdiff_t>(descriptor_size), payload.end());
-            ack(LVHB_STATUS_OK);
-            break;
-          }
-        case LVHB_MSG_LAYOUT_FEATURE:
+        case protocol::message::layout_slot:
+          handle_layout_slot(payload);
+          ack_locked(type, sequence, protocol::status::ok);
+          break;
+        case protocol::message::layout_feature:
           staged_->slots[payload[0]].features.emplace_back(payload.begin() + 1, payload.end());
-          ack(LVHB_STATUS_OK);
+          ack_locked(type, sequence, protocol::status::ok);
           break;
-        case LVHB_MSG_LAYOUT_COMMIT:
-          {
-            std::uint8_t kinds[LVHB_MAX_SLOTS] {};
-            for (std::size_t index = 0; index < LVHB_MAX_SLOTS; ++index) {
-              kinds[index] = staged_->slots[index].kind;
-            }
-            if (lvhb_layout_fits(kinds) == 0) {
-              ack(LVHB_STATUS_INVALID_LAYOUT);
-              break;
-            }
-            staged_->generation = static_cast<std::uint32_t>(payload[0] | (payload[1] << 8U) | (payload[2] << 16U) | (payload[3] << 24U));
-            ack(LVHB_STATUS_OK);
-            pending_reenumeration_ = true;
-            break;
-          }
-        case LVHB_MSG_INPUT_REPORT:
-          if (!authorized_) {
-            break;
-          }
-          inputs_.emplace_back(payload[0], std::vector<std::uint8_t> {payload.begin() + 1, payload.end()});
+        case protocol::message::layout_commit:
+          ack_locked(type, sequence, handle_layout_commit(payload));
           break;
-        case LVHB_MSG_PING:
-          send_locked(LVHB_MSG_PONG, std::vector<std::uint8_t> {payload.begin(), payload.end()});
+        case protocol::message::input_report:
+          if (pairing_.authorized) {
+            inputs_.emplace_back(payload[0], std::vector<std::uint8_t> {payload.begin() + 1, payload.end()});
+          }
+          break;
+        case protocol::message::ping:
+          send_locked(protocol::message::pong, std::vector<std::uint8_t> {payload.begin(), payload.end()});
           break;
         default:
           break;
       }
     }
 
+    void handle_hello(std::uint8_t sequence) {
+      if (behavior_.reject_version) {
+        ack_locked(protocol::message::hello, sequence, protocol::status::version_mismatch);
+        return;
+      }
+      pairing_.authorized = !behavior_.require_pairing;
+      pairing_.nonce.fill(++pairing_.nonce_counter);
+      std::vector<std::uint8_t> reply;
+      lvh::detail::esp32::append_le(reply, protocol::version);
+      reply.push_back(static_cast<std::uint8_t>(protocol::max_slots));
+      reply.push_back(1);
+      lvh::detail::esp32::append_le(reply, active_.generation);
+      lvh::detail::esp32::append_le(reply, static_cast<std::uint16_t>(protocol::max_report_descriptor));
+      std::uint8_t flags = 0;
+      if (behavior_.require_pairing) {
+        flags += protocol::auth_flag::pairing_required;
+      }
+      if (pairing_.authorized) {
+        flags += protocol::auth_flag::authorized;
+      }
+      reply.push_back(flags);
+      reply.insert(reply.end(), pairing_.nonce.begin(), pairing_.nonce.end());
+      reply.insert(reply.end(), device_id.begin(), device_id.end());
+      reply.insert(reply.end(), {'t', 'e', 's', 't'});
+      send_locked(protocol::message::hello_ack, reply);
+    }
+
+    bool handle_auth(std::span<const std::uint8_t> payload) {
+      ++counters_.auth_attempts;
+      if (payload.size() < protocol::key_id_size + protocol::mac_size) {
+        return false;
+      }
+      const auto key_id = payload.first(protocol::key_id_size);
+      const auto valid = std::ranges::any_of(pairing_.pairings, [this, key_id, payload](const BridgeCredential &pairing) {
+        if (!std::ranges::equal(pairing.key_id, key_id)) {
+          return false;
+        }
+        const auto mac = lvh::detail::esp32::hmac_sha256(pairing.secret, lvh::detail::esp32::make_auth_message(pairing_.nonce, pairing.key_id, device_id));
+        return std::ranges::equal(mac, payload.subspan(protocol::key_id_size, protocol::mac_size));
+      });
+      pairing_.authorized = pairing_.authorized || valid;
+      return valid;
+    }
+
+    void handle_layout_slot(std::span<const std::uint8_t> payload) {
+      auto &slot = staged_->slots[payload[0]];
+      slot.kind = payload[1];
+      const auto descriptor_size = lvh::detail::esp32::read_le<std::uint16_t>(payload.subspan(3));
+      const auto descriptor = payload.subspan(5, descriptor_size);
+      slot.descriptor.assign(descriptor.begin(), descriptor.end());
+      const auto neutral = payload.subspan(5 + descriptor_size);
+      slot.neutral.assign(neutral.begin(), neutral.end());
+    }
+
+    std::uint8_t handle_layout_commit(std::span<const std::uint8_t> payload) {
+      std::array<std::uint8_t, protocol::max_slots> kinds {};
+      std::ranges::transform(staged_->slots, kinds.begin(), &Slot::kind);
+      if (!protocol::layout_fits(kinds)) {
+        return protocol::status::invalid_layout;
+      }
+      staged_->generation = lvh::detail::esp32::read_le<std::uint32_t>(payload);
+      pending_reenumeration_ = true;
+      return protocol::status::ok;
+    }
+
     void reenumerate_locked() {
       pending_reenumeration_ = false;
       active_ = *staged_;
       staged_.reset();
-      ++commits_;
+      ++counters_.commits;
       ++instance_;
       to_host_.clear();
       present_after_ = std::chrono::steady_clock::now() + 20ms;
     }
 
     void send_locked(std::uint8_t type, const std::vector<std::uint8_t> &payload) {
-      std::array<std::uint8_t, LVHB_MAX_ENCODED_FRAME> encoded {};
-      const auto size = lvhb_encode_frame(type, tx_sequence_++, payload.data(), payload.size(), encoded.data());
+      std::array<std::uint8_t, protocol::max_encoded_frame> encoded {};
+      const auto size = protocol::encode_frame(type, tx_sequence_++, payload, encoded);
       to_host_.insert(to_host_.end(), encoded.begin(), encoded.begin() + static_cast<std::ptrdiff_t>(size));
       changed_.notify_all();
     }
@@ -369,20 +420,12 @@ namespace {
     Layout active_;
     bool pending_reenumeration_ = false;
     int instance_ = 0;
-    int commits_ = 0;
     std::uint8_t tx_sequence_ = 0;
     std::chrono::steady_clock::time_point present_after_ {};
     std::vector<std::pair<std::uint8_t, std::vector<std::uint8_t>>> inputs_;
-    bool require_pairing_ = false;
-    bool reject_version_ = false;
-    std::uint8_t pair_status_ = LVHB_STATUS_OK;
-    int pair_requests_ = 0;
-    bool authorized_ = false;
-    bool pending_pair_ = false;
-    int auth_attempts_ = 0;
-    std::uint8_t nonce_counter_ = 0;
-    std::array<std::uint8_t, LVHB_NONCE_SIZE> nonce_ {};
-    std::vector<BridgeCredential> pairings_;
+    Behavior behavior_;
+    PairingState pairing_;
+    Counters counters_;
   };
 
   /**
@@ -414,7 +457,7 @@ namespace {
 
   private:
     std::mutex mutex_;
-    std::map<std::string, BridgeCredential> credentials_;
+    std::map<std::string, BridgeCredential, std::less<>> credentials_;
   };
 
   /**
@@ -435,7 +478,7 @@ namespace {
     }
 
     std::string path() const override {
-      return "fake" + std::to_string(instance_);
+      return std::format("fake{}", instance_);
     }
 
   private:
@@ -468,9 +511,6 @@ namespace {
         return std::make_unique<FakePort>(device, device->instance());
       },
       [this](lvh::LogLevel, const std::string &message) {
-        if (std::getenv("LVH_TEST_LOG") != nullptr) {
-          std::fprintf(stderr, "[bridge] %s\n", message.c_str());
-        }
         if (on_log) {
           on_log(message);
         }
@@ -496,27 +536,27 @@ namespace {
    * @brief Input report sizes in bytes per report id, computed by walking a HID report descriptor.
    */
   struct DescriptorSummary {
-    std::map<std::uint8_t, std::size_t> input_bytes;
-    std::map<std::uint8_t, std::size_t> output_bytes;
+    std::array<std::size_t, 256> input_bytes {};  ///< Indexed by report id; 0 when the id has no input report.
+    std::array<std::size_t, 256> output_bytes {};  ///< Indexed by report id; 0 when the id has no output report.
     int collection_depth = 0;
     bool balanced = true;
   };
 
   DescriptorSummary summarize_descriptor(const std::vector<std::uint8_t> &descriptor) {
     DescriptorSummary summary;
-    std::map<std::uint8_t, std::size_t> input_bits;
-    std::map<std::uint8_t, std::size_t> output_bits;
+    std::array<std::size_t, 256> input_bits {};
+    std::array<std::size_t, 256> output_bits {};
     std::uint32_t report_size = 0;
     std::uint32_t report_count = 0;
     std::uint8_t report_id = 0;
     for (std::size_t index = 0; index < descriptor.size();) {
-      const auto prefix = descriptor[index];
-      const std::size_t size = (prefix & 0x03U) == 3U ? 4U : (prefix & 0x03U);
+      const unsigned prefix = descriptor[index];
+      const std::size_t size = prefix % 4U == 3U ? 4U : prefix % 4U;
       std::uint32_t value = 0;
-      for (std::size_t byte = 0; byte < size; ++byte) {
-        value |= static_cast<std::uint32_t>(descriptor[index + 1U + byte]) << (8U * byte);
+      for (std::size_t byte = size; byte > 0; --byte) {
+        value = value * 0x100U + descriptor[index + byte];
       }
-      switch (prefix & 0xFCU) {
+      switch (prefix - prefix % 4U) {
         case 0x74:
           report_size = value;
           break;
@@ -536,20 +576,29 @@ namespace {
           ++summary.collection_depth;
           break;
         case 0xC0:
-          summary.balanced = summary.balanced && --summary.collection_depth >= 0;
+          --summary.collection_depth;
+          summary.balanced = summary.balanced && summary.collection_depth >= 0;
           break;
         default:
           break;
       }
       index += 1U + size;
     }
-    for (const auto &[id, bits] : input_bits) {
-      summary.input_bytes[id] = 1U + (bits + 7U) / 8U;
-    }
-    for (const auto &[id, bits] : output_bits) {
-      summary.output_bytes[id] = 1U + (bits + 7U) / 8U;
+    for (std::size_t id = 0; id < input_bits.size(); ++id) {
+      summary.input_bytes[id] = input_bits[id] != 0 ? 1U + (input_bits[id] + 7U) / 8U : 0U;
+      summary.output_bytes[id] = output_bits[id] != 0 ? 1U + (output_bits[id] + 7U) / 8U : 0U;
     }
     return summary;
+  }
+
+  /**
+   * @brief Unique directory below the test's working directory; the caller removes it.
+   *
+   * @param name Distinguishes tests.
+   * @return Directory path, not created yet.
+   */
+  std::filesystem::path scratch_directory(std::string_view name) {
+    return std::filesystem::current_path() / std::format("lvh-bridge-{}-{}", name, std::chrono::steady_clock::now().time_since_epoch().count());
   }
 
   lvh::CreateGamepadOptions options_for(lvh::DeviceProfile profile) {
@@ -558,59 +607,79 @@ namespace {
     return options;
   }
 
+  /**
+   * @brief Require pairing, create an Xbox 360 pad, and confirm the pairing with BOOT.
+   *
+   * @param harness Test bridge.
+   * @return Creation result; the pad stays alive while the caller holds it.
+   */
+  auto create_paired_xbox_pad(BridgeHarness &harness) {
+    harness.device->require_pairing(true);
+    auto created = harness.backend->create_gamepad(1, options_for(lvh::profiles::xbox_360()));
+    EXPECT_TRUE(harness.device->wait_until([&harness]() {
+      return harness.device->pairing_pending();
+    }));
+    harness.device->press_boot();
+    EXPECT_TRUE(harness.device->wait_until([&harness]() {
+      return harness.device->commits() == 1;
+    }));
+    return created;
+  }
+
 }  // namespace
 
 TEST(Esp32BridgeProtocolTest, FrameRoundTripsPayloadWithZeros) {
   const std::vector<std::uint8_t> payload {0x00, 0x01, 0x00, 0x00, 0xFF, 0x00};
-  std::array<std::uint8_t, LVHB_MAX_ENCODED_FRAME> encoded {};
-  const auto size = lvhb_encode_frame(LVHB_MSG_INPUT_REPORT, 7, payload.data(), payload.size(), encoded.data());
+  std::array<std::uint8_t, protocol::max_encoded_frame> encoded {};
+  const auto size = protocol::encode_frame(protocol::message::input_report, 7, payload, encoded);
   ASSERT_GT(size, payload.size());
   EXPECT_EQ(encoded[size - 1U], 0U);
   for (std::size_t index = 0; index + 1U < size; ++index) {
     EXPECT_NE(encoded[index], 0U);
   }
 
-  std::array<std::uint8_t, LVHB_MAX_FRAME> frame {};
-  ASSERT_EQ(lvhb_decode_frame(encoded.data(), size - 1U, frame.data()), static_cast<int>(payload.size()));
-  EXPECT_EQ(frame[0], LVHB_MSG_INPUT_REPORT);
+  std::array<std::uint8_t, protocol::max_frame> frame {};
+  ASSERT_EQ(protocol::decode_frame(std::span {encoded}.first(size - 1U), frame), payload.size());
+  EXPECT_EQ(frame[0], protocol::message::input_report);
   EXPECT_EQ(frame[1], 7U);
   EXPECT_TRUE(std::equal(payload.begin(), payload.end(), frame.begin() + 2));
 }
 
 TEST(Esp32BridgeProtocolTest, FrameRoundTripsLongRunWithoutZeros) {
-  std::vector<std::uint8_t> payload(LVHB_MAX_PAYLOAD, 0x5A);
-  std::array<std::uint8_t, LVHB_MAX_ENCODED_FRAME> encoded {};
-  const auto size = lvhb_encode_frame(LVHB_MSG_LAYOUT_SLOT, 1, payload.data(), payload.size(), encoded.data());
+  std::vector<std::uint8_t> payload(protocol::max_payload, 0x5A);
+  std::array<std::uint8_t, protocol::max_encoded_frame> encoded {};
+  const auto size = protocol::encode_frame(protocol::message::layout_slot, 1, payload, encoded);
   ASSERT_NE(size, 0U);
-  ASSERT_LE(size, LVHB_MAX_ENCODED_FRAME);
-  std::array<std::uint8_t, LVHB_MAX_FRAME> frame {};
-  EXPECT_EQ(lvhb_decode_frame(encoded.data(), size - 1U, frame.data()), static_cast<int>(payload.size()));
+  ASSERT_LE(size, protocol::max_encoded_frame);
+  std::array<std::uint8_t, protocol::max_frame> frame {};
+  EXPECT_EQ(protocol::decode_frame(std::span {encoded}.first(size - 1U), frame), payload.size());
 }
 
 TEST(Esp32BridgeProtocolTest, CorruptedFrameFailsCrc) {
   const std::vector<std::uint8_t> payload {1, 2, 3, 4};
-  std::array<std::uint8_t, LVHB_MAX_ENCODED_FRAME> encoded {};
-  const auto size = lvhb_encode_frame(LVHB_MSG_PING, 0, payload.data(), payload.size(), encoded.data());
-  encoded[3] ^= 0x10U;
-  std::array<std::uint8_t, LVHB_MAX_FRAME> frame {};
-  EXPECT_EQ(lvhb_decode_frame(encoded.data(), size - 1U, frame.data()), -1);
+  std::array<std::uint8_t, protocol::max_encoded_frame> encoded {};
+  const auto size = protocol::encode_frame(protocol::message::ping, 0, payload, encoded);
+  encoded[3] = encoded[3] == 0x10U ? 0x20U : 0x10U;
+  std::array<std::uint8_t, protocol::max_frame> frame {};
+  EXPECT_FALSE(protocol::decode_frame(std::span {encoded}.first(size - 1U), frame).has_value());
 }
 
 TEST(Esp32BridgeProtocolTest, EndpointBudgetAllowsOneXinputBesideCdc) {
-  const std::uint8_t xinput_and_hid[] {LVHB_SLOT_XINPUT, LVHB_SLOT_HID};
-  const std::uint8_t two_hid[] {LVHB_SLOT_HID, LVHB_SLOT_HID};
-  const std::uint8_t two_xinput[] {LVHB_SLOT_XINPUT, LVHB_SLOT_XINPUT};
-  EXPECT_NE(lvhb_layout_fits(xinput_and_hid), 0);
-  EXPECT_NE(lvhb_layout_fits(two_hid), 0);
-  EXPECT_EQ(lvhb_layout_fits(two_xinput), 0);
+  constexpr std::array xinput_and_hid {protocol::slot::xinput, protocol::slot::hid};
+  constexpr std::array two_hid {protocol::slot::hid, protocol::slot::hid};
+  constexpr std::array two_xinput {protocol::slot::xinput, protocol::slot::xinput};
+  EXPECT_TRUE(protocol::layout_fits(xinput_and_hid));
+  EXPECT_TRUE(protocol::layout_fits(two_hid));
+  EXPECT_FALSE(protocol::layout_fits(two_xinput));
 }
 
 TEST(Esp32BridgeReportTest, PacksXinputButtonsTriggersAndAxes) {
+  using enum lvh::GamepadButton;
   lvh::GamepadState state;
-  state.buttons.set(lvh::GamepadButton::a);
-  state.buttons.set(lvh::GamepadButton::dpad_left);
-  state.buttons.set(lvh::GamepadButton::guide);
-  state.buttons.set(lvh::GamepadButton::back);
+  state.buttons.set(a);
+  state.buttons.set(dpad_left);
+  state.buttons.set(guide);
+  state.buttons.set(back);
   state.left_trigger = 1.0F;
   state.left_stick = {1.0F, -1.0F};
   state.right_stick = {0.0F, 1.0F};
@@ -675,14 +744,14 @@ TEST(Esp32BridgeBackendTest, XboxProfileEnumeratesXinputSlotAndForwardsReports) 
 
   const auto layout = harness.device->active();
   EXPECT_EQ(harness.device->commits(), 1);
-  EXPECT_EQ(layout.slots[0].kind, LVHB_SLOT_XINPUT);
-  EXPECT_EQ(layout.slots[1].kind, LVHB_SLOT_NONE);
+  EXPECT_EQ(layout.slots[0].kind, protocol::slot::xinput);
+  EXPECT_EQ(layout.slots[1].kind, protocol::slot::none);
   EXPECT_EQ(layout.vendor_id, 0x303AU);
-  EXPECT_EQ(layout.slots[0].neutral.size(), LVHB_XINPUT_REPORT_SIZE);
+  EXPECT_EQ(layout.slots[0].neutral.size(), protocol::xinput_report_size);
 
   std::mutex outputs_mutex;
   std::vector<lvh::GamepadOutput> outputs;
-  created.gamepad->set_output_callback([&](const lvh::GamepadOutput &output) {
+  created.gamepad->set_output_callback([&outputs_mutex, &outputs](const lvh::GamepadOutput &output) {
     std::lock_guard lock {outputs_mutex};
     outputs.push_back(output);
   });
@@ -693,10 +762,10 @@ TEST(Esp32BridgeBackendTest, XboxProfileEnumeratesXinputSlotAndForwardsReports) 
   ASSERT_TRUE(harness.device->wait_until([&]() {
     return !harness.device->inputs().empty();
   }));
-  const auto input = harness.device->inputs().back();
-  EXPECT_EQ(input.first, 0U);
-  ASSERT_EQ(input.second.size(), LVHB_XINPUT_REPORT_SIZE);
-  EXPECT_EQ(input.second[3], 0x80U);
+  const auto [input_slot, input_report] = harness.device->inputs().back();
+  EXPECT_EQ(input_slot, 0U);
+  ASSERT_EQ(input_report.size(), protocol::xinput_report_size);
+  EXPECT_EQ(input_report[3], 0x80U);
 
   harness.device->emit_output(0, {0x00, 0x08, 0x00, 0x40, 0x20, 0x00, 0x00, 0x00});
   ASSERT_TRUE(harness.device->wait_until([&]() {
@@ -720,8 +789,8 @@ TEST(Esp32BridgeBackendTest, DualSenseUsesHidSlotWithSonyIdentityAndFeatureRepor
   const auto usb_profile = lvh::profiles::dualsense_usb();
   const auto layout = harness.device->active();
   EXPECT_EQ(harness.device->commits(), 2);
-  EXPECT_EQ(layout.slots[0].kind, LVHB_SLOT_XINPUT);
-  EXPECT_EQ(layout.slots[1].kind, LVHB_SLOT_HID);
+  EXPECT_EQ(layout.slots[0].kind, protocol::slot::xinput);
+  EXPECT_EQ(layout.slots[1].kind, protocol::slot::hid);
   EXPECT_EQ(layout.vendor_id, usb_profile.vendor_id);
   EXPECT_EQ(layout.product_id, usb_profile.product_id);
   EXPECT_EQ(layout.slots[1].descriptor, usb_profile.report_descriptor);
@@ -766,7 +835,7 @@ TEST(Esp32BridgeBackendTest, ClosingGamepadReleasesSlot) {
   ASSERT_TRUE(created) << created.status.message();
   ASSERT_TRUE(created.gamepad->close().ok());
   EXPECT_EQ(harness.device->commits(), 2);
-  EXPECT_EQ(harness.device->active().slots[0].kind, LVHB_SLOT_NONE);
+  EXPECT_EQ(harness.device->active().slots[0].kind, protocol::slot::none);
   EXPECT_EQ(created.gamepad->submit({}, {}).code(), lvh::ErrorCode::device_closed);
 
   auto again = harness.backend->create_gamepad(2, options_for(lvh::profiles::xbox_360()));
@@ -783,11 +852,11 @@ TEST(Esp32BridgeBackendTest, RestoresLayoutAndLatestInputAfterBridgeReboot) {
 
   harness.device->reboot();
   ASSERT_TRUE(harness.device->wait_until([&]() {
-    return harness.device->commits() >= 2 && harness.device->active().slots[0].kind == LVHB_SLOT_XINPUT;
+    return harness.device->commits() >= 2 && harness.device->active().slots[0].kind == protocol::slot::xinput;
   }));
   ASSERT_TRUE(harness.device->wait_until([&]() {
     const auto inputs = harness.device->inputs();
-    return inputs.size() >= 2U && inputs.back().second.size() == LVHB_XINPUT_REPORT_SIZE && inputs.back().second[3] == 0x20U;
+    return inputs.size() >= 2U && inputs.back().second.size() == protocol::xinput_report_size && inputs.back().second[3] == 0x20U;
   }));
 }
 
@@ -849,7 +918,7 @@ TEST(Esp32BridgePairingTest, UnpairedBridgeDefersLayoutUntilBootPress) {
 
   harness.device->press_boot();
   ASSERT_TRUE(harness.device->wait_until([&]() {
-    return harness.device->commits() == 1 && harness.device->active().slots[0].kind == LVHB_SLOT_XINPUT;
+    return harness.device->commits() == 1 && harness.device->active().slots[0].kind == protocol::slot::xinput;
   }));
   EXPECT_FALSE(harness.client->status().awaiting_pairing);
   EXPECT_EQ(harness.credentials->size(), 1U);
@@ -863,16 +932,8 @@ TEST(Esp32BridgePairingTest, UnpairedBridgeDefersLayoutUntilBootPress) {
 
 TEST(Esp32BridgePairingTest, StoredPairingAuthenticatesAfterReboot) {
   BridgeHarness harness;
-  harness.device->require_pairing(true);
-  auto created = harness.backend->create_gamepad(1, options_for(lvh::profiles::xbox_360()));
+  auto created = create_paired_xbox_pad(harness);
   ASSERT_TRUE(created) << created.status.message();
-  ASSERT_TRUE(harness.device->wait_until([&]() {
-    return harness.device->pairing_pending();
-  }));
-  harness.device->press_boot();
-  ASSERT_TRUE(harness.device->wait_until([&]() {
-    return harness.device->commits() == 1;
-  }));
 
   // The reconnect after the commit authenticates with the stored pairing.
   ASSERT_TRUE(harness.device->wait_until([&]() {
@@ -881,7 +942,7 @@ TEST(Esp32BridgePairingTest, StoredPairingAuthenticatesAfterReboot) {
   const auto attempts = harness.device->auth_attempts();
   harness.device->reboot();
   ASSERT_TRUE(harness.device->wait_until([&]() {
-    return harness.device->commits() == 2 && harness.device->active().slots[0].kind == LVHB_SLOT_XINPUT;
+    return harness.device->commits() == 2 && harness.device->active().slots[0].kind == protocol::slot::xinput;
   }));
   EXPECT_GT(harness.device->auth_attempts(), attempts);
   EXPECT_FALSE(harness.device->pairing_pending());
@@ -889,16 +950,8 @@ TEST(Esp32BridgePairingTest, StoredPairingAuthenticatesAfterReboot) {
 
 TEST(Esp32BridgePairingTest, RevokedPairingAsksToPairAgain) {
   BridgeHarness harness;
-  harness.device->require_pairing(true);
-  auto created = harness.backend->create_gamepad(1, options_for(lvh::profiles::xbox_360()));
+  auto created = create_paired_xbox_pad(harness);
   ASSERT_TRUE(created) << created.status.message();
-  ASSERT_TRUE(harness.device->wait_until([&]() {
-    return harness.device->pairing_pending();
-  }));
-  harness.device->press_boot();
-  ASSERT_TRUE(harness.device->wait_until([&]() {
-    return harness.device->commits() == 1;
-  }));
 
   harness.device->revoke_all();
   harness.device->reboot();
@@ -910,7 +963,7 @@ TEST(Esp32BridgePairingTest, RevokedPairingAsksToPairAgain) {
 }
 
 TEST(Esp32BridgePairingTest, FileStoreRoundTripsCredential) {
-  const auto directory = std::filesystem::temp_directory_path() / ("lvh-bridge-test-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+  const auto directory = scratch_directory("test");
   auto store = lvh::detail::esp32::make_file_credential_store(directory.string());
   BridgeCredential credential;
   credential.key_id.fill(0x42);
@@ -929,21 +982,24 @@ TEST(Esp32BridgeKeyboardMouseReportTest, DescriptorMatchesPackedReportSizes) {
   const auto summary = summarize_descriptor(lvh::detail::esp32::keyboard_mouse_report_descriptor());
   EXPECT_TRUE(summary.balanced);
   EXPECT_EQ(summary.collection_depth, 0);
-  ASSERT_EQ(summary.input_bytes.size(), 3U);
-  EXPECT_EQ(summary.input_bytes.at(LVHB_KM_KEYBOARD_REPORT_ID), std::size_t {LVHB_KM_KEYBOARD_REPORT_SIZE});
-  EXPECT_EQ(summary.input_bytes.at(LVHB_KM_RELATIVE_REPORT_ID), std::size_t {LVHB_KM_RELATIVE_REPORT_SIZE});
-  EXPECT_EQ(summary.input_bytes.at(LVHB_KM_ABSOLUTE_REPORT_ID), std::size_t {LVHB_KM_ABSOLUTE_REPORT_SIZE});
-  EXPECT_EQ(summary.output_bytes.at(LVHB_KM_KEYBOARD_REPORT_ID), 2U);
-  EXPECT_LE(lvh::detail::esp32::keyboard_mouse_report_descriptor().size(), std::size_t {LVHB_MAX_REPORT_DESCRIPTOR});
+  EXPECT_EQ(std::ranges::count_if(summary.input_bytes, [](std::size_t bytes) {
+              return bytes != 0;
+            }),
+            3);
+  EXPECT_EQ(summary.input_bytes[protocol::km::keyboard_report_id], protocol::km::keyboard_report_size);
+  EXPECT_EQ(summary.input_bytes[protocol::km::relative_report_id], protocol::km::relative_report_size);
+  EXPECT_EQ(summary.input_bytes[protocol::km::absolute_report_id], protocol::km::absolute_report_size);
+  EXPECT_EQ(summary.output_bytes[protocol::km::keyboard_report_id], 2U);
+  EXPECT_LE(lvh::detail::esp32::keyboard_mouse_report_descriptor().size(), std::size_t {protocol::max_report_descriptor});
 }
 
 TEST(Esp32BridgeKeyboardMouseReportTest, NeutralReportsAreLengthPrefixed) {
   const auto neutral = lvh::detail::esp32::keyboard_mouse_neutral_reports();
-  ASSERT_EQ(neutral.size(), 2U + LVHB_KM_KEYBOARD_REPORT_SIZE + LVHB_KM_RELATIVE_REPORT_SIZE);
-  EXPECT_EQ(neutral[0], LVHB_KM_KEYBOARD_REPORT_SIZE);
-  EXPECT_EQ(neutral[1], LVHB_KM_KEYBOARD_REPORT_ID);
-  EXPECT_EQ(neutral[1U + LVHB_KM_KEYBOARD_REPORT_SIZE], LVHB_KM_RELATIVE_REPORT_SIZE);
-  EXPECT_EQ(neutral[2U + LVHB_KM_KEYBOARD_REPORT_SIZE], LVHB_KM_RELATIVE_REPORT_ID);
+  ASSERT_EQ(neutral.size(), 2U + protocol::km::keyboard_report_size + protocol::km::relative_report_size);
+  EXPECT_EQ(neutral[0], protocol::km::keyboard_report_size);
+  EXPECT_EQ(neutral[1], protocol::km::keyboard_report_id);
+  EXPECT_EQ(neutral[1U + protocol::km::keyboard_report_size], protocol::km::relative_report_size);
+  EXPECT_EQ(neutral[2U + protocol::km::keyboard_report_size], protocol::km::relative_report_id);
 }
 
 TEST(Esp32BridgeKeyboardMouseReportTest, MapsVirtualKeysToHidUsages) {
@@ -981,7 +1037,7 @@ TEST(Esp32BridgeKeyboardMouseReportTest, KeyboardStateTracksModifiersAndRollover
     EXPECT_TRUE(state.apply(usage, true));
   }
   auto report = state.report();
-  EXPECT_EQ(report[0], LVHB_KM_KEYBOARD_REPORT_ID);
+  EXPECT_EQ(report[0], protocol::km::keyboard_report_id);
   EXPECT_EQ(report[1], 0x02U);
   // The seventh key displaces the oldest.
   EXPECT_EQ(report[3], 0x05U);
@@ -1014,10 +1070,10 @@ TEST(Esp32BridgeKeyboardMouseTest, KeyboardAndMouseShareOneSlot) {
   ASSERT_TRUE(mouse) << mouse.status.message();
   EXPECT_EQ(harness.device->commits(), 1);
   const auto layout = harness.device->active();
-  EXPECT_EQ(layout.slots[0].kind, LVHB_SLOT_KEYBOARD_MOUSE);
+  EXPECT_EQ(layout.slots[0].kind, protocol::slot::keyboard_mouse);
   EXPECT_EQ(layout.slots[0].descriptor, lvh::detail::esp32::keyboard_mouse_report_descriptor());
   EXPECT_EQ(layout.slots[0].neutral, lvh::detail::esp32::keyboard_mouse_neutral_reports());
-  EXPECT_EQ(layout.slots[1].kind, LVHB_SLOT_NONE);
+  EXPECT_EQ(layout.slots[1].kind, protocol::slot::none);
   EXPECT_FALSE(harness.backend->create_keyboard(3, {}));
 }
 
@@ -1087,7 +1143,7 @@ TEST(Esp32BridgeKeyboardMouseTest, MouseSendsRelativeButtonScrollAndAbsoluteRepo
   // Two half detents make one wheel click.
   EXPECT_EQ(reports[3], (std::vector<std::uint8_t> {2, 0x04, 0, 0, 0, 0, 1, 0}));
   EXPECT_EQ(reports[4], (std::vector<std::uint8_t> {2, 0x04, 0, 0, 0, 0, 0, 0xFE}));
-  EXPECT_EQ(reports[5][0], LVHB_KM_ABSOLUTE_REPORT_ID);
+  EXPECT_EQ(reports[5][0], protocol::km::absolute_report_id);
   EXPECT_EQ(reports[5][1], 0x04U);
   EXPECT_EQ(reports[5][2] | (reports[5][3] << 8U), 32750);
   // After absolute motion, buttons travel with the absolute position.
@@ -1101,8 +1157,8 @@ TEST(Esp32BridgeKeyboardMouseTest, KeyboardMouseFitsBesideXinputButNotTwoPads) {
   auto xbox = harness.backend->create_gamepad(2, options_for(lvh::profiles::xbox_360()));
   ASSERT_TRUE(xbox) << xbox.status.message();
   const auto layout = harness.device->active();
-  EXPECT_EQ(layout.slots[0].kind, LVHB_SLOT_KEYBOARD_MOUSE);
-  EXPECT_EQ(layout.slots[1].kind, LVHB_SLOT_XINPUT);
+  EXPECT_EQ(layout.slots[0].kind, protocol::slot::keyboard_mouse);
+  EXPECT_EQ(layout.slots[1].kind, protocol::slot::xinput);
   auto second_pad = harness.backend->create_gamepad(3, options_for(lvh::profiles::dualsense()));
   EXPECT_FALSE(second_pad);
   EXPECT_EQ(second_pad.status.code(), lvh::ErrorCode::unsupported_profile);
@@ -1127,7 +1183,7 @@ TEST(Esp32BridgeKeyboardMouseTest, SlotStaysUntilKeyboardAndMouseClose) {
   }));
   ASSERT_TRUE(mouse.mouse->close().ok());
   EXPECT_EQ(harness.device->commits(), 2);
-  EXPECT_EQ(harness.device->active().slots[0].kind, LVHB_SLOT_NONE);
+  EXPECT_EQ(harness.device->active().slots[0].kind, protocol::slot::none);
 }
 
 TEST(Esp32BridgeKeyboardMouseTest, FullBridgeFailsWithoutFallbackAndUsesFallbackWhenPresent) {
@@ -1172,7 +1228,7 @@ TEST(Esp32BridgeKeyboardMouseTest, KeyboardMouseReportsAreNotReplayedAfterReboot
   }));
   harness.device->reboot();
   ASSERT_TRUE(harness.device->wait_until([&]() {
-    return harness.device->commits() >= 2 && harness.device->active().slots[0].kind == LVHB_SLOT_KEYBOARD_MOUSE;
+    return harness.device->commits() >= 2 && harness.device->active().slots[0].kind == protocol::slot::keyboard_mouse;
   }));
   std::this_thread::sleep_for(200ms);
   EXPECT_EQ(harness.slot_inputs(0).size(), 1U);
@@ -1304,12 +1360,12 @@ TEST(Esp32BridgePairingTest, PairingRequestIsRepeatedAfterTheBootWindowEnds) {
 TEST(Esp32BridgePairingTest, BusyBridgeIsAskedAgain) {
   BridgeHarness harness;
   harness.device->require_pairing(true);
-  harness.device->pair_status(LVHB_STATUS_BUSY);
+  harness.device->pair_status(protocol::status::busy);
   ASSERT_TRUE(harness.client->start().ok());
   ASSERT_TRUE(harness.device->wait_until([&]() {
     return harness.device->pair_requests() >= 1;
   }));
-  harness.device->pair_status(LVHB_STATUS_OK);
+  harness.device->pair_status(protocol::status::ok);
   ASSERT_TRUE(harness.device->wait_until([&]() {
     return harness.device->pairing_pending();
   }));
@@ -1332,7 +1388,7 @@ TEST(Esp32BridgeBackendTest, ReleasedPadStaysGoneWhenTheBridgeReturns) {
     return harness.client->status().connected && harness.device->commits() >= 2;
   }));
   std::this_thread::sleep_for(200ms);
-  EXPECT_EQ(harness.device->active().slots[0].kind, LVHB_SLOT_NONE);
+  EXPECT_EQ(harness.device->active().slots[0].kind, protocol::slot::none);
 }
 
 TEST(Esp32BridgeBackendTest, ImplicitBridgeFallsBackForGamepadsWhenNoneAnswers) {
@@ -1370,7 +1426,7 @@ TEST(Esp32BridgeBackendTest, TeardownWhileOutputReportsArrive) {
 }
 
 TEST(Esp32BridgeCredentialStoreTest, RejectsCorruptFilesAndKeepsSecretsPrivate) {
-  const auto directory = std::filesystem::temp_directory_path() / ("lvh-bridge-corrupt-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+  const auto directory = scratch_directory("corrupt");
   std::filesystem::create_directories(directory);
   {
     std::ofstream file {directory / "bridge-A4CB8F000002.key"};
@@ -1394,7 +1450,7 @@ TEST(Esp32BridgePairingTest, ClientNameAddsTheHostAndFitsTheBridgeLimit) {
   using lvh::detail::esp32::pairing_client_name;
   EXPECT_EQ(pairing_client_name("Sunshine", "DESKTOP-1"), "Sunshine on DESKTOP-1");
   EXPECT_EQ(pairing_client_name("", ""), "libvirtualhid");
-  EXPECT_EQ(pairing_client_name(std::string(40, 'a'), "host").size(), LVHB_MAX_PAIRING_NAME);
+  EXPECT_EQ(pairing_client_name(std::string(40, 'a'), "host").size(), protocol::max_pairing_name);
 }
 
 #ifdef __linux__
