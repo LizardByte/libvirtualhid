@@ -292,10 +292,9 @@ namespace lvh::detail::esp32 {
     };
 
     /**
-     * @brief Open port and frame sequence; writes stay under the mutex so frames never interleave.
+     * @brief Open port and frame sequence; guarded by link_mutex_, and writes stay under it so frames never interleave.
      */
     struct Link {
-      mutable std::mutex mutex;  ///< Guards the members below.
       std::shared_ptr<SerialPort> port;  ///< Open port; the reader reads from a copy.
       std::uint8_t next_sequence = 0;  ///< Sequence number of the next frame.
     };
@@ -488,6 +487,7 @@ namespace lvh::detail::esp32 {
     std::shared_ptr<CredentialStore> credentials_;  ///< Pairing secrets.
     std::string client_name_;  ///< Pairing label.
     std::atomic_bool stopping_ = false;  ///< stop() was called; waits return early.
+    mutable std::mutex link_mutex_;  ///< Guards link_.
     Link link_;  ///< Port and sequence numbers.
     mutable std::mutex state_mutex_;  ///< Guards state_.
     std::condition_variable state_changed_;  ///< Signals changes of state_.

@@ -174,7 +174,7 @@ namespace {
       credential.secret.fill(static_cast<std::uint8_t>(0xA0U + pairing_.pairings.size()));
       pairing_.pairings.push_back(credential);
       pairing_.authorized = true;
-      std::vector<std::uint8_t> result {protocol::message::pair, protocol::status::ok};
+      std::vector result {protocol::message::pair, protocol::status::ok};
       result.insert(result.end(), credential.key_id.begin(), credential.key_id.end());
       result.insert(result.end(), credential.secret.begin(), credential.secret.end());
       send_locked(protocol::message::confirm_result, result);

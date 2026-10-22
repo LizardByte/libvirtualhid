@@ -156,7 +156,7 @@ namespace lvh::detail::esp32 {
     std::array<std::uint8_t, protocol::max_slots> kinds {};
     for (std::size_t index = 0; index < protocol::max_slots; ++index) {
       const auto &slot = layout.slots[index];
-      kinds[index] = slot.has_value() ? slot->kind : static_cast<std::uint8_t>(protocol::slot::none);
+      kinds[index] = slot.has_value() ? slot->kind : protocol::slot::none;
       if (!slot.has_value()) {
         continue;
       }
@@ -283,10 +283,10 @@ namespace lvh::detail::esp32 {
 
   std::optional<bool> BridgeClient::wait_until_reachable() {
     std::unique_lock lock {state_mutex_};
-    const auto reachable = state_changed_.wait_for(lock, timings_.connect_timeout, [this]() {
-      return state_.connected || state_.awaiting_pairing || stopping_;
-    });
-    if (!reachable || stopping_) {
+    if (const auto reachable = state_changed_.wait_for(lock, timings_.connect_timeout, [this]() {
+          return state_.connected || state_.awaiting_pairing || stopping_;
+        });
+        !reachable || stopping_) {
       return std::nullopt;
     }
     return !state_.connected;
@@ -440,7 +440,7 @@ namespace lvh::detail::esp32 {
   }
 
   std::string BridgeClient::port_path() const {
-    std::lock_guard lock {link_.mutex};
+    std::lock_guard lock {link_mutex_};
     return link_.port != nullptr ? link_.port->path() : std::string {};
   }
 
@@ -457,7 +457,7 @@ namespace lvh::detail::esp32 {
     while (!stop_token.stop_requested()) {
       std::shared_ptr<SerialPort> port;
       {
-        std::lock_guard lock {link_.mutex};
+        std::lock_guard lock {link_mutex_};
         port = link_.port;
       }
       if (port == nullptr) {
@@ -507,7 +507,7 @@ namespace lvh::detail::esp32 {
       }
       std::shared_ptr<SerialPort> port;
       {
-        std::lock_guard lock {link_.mutex};
+        std::lock_guard lock {link_mutex_};
         port = link_.port;
       }
       if (port == nullptr) {
@@ -548,7 +548,7 @@ namespace lvh::detail::esp32 {
     }
     log(LogLevel::debug, "opened ESP32-S3 bridge port " + port->path());
     {
-      std::lock_guard lock {link_.mutex};
+      std::lock_guard lock {link_mutex_};
       link_.port = port;
     }
     {
@@ -556,13 +556,13 @@ namespace lvh::detail::esp32 {
       state_.last_frame_time = std::chrono::steady_clock::now();
     }
     std::vector<std::uint8_t> payload;
-    append_le(payload, static_cast<std::uint16_t>(protocol::version));
+    append_le(payload, protocol::version);
     return write_frame(protocol::message::hello, payload);
   }
 
   void BridgeClient::drop_port(const std::shared_ptr<SerialPort> &expected) {
     {
-      std::lock_guard lock {link_.mutex};
+      std::lock_guard lock {link_mutex_};
       // A failure seen on an old port must not close the one the reader opened since.
       if (expected != nullptr && link_.port != expected) {
         return;
@@ -582,7 +582,7 @@ namespace lvh::detail::esp32 {
     {
       // Writes stay under the lock so frames from different threads never
       // interleave and sequence numbers go out in order.
-      std::lock_guard lock {link_.mutex};
+      std::lock_guard lock {link_mutex_};
       if (link_.port == nullptr) {
         return false;
       }

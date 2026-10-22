@@ -304,8 +304,7 @@ namespace lvh::detail::esp32::protocol {
     if (size < 4) {
       return std::nullopt;
     }
-    const auto expected = static_cast<std::uint16_t>(frame[size - 2] + (frame[size - 1] * 0x100U));
-    if (crc16(std::span {frame}.first(size - 2)) != expected) {
+    if (const auto expected = static_cast<std::uint16_t>(frame[size - 2] + (frame[size - 1] * 0x100U)); crc16(std::span {frame}.first(size - 2)) != expected) {
       return std::nullopt;
     }
     return size - 4;
