@@ -491,7 +491,13 @@ namespace lvh::detail {
           source {CGEventSourceCreate(kCGEventSourceStateHIDSystemState)},
           keyboard_source {CGEventSourceCreate(kCGEventSourceStatePrivate)},
           mouse_event {source ? CGEventCreate(source) : nullptr},
-          scroll_lines_per_detent_value {read_scroll_lines_per_detent(scrollwheel_scaling)} {}
+          scroll_lines_per_detent_value {read_scroll_lines_per_detent(scrollwheel_scaling)} {
+        // Each move warps the cursor. The default 250ms suppression then drops the
+        // following click and mouse-moved events. The cursor image still moves.
+        if (source) {
+          CGEventSourceSetLocalEventsSuppressionInterval(source, 0);
+        }
+      }
 
       MacosInputState(const MacosInputState &) = delete;
       MacosInputState &operator=(const MacosInputState &) = delete;
