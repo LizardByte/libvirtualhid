@@ -7,6 +7,7 @@
 #include "fixtures/fixtures.hpp"
 #include "playstation_feature_protocol.hpp"
 #include "shared/switch_pro_protocol.hpp"
+#include "vhf_report_response.hpp"
 #include "windows_device_identity.hpp"
 
 // standard includes
@@ -81,6 +82,82 @@ namespace {
   }
 
 }  // namespace
+
+TEST_F(WindowsDriverProtocolTest, VhfFeatureResponseDoesNotWriteToAdvertisedPadding) {
+  const auto request = playstation_request(LVH_WINDOWS_GAMEPAD_DUALSENSE);
+  for (const auto report_id : {0x05U, 0x09U, 0x20U}) {
+    SCOPED_TRACE(report_id);
+    const auto report = lvh::detail::windows::make_playstation_feature_report(request, report_id);
+    ASSERT_TRUE(report.has_value());
+    ASSERT_LE(report->size(), 64U);
+
+    // VHF allocates 64 bytes but advertises 128 in issue #199's PageHeap dump.
+    // Extra backing storage lets the test detect the overrun without invoking UB.
+    auto buffer = std::array<std::uint8_t, 128> {};
+    buffer.fill(0xA5);
+    ASSERT_TRUE(lvh::detail::windows::copy_vhf_report_response(buffer.data(), 128U, *report));
+    EXPECT_TRUE(std::ranges::equal(*report, std::span {buffer}.first(report->size())));
+    EXPECT_TRUE(std::ranges::all_of(std::span {buffer}.subspan(report->size()), [](auto byte) {
+      return byte == 0xA5;
+    }));
+  }
+}
+
+TEST_F(WindowsDriverProtocolTest, VhfInputResponseDoesNotWritePastTheReport) {
+  auto report = std::array<std::uint8_t, 64> {};
+  report.fill(0x5A);
+  report[0] = 0x01;
+  auto buffer = std::array<std::uint8_t, 128> {};
+  buffer.fill(0xA5);
+
+  ASSERT_TRUE(lvh::detail::windows::copy_vhf_report_response(buffer.data(), buffer.size(), report));
+  EXPECT_TRUE(std::ranges::equal(report, std::span {buffer}.first(report.size())));
+  EXPECT_TRUE(std::ranges::all_of(std::span {buffer}.subspan(report.size()), [](auto byte) {
+    return byte == 0xA5;
+  }));
+}
+
+TEST_F(WindowsDriverProtocolTest, VhfUnnumberedResponseWritesOnlyTheOptionalIdAndReport) {
+  const auto report = std::array<std::uint8_t, 8> {1, 2, 3, 4, 5, 6, 7, 8};
+  for (const auto prepend_zero_id : {false, true}) {
+    SCOPED_TRACE(prepend_zero_id);
+    const auto prefix_size = prepend_zero_id ? 1U : 0U;
+    auto buffer = std::array<std::uint8_t, 128> {};
+    buffer.fill(0xA5);
+
+    ASSERT_TRUE(lvh::detail::windows::copy_vhf_report_response(buffer.data(), buffer.size(), report, prepend_zero_id));
+    if (prepend_zero_id) {
+      EXPECT_EQ(buffer[0], 0U);
+    }
+    EXPECT_TRUE(std::ranges::equal(report, std::span {buffer}.subspan(prefix_size, report.size())));
+    EXPECT_TRUE(std::ranges::all_of(std::span {buffer}.subspan(prefix_size + report.size()), [](auto byte) {
+      return byte == 0xA5;
+    }));
+  }
+}
+
+TEST_F(WindowsDriverProtocolTest, VhfResponseRejectsShortRequestsWithoutWriting) {
+  const auto report = std::array<std::uint8_t, 8> {1, 2, 3, 4, 5, 6, 7, 8};
+  auto buffer = std::array<std::uint8_t, 16> {};
+  buffer.fill(0xA5);
+  EXPECT_FALSE(lvh::detail::windows::copy_vhf_report_response(buffer.data(), report.size() - 1U, report));
+  EXPECT_FALSE(lvh::detail::windows::copy_vhf_report_response(buffer.data(), report.size(), report, true));
+  EXPECT_TRUE(std::ranges::all_of(buffer, [](auto byte) {
+    return byte == 0xA5;
+  }));
+}
+
+TEST_F(WindowsDriverProtocolTest, VhfResponseAcceptsExactlySizedRequests) {
+  const auto report = std::array<std::uint8_t, 3> {1, 2, 3};
+  auto numbered_buffer = std::array<std::uint8_t, 3> {};
+  ASSERT_TRUE(lvh::detail::windows::copy_vhf_report_response(numbered_buffer.data(), numbered_buffer.size(), report));
+  EXPECT_EQ(numbered_buffer, report);
+
+  auto unnumbered_buffer = std::array<std::uint8_t, 4> {};
+  unnumbered_buffer.fill(0xA5);
+  ASSERT_TRUE(lvh::detail::windows::copy_vhf_report_response(unnumbered_buffer.data(), unnumbered_buffer.size(), report, true));
+  EXPECT_EQ(unnumbered_buffer, (std::array<std::uint8_t, 4> {0, 1, 2, 3}));
+}
 
 TEST_F(WindowsDriverProtocolTest, SeriesUsesCapturedXInputHidIdentity) {
   auto request = series_request();
