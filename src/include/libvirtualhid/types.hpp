@@ -104,7 +104,8 @@ namespace lvh {
    */
   enum class BackendKind {
     fake,  ///< In-memory backend for tests and API validation.
-    platform_default,  ///< Native backend for the current platform.
+    platform_default,  ///< Native backend for the current platform, or an attached ESP32-S3 bridge (see Esp32BridgeOptions::autodetect).
+    esp32_bridge,  ///< Devices enumerate as USB devices of an attached ESP32-S3 bridge.
   };
 
   /**
@@ -126,6 +127,20 @@ namespace lvh {
   using LogCallback = std::function<void(LogLevel level, const std::string &message)>;
 
   /**
+   * @brief Settings of the ESP32-S3 USB bridge backend.
+   *
+   * BackendKind::platform_default switches to the bridge when #autodetect is
+   * set and `LVH_BACKEND=esp32_bridge`, `LVH_ESP32_PORT`, or #port is set, or a
+   * bridge is attached. `LVH_BACKEND=platform` keeps the platform backend.
+   */
+  struct Esp32BridgeOptions {
+    std::string port;  ///< Serial port such as `COM5` or `/dev/ttyACM0`; empty auto-detects by the `LVHB-` USB serial number (Linux and Windows).
+    bool autodetect = true;  ///< Let BackendKind::platform_default switch to the bridge; set `false` when users choose the bridge explicitly.
+    std::string credential_dir;  ///< Directory of pairing secrets; empty uses `%ProgramData%/libvirtualhid/esp32-bridge` or `$XDG_CONFIG_HOME/libvirtualhid/esp32-bridge`.
+    std::string client_name = "libvirtualhid";  ///< Application name of this host's pairing; the host name is appended.
+  };
+
+  /**
    * @brief Runtime creation options.
    */
   struct RuntimeOptions {
@@ -138,6 +153,11 @@ namespace lvh {
      * @brief Optional callback for diagnostic messages.
      */
     LogCallback log_callback;
+
+    /**
+     * @brief Settings of the ESP32-S3 USB bridge backend.
+     */
+    Esp32BridgeOptions esp32_bridge;
   };
 
   /**

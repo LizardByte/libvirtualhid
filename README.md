@@ -99,6 +99,7 @@ More complete examples live in `examples/`, including the streaming-host-oriente
 - [Platform support](docs/platform-support.md): device availability, platform limits, and Linux permissions.
 - [Windows driver package](docs/windows-driver.md): installation, licensing, diagnostics, and contributor builds.
 - [macOS gamepad setup](docs/macos-gamepad.md): installation, licensing, and signed builds.
+- [ESP32-S3 USB bridge](docs/esp32-bridge.md): backend selection, slot limits, and pairing.
 - [Streaming-host integration](docs/streaming-host-integration.md): integration pattern.
 - [Development](docs/development.md): build, test, and documentation commands.
 

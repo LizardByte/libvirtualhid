@@ -10,6 +10,7 @@
 
 // local includes
 #include "core/backend.hpp"
+#include "platform/esp32/esp32_backend.hpp"
 
 namespace lvh::detail {
   namespace {
@@ -187,9 +188,14 @@ namespace lvh::detail {
 
   }  // namespace
 
-  std::unique_ptr<Backend> create_backend(BackendKind kind) {
-    if (kind == BackendKind::fake) {
+  std::unique_ptr<Backend> create_backend(const RuntimeOptions &options) {
+    if (options.backend == BackendKind::fake) {
       return std::make_unique<FakeBackend>();
+    }
+    // An attached ESP32-S3 bridge can replace the platform backend, so existing
+    // consumers use it without code changes.
+    if (auto bridge = esp32::create_backend_if_selected(options); bridge != nullptr) {
+      return bridge;
     }
 
     return create_platform_backend();
