@@ -49,6 +49,7 @@ namespace lvh::detail::test {
     OperationStatus status;  ///< Backend submission status.
     std::optional<MacosPoint> posted_location;  ///< Location on the posted event, if any.
     std::optional<MacosPoint> warped_location;  ///< Cursor warp destination, if any.
+    std::optional<std::int32_t> posted_pid;  ///< Process that received the event, when delivery bypasses the active application.
   };
 
   /**
@@ -179,7 +180,8 @@ namespace lvh::detail::test {
   std::vector<MacosMouseSubmissionResult> macos_backend_mouse_submissions(
     const PointerViewport &viewport,
     const MacosViewportBounds &initial_display_bounds,
-    const std::vector<MacosMouseSubmission> &submissions
+    const std::vector<MacosMouseSubmission> &submissions,
+    std::int32_t event_target_pid = 0
   );
 
   /**

@@ -382,3 +382,35 @@ TEST_F(MacosBackendTest, ReportsCapabilitiesAndUnsupportedDevices) {
   EXPECT_EQ(result.trackpad_status.code(), lvh::ErrorCode::unsupported_profile);
   EXPECT_EQ(result.pen_tablet_status.code(), lvh::ErrorCode::unsupported_profile);
 }
+
+TEST_F(MacosBackendTest, PostsMouseToTargetProcessByWarpingTheLogicalCursor) {
+  const lvh::PointerViewport viewport {.offset_x = 100, .offset_y = 200, .width = 640, .height = 480};
+  const lvh::MouseEvent move {
+    .kind = lvh::MouseEventKind::absolute_motion,
+    .x = 50,
+    .y = 50,
+    .width = 100,
+    .height = 100,
+  };
+  const lvh::MouseEvent click {
+    .kind = lvh::MouseEventKind::button,
+    .button = lvh::MouseButton::left,
+    .pressed = true,
+  };
+  const std::vector<lvh::detail::test::MacosMouseSubmission> submissions {
+    {.display_bounds = {0, 0, 1920, 1080}, .cursor_location = {10, 10}, .event = move},
+    {.display_bounds = {0, 0, 1920, 1080}, .cursor_location = {10, 10}, .event = click},
+  };
+  const auto results = lvh::detail::test::macos_backend_mouse_submissions(viewport, {0, 0, 1920, 1080}, submissions, 4242);
+
+  ASSERT_EQ(results.size(), 2U);
+  for (const auto &result : results) {
+    ASSERT_TRUE(result.status.ok()) << result.status.message();
+    ASSERT_TRUE(result.posted_location);
+    ASSERT_TRUE(result.warped_location);
+    EXPECT_DOUBLE_EQ(result.posted_location->x, 420);
+    EXPECT_DOUBLE_EQ(result.posted_location->y, 440);
+    EXPECT_DOUBLE_EQ(result.warped_location->x, 420);
+    EXPECT_DOUBLE_EQ(result.warped_location->y, 440);
+  }
+}

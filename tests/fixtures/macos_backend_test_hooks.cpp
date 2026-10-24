@@ -61,6 +61,7 @@ namespace {
     lvh::detail::test::MacosPoint cursor_location;
     std::optional<lvh::detail::test::MacosPoint> posted_location;
     std::optional<lvh::detail::test::MacosPoint> warped_location;
+    std::optional<std::int32_t> posted_pid;
   };
 
   CGDirectDisplayID mouse_main_display_id() {
@@ -99,6 +100,16 @@ namespace {
     return kCGErrorSuccess;
   }
 
+  void mouse_event_post_to_pid(pid_t pid, CGEventRef event) {
+    if (!mouse_environment()) {
+      CGEventPostToPid(pid, event);
+      return;
+    }
+    const auto point = CGEventGetLocation(event);
+    mouse_environment()->posted_location = {.x = point.x, .y = point.y};
+    mouse_environment()->posted_pid = static_cast<std::int32_t>(pid);
+  }
+
 }  // namespace
 
 // Load the backend's dependencies before these macros, then compile it in a
@@ -108,11 +119,13 @@ namespace {
 #define CGDisplayBounds mouse_display_bounds
 #define CGEventGetLocation mouse_event_location
 #define CGEventPost mouse_event_post
+#define CGEventPostToPid mouse_event_post_to_pid
 #define CGWarpMouseCursorPosition mouse_warp_cursor_position
 #define create_platform_backend create_platform_backend_for_macos_backend_test_hooks
 #include "../../src/platform/macos/macos_backend.cpp"
 #undef create_platform_backend
 #undef CGWarpMouseCursorPosition
+#undef CGEventPostToPid
 #undef CGEventPost
 #undef CGEventGetLocation
 #undef CGDisplayBounds
@@ -217,8 +230,13 @@ namespace lvh::detail::test {
   std::vector<MacosMouseSubmissionResult> macos_backend_mouse_submissions(
     const PointerViewport &viewport,
     const MacosViewportBounds &initial_display_bounds,
-    const std::vector<MacosMouseSubmission> &submissions
+    const std::vector<MacosMouseSubmission> &submissions,
+    std::int32_t event_target_pid
   ) {
+    macos::set_event_target_pid(event_target_pid);
+    const auto clear_target = std::shared_ptr<void> {nullptr, [](void *) {
+      macos::set_event_target_pid(0);
+    }};
     MouseEnvironment environment {initial_display_bounds};
     auto backend = create_platform_backend_for_macos_backend_test_hooks();
     CreateMouseOptions options;
@@ -235,8 +253,9 @@ namespace lvh::detail::test {
       environment.cursor_location = submission.cursor_location;
       environment.posted_location.reset();
       environment.warped_location.reset();
+      environment.posted_pid.reset();
       const auto status = created.mouse->submit(submission.event);
-      results.emplace_back(status, environment.posted_location, environment.warped_location);
+      results.emplace_back(status, environment.posted_location, environment.warped_location, environment.posted_pid);
     }
     return results;
   }
