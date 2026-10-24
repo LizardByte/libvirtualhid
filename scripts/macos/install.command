@@ -35,6 +35,7 @@ fi
 /usr/bin/sudo /bin/rm -rf "${legacy_broker_app}" "${installed_broker_app}" "${installed_control_app}"
 /usr/bin/sudo /usr/bin/ditto "${broker_app}" "${installed_broker_app}"
 /usr/bin/sudo /usr/bin/ditto "${control_app}" "${installed_control_app}"
+/usr/bin/sudo /usr/bin/xattr -dr com.apple.quarantine "${installed_broker_app}" "${installed_control_app}"
 /usr/bin/sudo /usr/sbin/chown -R root:wheel "${installed_broker_app}" "${installed_control_app}"
 /usr/bin/sudo /bin/chmod -R a+rX "${installed_broker_app}" "${installed_control_app}"
 /usr/bin/sudo /bin/chmod -R go-w "${installed_broker_app}" "${installed_control_app}"
@@ -43,6 +44,7 @@ fi
 /usr/bin/sudo /usr/bin/install -m 0644 \
   "${image_root}/${launchd_plist}" "${service_plist}"
 /usr/bin/sudo /usr/sbin/chown root:wheel "${service_plist}"
+/usr/bin/sudo /usr/bin/xattr -dr com.apple.quarantine "${service_plist}"
 
 if [[ -d "${image_root}/usr/local/include/libvirtualhid" ]]; then
   /usr/bin/sudo /usr/bin/ditto "${image_root}/usr/local/include/libvirtualhid" /usr/local/include/libvirtualhid
@@ -61,6 +63,14 @@ fi
 if [[ -d "${image_root}/usr/local/share/licenses/libvirtualhid" ]]; then
   /usr/bin/sudo /usr/bin/ditto "${image_root}/usr/local/share/licenses/libvirtualhid" /usr/local/share/licenses/libvirtualhid
 fi
+
+for installed_path in /usr/local/include/libvirtualhid /usr/local/lib/libvirtualhid.a \
+  /usr/local/bin/libvirtualhid-license /usr/local/lib/cmake/libvirtualhid \
+  /usr/local/share/licenses/libvirtualhid; do
+  if [[ -e "${installed_path}" ]]; then
+    /usr/bin/sudo /usr/bin/xattr -dr com.apple.quarantine "${installed_path}"
+  fi
+done
 
 /usr/bin/sudo /bin/launchctl bootstrap system "${service_plist}"
 /usr/bin/sudo /bin/launchctl kickstart -k "system/${bundle_id}"
