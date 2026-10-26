@@ -6,8 +6,10 @@
 #include "platform/macos/broker/io.hpp"
 #include "platform/macos/macos_xbox_transport.hpp"
 
+#include <algorithm>
 #include <array>
 #include <bitset>
+#include <span>
 #include <gtest/gtest.h>
 #include <libvirtualhid/profiles.hpp>
 #include <libvirtualhid/report.hpp>
@@ -97,6 +99,10 @@ TEST(MacosBrokerProtocolTest, XboxOneAndSeriesUseDistinctIdentitiesAndGipInput) 
     EXPECT_EQ(transport.input_report_size, 25U);
     EXPECT_EQ(transport.output_report_size, 9U);
     EXPECT_NE(transport.report_descriptor, requested.report_descriptor);
+    for (const std::uint8_t report_id : {0x01, 0x03, 0x09, 0x20}) {
+      const std::array<std::uint8_t, 2> report_id_item {0x85, report_id};
+      EXPECT_FALSE(std::ranges::search(transport.report_descriptor, report_id_item).empty()) << int {report_id};
+    }
 
     lvh::GamepadState state;
     state.buttons.set(lvh::GamepadButton::a);
@@ -162,6 +168,70 @@ TEST(MacosBrokerProtocolTest, XboxGipTransportMapsEveryButtonAndGuide) {
     ASSERT_EQ(report.size(), 25U);
     EXPECT_EQ(report[item.index], item.mask);
   }
+}
+
+TEST(MacosBrokerProtocolTest, XboxBluetoothTransportUsesCompactGameControllerLayout) {
+  using enum lvh::GamepadButton;
+
+  struct ButtonCase {
+    lvh::GamepadButton button;
+    std::size_t index;
+    std::uint8_t mask;
+  };
+
+  const std::array buttons {
+    ButtonCase {a, 14, 0x01},
+    ButtonCase {b, 14, 0x02},
+    ButtonCase {x, 14, 0x04},
+    ButtonCase {y, 14, 0x08},
+    ButtonCase {left_shoulder, 14, 0x10},
+    ButtonCase {right_shoulder, 14, 0x20},
+    ButtonCase {back, 14, 0x40},
+    ButtonCase {start, 14, 0x80},
+    ButtonCase {left_stick, 15, 0x01},
+    ButtonCase {right_stick, 15, 0x02},
+    ButtonCase {guide, 15, 0x04},
+    ButtonCase {misc1, 16, 0x01},
+  };
+  for (const auto &item : buttons) {
+    lvh::GamepadState state;
+    state.buttons.set(item.button);
+    const auto packed = lvh::reports::pack_input_report(lvh::profiles::xbox_series(), state);
+    const auto report = lvh::detail::macos::xbox_bluetooth_transport_input_report(state, packed, true);
+    ASSERT_EQ(report.size(), 25U);
+    EXPECT_EQ(report[0], 0x01U);
+    EXPECT_EQ(report[item.index], item.mask);
+    EXPECT_EQ(std::bitset<8> {report[14]}.count() + std::bitset<8> {report[15]}.count() + std::bitset<8> {report[16]}.count(), 1U);
+  }
+
+  lvh::GamepadState share;
+  share.buttons.set(misc1);
+  const auto xbox_one = lvh::detail::macos::xbox_bluetooth_transport_input_report(
+    share,
+    lvh::reports::pack_input_report(lvh::profiles::xbox_one(), share),
+    false
+  );
+  ASSERT_EQ(xbox_one.size(), 25U);
+  EXPECT_EQ(xbox_one[16], 0U);
+}
+
+TEST(MacosBrokerProtocolTest, XboxBluetoothTransportCopiesAxesAndHat) {
+  lvh::GamepadState state;
+  state.left_stick = {1.0F, 1.0F};
+  state.right_stick = {-1.0F, 0.0F};
+  state.left_trigger = 1.0F;
+  state.right_trigger = 0.5F;
+  state.buttons.set(lvh::GamepadButton::dpad_left);
+  const auto packed = lvh::reports::pack_input_report(lvh::profiles::xbox_series(), state);
+  const auto report = lvh::detail::macos::xbox_bluetooth_transport_input_report(state, packed, true);
+  ASSERT_EQ(report.size(), 25U);
+  EXPECT_TRUE(std::ranges::equal(std::span {report}.subspan(1, 12), std::span {packed}.first(12)));
+  EXPECT_EQ(report[13], packed[14]);
+  EXPECT_NE(report[13], 0U);
+  EXPECT_TRUE(std::ranges::all_of(std::span {report}.subspan(17), [](auto value) {
+    return value == 0U;
+  }));
+  EXPECT_TRUE(lvh::detail::macos::xbox_bluetooth_transport_input_report(state, std::span {packed}.first(14), true).empty());
 }
 
 TEST(MacosBrokerProtocolTest, XboxGipRumbleUsesFourMotorOutputDecoder) {

@@ -1,10 +1,13 @@
 /**
  * @file src/platform/macos/macos_xbox_transport.hpp
- * @brief Steam-compatible macOS HID transport for Xbox gamepad profiles.
+ * @brief Steam- and GameController-compatible macOS HID transport for Xbox gamepad profiles.
  */
 #pragma once
 
+#include "platform/shared/xbox_bluetooth_transport.hpp"
+
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <libvirtualhid/profiles.hpp>
@@ -15,22 +18,29 @@
 namespace lvh::detail::macos {
 
   inline constexpr std::uint8_t xbox_gip_input_command = 0x20;
+  inline constexpr std::size_t xbox_gip_input_report_size = 25;
 
+  /**
+   * @brief Build the macOS Xbox One and Series HID descriptor.
+   *
+   * IOHIDUserDevice exposes its transport as Virtual even when Bluetooth is
+   * requested, so Steam selects its wired GIP decoder for these IDs, while
+   * Apple's GameController framework decodes only the Bluetooth input report.
+   * The device therefore declares both: the Xbox Bluetooth gamepad collection
+   * and a vendor collection that carries GIP input and wired rumble output.
+   *
+   * @return HID report descriptor bytes.
+   */
   inline std::vector<std::uint8_t> xbox_gip_report_descriptor() {
-    // IOHIDUserDevice exposes its transport as Virtual even when Bluetooth is
-    // requested. Steam therefore selects its wired GIP decoder for these IDs.
-    return {
-      0x05,
-      0x01,  // Usage Page (Generic Desktop)
-      0x09,
-      0x05,  // Usage (Game Pad)
-      0xA1,
-      0x01,  // Collection (Application)
+    auto descriptor = xbox_bluetooth::make_xbox_bluetooth_report_descriptor(false);
+    constexpr std::array<std::uint8_t, 27> gip_collection {
       0x06,
       0x00,
       0xFF,  // Usage Page (Vendor Defined)
       0x09,
       0x01,  // Usage (Vendor Defined 1)
+      0xA1,
+      0x01,  // Collection (Application)
       0x15,
       0x00,  // Logical Minimum (0)
       0x26,
@@ -45,19 +55,15 @@ namespace lvh::detail::macos {
       0x81,
       0x02,  // Input (Data, Variable, Absolute)
       0x85,
-      0x03,  // Bluetooth-compatible rumble output
-      0x95,
-      0x08,
-      0x91,
-      0x02,  // Output (Data, Variable, Absolute)
-      0x85,
       0x09,  // Wired GIP rumble output
       0x95,
       0x0C,
       0x91,
-      0x02,
-      0xC0,
+      0x02,  // Output (Data, Variable, Absolute)
+      0xC0,  // End Collection
     };
+    descriptor.insert(descriptor.end(), gip_collection.begin(), gip_collection.end());
+    return descriptor;
   }
 
   inline std::vector<std::uint8_t> xbox_gip_transport_input_report(
@@ -73,7 +79,7 @@ namespace lvh::detail::macos {
     const auto pressed = [&state](GamepadButton button, unsigned int bit) {
       return state.buttons.test(button) ? (1U << bit) : 0U;
     };
-    std::vector<std::uint8_t> report(25U);
+    std::vector<std::uint8_t> report(xbox_gip_input_report_size);
     report[0] = xbox_gip_input_command;
     report[3] = 0x10;  // Sixteen-byte GIP state payload.
     report[4] = static_cast<std::uint8_t>(pressed(start, 2) | pressed(back, 3) | pressed(a, 4) | pressed(b, 5) | pressed(x, 6) | pressed(y, 7));
@@ -91,6 +97,43 @@ namespace lvh::detail::macos {
     report[21] = 0x20;  // Internal command.
     report[23] = 0x01;
     report[24] = state.buttons.test(guide) ? 0x01 : 0x00;
+    return report;
+  }
+
+  /**
+   * @brief Build the Xbox Bluetooth input report sent alongside GIP input.
+   *
+   * GameController decodes buttons in the compact firmware 5 order (A, B, X,
+   * Y, bumpers, View, Menu, then stick clicks) rather than the gapped layout
+   * Linux exposes. The broker accepts one fixed input size per device, so the
+   * 17-byte report is zero-padded to the GIP report size; HID consumers read
+   * only the fields declared for report ID 1.
+   *
+   * @param state Gamepad state.
+   * @param packed Input report packed for the requested Xbox profile.
+   * @param series Whether the requested profile has the Series Share button.
+   * @return Padded Bluetooth input report, or empty when `packed` is too short.
+   */
+  inline std::vector<std::uint8_t> xbox_bluetooth_transport_input_report(
+    const GamepadState &state,
+    std::span<const std::uint8_t> packed,
+    bool series
+  ) {
+    if (packed.size() < 15U) {
+      return {};
+    }
+
+    using enum GamepadButton;
+    const auto pressed = [&state](GamepadButton button, unsigned int bit) {
+      return state.buttons.test(button) ? (1U << bit) : 0U;
+    };
+    std::vector<std::uint8_t> report(xbox_gip_input_report_size);
+    report[0] = xbox_bluetooth::xbox_bluetooth_input_report_id;
+    std::copy_n(packed.begin(), 12, report.begin() + 1);  // Sticks and triggers.
+    report[13] = packed[14];  // Hat switch.
+    report[14] = static_cast<std::uint8_t>(pressed(a, 0) | pressed(b, 1) | pressed(x, 2) | pressed(y, 3) | pressed(left_shoulder, 4) | pressed(right_shoulder, 5) | pressed(back, 6) | pressed(start, 7));
+    report[15] = static_cast<std::uint8_t>(pressed(left_stick, 0) | pressed(right_stick, 1) | pressed(guide, 2));
+    report[16] = series && state.buttons.test(misc1) ? 0x01 : 0x00;  // Record usage.
     return report;
   }
 
