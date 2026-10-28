@@ -60,6 +60,7 @@
 #include "shared/switch_pro_protocol.hpp"
 #include "unique_win32_handle.hpp"
 #include "vhf_input_report_queue.hpp"
+#include "vhf_report_response.hpp"
 #include "windows_device_identity.hpp"
 
 using VhfContext = PVOID;  // NOSONAR(cpp:S5008): VHF callback ABI requires PVOID; client context narrows to DeviceRecord.
@@ -905,6 +906,13 @@ namespace {
     return event;
   }
 
+  /**
+   * @brief Return a feature report without padding to VHF's advertised request length.
+   *
+   * @param record Device whose feature report is requested.
+   * @param packet VHF-owned destination and reported request length.
+   * @return Success, unsupported report, or insufficient reported buffer length.
+   */
   NTSTATUS copy_vhf_feature_report(DeviceRecord &record, HID_XFER_PACKET &packet) {
     auto report_number = packet.reportId;
     if (report_number == 0U && packet.reportBufferLen > 0U) {
@@ -924,15 +932,18 @@ namespace {
     if (!report.has_value()) {
       return STATUS_NOT_SUPPORTED;
     }
-    if (packet.reportBufferLen < report->size()) {
-      return STATUS_BUFFER_TOO_SMALL;
-    }
-
-    std::fill_n(packet.reportBuffer, packet.reportBufferLen, UCHAR {});
-    std::copy(report->begin(), report->end(), packet.reportBuffer);
-    return STATUS_SUCCESS;
+    return lvh::detail::windows::copy_vhf_report_response(packet.reportBuffer, packet.reportBufferLen, *report) ?
+             STATUS_SUCCESS :
+             STATUS_BUFFER_TOO_SMALL;
   }
 
+  /**
+   * @brief Return the latest input report, adding a zero ID when requested for an unnumbered report.
+   *
+   * @param record Device whose last input report is requested.
+   * @param packet VHF-owned destination; bytes beyond the returned report are untouched.
+   * @return Success, unsupported report, or insufficient reported buffer length.
+   */
   NTSTATUS copy_vhf_input_report(DeviceRecord &record, HID_XFER_PACKET &packet) {
     auto report_number = packet.reportId;
     if (
@@ -953,14 +964,10 @@ namespace {
     }
 
     const auto unnumbered_report = report_number == 0U;
-    const auto leading_report_id_size = unnumbered_report && packet.reportBufferLen > report.size() ? 1U : 0U;
-    if (packet.reportBufferLen < report.size() + leading_report_id_size) {
-      return STATUS_BUFFER_TOO_SMALL;
-    }
-
-    std::fill_n(packet.reportBuffer, packet.reportBufferLen, UCHAR {});
-    std::copy(report.begin(), report.end(), packet.reportBuffer + leading_report_id_size);
-    return STATUS_SUCCESS;
+    const auto prepend_zero_id = unnumbered_report && packet.reportBufferLen > report.size();
+    return lvh::detail::windows::copy_vhf_report_response(packet.reportBuffer, packet.reportBufferLen, report, prepend_zero_id) ?
+             STATUS_SUCCESS :
+             STATUS_BUFFER_TOO_SMALL;
   }
 
   bool handle_vhf_set_feature(DeviceRecord &record, const HID_XFER_PACKET &packet) {
