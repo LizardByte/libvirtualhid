@@ -45,6 +45,9 @@ jobs:
       - name: Install dependencies
         run: brew install cmake
 
+      - name: Test macOS installer quarantine handling
+        run: python3 tests/scripts/test-macos-install.py scripts/macos/install.command
+
       - name: Configure universal build
         env:
           BUILD_VERSION: ${{ inputs.release_version }}
