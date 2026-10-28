@@ -9,10 +9,10 @@
 #include <algorithm>
 #include <array>
 #include <bitset>
-#include <span>
 #include <gtest/gtest.h>
 #include <libvirtualhid/profiles.hpp>
 #include <libvirtualhid/report.hpp>
+#include <span>
 #include <sys/socket.h>
 #include <thread>
 #include <unistd.h>
