@@ -199,4 +199,11 @@ namespace lvh::detail::test {
    */
   MacosBackendUtilityResult macos_backend_utilities();
 
+  /**
+   * @brief Read the suppression interval stored on the backend's reusable mouse event.
+   *
+   * @return Suppression interval in seconds, or no value if event-source creation fails.
+   */
+  std::optional<double> macos_backend_mouse_event_suppression_interval();
+
 }  // namespace lvh::detail::test
