@@ -177,6 +177,22 @@ jobs:
             -Destination `
               ".\artifacts\libvirtualhid-Windows-AMD64-driver-installer.msi"
 
+      - name: Verify packaged license notices
+        shell: pwsh
+        run: |
+          $packageDirectory = ".\cmake-build-driver\cpack_artifacts\_CPack_Packages\win64\WIX\libvirtualhid"
+          $licenseDirectory = Join-Path $packageDirectory "licenses"
+          foreach ($license in @("MIT.md", "HIDMaestro-MIT.md", "LicenseRef-LizardByte-SAL-1.0.md")) {
+            $source = Join-Path .\LICENSES $license
+            $packaged = Join-Path $licenseDirectory $license
+            if (!(Test-Path -LiteralPath $packaged -PathType Leaf)) {
+              throw "Packaged license notice is missing: $license"
+            }
+            if ((Get-FileHash -LiteralPath $source).Hash -ne (Get-FileHash -LiteralPath $packaged).Hash) {
+              throw "Packaged license notice differs from its source: $license"
+            }
+          }
+
       - name: Export Azure driver signing certificate
         if: >-
           github.event_name == 'push' &&

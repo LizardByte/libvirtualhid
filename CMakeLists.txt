@@ -172,6 +172,10 @@ if(LIBVIRTUALHID_INSTALL)
       RENAME LICENSE
       COMPONENT library)
 
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/LICENSES/HIDMaestro-MIT.md"
+      DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/libvirtualhid"
+      COMPONENT library)
+
     configure_package_config_file(
       "${CMAKE_CURRENT_SOURCE_DIR}/cmake/libvirtualhid-config.cmake.in"
       "${CMAKE_CURRENT_BINARY_DIR}/libvirtualhid-config.cmake"
