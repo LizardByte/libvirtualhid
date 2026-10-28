@@ -95,6 +95,9 @@ namespace lvh::detail::windows {
    * Joystick top-level collection; exposing PID reports from a Game Pad
    * collection can fault pid.dll during effect creation.
    *
+   * The HIDMaestro descriptor block is Copyright (c) 2026 HIDMaestro Contributors
+   * and licensed under MIT; see LICENSES/HIDMaestro-MIT.md for the full notice.
+   *
    * @param source Built-in Generic Controller report descriptor.
    * @return Windows descriptor, or an empty vector when @p source is not the expected built-in layout.
    */
