@@ -30,6 +30,14 @@ The published installer targets Windows 11 version 21H2 or later on AMD64.
 Windows 10 version 2004 or later has a best-effort path. Windows ARM64 release
 packages are not available.
 
+We strongly recommend upgrading to a Windows 11 release that is
+[still supported by Microsoft](https://learn.microsoft.com/en-us/lifecycle/products/windows-11-home-and-pro).
+On Windows 10, a Microsoft `xinputhid.sys` defect can cause progressive CPU
+usage and game FPS loss with Xbox Series virtual controllers while
+`GameInputSvc` is running. See the
+[Windows 10 gamepad limitation](windows-driver.md#windows-10-gamepad-limitation)
+for the confirmed Xbox 360 profile workaround.
+
 ## Linux
 
 Linux needs `uhid` for descriptor-driven profiles and `uinput` for the other

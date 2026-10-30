@@ -10,6 +10,31 @@ The released MSI targets Windows 11 version 21H2 or later on AMD64. Windows 10
 version 2004 or later has a best-effort compatibility path. Windows ARM64
 release packages are not yet available.
 
+We strongly recommend upgrading to a Windows 11 release that is
+[still supported by Microsoft](https://learn.microsoft.com/en-us/lifecycle/products/windows-11-home-and-pro).
+
+## Windows 10 gamepad limitation
+
+On Windows 10, Xbox Series virtual controllers can cause progressive CPU
+usage and game FPS loss while `GameInputSvc` is running. The affected Microsoft
+`xinputhid.sys` driver fails to initialize a process ID used to reuse internal
+queues, allowing queues to accumulate. See
+[issue #194](https://github.com/LizardByte/libvirtualhid/issues/194) and the
+[driver investigation](https://github.com/nefarius/GameInput-Fault-RE/blob/master/docs/windows10-queue-identity.md).
+
+If you must remain on Windows 10, use the Xbox 360 profile as a workaround.
+It bypasses the affected driver path and lets `GameInputSvc` remain enabled.
+For Sunshine, set:
+
+```ini
+gamepad = x360
+gamepad_driver = virtualhid
+```
+
+Restart Sunshine and reconnect Moonlight so the virtual controller is
+recreated. A physical Xbox Series controller can still be used, but the game
+sees an Xbox 360 controller without Series-specific features.
+
 ## Install and use
 
 Install the production-signed MSI from the
