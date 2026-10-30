@@ -66,21 +66,18 @@ namespace lvh::detail {
       }
 
       OperationStatus submit(const GamepadState &state, const std::vector<std::uint8_t> &report) override {
-        std::vector<std::uint8_t> xbox_report;
-        if (xbox_transport_) {
-          xbox_report = profile_.gamepad_kind == GamepadProfileKind::xbox_360 ?
-                          macos::xbox_transport_input_report(state) :
-                          macos::xbox_gip_transport_input_report(state, report, profile_.gamepad_kind == GamepadProfileKind::xbox_series);
+        if (!xbox_transport_) {
+          return submit_report(report);
         }
-        const auto &transport_report = xbox_transport_ ? xbox_report : report;
-        if (transport_report.empty() || transport_report.size() > macos_broker::max_report_size) {
-          return OperationStatus::failure(ErrorCode::invalid_argument, "macOS gamepad report exceeds broker limit");
+        if (profile_.gamepad_kind == GamepadProfileKind::xbox_360) {
+          return submit_report(macos::xbox_transport_input_report(state));
         }
-        macos_broker::Message request;
-        request.type = macos_broker::MessageType::submit;
-        request.size = static_cast<std::uint32_t>(transport_report.size());
-        std::ranges::copy(transport_report, request.data.begin());
-        return call(request);
+        // GameController reads the Bluetooth report and Steam reads GIP input.
+        const bool series = profile_.gamepad_kind == GamepadProfileKind::xbox_series;
+        if (auto status = submit_report(macos::xbox_bluetooth_transport_input_report(state, report, series)); !status.ok()) {
+          return status;
+        }
+        return submit_report(macos::xbox_gip_transport_input_report(state, report, series));
       }
 
       void set_output_callback(OutputCallback callback) override {
@@ -151,6 +148,17 @@ namespace lvh::detail {
             }
           }
         }
+      }
+
+      OperationStatus submit_report(const std::vector<std::uint8_t> &report) {
+        if (report.empty() || report.size() > macos_broker::max_report_size) {
+          return OperationStatus::failure(ErrorCode::invalid_argument, "macOS gamepad report exceeds broker limit");
+        }
+        macos_broker::Message request;
+        request.type = macos_broker::MessageType::submit;
+        request.size = static_cast<std::uint32_t>(report.size());
+        std::ranges::copy(report, request.data.begin());
+        return call(request);
       }
 
       OperationStatus call(const macos_broker::Message &request) {
