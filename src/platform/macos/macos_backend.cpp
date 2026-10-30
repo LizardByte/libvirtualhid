@@ -484,6 +484,11 @@ namespace lvh::detail {
 
     /**
      * @brief Shared macOS backend state.
+     *
+     * Local-event suppression on `source` is set to zero so cursor warps do not
+     * discard the following click or mouse-moved events. CoreGraphics copies
+     * that configuration into each event at creation time, so `mouse_event` is
+     * refreshed from `source` after the interval is configured.
      */
     class MacosInputState {
     public:
@@ -491,7 +496,16 @@ namespace lvh::detail {
           source {CGEventSourceCreate(kCGEventSourceStateHIDSystemState)},
           keyboard_source {CGEventSourceCreate(kCGEventSourceStatePrivate)},
           mouse_event {source ? CGEventCreate(source) : nullptr},
-          scroll_lines_per_detent_value {read_scroll_lines_per_detent(scrollwheel_scaling)} {}
+          scroll_lines_per_detent_value {read_scroll_lines_per_detent(scrollwheel_scaling)} {
+        // Each move warps the cursor. The default 250ms suppression then drops the
+        // following click and mouse-moved events. The cursor image still moves.
+        if (source) {
+          CGEventSourceSetLocalEventsSuppressionInterval(source, 0);
+          if (mouse_event) {
+            CGEventSetSource(mouse_event, source);
+          }
+        }
+      }
 
       MacosInputState(const MacosInputState &) = delete;
       MacosInputState &operator=(const MacosInputState &) = delete;
@@ -510,9 +524,9 @@ namespace lvh::detail {
         }
       }
 
-      CGEventSourceRef source {};  ///< CoreGraphics event source for mouse and scroll events.
+      CGEventSourceRef source {};  ///< Mouse/scroll source with local-event suppression disabled.
       CGEventSourceRef keyboard_source {};  ///< CoreGraphics event source for keyboard events.
-      CGEventRef mouse_event {};  ///< Reusable CoreGraphics mouse event.
+      CGEventRef mouse_event {};  ///< Reusable mouse event refreshed from `source` after suppression is disabled.
       double scrollwheel_scaling = default_scrollwheel_scaling;  ///< Raw macOS scroll-wheel scaling preference.
       int scroll_lines_per_detent_value = default_scroll_lines_per_detent;  ///< Logical lines per wheel detent.
       CGEventFlags keyboard_flags {};  ///< Active modifier flags applied to mouse events.

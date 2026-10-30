@@ -21,6 +21,12 @@
  */
 class MacosBackendTest: public MacOSTest {};
 
+TEST_F(MacosBackendTest, DisablesSuppressionForReusableMouseEvent) {
+  const auto interval = lvh::detail::test::macos_backend_mouse_event_suppression_interval();
+  ASSERT_TRUE(interval.has_value());
+  EXPECT_DOUBLE_EQ(*interval, 0.0);
+}
+
 TEST_F(MacosBackendTest, TranslatesKeyboardKeys) {
   EXPECT_EQ(lvh::detail::test::macos_backend_key_code(0x08), kVK_Delete);
   EXPECT_EQ(lvh::detail::test::macos_backend_key_code(0x09), kVK_Tab);

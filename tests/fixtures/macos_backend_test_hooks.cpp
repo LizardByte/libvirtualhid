@@ -123,6 +123,20 @@ namespace lvh::detail::test {
 
   namespace macos = lvh::detail::macos_backend_test;
 
+  std::optional<double> macos_backend_mouse_event_suppression_interval() {
+    macos::MacosInputState state;
+    if (!state.mouse_event) {
+      return std::nullopt;
+    }
+    const auto source = CGEventCreateSourceFromEvent(state.mouse_event);
+    if (!source) {
+      return std::nullopt;
+    }
+    const auto interval = CGEventSourceGetLocalEventsSuppressionInterval(source);
+    CFRelease(source);
+    return interval;
+  }
+
   std::optional<std::uint16_t> macos_backend_key_code(KeyboardKeyCode key_code) {
     const auto mapped = macos::macos_key_code(key_code);
     if (!mapped) {
