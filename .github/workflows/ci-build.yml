@@ -536,6 +536,7 @@ jobs:
           $logPath = Join-Path $env:RUNNER_TEMP "libvirtualhid-driver-repair.log"
           $driverLogPath = Join-Path $env:ProgramData "libvirtualhid\install-driver.log"
           $setupApiLogPath = Join-Path $env:windir "inf\setupapi.dev.log"
+          $repairStartedAt = Get-Date
           try {
             $repairArguments = @(
               "/i", $installer.FullName,
@@ -556,6 +557,11 @@ jobs:
             if ($process.ExitCode -notin @(0, 3010)) {
               Get-Content -LiteralPath $logPath -ErrorAction SilentlyContinue
               Get-Content -LiteralPath $driverLogPath -ErrorAction SilentlyContinue
+              Get-WinEvent -FilterHashtable @{
+                LogName = "Microsoft-Windows-PowerShell/Operational"
+                StartTime = $repairStartedAt
+                Id = 4100
+              } -ErrorAction SilentlyContinue | Format-List TimeCreated, Id, Message
               Get-Content -LiteralPath $setupApiLogPath -Tail 300 -ErrorAction SilentlyContinue
               throw "Windows driver installer repair exited with code $($process.ExitCode)."
             }
