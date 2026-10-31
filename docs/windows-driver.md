@@ -46,9 +46,15 @@ default. Applications can then use the normal C++ API without administrator
 privileges.
 
 During a reinstall or upgrade, the installer stops the broker before updating
-the driver. This disconnects existing virtual devices. Close applications
-using libvirtualhid, including Sunshine, before upgrading, then restart them
-afterward. If an open device handle prevents Windows from reloading the driver,
+the driver. This disconnects existing virtual devices. The interactive MSI
+includes running Sunshine applications and `SunshineService` in Windows'
+standard applications-to-close dialog. Closing Sunshine disconnects active
+streams. Allow Windows to close it, or stop it yourself before continuing;
+restart Sunshine and reconnect afterward. Silent installations follow Windows
+Installer's Restart Manager policy without displaying the dialog.
+
+Close other applications using libvirtualhid before upgrading. If an open
+device handle prevents Windows from reloading the driver,
 installation can finish with a reboot warning in `install-driver.log`;
 restart Windows before using the updated driver.
 
