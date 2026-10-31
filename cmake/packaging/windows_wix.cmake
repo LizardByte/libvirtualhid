@@ -12,6 +12,7 @@ set(CPACK_WIX_VERSION 4)
 set(CPACK_GENERATOR "WIX")
 set(WIX_VERSION 4.0.4)
 set(WIX_UI_VERSION 4.0.4)  # extension versioning is independent of the WiX version
+set(WIX_UTIL_VERSION 4.0.4)
 set(WIX_BUILD_PARENT_DIRECTORY "${CMAKE_BINARY_DIR}/wix_packaging")
 set(WIX_BUILD_DIRECTORY "${CPACK_PACKAGE_DIRECTORY}/_CPack_Packages/win64/WIX")
 
@@ -55,6 +56,7 @@ function(libvirtualhid_wix_ensure_extension extension_name extension_version)
 endfunction()
 
 libvirtualhid_wix_ensure_extension(WixToolset.UI.wixext ${WIX_UI_VERSION})
+libvirtualhid_wix_ensure_extension(WixToolset.Util.wixext ${WIX_UTIL_VERSION})
 
 set(CPACK_WIX_ROOT "${WIX_TOOL_PATH}")
 set(CPACK_WIX_UPGRADE_GUID "71D7B738-9D83-4E57-82E3-C3106D9F8053")
@@ -66,7 +68,10 @@ set(CPACK_WIX_PROGRAM_MENU_FOLDER "LizardByte")
 # https://learn.microsoft.com/en-us/windows/win32/msi/reinstallmode
 set(CPACK_WIX_PROPERTY_REINSTALLMODE "amus")
 set(CPACK_WIX_EXTENSIONS
-        "WixToolset.UI.wixext")
+        "WixToolset.UI.wixext"
+        "WixToolset.Util.wixext")
+set(CPACK_WIX_CUSTOM_XMLNS
+        "util=http://wixtoolset.org/schemas/v4/wxs/util")
 
 set(CPACK_WIX_PATCH_FILE
         "${CMAKE_CURRENT_LIST_DIR}/wix_resources/libvirtualhid-driver-installer-patch.xml")

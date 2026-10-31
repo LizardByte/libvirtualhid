@@ -351,8 +351,22 @@ jobs:
             Write-Host "Trusted driver publisher certificate $($cert.Subject) [$($cert.Thumbprint)]."
           }
 
+      - name: Prepare Sunshine close-applications regression test
+        if: runner.os == 'Windows'
+        id: sunshine_fixture
+        shell: powershell
+        run: |
+          $installer = Get-ChildItem -LiteralPath .\windows-driver-installer -Filter *.msi |
+            Select-Object -First 1
+          $fixtureDirectory = Join-Path $env:RUNNER_TEMP "libvirtualhid-sunshine-$([Guid]::NewGuid())"
+          $fixtureId = .\tests\scripts\test-installer-restart-manager.ps1 `
+            -MsiPath $installer.FullName -FixtureDirectory $fixtureDirectory
+          @("pid=$fixtureId", "exe=$fixtureDirectory\sunshine.exe") |
+            Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
       - name: Install Windows driver installer
         if: runner.os == 'Windows'
+        id: install_windows_driver
         shell: pwsh
         timeout-minutes: 10
         run: |
@@ -380,6 +394,30 @@ jobs:
             Get-Content -LiteralPath $driverLogPath -ErrorAction SilentlyContinue
             Get-Content -LiteralPath $setupApiLogPath -Tail 300 -ErrorAction SilentlyContinue
             throw "Windows driver installer exited with code $($process.ExitCode)."
+          }
+
+      - name: Verify Windows installer closed Sunshine
+        if: always() && runner.os == 'Windows' && steps.sunshine_fixture.outputs.pid != ''
+        shell: powershell
+        env:
+          FIXTURE_PID: ${{ steps.sunshine_fixture.outputs.pid }}
+          FIXTURE_EXE: ${{ steps.sunshine_fixture.outputs.exe }}
+          INSTALL_OUTCOME: ${{ steps.install_windows_driver.outcome }}
+        run: |
+          $fixture = Get-Process -Id ([int] $env:FIXTURE_PID) -ErrorAction SilentlyContinue
+          $isFixture = $fixture -and $fixture.Path -eq $env:FIXTURE_EXE
+          try {
+            if ($env:INSTALL_OUTCOME -eq "success" -and $isFixture -and !$fixture.WaitForExit(15000)) {
+              Get-Content -LiteralPath (Join-Path $env:RUNNER_TEMP "libvirtualhid-driver-install.log")
+              throw "Windows Installer did not close the registered sunshine.exe fixture."
+            }
+          } finally {
+            if ($isFixture -and !$fixture.HasExited) {
+              Stop-Process -Id $fixture.Id -Force -ErrorAction SilentlyContinue
+              $null = $fixture.WaitForExit(10000)
+            }
+            Remove-Item -LiteralPath $env:FIXTURE_EXE -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath (Split-Path -Parent $env:FIXTURE_EXE) -ErrorAction SilentlyContinue
           }
 
       - name: Enable GitHub Actions evaluation window
@@ -512,6 +550,63 @@ jobs:
             --verbose \
             --xml-pretty \
             -o reports/coverage.xml
+
+      - name: Repair Windows driver installer with an open consumer handle
+        if: runner.os == 'Windows'
+        shell: pwsh
+        timeout-minutes: 10
+        run: |
+          $installer = Get-ChildItem -LiteralPath .\windows-driver-installer -Filter *.msi |
+            Select-Object -First 1
+          if (!$installer) {
+            throw "Windows driver installer artifact did not contain an MSI."
+          }
+          if ((Get-Service -Name libvirtualhid_broker).Status -ne "Running") {
+            throw "The broker must be running before the MSI repair regression test."
+          }
+
+          $deviceHandle = [System.IO.File]::Open(
+            "\\.\LibVirtualHid",
+            [System.IO.FileMode]::Open,
+            [System.IO.FileAccess]::ReadWrite,
+            [System.IO.FileShare]::ReadWrite
+          )
+          $logPath = Join-Path $env:RUNNER_TEMP "libvirtualhid-driver-repair.log"
+          $driverLogPath = Join-Path $env:ProgramData "libvirtualhid\install-driver.log"
+          $setupApiLogPath = Join-Path $env:windir "inf\setupapi.dev.log"
+          $repairStartedAt = Get-Date
+          try {
+            $repairArguments = @(
+              "/i", $installer.FullName,
+              "REINSTALL=ALL", "REINSTALLMODE=amus",
+              "/qn", "/norestart", "/L*v", $logPath
+            )
+            $process = Start-Process `
+              -FilePath msiexec.exe `
+              -ArgumentList $repairArguments `
+              -PassThru `
+              -WindowStyle Hidden
+            if (!$process.WaitForExit([int] [TimeSpan]::FromMinutes(5).TotalMilliseconds)) {
+              Get-Content -LiteralPath $logPath -Tail 200 -ErrorAction SilentlyContinue
+              Get-Content -LiteralPath $driverLogPath -Tail 200 -ErrorAction SilentlyContinue
+              Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+              throw "Windows driver installer repair timed out after 5 minutes."
+            }
+            if ($process.ExitCode -notin @(0, 3010)) {
+              Get-Content -LiteralPath $logPath -ErrorAction SilentlyContinue
+              Get-Content -LiteralPath $driverLogPath -ErrorAction SilentlyContinue
+              Get-WinEvent -FilterHashtable @{
+                LogName = "Microsoft-Windows-PowerShell/Operational"
+                StartTime = $repairStartedAt
+                Id = 4100
+              } -ErrorAction SilentlyContinue | Format-List TimeCreated, Id, Message
+              Get-Content -LiteralPath $setupApiLogPath -Tail 300 -ErrorAction SilentlyContinue
+              throw "Windows driver installer repair exited with code $($process.ExitCode)."
+            }
+            (Get-Service -Name libvirtualhid_broker).WaitForStatus("Running", [TimeSpan]::FromSeconds(15))
+          } finally {
+            $deviceHandle.Dispose()
+          }
 
       - name: Uninstall Windows driver installer with an open consumer handle
         if: >-
