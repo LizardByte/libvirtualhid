@@ -10,6 +10,7 @@ and effective profile capabilities before enabling optional features.
 | Linux    | Generic and Xbox 360 through `uinput`; PlayStation, Switch Pro, Xbox One and Series through `uhid` | Keyboard, mouse, touchscreen, trackpad, pen tablet through `uinput`; XTest keyboard and mouse fallback | Writable device nodes and required kernel modules                        |
 | FreeBSD  | Built-in profiles through `uinput`                                                                 | Keyboard, mouse, touchscreen, trackpad, pen tablet through `uinput`; XTest fallback                    | Writable `uinput` device node                                            |
 | macOS    | Built-in profiles through the virtual HID broker                                                   | CoreGraphics keyboard and mouse                                                                        | Signed broker, Apple entitlement, system permission, and machine license |
+| ESP32-S3 | Xbox, PlayStation, Switch Pro on the board; two slots in total                                     | Keyboard and mouse on the board                                                                        | Bridge firmware; see [ESP32-S3 USB bridge](esp32-bridge.md)              |
 
 ## Windows
 

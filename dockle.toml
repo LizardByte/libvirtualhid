@@ -25,6 +25,7 @@ inputs = [
   "docs/end-user-gamepad-guide.md",
   "docs/usage.md",
   "docs/platform-support.md",
+  "docs/esp32-bridge.md",
   "docs/windows-driver.md",
   "docs/macos-gamepad.md",
   "docs/streaming-host-integration.md",
