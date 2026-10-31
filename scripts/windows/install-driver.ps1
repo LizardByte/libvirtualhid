@@ -98,17 +98,6 @@ function Get-LibVirtualHidQuotedServiceBinaryPath {
   return "`"$Path`""
 }
 
-function Get-LibVirtualHidScBinaryPathArgument {
-  param(
-    [Parameter(Mandatory = $true)]
-    [string] $Path
-  )
-
-  # Windows PowerShell 5.1 needs triple quotes in a native-command argument to pass one literal quote
-  # through to sc.exe while keeping a path containing spaces in a single argv element.
-  return (Get-LibVirtualHidQuotedServiceBinaryPath -Path $Path).Replace('"', '"""')
-}
-
 function Assert-LibVirtualHidBrokerServiceImagePath {
   param(
     [Parameter(Mandatory = $true)]
@@ -176,6 +165,40 @@ function Restore-LibVirtualHidBrokerService {
   }
 }
 
+<#
+.SYNOPSIS
+Updates the broker service without native command-line quote parsing.
+.PARAMETER Path
+The broker executable path to store as a quoted service binary path.
+.OUTPUTS
+System.Boolean. True when the service configuration was updated.
+#>
+function Set-LibVirtualHidBrokerServiceConfiguration {
+  [CmdletBinding(SupportsShouldProcess)]
+  [OutputType([bool])]
+  param([string] $Path)
+
+  if (-not $PSCmdlet.ShouldProcess($script:LibVirtualHidBrokerServiceName, "Update libvirtualhid broker service")) {
+    return $false
+  }
+
+  $service = Get-CimInstance -ClassName Win32_Service `
+    -Filter "Name = '$script:LibVirtualHidBrokerServiceName'" -ErrorAction Stop
+  if (-not $service) {
+    throw "The $script:LibVirtualHidBrokerServiceName service was not found for reconfiguration."
+  }
+
+  $result = Invoke-CimMethod -InputObject $service -MethodName Change -Arguments @{
+    PathName = Get-LibVirtualHidQuotedServiceBinaryPath -Path $Path
+    DisplayName = $script:LibVirtualHidBrokerServiceDisplayName
+    StartMode = "Automatic"
+  } -ErrorAction Stop
+  if ($result.ReturnValue -ne 0) {
+    throw "Updating the libvirtualhid broker service failed with Win32_Service.Change return value $($result.ReturnValue)."
+  }
+  return $true
+}
+
 function Install-LibVirtualHidBrokerService {
   [CmdletBinding(SupportsShouldProcess)]
   param([string] $Path)
@@ -186,24 +209,11 @@ function Install-LibVirtualHidBrokerService {
     return
   }
 
-  $serviceBinaryPath = Get-LibVirtualHidScBinaryPathArgument -Path $resolvedBroker
   $serviceRegistered = $false
   $service = Get-Service -Name $script:LibVirtualHidBrokerServiceName -ErrorAction SilentlyContinue
   if ($service) {
     Stop-LibVirtualHidBrokerService -Name $script:LibVirtualHidBrokerServiceName
-    if ($PSCmdlet.ShouldProcess($script:LibVirtualHidBrokerServiceName, "Update libvirtualhid broker service")) {
-      Invoke-CheckedCommand -FilePath "sc.exe" -Arguments @(
-        "config",
-        $script:LibVirtualHidBrokerServiceName,
-        "binPath=",
-        $serviceBinaryPath,
-        "start=",
-        "auto",
-        "DisplayName=",
-        $script:LibVirtualHidBrokerServiceDisplayName
-      )
-      $serviceRegistered = $true
-    }
+    $serviceRegistered = Set-LibVirtualHidBrokerServiceConfiguration -Path $resolvedBroker
   } else {
     if ($PSCmdlet.ShouldProcess($script:LibVirtualHidBrokerServiceName, "Install libvirtualhid broker service")) {
       $quotedServicePath = Get-LibVirtualHidQuotedServiceBinaryPath -Path $resolvedBroker
@@ -296,10 +306,20 @@ function Restart-RootDevice {
     return
   }
 
-  $output = @(pnputil.exe /restart-device $InstanceId 2>&1)
-  $exitCode = $LASTEXITCODE
+  $command = Get-Command pnputil.exe -ErrorAction Stop
+  $previousErrorActionPreference = $ErrorActionPreference
+  try {
+    # Windows PowerShell 5.1 turns redirected native stderr into error records.
+    # Collect them so the native exit code, including reboot statuses, decides
+    # whether the restart failed.
+    $ErrorActionPreference = "Continue"
+    $output = @(& $command /restart-device $InstanceId 2>&1)
+    $exitCode = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $previousErrorActionPreference
+  }
   foreach ($line in $output) {
-    Write-Information $line -InformationAction Continue
+    Write-Information ([string] $line) -InformationAction Continue
   }
 
   # ERROR_NOT_SUPPORTED (50) is also returned when an earlier driver update

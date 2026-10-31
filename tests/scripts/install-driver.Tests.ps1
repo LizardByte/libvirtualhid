@@ -115,11 +115,6 @@ Describe "Service path quoting" {
     } | Should -Throw "*must not contain quotation marks*"
   }
 
-  It "formats the service path for Windows PowerShell native argument parsing" {
-    Get-LibVirtualHidScBinaryPathArgument -Path "C:\Program Files\libvirtualhid\broker.exe" |
-      Should -Be '"""C:\Program Files\libvirtualhid\broker.exe"""'
-  }
-
   It "accepts an exactly quoted service ImagePath" {
     Mock Get-ItemProperty {
       [pscustomobject]@{ ImagePath = '"C:\Program Files\libvirtualhid\broker.exe"' }
@@ -235,21 +230,70 @@ Describe "Broker service helpers" {
   It "updates and configures an existing broker service" {
     $path = Join-Path $TestDrive "existing-libvirtualhid_broker.exe"
     New-Item -ItemType File -Path $path | Out-Null
+    $resolvedExistingPath = (Resolve-Path $path).Path
     Mock Get-Service { [pscustomobject]@{ Status = "Stopped" } }
     Mock Stop-LibVirtualHidBrokerService {}
     Mock Assert-LibVirtualHidBrokerServiceImagePath {}
     Mock Clear-LibVirtualHidBrokerServiceEnvironment {}
     Mock Invoke-CheckedCommand {}
+    Mock Set-LibVirtualHidBrokerServiceConfiguration { $true }
     Mock Start-Service {}
 
     Install-LibVirtualHidBrokerService -Path $path -Confirm:$false
 
     Should -Invoke Stop-LibVirtualHidBrokerService -Times 1 -Exactly -Scope It
-    Should -Invoke Invoke-CheckedCommand -Times 3 -Exactly -Scope It
-    Should -Invoke Invoke-CheckedCommand -Times 1 -Exactly -Scope It -ParameterFilter {
-      $FilePath -eq "sc.exe" -and $Arguments[0] -eq "config"
+    Should -Invoke Invoke-CheckedCommand -Times 2 -Exactly -Scope It
+    Should -Invoke Set-LibVirtualHidBrokerServiceConfiguration -Times 1 -Exactly -Scope It -ParameterFilter {
+      $Path -eq $resolvedExistingPath
     }
     Should -Invoke Start-Service -Times 1 -Exactly -Scope It
+  }
+}
+
+Describe "Broker service reconfiguration" {
+  BeforeEach {
+    $cimService = New-CimInstance -ClassName Win32_Service -ClientOnly -Property @{ Name = "libvirtualhid_broker" }
+    Mock Get-CimInstance { $cimService }
+    Mock Invoke-CimMethod { [pscustomobject]@{ ReturnValue = 0 } }
+  }
+
+  It "passes a quoted executable path and service settings directly to CIM" {
+    Set-LibVirtualHidBrokerServiceConfiguration -Path "C:\Program Files\libvirtualhid\broker.exe" -Confirm:$false |
+      Should -BeTrue
+
+    Should -Invoke Get-CimInstance -Times 1 -Exactly -Scope It -ParameterFilter {
+      $ClassName -eq "Win32_Service" -and $Filter -eq "Name = 'libvirtualhid_broker'"
+    }
+    Should -Invoke Invoke-CimMethod -Times 1 -Exactly -Scope It -ParameterFilter {
+      $InputObject -eq $cimService -and $MethodName -eq "Change" -and
+        $Arguments.PathName -ceq '"C:\Program Files\libvirtualhid\broker.exe"' -and
+        $Arguments.DisplayName -eq "libvirtualhid Broker" -and $Arguments.StartMode -eq "Automatic"
+    }
+  }
+
+  It "rejects a failed service configuration change" {
+    Mock Invoke-CimMethod { [pscustomobject]@{ ReturnValue = 2 } }
+
+    {
+      Set-LibVirtualHidBrokerServiceConfiguration -Path "C:\broker.exe" -Confirm:$false
+    } | Should -Throw "*Win32_Service.Change return value 2*"
+  }
+
+  It "rejects a service that disappeared before reconfiguration" {
+    Mock Get-CimInstance { $null }
+
+    {
+      Set-LibVirtualHidBrokerServiceConfiguration -Path "C:\broker.exe" -Confirm:$false
+    } | Should -Throw "*service was not found for reconfiguration*"
+
+    Should -Invoke Invoke-CimMethod -Times 0 -Exactly -Scope It
+  }
+
+  It "does not reconfigure a service during WhatIf" {
+    Set-LibVirtualHidBrokerServiceConfiguration -Path "C:\broker.exe" -WhatIf | Should -BeFalse
+
+    Should -Invoke Get-CimInstance -Times 0 -Exactly -Scope It
+    Should -Invoke Invoke-CimMethod -Times 0 -Exactly -Scope It
   }
 }
 
@@ -352,6 +396,31 @@ Describe "Driver installation helpers" {
     Restart-RootDevice -InstanceId "ROOT\LIBVIRTUALHID\0000" -Confirm:$false
 
     Should -Invoke pnputil.exe -Times 0 -Exactly -Scope It
+  }
+
+  It "handles native stderr before interpreting a reboot exit code" {
+    Mock pnputil.exe {
+      & $env:ComSpec /c "echo Device is pending system reboot. 1>&2 & exit /b 50"
+    }
+    Mock Write-Warning {}
+    $ErrorActionPreference = "Stop"
+
+    Restart-RootDevice -InstanceId "ROOT\LIBVIRTUALHID\0000" -Confirm:$false
+
+    $script:LibVirtualHidRebootRequired | Should -BeTrue
+    $ErrorActionPreference | Should -Be "Stop"
+    Should -Invoke Write-Warning -Times 1 -Exactly -Scope It
+  }
+
+  It "preserves a command invocation failure and restores the error preference" {
+    Mock pnputil.exe { throw "Launch failed" }
+    $ErrorActionPreference = "Stop"
+
+    {
+      Restart-RootDevice -InstanceId "ROOT\LIBVIRTUALHID\0000" -Confirm:$false
+    } | Should -Throw "Launch failed"
+
+    $ErrorActionPreference | Should -Be "Stop"
   }
 
   It "restarts a device successfully without requiring a reboot" {
