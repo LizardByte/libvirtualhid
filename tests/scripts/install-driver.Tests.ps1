@@ -55,6 +55,7 @@ Describe "install-driver.ps1 entry point" {
     }
     Mock Get-CimInstance { @() }
     Mock Get-ChildItem { @() }
+    Mock Get-Service { $null }
 
     try {
       {
@@ -253,6 +254,10 @@ Describe "Broker service helpers" {
 }
 
 Describe "Driver installation helpers" {
+  BeforeEach {
+    $script:LibVirtualHidRebootRequired = $false
+  }
+
   It "imports an existing certificate into both required stores" {
     $path = Join-Path $TestDrive "driver.cer"
     New-Item -ItemType File -Path $path | Out-Null
@@ -320,6 +325,41 @@ Describe "Driver installation helpers" {
     Should -Invoke Write-Warning -Times 1 -Exactly -Scope It -ParameterFilter {
       $Message -like "Windows reported that a reboot is required*"
     }
+    $script:LibVirtualHidRebootRequired | Should -BeTrue
+  }
+
+  It "defers a restart with exit code <ExitCode> until reboot" -TestCases @(
+    @{ ExitCode = 50 },
+    @{ ExitCode = 3010 }
+  ) {
+    param($ExitCode)
+    Mock pnputil.exe { $global:LASTEXITCODE = $ExitCode }
+    Mock Write-Warning {}
+
+    Restart-RootDevice -InstanceId "ROOT\LIBVIRTUALHID\0000" -Confirm:$false
+
+    $script:LibVirtualHidRebootRequired | Should -BeTrue
+    Should -Invoke Write-Warning -Times 1 -Exactly -Scope It -ParameterFilter {
+      $Message -like "*Restart Windows to complete*"
+    }
+  }
+
+  It "does not restart a device once a reboot is required" {
+    $script:LibVirtualHidRebootRequired = $true
+    Mock pnputil.exe { throw "A pending-reboot device must not be restarted" }
+
+    Restart-RootDevice -InstanceId "ROOT\LIBVIRTUALHID\0000" -Confirm:$false
+
+    Should -Invoke pnputil.exe -Times 0 -Exactly -Scope It
+  }
+
+  It "restarts a device successfully without requiring a reboot" {
+    Mock pnputil.exe { $global:LASTEXITCODE = 0 }
+
+    Restart-RootDevice -InstanceId "ROOT\LIBVIRTUALHID\0000" -Confirm:$false
+
+    $script:LibVirtualHidRebootRequired | Should -BeFalse
+    Should -Invoke pnputil.exe -Times 1 -Exactly -Scope It
   }
 
   It "throws when restarting the device fails" {
@@ -346,6 +386,7 @@ Describe "Driver installation helpers" {
         $SuccessExitCodes -contains 3010
     }
     Should -Invoke Write-Warning -Times 1 -Exactly -Scope It
+    $script:LibVirtualHidRebootRequired | Should -BeTrue
   }
 
   It "installs a root device through the SetupAPI helper" {
@@ -358,6 +399,191 @@ Describe "Driver installation helpers" {
 
     Should -Invoke Invoke-CheckedCommand -Times 1 -Exactly -Scope It -ParameterFilter {
       $FilePath -eq "setup.exe" -and $Arguments -join "," -eq "install,driver.inf,ROOT\LIBVIRTUALHID"
+    }
+  }
+}
+
+Describe "Install-LibVirtualHidDriver" {
+  BeforeEach {
+    $infPath = Join-Path $TestDrive "libvirtualhid.inf"
+    Set-Content -LiteralPath $infPath -Value "test INF"
+    $script:installOperations = [System.Collections.Generic.List[string]]::new()
+    $script:brokerStatus = "Running"
+    Mock Import-DriverCertificate {}
+    Mock Invoke-CheckedCommand {
+      $script:installOperations.Add("stage")
+    }
+    Mock Resolve-LibVirtualHidDriverSetupPath { "setup.exe" }
+    Mock Resolve-LibVirtualHidBrokerPath { "broker.exe" }
+    Mock Get-Service { [pscustomobject]@{ Status = $script:brokerStatus } }
+    Mock Stop-LibVirtualHidBrokerService {
+      $script:installOperations.Add("stop")
+      $script:brokerStatus = "Stopped"
+    }
+    Mock Get-LibVirtualHidRegistryRootDevice { @() }
+    Mock Get-LibVirtualHidRootDeviceInstanceId { "ROOT\LIBVIRTUALHID\0000" }
+    Mock Install-RootDeviceWithSetupApi {
+      $script:installOperations.Add("create")
+    }
+    Mock Remove-DeviceInstance {
+      $script:installOperations.Add("remove")
+    }
+    Mock Set-RootDeviceVhfMode {
+      $script:installOperations.Add("vhf")
+    }
+    Mock Update-RootDeviceDriverWithSetupApi {
+      $script:installOperations.Add("update")
+    }
+    Mock Restart-RootDevice {
+      $script:installOperations.Add("restart")
+    }
+    Mock Install-LibVirtualHidBrokerService {
+      $script:installOperations.Add("broker")
+      $script:brokerStatus = "Running"
+    }
+    Mock Start-Service {
+      $script:installOperations.Add("restore")
+    }
+    Mock Write-Warning {}
+  }
+
+  It "stops the broker before updating an existing device and starts it last" {
+    Install-LibVirtualHidDriver -InfPath $infPath -Confirm:$false
+
+    $script:installOperations.ToArray() | Should -Be @("stage", "stop", "vhf", "update", "restart", "broker")
+    Should -Invoke Install-RootDeviceWithSetupApi -Times 0 -Exactly -Scope It
+    Should -Invoke Start-Service -Times 0 -Exactly -Scope It
+  }
+
+  It "stops the broker before removing a stale device and creating its replacement" {
+    Mock Get-LibVirtualHidRegistryRootDevice {
+      [pscustomobject]@{
+        InstanceId = "ROOT\LIBVIRTUALHID\0000"
+        HasCorruptHardwareId = $true
+        HasLegacyHidClass = $false
+      }
+    }
+    $script:deviceQueries = 0
+    Mock Get-LibVirtualHidRootDeviceInstanceId {
+      $script:deviceQueries += 1
+      if ($script:deviceQueries -gt 1) {
+        "ROOT\LIBVIRTUALHID\0001"
+      }
+    }
+
+    Install-LibVirtualHidDriver -InfPath $infPath -Confirm:$false
+
+    $script:installOperations.ToArray() | Should -Be @("stage", "stop", "remove", "create", "vhf", "update", "restart", "broker")
+  }
+
+  It "finishes broker installation without restarting a pending-reboot device" {
+    Mock Update-RootDeviceDriverWithSetupApi {
+      $script:installOperations.Add("update")
+      $script:LibVirtualHidRebootRequired = $true
+    }
+
+    Install-LibVirtualHidDriver -InfPath $infPath -Confirm:$false
+
+    $script:installOperations.ToArray() | Should -Be @("stage", "stop", "vhf", "update", "broker")
+    Should -Invoke Restart-RootDevice -Times 0 -Exactly -Scope It
+  }
+
+  It "does not stop the broker when only staging a driver" {
+    Install-LibVirtualHidDriver -InfPath $infPath -StageOnly -Confirm:$false
+
+    $script:installOperations.ToArray() | Should -Be @("stage")
+    Should -Invoke Get-Service -Times 0 -Exactly -Scope It
+    Should -Invoke Resolve-LibVirtualHidDriverSetupPath -Times 0 -Exactly -Scope It
+  }
+
+  It "validates the broker path before stopping the existing service" {
+    Mock Resolve-LibVirtualHidBrokerPath { throw "Missing broker" }
+
+    { Install-LibVirtualHidDriver -InfPath $infPath -Confirm:$false } | Should -Throw "Missing broker"
+
+    Should -Invoke Stop-LibVirtualHidBrokerService -Times 0 -Exactly -Scope It
+  }
+
+  It "preserves a driver update failure and restores a previously running broker" {
+    Mock Update-RootDeviceDriverWithSetupApi { throw "Update failed" }
+
+    { Install-LibVirtualHidDriver -InfPath $infPath -Confirm:$false } | Should -Throw "Update failed"
+
+    $script:installOperations.ToArray() | Should -Be @("stage", "stop", "vhf", "restore")
+    Should -Invoke Install-LibVirtualHidBrokerService -Times 0 -Exactly -Scope It
+  }
+
+  It "does not start a previously stopped broker after an update failure" {
+    $script:brokerStatus = "Stopped"
+    Mock Update-RootDeviceDriverWithSetupApi { throw "Update failed" }
+
+    { Install-LibVirtualHidDriver -InfPath $infPath -Confirm:$false } | Should -Throw "Update failed"
+
+    Should -Invoke Start-Service -Times 0 -Exactly -Scope It
+  }
+
+  It "preserves an update failure if broker recovery also fails" {
+    Mock Update-RootDeviceDriverWithSetupApi { throw "Update failed" }
+    Mock Start-Service { throw "Recovery failed" }
+
+    { Install-LibVirtualHidDriver -InfPath $infPath -Confirm:$false } | Should -Throw "Update failed"
+
+    Should -Invoke Write-Warning -Times 1 -Exactly -Scope It -ParameterFilter {
+      $Message -eq "Unable to restore the libvirtualhid broker service: Recovery failed"
+    }
+  }
+
+  It "restores a running broker after an install without a broker executable" {
+    Mock Resolve-LibVirtualHidBrokerPath { $null }
+    Mock Install-LibVirtualHidBrokerService {}
+
+    Install-LibVirtualHidDriver -InfPath $infPath -Confirm:$false
+
+    $script:installOperations[-1] | Should -Be "restore"
+  }
+}
+
+Describe "Installation failure logging" {
+  BeforeEach {
+    $script:LibVirtualHidTranscriptStarted = $false
+    Mock Write-Warning {}
+  }
+
+  It "records the error if a transcript could not be started" {
+    $path = Join-Path $TestDrive "failure.log"
+
+    Write-LibVirtualHidInstallFailure -Path $path -Message "Driver update failed"
+
+    Get-Content -LiteralPath $path | Should -BeLike "*libvirtualhid driver installation failed: Driver update failed"
+  }
+
+  It "writes the error to an active transcript without appending to its file" {
+    $script:LibVirtualHidTranscriptStarted = $true
+    Mock Add-Content {}
+
+    Write-LibVirtualHidInstallFailure -Path "driver.log" -Message "Driver update failed"
+
+    Should -Invoke Add-Content -Times 0 -Exactly -Scope It
+    Should -Invoke Write-Warning -Times 1 -Exactly -Scope It -ParameterFilter {
+      $Message -eq "libvirtualhid driver installation failed: Driver update failed"
+    }
+  }
+
+  It "does not require a log path" {
+    Mock Add-Content {}
+
+    Write-LibVirtualHidInstallFailure -Message "Driver update failed"
+
+    Should -Invoke Add-Content -Times 0 -Exactly -Scope It
+  }
+
+  It "does not replace the original error when writing the log also fails" {
+    Mock Add-Content { throw "Log is locked" }
+
+    { Write-LibVirtualHidInstallFailure -Path "driver.log" -Message "Driver update failed" } | Should -Not -Throw
+
+    Should -Invoke Write-Warning -Times 1 -Exactly -Scope It -ParameterFilter {
+      $Message -eq "Unable to write the libvirtualhid installation error log: Log is locked"
     }
   }
 }

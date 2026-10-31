@@ -45,6 +45,13 @@ Restart Windows if the installer requests it. The package installs the
 default. Applications can then use the normal C++ API without administrator
 privileges.
 
+During a reinstall or upgrade, the installer stops the broker before updating
+the driver. This disconnects existing virtual devices. Close applications
+using libvirtualhid, including Sunshine, before upgrading, then restart them
+afterward. If an open device handle prevents Windows from reloading the driver,
+installation can finish with a reboot warning in `install-driver.log`;
+restart Windows before using the updated driver.
+
 A machine license is required to create a driver-backed device. Open
 `virtualhid_control.exe` to activate or refresh a license, select a gamepad
 profile, and create a test controller. The tool can submit buttons, axes,

@@ -513,6 +513,52 @@ jobs:
             --xml-pretty \
             -o reports/coverage.xml
 
+      - name: Repair Windows driver installer with an open consumer handle
+        if: runner.os == 'Windows'
+        shell: pwsh
+        timeout-minutes: 10
+        run: |
+          $installer = Get-ChildItem -LiteralPath .\windows-driver-installer -Filter *.msi |
+            Select-Object -First 1
+          if (!$installer) {
+            throw "Windows driver installer artifact did not contain an MSI."
+          }
+          if ((Get-Service -Name libvirtualhid_broker).Status -ne "Running") {
+            throw "The broker must be running before the MSI repair regression test."
+          }
+
+          $deviceHandle = [System.IO.File]::Open(
+            "\\.\LibVirtualHid",
+            [System.IO.FileMode]::Open,
+            [System.IO.FileAccess]::ReadWrite,
+            [System.IO.FileShare]::ReadWrite
+          )
+          $logPath = Join-Path $env:RUNNER_TEMP "libvirtualhid-driver-repair.log"
+          $driverLogPath = Join-Path $env:ProgramData "libvirtualhid\install-driver.log"
+          $setupApiLogPath = Join-Path $env:windir "inf\setupapi.dev.log"
+          try {
+            $process = Start-Process `
+              -FilePath msiexec.exe `
+              -ArgumentList @("/i", $installer.FullName, "REINSTALL=ALL", "REINSTALLMODE=amus", "/qn", "/norestart", "/L*v", $logPath) `
+              -PassThru `
+              -WindowStyle Hidden
+            if (!$process.WaitForExit([int] [TimeSpan]::FromMinutes(5).TotalMilliseconds)) {
+              Get-Content -LiteralPath $logPath -Tail 200 -ErrorAction SilentlyContinue
+              Get-Content -LiteralPath $driverLogPath -Tail 200 -ErrorAction SilentlyContinue
+              Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+              throw "Windows driver installer repair timed out after 5 minutes."
+            }
+            if ($process.ExitCode -notin @(0, 3010)) {
+              Get-Content -LiteralPath $logPath -ErrorAction SilentlyContinue
+              Get-Content -LiteralPath $driverLogPath -ErrorAction SilentlyContinue
+              Get-Content -LiteralPath $setupApiLogPath -Tail 300 -ErrorAction SilentlyContinue
+              throw "Windows driver installer repair exited with code $($process.ExitCode)."
+            }
+            (Get-Service -Name libvirtualhid_broker).WaitForStatus("Running", [TimeSpan]::FromSeconds(15))
+          } finally {
+            $deviceHandle.Dispose()
+          }
+
       - name: Uninstall Windows driver installer with an open consumer handle
         if: >-
           always() &&

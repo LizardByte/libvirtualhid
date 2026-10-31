@@ -1,6 +1,11 @@
 <#
 .SYNOPSIS
 Stages and installs the libvirtualhid Windows UMDF development driver.
+.DESCRIPTION
+Stops the broker before changing devices and starts it after installation.
+Driver reloads that Windows defers until reboot produce a warning rather than
+failing an otherwise successful installation. Restart Windows before using the
+driver when this warning appears.
 #>
 [CmdletBinding(SupportsShouldProcess)]
 param(
@@ -24,6 +29,7 @@ $ErrorActionPreference = "Stop"
 $script:LibVirtualHidTranscriptStarted = $false
 $script:LibVirtualHidBrokerServiceName = "libvirtualhid_broker"
 $script:LibVirtualHidBrokerServiceDisplayName = "libvirtualhid Broker"
+$script:LibVirtualHidRebootRequired = $false
 . (Join-Path $PSScriptRoot "libvirtualhid-driver-common.ps1")
 
 function Invoke-CheckedCommand {
@@ -261,7 +267,7 @@ function Restart-RootDevice {
   [CmdletBinding(SupportsShouldProcess)]
   param([string] $InstanceId)
 
-  if (-not $InstanceId) {
+  if (-not $InstanceId -or $script:LibVirtualHidRebootRequired) {
     return
   }
 
@@ -275,11 +281,21 @@ function Restart-RootDevice {
     Write-Information $line -InformationAction Continue
   }
 
+  # ERROR_NOT_SUPPORTED (50) is also returned when an earlier driver update
+  # left the instance pending reboot. A reboot can reload the installed driver
+  # even when this OS cannot restart the device in place.
+  if ($exitCode -in @(50, 3010)) {
+    $script:LibVirtualHidRebootRequired = $true
+    Write-Warning "Windows could not reload $InstanceId without a reboot (pnputil exit code $exitCode). Restart Windows to complete the libvirtualhid driver installation."
+    return
+  }
+
   if ($exitCode -ne 0) {
     throw "pnputil.exe /restart-device $InstanceId exited with code $exitCode"
   }
 
   if ($output -match "reboot is needed") {
+    $script:LibVirtualHidRebootRequired = $true
     Write-Warning "Windows reported that a reboot is required to reload the libvirtualhid UMDF driver."
   }
 }
@@ -303,6 +319,7 @@ function Update-RootDeviceDriverWithSetupApi {
       -Arguments @("update", $Path, $TargetHardwareId) `
       -SuccessExitCodes @(0, 3010)
     if ($LASTEXITCODE -eq 3010) {
+      $script:LibVirtualHidRebootRequired = $true
       Write-Warning "Windows reported that a reboot is required to finish installing the libvirtualhid driver."
     }
   }
@@ -323,13 +340,54 @@ function Install-RootDeviceWithSetupApi {
   Invoke-CheckedCommand -FilePath $SetupHelperPath -Arguments @("install", $Path, $TargetHardwareId)
 }
 
-if ($MyInvocation.InvocationName -eq ".") {
-  return
+<#
+.SYNOPSIS
+Records a terminating installation error even when transcription is unavailable.
+.PARAMETER Path
+The installation log path, if one was requested.
+.PARAMETER Message
+The original installation error to record without replacing it with a logging error.
+#>
+function Write-LibVirtualHidInstallFailure {
+  [CmdletBinding(SupportsShouldProcess)]
+  param([string] $Path, [string] $Message)
+
+  Write-Warning "libvirtualhid driver installation failed: $Message" -WarningAction Continue
+  if (-not $Path -or $script:LibVirtualHidTranscriptStarted) {
+    return
+  }
+
+  try {
+    if ($PSCmdlet.ShouldProcess($Path, "Record libvirtualhid installation failure")) {
+      Add-Content -LiteralPath $Path -Value "$(Get-Date -Format o) libvirtualhid driver installation failed: $Message" -ErrorAction Stop
+    }
+  } catch {
+    Write-Warning "Unable to write the libvirtualhid installation error log: $($_.Exception.Message)" -WarningAction Continue
+  }
 }
 
-Start-LibVirtualHidTranscript -Path $LogPath
+<#
+.SYNOPSIS
+Installs or updates the driver while the broker has released its device handles.
+.DESCRIPTION
+Stages the package, stops the broker before changing any device, and registers
+the broker after the driver update. A required reboot skips further restarts.
+Restores a previously running broker if installation fails or no broker binary
+is supplied. StageOnly and WhatIf do not stop the service.
+#>
+function Install-LibVirtualHidDriver {
+  [CmdletBinding(SupportsShouldProcess)]
+  param(
+    [Parameter(Mandatory = $true)]
+    [string] $InfPath,
+    [string] $CertificatePath,
+    [string] $HardwareId = "ROOT\LIBVIRTUALHID",
+    [string] $BrokerPath,
+    [string] $SetupPath,
+    [switch] $StageOnly
+  )
 
-try {
+  $script:LibVirtualHidRebootRequired = $false
   $resolvedInf = (Resolve-Path -LiteralPath $InfPath).Path
   Import-DriverCertificate -Path $CertificatePath
 
@@ -342,48 +400,78 @@ try {
   }
 
   $resolvedSetup = Resolve-LibVirtualHidDriverSetupPath -Path $SetupPath
+  $resolvedBroker = Resolve-LibVirtualHidBrokerPath -Path $BrokerPath
+  $brokerService = Get-Service -Name $script:LibVirtualHidBrokerServiceName -ErrorAction SilentlyContinue
+  $brokerWasRunning = $brokerService -and $brokerService.Status -ne "Stopped"
 
-  $registryRootDevices = @(Get-LibVirtualHidRegistryRootDevice -TargetHardwareId $HardwareId)
-  foreach ($device in ($registryRootDevices | Where-Object { $_.HasCorruptHardwareId -or $_.HasLegacyHidClass })) {
-    Remove-DeviceInstance -InstanceId $device.InstanceId
-  }
+  try {
+    Stop-LibVirtualHidBrokerService -Name $script:LibVirtualHidBrokerServiceName
 
-  $rootDevices = @(Get-LibVirtualHidRootDeviceInstanceId -TargetHardwareId $HardwareId)
-  if ($rootDevices.Count -gt 0) {
-    Write-Information "Updating the existing $HardwareId device driver." -InformationAction Continue
+    $registryRootDevices = @(Get-LibVirtualHidRegistryRootDevice -TargetHardwareId $HardwareId)
+    foreach ($device in ($registryRootDevices | Where-Object { $_.HasCorruptHardwareId -or $_.HasLegacyHidClass })) {
+      Remove-DeviceInstance -InstanceId $device.InstanceId
+    }
+
+    $rootDevices = @(Get-LibVirtualHidRootDeviceInstanceId -TargetHardwareId $HardwareId)
+    if ($rootDevices.Count -eq 0) {
+      if ($PSCmdlet.ShouldProcess($HardwareId, "Create libvirtualhid development device with SetupAPI")) {
+        Install-RootDeviceWithSetupApi `
+          -Path $resolvedInf `
+          -TargetHardwareId $HardwareId `
+          -SetupHelperPath $resolvedSetup
+      }
+      $rootDevices = @(Get-LibVirtualHidRootDeviceInstanceId -TargetHardwareId $HardwareId)
+    } else {
+      Write-Information "Updating the existing $HardwareId device driver." -InformationAction Continue
+    }
+
     foreach ($rootDevice in $rootDevices) {
       Set-RootDeviceVhfMode -InstanceId $rootDevice
     }
+
     Update-RootDeviceDriverWithSetupApi `
       -Path $resolvedInf `
       -TargetHardwareId $HardwareId `
       -SetupHelperPath $resolvedSetup
-    foreach ($rootDevice in $rootDevices) {
-      Restart-RootDevice -InstanceId $rootDevice
+    if (-not $script:LibVirtualHidRebootRequired) {
+      foreach ($rootDevice in $rootDevices) {
+        Restart-RootDevice -InstanceId $rootDevice
+      }
     }
-    Install-LibVirtualHidBrokerService -Path $BrokerPath
-    return
+    Install-LibVirtualHidBrokerService -Path $resolvedBroker
+  } finally {
+    # Restore an existing broker after a failed update or a driver-only install.
+    # Do not let a recovery failure hide the original installation error.
+    if ($brokerWasRunning) {
+      try {
+        $service = Get-Service -Name $script:LibVirtualHidBrokerServiceName -ErrorAction Stop
+        if ($service.Status -eq "Stopped" -and $PSCmdlet.ShouldProcess($script:LibVirtualHidBrokerServiceName, "Restore libvirtualhid broker service")) {
+          Start-Service -Name $script:LibVirtualHidBrokerServiceName -ErrorAction Stop
+        }
+      } catch {
+        Write-Warning "Unable to restore the libvirtualhid broker service: $($_.Exception.Message)"
+      }
+    }
   }
+}
 
-  if ($PSCmdlet.ShouldProcess($HardwareId, "Create libvirtualhid development device with SetupAPI")) {
-    Install-RootDeviceWithSetupApi `
-      -Path $resolvedInf `
-      -TargetHardwareId $HardwareId `
-      -SetupHelperPath $resolvedSetup
-  }
+if ($MyInvocation.InvocationName -eq ".") {
+  return
+}
 
-  $rootDevices = @(Get-LibVirtualHidRootDeviceInstanceId -TargetHardwareId $HardwareId)
-  foreach ($rootDevice in $rootDevices) {
-    Set-RootDeviceVhfMode -InstanceId $rootDevice
-  }
-  Update-RootDeviceDriverWithSetupApi `
-    -Path $resolvedInf `
-    -TargetHardwareId $HardwareId `
-    -SetupHelperPath $resolvedSetup
-  foreach ($rootDevice in $rootDevices) {
-    Restart-RootDevice -InstanceId $rootDevice
-  }
-  Install-LibVirtualHidBrokerService -Path $BrokerPath
+Start-LibVirtualHidTranscript -Path $LogPath
+
+try {
+  Install-LibVirtualHidDriver `
+    -InfPath $InfPath `
+    -CertificatePath $CertificatePath `
+    -HardwareId $HardwareId `
+    -BrokerPath $BrokerPath `
+    -SetupPath $SetupPath `
+    -StageOnly:$StageOnly
+} catch {
+  Write-LibVirtualHidInstallFailure -Path $LogPath -Message $_.Exception.Message
+  throw
 } finally {
   Stop-LibVirtualHidTranscript
 }
