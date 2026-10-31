@@ -333,7 +333,8 @@ Describe "Driver installation helpers" {
     @{ ExitCode = 3010 }
   ) {
     param($ExitCode)
-    Mock pnputil.exe { $global:LASTEXITCODE = $ExitCode }
+    $script:restartExitCode = $ExitCode
+    Mock pnputil.exe { $global:LASTEXITCODE = $script:restartExitCode }
     Mock Write-Warning {}
 
     Restart-RootDevice -InstanceId "ROOT\LIBVIRTUALHID\0000" -Confirm:$false

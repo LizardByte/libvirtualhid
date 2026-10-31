@@ -155,6 +155,27 @@ function Stop-LibVirtualHidBrokerService {
   }
 }
 
+<#
+.SYNOPSIS
+Restores a previously running broker after installation or update failure.
+.PARAMETER Name
+The broker service to start if it is currently stopped.
+#>
+function Restore-LibVirtualHidBrokerService {
+  [CmdletBinding(SupportsShouldProcess)]
+  param([string] $Name)
+
+  # Do not let a recovery failure hide the original installation error.
+  try {
+    $service = Get-Service -Name $Name -ErrorAction Stop
+    if ($service.Status -eq "Stopped" -and $PSCmdlet.ShouldProcess($Name, "Restore libvirtualhid broker service")) {
+      Start-Service -Name $Name -ErrorAction Stop
+    }
+  } catch {
+    Write-Warning "Unable to restore the libvirtualhid broker service: $($_.Exception.Message)"
+  }
+}
+
 function Install-LibVirtualHidBrokerService {
   [CmdletBinding(SupportsShouldProcess)]
   param([string] $Path)
@@ -441,16 +462,8 @@ function Install-LibVirtualHidDriver {
     Install-LibVirtualHidBrokerService -Path $resolvedBroker
   } finally {
     # Restore an existing broker after a failed update or a driver-only install.
-    # Do not let a recovery failure hide the original installation error.
     if ($brokerWasRunning) {
-      try {
-        $service = Get-Service -Name $script:LibVirtualHidBrokerServiceName -ErrorAction Stop
-        if ($service.Status -eq "Stopped" -and $PSCmdlet.ShouldProcess($script:LibVirtualHidBrokerServiceName, "Restore libvirtualhid broker service")) {
-          Start-Service -Name $script:LibVirtualHidBrokerServiceName -ErrorAction Stop
-        }
-      } catch {
-        Write-Warning "Unable to restore the libvirtualhid broker service: $($_.Exception.Message)"
-      }
+      Restore-LibVirtualHidBrokerService -Name $script:LibVirtualHidBrokerServiceName
     }
   }
 }

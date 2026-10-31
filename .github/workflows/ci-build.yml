@@ -537,9 +537,14 @@ jobs:
           $driverLogPath = Join-Path $env:ProgramData "libvirtualhid\install-driver.log"
           $setupApiLogPath = Join-Path $env:windir "inf\setupapi.dev.log"
           try {
+            $repairArguments = @(
+              "/i", $installer.FullName,
+              "REINSTALL=ALL", "REINSTALLMODE=amus",
+              "/qn", "/norestart", "/L*v", $logPath
+            )
             $process = Start-Process `
               -FilePath msiexec.exe `
-              -ArgumentList @("/i", $installer.FullName, "REINSTALL=ALL", "REINSTALLMODE=amus", "/qn", "/norestart", "/L*v", $logPath) `
+              -ArgumentList $repairArguments `
               -PassThru `
               -WindowStyle Hidden
             if (!$process.WaitForExit([int] [TimeSpan]::FromMinutes(5).TotalMilliseconds)) {
