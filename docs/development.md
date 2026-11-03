@@ -9,7 +9,8 @@ sources and, when enabled, the diagnostic control model. GCC and Clang coverage
 instrumentation is confined to the tests directory. The normal library,
 examples, tools, and brokers remain free of coverage instrumentation, including
 when they are packaged from a build that also runs tests. MSVC coverage uses
-OpenCppCoverage rather than compiler instrumentation.
+covdbg, which reads the test binary and its PDB, rather than compiler
+instrumentation.
 
 ## Windows library and tests
 

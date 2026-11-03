@@ -1,0 +1,14 @@
+# MSVC coverage for ci-build.yml: the same sources as before (examples/, src/, tools/),
+# without the broker test hook's private copy of the broker.
+---
+version: 1
+source_root: "."
+coverage:
+  default:
+    files:
+      include:
+        - "examples/**"
+        - "src/**"
+        - "tools/**"
+      exclude:
+        - "src/platform/windows/broker/**"

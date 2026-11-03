@@ -51,11 +51,11 @@ jobs:
           path: _reports
 
       - name: Debug coverage file
-        if: matrix.has_coverage
+        if: matrix.has_coverage && hashFiles('_reports/coverage.xml') != ''
         run: cat _reports/coverage.xml
 
       - name: Upload test coverage
-        if: matrix.has_coverage
+        if: matrix.has_coverage && hashFiles('_reports/coverage.xml') != ''
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5  # v7.1.1
         with:
           disable_search: true

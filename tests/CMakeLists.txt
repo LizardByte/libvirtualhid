@@ -24,7 +24,7 @@ endif()
 set(TEST_BINARY test_libvirtualhid)
 
 # Recompile the library for coverage without instrumenting installed targets.
-# MSVC coverage is collected externally with OpenCppCoverage.
+# MSVC coverage is collected externally with covdbg.
 if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     add_compile_options(-fprofile-arcs -ftest-coverage -ggdb -O0)
     add_link_options(-fprofile-arcs -ftest-coverage)

@@ -90,6 +90,7 @@ jobs:
       - setup_release
     permissions:
       contents: read
+      id-token: write  # covdbg identifies this repository by the job's OIDC token
     uses: ./.github/workflows/ci-build.yml
     with:
       python_version: ${{ needs.setup_release.outputs.python_version }}
