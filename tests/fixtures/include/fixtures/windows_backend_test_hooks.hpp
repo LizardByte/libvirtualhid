@@ -7,6 +7,7 @@
 // standard includes
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -207,6 +208,16 @@ namespace lvh::detail::test {
     WindowsSendInputRecord keypad_enter_input;
   };
 
+  /**
+   * @brief Captured delivery of a sequence of Windows keyboard events.
+   */
+  struct WindowsKeyboardTranslationResult {
+    OperationStatus create_status;  ///< Keyboard creation result.
+    std::vector<OperationStatus> submit_statuses;  ///< Result of each submitted event.
+    std::vector<WindowsSendInputRecord> sent_inputs;  ///< Intercepted Win32 input events.
+    std::vector<std::vector<std::uint8_t>> reports;  ///< Intercepted HID keyboard reports.
+  };
+
   struct WindowsMouseSendInputResult {
     OperationStatus relative_status;
     OperationStatus absolute_status;
@@ -277,6 +288,18 @@ namespace lvh::detail::test {
   WindowsBackendUtilityResult windows_backend_fake_channel_utilities();
   WindowsOverlappedIoResult windows_backend_overlapped_device_io();
   WindowsBackendSendInputResult windows_backend_send_input_devices();
+
+  /**
+   * @brief Submit keyboard events while intercepting Win32 input and HID reports.
+   *
+   * @param events Keyboard events to translate without delivering input to the host.
+   * @param use_hid Whether to use the fake HID control channel instead of the Win32 fallback.
+   * @return Submission results and captured input.
+   */
+  WindowsKeyboardTranslationResult windows_backend_translate_keyboard_events(
+    std::span<const KeyboardEvent> events,
+    bool use_hid
+  );
 
   /**
    * @brief Scale a source coordinate through a target viewport into a virtual desktop axis.

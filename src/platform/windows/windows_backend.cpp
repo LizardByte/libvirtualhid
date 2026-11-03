@@ -486,6 +486,17 @@ namespace lvh::detail {
       pointer_info.ptPixelLocation = pointer_location(viewport, x, y);
     }
 
+    /**
+     * @brief Identify keys requiring the E0 prefix during Win32 and HID translation.
+     *
+     * Preserve the established navigation and modifier handling, and ask Windows
+     * for the prefix of other keys so media, volume, and browser keys cannot be
+     * mistaken for ordinary keys sharing the same scan code. The E1 prefix used
+     * by Pause does not represent KEYEVENTF_EXTENDEDKEY.
+     *
+     * @param key_code Windows virtual-key code after any consumer remapping.
+     * @return Whether the key requires E0 extended-key handling.
+     */
     bool extended_key(KeyboardKeyCode key_code) {
       switch (key_code) {
         case VK_LWIN:
@@ -506,7 +517,7 @@ namespace lvh::detail {
         case VK_APPS:
           return true;
         default:
-          return false;
+          return (::MapVirtualKeyW(key_code, MAPVK_VK_TO_VSC_EX) & 0xFF00U) == 0xE000U;
       }
     }
 
