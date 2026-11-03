@@ -24,17 +24,21 @@
   #endif
 #endif
 
-// local includes
+// test includes
 #include "fixtures/fixtures.hpp"
 #include "fixtures/windows_backend_test_hooks.hpp"
-#include "lvh_windows_protocol.h"
+
+// standard includes
+#include <algorithm>
+#include <array>
+#include <utility>
+#include <vector>
 
 // lib includes
 #include <libvirtualhid/profiles.hpp>
 
-// standard includes
-#include <algorithm>
-#include <vector>
+// local includes
+#include "lvh_windows_protocol.h"
 
 #ifndef NOMINMAX
   #define NOMINMAX
@@ -328,6 +332,127 @@ TEST_F(WindowsBackendTest, OverlappedDeviceIoUsesAnEventAndWaitsForPendingComple
 
   EXPECT_EQ(result.start_failure_status.code(), lvh::ErrorCode::backend_failure);
   EXPECT_EQ(result.completion_failure_status.code(), lvh::ErrorCode::backend_failure);
+}
+
+TEST_F(WindowsBackendTest, PreservesExtendedMediaAndBrowserKeysInSendInput) {
+  // These scan codes overlap letters unless KEYEVENTF_EXTENDEDKEY accompanies them.
+  const auto keys = std::to_array<std::pair<lvh::KeyboardKeyCode, std::uint16_t>>({
+    {VK_BROWSER_BACK, 0x6AU},
+    {VK_BROWSER_FORWARD, 0x69U},
+    {VK_BROWSER_REFRESH, 0x67U},
+    {VK_BROWSER_STOP, 0x68U},
+    {VK_BROWSER_SEARCH, 0x65U},
+    {VK_BROWSER_FAVORITES, 0x66U},
+    {VK_BROWSER_HOME, 0x32U},
+    {VK_VOLUME_MUTE, 0x20U},
+    {VK_VOLUME_DOWN, 0x2EU},
+    {VK_VOLUME_UP, 0x30U},
+    {VK_MEDIA_NEXT_TRACK, 0x19U},
+    {VK_MEDIA_PREV_TRACK, 0x10U},
+    {VK_MEDIA_STOP, 0x24U},
+    {VK_MEDIA_PLAY_PAUSE, 0x22U},
+    {VK_LAUNCH_MAIL, 0x6CU},
+    {VK_LAUNCH_MEDIA_SELECT, 0x6DU},
+    {VK_LAUNCH_APP1, 0x6BU},
+    {VK_LAUNCH_APP2, 0x21U},
+  });
+  for (const auto &[key, scan_code] : keys) {
+    for (const bool normalized : {false, true}) {
+      SCOPED_TRACE(key);
+      SCOPED_TRACE(normalized);
+      const std::array events {
+        lvh::KeyboardEvent {.key_code = key, .pressed = true, .uses_normalized_key_code = normalized, .prefer_native_scan_code = true},
+        lvh::KeyboardEvent {.key_code = key, .pressed = false, .uses_normalized_key_code = normalized, .prefer_native_scan_code = true},
+      };
+      const auto result = lvh::detail::test::windows_backend_translate_keyboard_events(events, false);
+      expect_ok(result.create_status);
+      ASSERT_EQ(result.submit_statuses.size(), 2U);
+      ASSERT_EQ(result.sent_inputs.size(), 2U);
+      for (std::size_t i = 0; i < events.size(); ++i) {
+        expect_ok(result.submit_statuses[i]);
+        const auto &input = result.sent_inputs[i];
+        EXPECT_EQ(input.type, INPUT_KEYBOARD);
+        EXPECT_EQ(input.virtual_key, 0U);
+        EXPECT_EQ(input.scan_code, scan_code);
+        EXPECT_EQ(input.key_flags, KEYEVENTF_SCANCODE | KEYEVENTF_EXTENDEDKEY | (i == 0U ? 0U : KEYEVENTF_KEYUP));
+        EXPECT_EQ(::MapVirtualKeyW(0xE000U | input.scan_code, MAPVK_VSC_TO_VK_EX), key);
+      }
+    }
+  }
+}
+
+TEST_F(WindowsBackendTest, KeepsOrdinaryKeysAndE1PauseDistinctFromE0Keys) {
+  for (const auto key : std::to_array<lvh::KeyboardKeyCode>({'B', 'C', VK_RETURN, VK_PAUSE, VK_SNAPSHOT, VK_NUMLOCK})) {
+    SCOPED_TRACE(key);
+    const std::array events {
+      lvh::KeyboardEvent {.key_code = static_cast<lvh::KeyboardKeyCode>(key), .pressed = true, .uses_normalized_key_code = true},
+      lvh::KeyboardEvent {.key_code = static_cast<lvh::KeyboardKeyCode>(key), .pressed = false, .prefer_native_scan_code = true},
+    };
+    const auto result = lvh::detail::test::windows_backend_translate_keyboard_events(events, false);
+    expect_ok(result.create_status);
+    ASSERT_EQ(result.submit_statuses.size(), 2U);
+    ASSERT_EQ(result.sent_inputs.size(), 2U);
+    for (std::size_t i = 0; i < events.size(); ++i) {
+      expect_ok(result.submit_statuses[i]);
+      EXPECT_EQ(result.sent_inputs[i].key_flags & KEYEVENTF_EXTENDEDKEY, 0U);
+    }
+  }
+}
+
+TEST_F(WindowsBackendTest, PreservesVolumeKeysInHidKeyboardReports) {
+  const auto keys = std::to_array<std::pair<lvh::KeyboardKeyCode, std::uint8_t>>({
+    {VK_VOLUME_MUTE, 0x7FU},
+    {VK_VOLUME_DOWN, 0x81U},
+    {VK_VOLUME_UP, 0x80U},
+    {'C', 0x06U},
+    {'B', 0x05U},
+  });
+  for (const auto &[key, usage] : keys) {
+    for (const bool normalized : {false, true}) {
+      SCOPED_TRACE(key);
+      SCOPED_TRACE(normalized);
+      const std::array events {
+        lvh::KeyboardEvent {.key_code = key, .pressed = true, .uses_normalized_key_code = normalized, .prefer_native_scan_code = true},
+        lvh::KeyboardEvent {.key_code = key, .pressed = false, .uses_normalized_key_code = normalized, .prefer_native_scan_code = true},
+      };
+      const auto result = lvh::detail::test::windows_backend_translate_keyboard_events(events, true);
+      expect_ok(result.create_status);
+      ASSERT_EQ(result.submit_statuses.size(), 2U);
+      for (const auto &status : result.submit_statuses) {
+        expect_ok(status);
+      }
+      EXPECT_TRUE(result.sent_inputs.empty());
+      std::vector<std::uint8_t> pressed_report(LVH_WINDOWS_KEYBOARD_INPUT_REPORT_SIZE, 0U);
+      pressed_report[2U] = usage;
+      const std::vector<std::uint8_t> released_report(LVH_WINDOWS_KEYBOARD_INPUT_REPORT_SIZE, 0U);
+      EXPECT_EQ(result.reports, (std::vector<std::vector<std::uint8_t>> {pressed_report, released_report}));
+    }
+  }
+}
+
+TEST_F(WindowsBackendTest, PreservesConsumerKeysWhenHidKeyboardFallsBackToSendInput) {
+  for (const auto key : {VK_BROWSER_HOME, VK_MEDIA_NEXT_TRACK, VK_LAUNCH_APP2}) {
+    for (const bool normalized : {false, true}) {
+      SCOPED_TRACE(key);
+      SCOPED_TRACE(normalized);
+      const std::array events {
+        lvh::KeyboardEvent {.key_code = static_cast<lvh::KeyboardKeyCode>(key), .pressed = true, .uses_normalized_key_code = normalized, .prefer_native_scan_code = true},
+        lvh::KeyboardEvent {.key_code = static_cast<lvh::KeyboardKeyCode>(key), .pressed = false, .uses_normalized_key_code = normalized, .prefer_native_scan_code = true},
+      };
+      const auto result = lvh::detail::test::windows_backend_translate_keyboard_events(events, true);
+      expect_ok(result.create_status);
+      ASSERT_EQ(result.submit_statuses.size(), 2U);
+      ASSERT_EQ(result.sent_inputs.size(), 2U);
+      EXPECT_TRUE(result.reports.empty());
+      for (std::size_t i = 0; i < events.size(); ++i) {
+        expect_ok(result.submit_statuses[i]);
+        const auto &input = result.sent_inputs[i];
+        EXPECT_EQ(input.virtual_key, 0U);
+        EXPECT_EQ(input.key_flags, KEYEVENTF_SCANCODE | KEYEVENTF_EXTENDEDKEY | (i == 0U ? 0U : KEYEVENTF_KEYUP));
+        EXPECT_EQ(::MapVirtualKeyW(0xE000U | input.scan_code, MAPVK_VSC_TO_VK_EX), static_cast<UINT>(key));
+      }
+    }
+  }
 }
 
 TEST_F(WindowsBackendTest, SendInputDevicesTranslateKeyboardMouseFailuresAndUnsupportedProfiles) {

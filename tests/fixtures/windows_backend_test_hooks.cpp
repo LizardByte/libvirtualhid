@@ -1135,6 +1135,32 @@ namespace lvh::detail {
       return result;
     }
 
+    WindowsKeyboardTranslationResult windows_backend_translate_keyboard_events(
+      std::span<const KeyboardEvent> events,
+      bool use_hid
+    ) {
+      WindowsKeyboardTranslationResult result;
+      FakeSendInputState send_input_state;
+      ScopedFakeSendInput fake_send_input {send_input_state};
+      auto command_state = std::make_shared<FakeWindowsControlChannelState>();
+      auto backend = use_hid ?
+                       make_fake_windows_backend(command_state, std::make_shared<FakeWindowsControlChannelState>()) :
+                       std::make_unique<WindowsBackend>(nullptr, nullptr);
+
+      CreateKeyboardOptions options;
+      options.profile = profiles::keyboard();
+      auto created = backend->create_keyboard(1U, options);
+      result.create_status = created.status;
+      if (created) {
+        for (const auto &event : events) {
+          result.submit_statuses.push_back(created.keyboard->submit(event));
+        }
+      }
+      result.sent_inputs = std::move(send_input_state.sent_inputs);
+      result.reports = command_state->submit_reports();
+      return result;
+    }
+
     WindowsBackendSendInputResult windows_backend_send_input_devices() {
       using enum MouseEventKind;
 
