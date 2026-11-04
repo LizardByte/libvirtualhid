@@ -1,0 +1,26 @@
+<Configuration>
+  <CodeCoverage>
+    <EnableStaticNativeInstrumentation>True</EnableStaticNativeInstrumentation>
+    <EnableStaticNativeInstrumentationRestore>True</EnableStaticNativeInstrumentationRestore>
+    <EnableDynamicNativeInstrumentation>False</EnableDynamicNativeInstrumentation>
+    <EnableStaticManagedInstrumentation>False</EnableStaticManagedInstrumentation>
+    <EnableDynamicManagedInstrumentation>False</EnableDynamicManagedInstrumentation>
+    <CollectFromChildProcesses>False</CollectFromChildProcesses>
+    <ModulePaths>
+      <IncludeDirectories>
+        <Directory Recursive="false" />
+      </IncludeDirectories>
+      <Include>
+        <ModulePath />
+      </Include>
+    </ModulePaths>
+    <Sources>
+      <Include>
+        <Source />
+      </Include>
+      <Exclude>
+        <Source />
+      </Exclude>
+    </Sources>
+  </CodeCoverage>
+</Configuration>

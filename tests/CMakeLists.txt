@@ -24,7 +24,7 @@ endif()
 set(TEST_BINARY test_libvirtualhid)
 
 # Recompile the library for coverage without instrumenting installed targets.
-# MSVC coverage is collected externally with OpenCppCoverage.
+# MSVC coverage is collected externally with Microsoft.CodeCoverage.Console.
 if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     add_compile_options(-fprofile-arcs -ftest-coverage -ggdb -O0)
     add_link_options(-fprofile-arcs -ftest-coverage)
@@ -160,6 +160,8 @@ elseif(WIN32)
       LIBVIRTUALHID_TEST_BINARY_DIR="${CMAKE_CURRENT_BINARY_DIR}")
     if(MSVC)
         target_compile_options(${TEST_BINARY} PRIVATE /EHsc)
+        # Only the test executable needs to support native static instrumentation.
+        target_link_options(${TEST_BINARY} PRIVATE /PROFILE /INCREMENTAL:NO)
     endif()
     target_link_libraries(${TEST_BINARY}
       PRIVATE
