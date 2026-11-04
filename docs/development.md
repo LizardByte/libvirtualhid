@@ -9,7 +9,9 @@ sources and, when enabled, the diagnostic control model. GCC and Clang coverage
 instrumentation is confined to the tests directory. The normal library,
 examples, tools, and brokers remain free of coverage instrumentation, including
 when they are packaged from a build that also runs tests. MSVC coverage uses
-OpenCppCoverage rather than compiler instrumentation.
+Microsoft.CodeCoverage.Console to instrument only the GoogleTest executable,
+which is linked with `/PROFILE`. The collector restores the executable after
+the run.
 
 ## Windows library and tests
 
@@ -36,6 +38,13 @@ table. Run the same check on a local build with MSYS2/UCRT64 binutils installed:
 
 The script checks all built configurations and excludes the separate test
 targets. Pass the MSVC build directory to check a Visual Studio build.
+
+MSVC CI configures the [coverage settings template](../tests/msvc-coverage.config.in)
+for the checkout and invokes Microsoft.CodeCoverage.Console directly from the
+workflow. The collector ships with Visual Studio Enterprise 2022 and all Visual
+Studio 2026 editions. Use a Debug test executable with its matching PDB. CI writes
+Cobertura `coverage.xml` and GoogleTest `junit.xml`, and fails if tests fail or
+native coverage is missing. GCC and Clang builds continue to use gcovr.
 
 ## Linux and macOS
 
