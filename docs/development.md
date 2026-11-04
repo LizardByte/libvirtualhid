@@ -39,8 +39,8 @@ table. Run the same check on a local build with MSYS2/UCRT64 binutils installed:
 The script checks all built configurations and excludes the separate test
 targets. Pass the MSVC build directory to check a Visual Studio build.
 
-MSVC CI configures the [coverage settings template](../tests/msvc-coverage.config.in)
-for the checkout and invokes Microsoft.CodeCoverage.Console directly from the
+MSVC CI configures `tests/msvc-coverage.config.in` for the checkout and invokes
+Microsoft.CodeCoverage.Console directly from the
 workflow. The collector ships with Visual Studio Enterprise 2022 and all Visual
 Studio 2026 editions. Use a Debug test executable with its matching PDB. CI writes
 Cobertura `coverage.xml` and GoogleTest `junit.xml`, and fails if tests fail or
