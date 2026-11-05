@@ -133,6 +133,11 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
       PkgConfig::LIBINPUT
       PkgConfig::SDL2)
 
+    if(LIBVIRTUALHID_USES_GIO)
+        target_sources(${TEST_BINARY} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_linux_output_mapping.cpp")
+        target_link_libraries(${TEST_BINARY} PRIVATE PkgConfig::GIO)
+    endif()
+
     set(LIBVIRTUALHID_TEST_SDL3_TARGET SDL3::SDL3)
     if(TARGET SDL3::SDL3-static)
         set(LIBVIRTUALHID_TEST_SDL3_TARGET SDL3::SDL3-static)
