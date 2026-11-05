@@ -9,6 +9,8 @@
 
 // standard includes
 #include <algorithm>
+#include <array>
+#include <functional>
 #include <future>
 #include <map>
 #include <string>
@@ -40,6 +42,9 @@ namespace {
    */
   class KWinMappingTest: public testing::Test {
   protected:
+    /**
+     * @brief Start an isolated bus and wait until the compositor service is ready.
+     */
     void SetUp() override {
       bus_ = g_test_dbus_new(G_TEST_DBUS_NONE);
       g_test_dbus_up(bus_);
@@ -48,80 +53,17 @@ namespace {
       loop_ = g_main_loop_new(context_, false);
       std::promise<void> ready;
       worker_ = std::jthread {[this, &ready] {
-        g_main_context_push_thread_default(context_);
-        GError *error = nullptr;
-        connection_ = g_dbus_connection_new_for_address_sync(
-          g_test_dbus_get_bus_address(bus_),
-          GDBusConnectionFlags(G_DBUS_CONNECTION_FLAGS_AUTHENTICATION_CLIENT | G_DBUS_CONNECTION_FLAGS_MESSAGE_BUS_CONNECTION),
-          nullptr,
-          nullptr,
-          &error
-        );
-        if (!connection_) {
-          startup_error_ = error->message;
-          g_error_free(error);
-          ready.set_value();
-          g_main_context_pop_thread_default(context_);
-          return;
-        }
-        g_autoptr(GVariant) reply = g_dbus_connection_call_sync(
-          connection_,
-          "org.freedesktop.DBus",
-          "/org/freedesktop/DBus",
-          "org.freedesktop.DBus",
-          "RequestName",
-          g_variant_new("(su)", "org.kde.KWin", 0U),
-          nullptr,
-          G_DBUS_CALL_FLAGS_NONE,
-          1000,
-          nullptr,
-          &error
-        );
-        if (error) {
-          startup_error_ = error->message;
-          g_error_free(error);
-        }
-        introspection_ = g_dbus_node_info_new_for_xml(
-          "<node><interface name='org.kde.KWin.InputDevice'>"
-          "<property name='outputName' type='s' access='readwrite'/>"
-          "<property name='mapToWorkspace' type='b' access='readwrite'/>"
-          "</interface></node>",
-          nullptr
-        );
-        g_autoptr(GDBusNodeInfo) manager_info = g_dbus_node_info_new_for_xml(
-          "<node><interface name='org.kde.KWin.InputDeviceManager'>"
-          "<property name='devicesSysNames' type='as' access='read'/></interface></node>",
-          nullptr
-        );
-        static const GDBusInterfaceVTable manager_vtable {
-          .method_call = nullptr,
-          .get_property = [](GDBusConnection *, const gchar *, const gchar *, const gchar *, const gchar *, GError **, gpointer) -> GVariant * {
-            const char *nodes[] = {"event7", "event8", nullptr};
-            return g_variant_new_strv(nodes, -1);
-          },
-          .set_property = nullptr,
-          .padding = {},
-        };
-        manager_id_ = g_dbus_connection_register_object(connection_, "/org/kde/KWin/InputDevice", manager_info->interfaces[0], &manager_vtable, this, nullptr, nullptr);
-        registrations_.push_back(manager_id_);
-        register_device("event7");
-        register_device("event8");
-        ready.set_value();
-        g_main_loop_run(loop_);
-        for (const auto id : registrations_) {
-          g_dbus_connection_unregister_object(connection_, id);
-        }
-        g_dbus_node_info_unref(introspection_);
-        g_dbus_connection_close_sync(connection_, nullptr, nullptr);
-        g_clear_object(&connection_);
-        g_main_context_pop_thread_default(context_);
+        run_service(ready);
       }};
       ready.get_future().wait();
       ASSERT_TRUE(startup_error_.empty()) << startup_error_;
     }
 
+    /**
+     * @brief Stop the service thread and release the isolated bus.
+     */
     void TearDown() override {
-      g_main_context_invoke(context_, [](gpointer data) -> gboolean {
+      g_main_context_invoke(context_, [](gpointer data) {
         g_main_loop_quit(static_cast<GMainLoop *>(data));
         return G_SOURCE_REMOVE;
       },
@@ -144,24 +86,13 @@ namespace {
       devices_.try_emplace(path);
       static const GDBusInterfaceVTable vtable {
         .method_call = nullptr,
-        .get_property = [](GDBusConnection *, const gchar *, const gchar *path, const gchar *, const gchar *property, GError **, gpointer data) -> GVariant * {
-          auto &device = static_cast<KWinMappingTest *>(data)->devices_.at(path);
+        .get_property = [](GDBusConnection *, const gchar *, const gchar *path, const gchar *, const gchar *property, GError **, gpointer data) {
+          const auto &device = static_cast<KWinMappingTest *>(data)->devices_.at(path);
           return std::string_view {property} == "outputName" ? g_variant_new_string(device.output.c_str()) : g_variant_new_boolean(device.workspace);
         },
-        .set_property = [](GDBusConnection *, const gchar *, const gchar *path, const gchar *, const gchar *property, GVariant *value, GError **error, gpointer data) -> gboolean {
-          auto &self = *static_cast<KWinMappingTest *>(data);
-          if (self.reject_property_ == property) {
-            g_set_error_literal(error, G_DBUS_ERROR, self.reject_code_, "mapping denied");
-            return false;
-          }
-          auto &device = self.devices_.at(path);
-          if (std::string_view {property} == "outputName") {
-            device.output = g_variant_get_string(value, nullptr);
-            ++device.assignments;
-          } else {
-            device.workspace = g_variant_get_boolean(value);
-          }
-          return true;
+        // GDBus fixes the callback prefix; forward its property payload to a typed handler.
+        .set_property = [](GDBusConnection *, const gchar *, const gchar *path, const gchar *, auto... property_args) {
+          return set_device_property(path, property_args...);
         },
         .padding = {},
       };
@@ -184,7 +115,7 @@ namespace {
     void on_service(Action action) {
       std::packaged_task<void()> task {std::move(action)};
       auto completed = task.get_future();
-      g_main_context_invoke(context_, [](gpointer data) -> gboolean {
+      g_main_context_invoke(context_, [](gpointer data) {
         (*static_cast<std::packaged_task<void()> *>(data))();
         return G_SOURCE_REMOVE;
       },
@@ -199,12 +130,115 @@ namespace {
      */
     DeviceMapping device(const char *name) {
       DeviceMapping result;
-      on_service([&] {
+      on_service([this, &result, name] {
         result = devices_.at(std::string {"/org/kde/KWin/InputDevice/"} + name);
       });
       return result;
     }
 
+  private:
+    /**
+     * @brief Serve compositor requests on the worker's thread-default context.
+     *
+     * @param ready Promise completed after service startup or a startup failure.
+     */
+    void run_service(std::promise<void> &ready) {
+      g_main_context_push_thread_default(context_);
+      GError *error = nullptr;
+      connection_ = g_dbus_connection_new_for_address_sync(
+        g_test_dbus_get_bus_address(bus_),
+        GDBusConnectionFlags(G_DBUS_CONNECTION_FLAGS_AUTHENTICATION_CLIENT | G_DBUS_CONNECTION_FLAGS_MESSAGE_BUS_CONNECTION),
+        nullptr,
+        nullptr,
+        &error
+      );
+      if (!connection_) {
+        startup_error_ = error->message;
+        g_error_free(error);
+        ready.set_value();
+        g_main_context_pop_thread_default(context_);
+        return;
+      }
+      g_autoptr(GVariant) reply = g_dbus_connection_call_sync(
+        connection_,
+        "org.freedesktop.DBus",
+        "/org/freedesktop/DBus",
+        "org.freedesktop.DBus",
+        "RequestName",
+        g_variant_new("(su)", "org.kde.KWin", 0U),
+        nullptr,
+        G_DBUS_CALL_FLAGS_NONE,
+        1000,
+        nullptr,
+        &error
+      );
+      if (error) {
+        startup_error_ = error->message;
+        g_error_free(error);
+      }
+      introspection_ = g_dbus_node_info_new_for_xml(
+        "<node><interface name='org.kde.KWin.InputDevice'>"
+        "<property name='outputName' type='s' access='readwrite'/>"
+        "<property name='mapToWorkspace' type='b' access='readwrite'/>"
+        "</interface></node>",
+        nullptr
+      );
+      g_autoptr(GDBusNodeInfo) manager_info = g_dbus_node_info_new_for_xml(
+        "<node><interface name='org.kde.KWin.InputDeviceManager'>"
+        "<property name='devicesSysNames' type='as' access='read'/></interface></node>",
+        nullptr
+      );
+      static const GDBusInterfaceVTable manager_vtable {
+        .method_call = nullptr,
+        .get_property = [](GDBusConnection *, const gchar *, const gchar *, const gchar *, const gchar *, GError **, gpointer) {
+          const std::array nodes {"event7", "event8"};
+          return g_variant_new_strv(nodes.data(), static_cast<gssize>(nodes.size()));
+        },
+        .set_property = nullptr,
+        .padding = {},
+      };
+      manager_id_ = g_dbus_connection_register_object(connection_, "/org/kde/KWin/InputDevice", manager_info->interfaces[0], &manager_vtable, this, nullptr, nullptr);
+      registrations_.push_back(manager_id_);
+      register_device("event7");
+      register_device("event8");
+      ready.set_value();
+      g_main_loop_run(loop_);
+      for (const auto id : registrations_) {
+        g_dbus_connection_unregister_object(connection_, id);
+      }
+      g_dbus_node_info_unref(introspection_);
+      g_dbus_connection_close_sync(connection_, nullptr, nullptr);
+      g_clear_object(&connection_);
+      g_main_context_pop_thread_default(context_);
+    }
+
+    /**
+     * @brief Apply a property write to one registered compositor device.
+     *
+     * @param path Event device object path.
+     * @param property Property being updated.
+     * @param value New property value.
+     * @param error Receives a configured rejection error.
+     * @param data Fixture owning the registered device.
+     * @return Whether the property write succeeded.
+     */
+    static gboolean set_device_property(const gchar *path, const gchar *property, GVariant *value, GError **error, gpointer data) {
+      auto &self = *static_cast<KWinMappingTest *>(data);
+      if (self.reject_property_ == property) {
+        g_set_error_literal(error, G_DBUS_ERROR, self.reject_code_, "mapping denied");
+        return false;
+      }
+      auto &device = self.devices_.at(path);
+      if (std::string_view {property} == "outputName") {
+        device.output = g_variant_get_string(value, nullptr);
+        ++device.assignments;
+      } else {
+        device.workspace = g_variant_get_boolean(value);
+      }
+      return true;
+    }
+
+  protected:
     guint manager_id_ = 0;  ///< Wayland input manager registration.
     lvh::detail::OutputMapping mapping_;  ///< Mapping under test.
     GDBusError reject_code_ = G_DBUS_ERROR_ACCESS_DENIED;  ///< Failure returned for a rejected property.
@@ -212,12 +246,11 @@ namespace {
     GMainContext *context_ = nullptr;  ///< Service event context.
     GDBusConnection *connection_ = nullptr;  ///< Service bus connection.
 
-  private:
     GTestDBus *bus_ = nullptr;  ///< Private D-Bus daemon.
     GMainLoop *loop_ = nullptr;  ///< Service event loop.
     GDBusNodeInfo *introspection_ = nullptr;  ///< Device property interface.
     std::vector<guint> registrations_;  ///< Objects registered in the private bus.
-    std::map<std::string, DeviceMapping> devices_;  ///< Compositor device state.
+    std::map<std::string, DeviceMapping, std::less<>> devices_;  ///< Compositor device state.
     std::string startup_error_;  ///< Service startup diagnostic.
     std::jthread worker_;  ///< Compositor service worker.
   };
@@ -246,7 +279,7 @@ namespace {
   TEST_F(KWinMappingTest, LeavesEmptyTargetsAndSessionsWithoutInputManagerUnchanged) {
     EXPECT_TRUE(mapping_.update("/dev/input/event7", "", false).ok());
     EXPECT_EQ(device("event7").assignments, 0);
-    on_service([&] {
+    on_service([this] {
       unregister_manager();
     });
     EXPECT_TRUE(mapping_.update("/dev/input/event7", "DP-1", false).ok());
@@ -260,7 +293,7 @@ namespace {
   }
 
   TEST_F(KWinMappingTest, LeavesOtherCompositorsUnchanged) {
-    on_service([&] {
+    on_service([this] {
       g_autoptr(GVariant) reply = g_dbus_connection_call_sync(
         connection_,
         "org.freedesktop.DBus",
@@ -280,7 +313,7 @@ namespace {
   }
 
   TEST_F(KWinMappingTest, RejectsInvalidDeviceNodesAndDisplayNames) {
-    for (const auto *node : {"", "/dev/input/event", "/dev/input/event7/other", "/tmp/event7", "/dev/input/event-1", "/dev/input/eventz"}) {
+    for (const auto *node : {"", "/dev/input/event", "/dev/input/event7/other", "/not-an-input-device/event7", "/dev/input/event-1", "/dev/input/eventz"}) {
       EXPECT_EQ(mapping_.update(node, "DP-1", false).code(), lvh::ErrorCode::invalid_argument) << node;
     }
     EXPECT_EQ(mapping_.update("/dev/input/event7", std::string(1, '\xff'), false).code(), lvh::ErrorCode::invalid_argument);
@@ -289,14 +322,14 @@ namespace {
   }
 
   TEST_F(KWinMappingTest, RetriesFailedAssignments) {
-    on_service([&] {
+    on_service([this] {
       reject_property_ = "outputName";
     });
     auto status = mapping_.update("/dev/input/event7", "DP-1", false);
     EXPECT_EQ(status.code(), lvh::ErrorCode::backend_failure);
     EXPECT_NE(status.message().find("mapping denied"), std::string::npos);
     EXPECT_EQ(device("event7").output, "HDMI-A-1");
-    on_service([&] {
+    on_service([this] {
       reject_property_.clear();
     });
     EXPECT_TRUE(mapping_.update("/dev/input/event7", "DP-1", false).ok());
@@ -304,12 +337,12 @@ namespace {
   }
 
   TEST_F(KWinMappingTest, ReportsTabletWorkspaceMappingFailureAndRetries) {
-    on_service([&] {
+    on_service([this] {
       reject_property_ = "mapToWorkspace";
     });
     EXPECT_EQ(mapping_.update("/dev/input/event7", "DP-1", true).code(), lvh::ErrorCode::backend_failure);
     EXPECT_TRUE(device("event7").workspace);
-    on_service([&] {
+    on_service([this] {
       reject_property_.clear();
     });
     EXPECT_TRUE(mapping_.update("/dev/input/event7", "DP-1", true).ok());
@@ -318,7 +351,7 @@ namespace {
 
   TEST_F(KWinMappingTest, WaitsForNewDeviceRegistration) {
     GSource *source = g_timeout_source_new(15);
-    g_source_set_callback(source, [](gpointer data) -> gboolean {
+    g_source_set_callback(source, [](gpointer data) {
       static_cast<KWinMappingTest *>(data)->register_device("event9");
       return G_SOURCE_REMOVE;
     },
@@ -331,7 +364,7 @@ namespace {
   }
 
   TEST_F(KWinMappingTest, BoundsTheWaitWhenCompositorReportsUnknownObject) {
-    on_service([&] {
+    on_service([this] {
       reject_property_ = "outputName";
       reject_code_ = G_DBUS_ERROR_UNKNOWN_OBJECT;
     });
@@ -376,7 +409,7 @@ namespace {
   }
 
   TEST_F(KWinMappingTest, FailedAssignmentEmitsNoTouchOrPenInput) {
-    on_service([&] {
+    on_service([this] {
       reject_property_ = "outputName";
     });
     lvh::TouchContact contact;

@@ -61,14 +61,10 @@ namespace lvh::detail {
     OperationStatus assign_output(GDBusConnection *connection, const std::string &path, const std::string &output_name, bool tablet) {
       for (int attempt = 0;; ++attempt) {
         g_autoptr(GError) error = nullptr;
-        if (set_property(connection, path, "outputName", g_variant_new_string(output_name.c_str()), &error)) {
-          if (!tablet || set_property(connection, path, "mapToWorkspace", g_variant_new_boolean(false), &error)) {
-            break;
-          }
+        if (set_property(connection, path, "outputName", g_variant_new_string(output_name.c_str()), &error) && (!tablet || set_property(connection, path, "mapToWorkspace", g_variant_new_boolean(false), &error))) {
+          break;
         }
-        const bool registration_pending = g_error_matches(error, G_DBUS_ERROR, G_DBUS_ERROR_UNKNOWN_OBJECT) ||
-                                          g_error_matches(error, G_DBUS_ERROR, G_DBUS_ERROR_UNKNOWN_METHOD);
-        if (!registration_pending || attempt == 9) {
+        if (const bool registration_pending = g_error_matches(error, G_DBUS_ERROR, G_DBUS_ERROR_UNKNOWN_OBJECT) || g_error_matches(error, G_DBUS_ERROR, G_DBUS_ERROR_UNKNOWN_METHOD); !registration_pending || attempt == 9) {
           return OperationStatus::failure(ErrorCode::backend_failure, "failed to map virtual input to " + output_name + ": " + error->message);
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -91,27 +87,12 @@ namespace lvh::detail {
       }
       // This manager is exposed by KWin's Wayland input backend. Detect it
       // directly because a user service may not inherit WAYLAND_DISPLAY.
-      g_autoptr(GVariant) manager = g_dbus_connection_call_sync(
-        connection,
-        kwin_service,
-        "/org/kde/KWin/InputDevice",
-        "org.freedesktop.DBus.Properties",
-        "Get",
-        g_variant_new("(ss)", "org.kde.KWin.InputDeviceManager", "devicesSysNames"),
-        G_VARIANT_TYPE("(v)"),
-        G_DBUS_CALL_FLAGS_NO_AUTO_START,
-        call_timeout_ms,
-        nullptr,
-        nullptr
-      );
-      if (!manager) {
+      if (g_autoptr(GVariant) manager = g_dbus_connection_call_sync(connection, kwin_service, "/org/kde/KWin/InputDevice", "org.freedesktop.DBus.Properties", "Get", g_variant_new("(ss)", "org.kde.KWin.InputDeviceManager", "devicesSysNames"), G_VARIANT_TYPE("(v)"), G_DBUS_CALL_FLAGS_NO_AUTO_START, call_timeout_ms, nullptr, nullptr); !manager) {
         return OperationStatus::success();
       }
-      constexpr std::string_view prefix = "/dev/input/event";
-      if (!devnode.starts_with(prefix) || devnode.size() == prefix.size() || !std::ranges::all_of(devnode.substr(prefix.size()), [](char c) {
+      if (constexpr std::string_view prefix = "/dev/input/event"; !devnode.starts_with(prefix) || devnode.size() == prefix.size() || !std::ranges::all_of(devnode.substr(prefix.size()), [](char c) {
             return c >= '0' && c <= '9';
-          }) ||
-          !g_utf8_validate(output_name.c_str(), static_cast<gssize>(output_name.size()), nullptr)) {
+          }) || !g_utf8_validate(output_name.c_str(), static_cast<gssize>(output_name.size()), nullptr)) {
         return OperationStatus::failure(ErrorCode::invalid_argument, "invalid virtual input device node or display name");
       }
       const auto path = "/org/kde/KWin/InputDevice/" + std::string {devnode.substr(std::string_view {"/dev/input/"}.size())};
