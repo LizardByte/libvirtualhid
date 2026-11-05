@@ -1722,8 +1722,8 @@ namespace lvh::detail {
       UinputMouse(
         int relative_file_descriptor,
         int absolute_file_descriptor,
-        PointerViewport desktop = {},
-        PointerViewport viewport = {}
+        const PointerViewport &desktop = {},
+        const PointerViewport &viewport = {}
       ):
           relative_device_ {relative_file_descriptor},
           absolute_device_ {absolute_file_descriptor},
@@ -1960,14 +1960,19 @@ namespace lvh::detail {
         return create_uinput_device(profile, id);
       }
 
+      /**
+       * @brief Submit a contact after assigning a touchscreen to its requested output.
+       *
+       * @param contact Monitor-local contact state and optional output identity.
+       * @param update_trackpad_buttons Whether to use trackpad buttons and preserve compositor mapping.
+       * @return Submission status, or a mapping error before any input is emitted.
+       */
       OperationStatus place_touch_contact(const TouchContact &contact, bool update_trackpad_buttons) {
         if (!is_open()) {
           return OperationStatus::failure(ErrorCode::device_closed, "uinput touch device is closed");
         }
-        if (!update_trackpad_buttons) {
-          if (const auto status = map_output(contact.viewport, false); !status.ok()) {
-            return status;
-          }
+        if (const auto status = update_trackpad_buttons ? OperationStatus::success() : map_output(contact.viewport, false); !status.ok()) {
+          return status;
         }
         if (contact.id < 0) {
           return OperationStatus::failure(ErrorCode::invalid_argument, "touch contact id must not be negative");
