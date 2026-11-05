@@ -1971,7 +1971,7 @@ namespace lvh::detail {
         if (!is_open()) {
           return OperationStatus::failure(ErrorCode::device_closed, "uinput touch device is closed");
         }
-        if (const auto status = update_trackpad_buttons ? OperationStatus::success() : map_output(contact.viewport, false); !status.ok()) {
+        if (const auto status = map_touch_output(contact.viewport, update_trackpad_buttons); !status.ok()) {
           return status;
         }
         if (contact.id < 0) {
@@ -2072,6 +2072,20 @@ namespace lvh::detail {
       }
 
     private:
+      /**
+       * @brief Assign touchscreen contacts while preserving relative trackpad mapping.
+       *
+       * @param viewport Contact output metadata.
+       * @param trackpad Whether the device uses relative trackpad behavior.
+       * @return Mapping status, or success when a trackpad needs no assignment.
+       */
+      OperationStatus map_touch_output(const PointerViewport &viewport, bool trackpad) {
+        if (trackpad) {
+          return OperationStatus::success();
+        }
+        return map_output(viewport, false);
+      }
+
       std::optional<int> slot_for_contact(std::int32_t contact_id) {
         if (const auto it = contacts_.find(contact_id); it != contacts_.end()) {
           new_slot_ = false;

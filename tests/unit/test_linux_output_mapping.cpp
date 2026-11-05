@@ -136,6 +136,46 @@ namespace {
       return result;
     }
 
+    /**
+     * @brief Access the output assignment cache under test.
+     *
+     * @return Mutable mapping instance owned by this fixture.
+     */
+    lvh::detail::OutputMapping &mapping() {
+      return mapping_;
+    }
+
+    /**
+     * @brief Access the service context when scheduling device registration.
+     *
+     * @return Borrowed service event context.
+     */
+    GMainContext *service_context() const {
+      return context_;
+    }
+
+    /**
+     * @brief Access the service bus connection from a service-thread action.
+     *
+     * @return Borrowed compositor connection.
+     */
+    GDBusConnection *service_connection() const {
+      return connection_;
+    }
+
+    /**
+     * @brief Configure property write rejection on the service thread.
+     *
+     * @param property Property to reject, or empty to accept all writes.
+     * @param code D-Bus error returned for the rejected property.
+     */
+    void set_rejection(std::string property = {}, GDBusError code = G_DBUS_ERROR_ACCESS_DENIED) {
+      on_service([this, rejected_property = std::move(property), code] {
+        reject_property_ = rejected_property;
+        reject_code_ = code;
+      });
+    }
+
   private:
     /**
      * @brief Serve compositor requests on the worker's thread-default context.
@@ -238,7 +278,6 @@ namespace {
       return true;
     }
 
-  protected:
     guint manager_id_ = 0;  ///< Wayland input manager registration.
     lvh::detail::OutputMapping mapping_;  ///< Mapping under test.
     GDBusError reject_code_ = G_DBUS_ERROR_ACCESS_DENIED;  ///< Failure returned for a rejected property.
@@ -256,46 +295,46 @@ namespace {
   };
 
   TEST_F(KWinMappingTest, MapsOnlyTheOwnedTouchscreenAndCachesTheAssignment) {
-    ASSERT_TRUE(mapping_.update("/dev/input/event7", "DP-1", false).ok());
+    ASSERT_TRUE(mapping().update("/dev/input/event7", "DP-1", false).ok());
     EXPECT_EQ(device("event7").output, "DP-1");
     EXPECT_EQ(device("event8").output, "HDMI-A-1");
     EXPECT_TRUE(device("event7").workspace);
-    ASSERT_TRUE(mapping_.update("/dev/input/event7", "DP-1", false).ok());
+    ASSERT_TRUE(mapping().update("/dev/input/event7", "DP-1", false).ok());
     EXPECT_EQ(device("event7").assignments, 1);
-    ASSERT_TRUE(mapping_.update("/dev/input/event7", "HDMI-A-1", false).ok());
+    ASSERT_TRUE(mapping().update("/dev/input/event7", "HDMI-A-1", false).ok());
     EXPECT_EQ(device("event7").output, "HDMI-A-1");
     EXPECT_EQ(device("event7").assignments, 2);
-    ASSERT_TRUE(mapping_.update("/dev/input/event8", "HDMI-A-1", false).ok());
+    ASSERT_TRUE(mapping().update("/dev/input/event8", "HDMI-A-1", false).ok());
     EXPECT_EQ(device("event8").assignments, 1);
   }
 
   TEST_F(KWinMappingTest, MapsPenToOneOutputAndDisablesWorkspaceMapping) {
-    ASSERT_TRUE(mapping_.update("/dev/input/event7", "DP-1", true).ok());
+    ASSERT_TRUE(mapping().update("/dev/input/event7", "DP-1", true).ok());
     EXPECT_EQ(device("event7").output, "DP-1");
     EXPECT_FALSE(device("event7").workspace);
     EXPECT_TRUE(device("event8").workspace);
   }
 
   TEST_F(KWinMappingTest, LeavesEmptyTargetsAndSessionsWithoutInputManagerUnchanged) {
-    EXPECT_TRUE(mapping_.update("/dev/input/event7", "", false).ok());
+    EXPECT_TRUE(mapping().update("/dev/input/event7", "", false).ok());
     EXPECT_EQ(device("event7").assignments, 0);
     on_service([this] {
       unregister_manager();
     });
-    EXPECT_TRUE(mapping_.update("/dev/input/event7", "DP-1", false).ok());
+    EXPECT_TRUE(mapping().update("/dev/input/event7", "DP-1", false).ok());
     EXPECT_EQ(device("event7").assignments, 0);
   }
 
   TEST_F(KWinMappingTest, MapsWaylandDeviceWithoutWaylandDisplayEnvironment) {
     g_unsetenv("WAYLAND_DISPLAY");
-    EXPECT_TRUE(mapping_.update("/dev/input/event7", "DP-1", false).ok());
+    EXPECT_TRUE(mapping().update("/dev/input/event7", "DP-1", false).ok());
     EXPECT_EQ(device("event7").output, "DP-1");
   }
 
   TEST_F(KWinMappingTest, LeavesOtherCompositorsUnchanged) {
     on_service([this] {
       g_autoptr(GVariant) reply = g_dbus_connection_call_sync(
-        connection_,
+        service_connection(),
         "org.freedesktop.DBus",
         "/org/freedesktop/DBus",
         "org.freedesktop.DBus",
@@ -308,44 +347,36 @@ namespace {
         nullptr
       );
     });
-    EXPECT_TRUE(mapping_.update("/dev/input/event7", "DP-1", false).ok());
+    EXPECT_TRUE(mapping().update("/dev/input/event7", "DP-1", false).ok());
     EXPECT_EQ(device("event7").assignments, 0);
   }
 
   TEST_F(KWinMappingTest, RejectsInvalidDeviceNodesAndDisplayNames) {
     for (const auto *node : {"", "/dev/input/event", "/dev/input/event7/other", "/not-an-input-device/event7", "/dev/input/event-1", "/dev/input/eventz"}) {
-      EXPECT_EQ(mapping_.update(node, "DP-1", false).code(), lvh::ErrorCode::invalid_argument) << node;
+      EXPECT_EQ(mapping().update(node, "DP-1", false).code(), lvh::ErrorCode::invalid_argument) << node;
     }
-    EXPECT_EQ(mapping_.update("/dev/input/event7", std::string(1, '\xff'), false).code(), lvh::ErrorCode::invalid_argument);
-    EXPECT_EQ(mapping_.update("/dev/input/event7", std::string {"DP-1\0x", 6}, false).code(), lvh::ErrorCode::invalid_argument);
+    EXPECT_EQ(mapping().update("/dev/input/event7", std::string(1, '\xff'), false).code(), lvh::ErrorCode::invalid_argument);
+    EXPECT_EQ(mapping().update("/dev/input/event7", std::string {"DP-1\0x", 6}, false).code(), lvh::ErrorCode::invalid_argument);
     EXPECT_EQ(device("event7").assignments, 0);
   }
 
   TEST_F(KWinMappingTest, RetriesFailedAssignments) {
-    on_service([this] {
-      reject_property_ = "outputName";
-    });
-    auto status = mapping_.update("/dev/input/event7", "DP-1", false);
+    set_rejection("outputName");
+    auto status = mapping().update("/dev/input/event7", "DP-1", false);
     EXPECT_EQ(status.code(), lvh::ErrorCode::backend_failure);
     EXPECT_NE(status.message().find("mapping denied"), std::string::npos);
     EXPECT_EQ(device("event7").output, "HDMI-A-1");
-    on_service([this] {
-      reject_property_.clear();
-    });
-    EXPECT_TRUE(mapping_.update("/dev/input/event7", "DP-1", false).ok());
+    set_rejection();
+    EXPECT_TRUE(mapping().update("/dev/input/event7", "DP-1", false).ok());
     EXPECT_EQ(device("event7").output, "DP-1");
   }
 
   TEST_F(KWinMappingTest, ReportsTabletWorkspaceMappingFailureAndRetries) {
-    on_service([this] {
-      reject_property_ = "mapToWorkspace";
-    });
-    EXPECT_EQ(mapping_.update("/dev/input/event7", "DP-1", true).code(), lvh::ErrorCode::backend_failure);
+    set_rejection("mapToWorkspace");
+    EXPECT_EQ(mapping().update("/dev/input/event7", "DP-1", true).code(), lvh::ErrorCode::backend_failure);
     EXPECT_TRUE(device("event7").workspace);
-    on_service([this] {
-      reject_property_.clear();
-    });
-    EXPECT_TRUE(mapping_.update("/dev/input/event7", "DP-1", true).ok());
+    set_rejection();
+    EXPECT_TRUE(mapping().update("/dev/input/event7", "DP-1", true).ok());
     EXPECT_FALSE(device("event7").workspace);
   }
 
@@ -357,23 +388,20 @@ namespace {
     },
                           this,
                           nullptr);
-    g_source_attach(source, context_);
+    g_source_attach(source, service_context());
     g_source_unref(source);
-    EXPECT_TRUE(mapping_.update("/dev/input/event9", "DP-1", false).ok());
+    EXPECT_TRUE(mapping().update("/dev/input/event9", "DP-1", false).ok());
     EXPECT_EQ(device("event9").output, "DP-1");
   }
 
   TEST_F(KWinMappingTest, BoundsTheWaitWhenCompositorReportsUnknownObject) {
-    on_service([this] {
-      reject_property_ = "outputName";
-      reject_code_ = G_DBUS_ERROR_UNKNOWN_OBJECT;
-    });
-    EXPECT_EQ(mapping_.update("/dev/input/event7", "DP-1", false).code(), lvh::ErrorCode::backend_failure);
+    set_rejection("outputName", G_DBUS_ERROR_UNKNOWN_OBJECT);
+    EXPECT_EQ(mapping().update("/dev/input/event7", "DP-1", false).code(), lvh::ErrorCode::backend_failure);
     EXPECT_EQ(device("event7").assignments, 0);
   }
 
   TEST_F(KWinMappingTest, BoundsTheWaitForAnUnregisteredDevice) {
-    EXPECT_EQ(mapping_.update("/dev/input/event404", "DP-1", false).code(), lvh::ErrorCode::backend_failure);
+    EXPECT_EQ(mapping().update("/dev/input/event404", "DP-1", false).code(), lvh::ErrorCode::backend_failure);
     EXPECT_EQ(device("event7").assignments, 0);
   }
 
@@ -409,9 +437,7 @@ namespace {
   }
 
   TEST_F(KWinMappingTest, FailedAssignmentEmitsNoTouchOrPenInput) {
-    on_service([this] {
-      reject_property_ = "outputName";
-    });
+    set_rejection("outputName");
     lvh::TouchContact contact;
     contact.viewport.output_name = "DP-1";
     const auto touch = lvh::detail::test::linux_uinput_mapped_contact(contact);
