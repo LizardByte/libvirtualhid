@@ -63,6 +63,7 @@
 
 // local includes
 #include "core/backend.hpp"
+#include "output_mapping.hpp"
 #include "platform/shared/xbox_bluetooth_transport.hpp"
 #if defined(__linux__)
   #include "shared/playstation_feature_reports.hpp"
@@ -1043,6 +1044,20 @@ namespace lvh::detail {
 
       std::vector<DeviceNode> uinput_device_nodes(const std::string &device_name) const;
 
+      /**
+       * @brief Assign this owned event device to a compositor output.
+       * @param viewport Target display metadata.
+       * @param tablet Whether this device is a pen tablet.
+       * @return Success or an output assignment error before emitting input.
+       */
+      OperationStatus map_output(const PointerViewport &viewport, bool tablet) {
+        if (viewport.output_name.empty()) {
+          return OperationStatus::success();
+        }
+        const auto *node = uinput_device_ ? libevdev_uinput_get_devnode(uinput_device_) : nullptr;
+        return output_mapping_.update(node ? node : "", viewport.output_name, tablet);
+      }
+
       OperationStatus emit_event(std::uint16_t type, std::uint16_t code, std::int32_t value) {
         std::lock_guard lock {write_mutex_};
         return emit_event_locked(type, code, value);
@@ -1107,6 +1122,7 @@ namespace lvh::detail {
 
       int fd_ = -1;
       libevdev_uinput *uinput_device_ = nullptr;
+      OutputMapping output_mapping_;  ///< Per-device compositor output assignment.
       std::atomic_bool open_ = true;
       std::mutex write_mutex_;
     };
@@ -1948,6 +1964,11 @@ namespace lvh::detail {
         if (!is_open()) {
           return OperationStatus::failure(ErrorCode::device_closed, "uinput touch device is closed");
         }
+        if (!update_trackpad_buttons) {
+          if (const auto status = map_output(contact.viewport, false); !status.ok()) {
+            return status;
+          }
+        }
         if (contact.id < 0) {
           return OperationStatus::failure(ErrorCode::invalid_argument, "touch contact id must not be negative");
         }
@@ -2235,6 +2256,9 @@ namespace lvh::detail {
           return OperationStatus::failure(ErrorCode::device_closed, "uinput pen tablet is closed");
         }
 
+        if (const auto status = map_output(state.viewport, true); !status.ok()) {
+          return status;
+        }
         if (const auto status = update_pen_tool(state.tool); !status.ok()) {
           return status;
         }

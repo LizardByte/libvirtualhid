@@ -982,6 +982,20 @@ namespace lvh::detail::test {
   LinuxMouseInputSubmissionResult linux_uinput_mouse_submit_split_pipe_sequence(const std::vector<MouseEvent> &events);
 
   /**
+   * @brief Submit a contact through an owned fake uinput device and real output mapping.
+   * @param contact Monitor-local contact with an optional display name.
+   * @return Submission status and events emitted after mapping.
+   */
+  LinuxInputSubmissionResult linux_uinput_mapped_contact(const TouchContact &contact);
+
+  /**
+   * @brief Submit a pen tool through an owned fake uinput device and real output mapping.
+   * @param tool Monitor-local pen state with an optional display name.
+   * @return Submission status and events emitted after mapping.
+   */
+  LinuxInputSubmissionResult linux_uinput_mapped_tool(const PenToolState &tool);
+
+  /**
    * @brief Place and release a contact through a pipe-backed uinput touchscreen.
    *
    * @param contact Touch contact to place.
