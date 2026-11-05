@@ -1,5 +1,9 @@
-<CPackWiXPatch>
+<CPackWiXPatch xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
   <CPackWiXFragment Id="#PRODUCT">
+    <!-- Device handles do not make Sunshine appear in MSI file-in-use detection. -->
+    <util:RestartResource Id="RR_SunshineService" ServiceName="SunshineService" />
+    <util:RestartResource Id="RR_SunshineProcess" ProcessName="sunshine.exe" />
+
     <CustomAction Id="CA_LibVirtualHidInstallDriver"
                   Directory="INSTALL_ROOT"
                   ExeCommand="&quot;[WindowsFolder]System32\WindowsPowerShell\v1.0\powershell.exe&quot; -WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File &quot;[INSTALL_ROOT]scripts\windows\install-driver.ps1&quot; -InfPath &quot;[INSTALL_ROOT]drivers\windows\libvirtualhid.inf&quot; -CertificatePath &quot;[INSTALL_ROOT]certificates\libvirtualhid-ci-test.cer&quot; -BrokerPath &quot;[INSTALL_ROOT]services\windows\libvirtualhid_broker.exe&quot; -SetupPath &quot;[INSTALL_ROOT]tools\windows\libvirtualhid_driver_setup.exe&quot; -LogPath &quot;[CommonAppDataFolder]libvirtualhid\install-driver.log&quot;"
