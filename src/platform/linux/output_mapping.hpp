@@ -22,7 +22,8 @@ namespace lvh::detail {
      *
      * KDE Wayland exposes output assignment through its session D-Bus service.
      * Other compositors and builds without GIO preserve their existing mapping.
-     * Successful assignments are cached; failed assignments can be retried.
+     * Only confirmed assignments are cached. Unavailable capability probes and
+     * failed assignments are retried on later input events.
      *
      * @param devnode Event device owned by the caller, such as `/dev/input/event7`.
      * @param output_name Native connector name, or empty to preserve defaults.

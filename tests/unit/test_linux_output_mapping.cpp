@@ -100,11 +100,33 @@ namespace {
     }
 
     /**
+     * @brief Expose the Wayland input manager on the compositor service thread.
+     */
+    void register_manager() {
+      g_autoptr(GDBusNodeInfo) manager_info = g_dbus_node_info_new_for_xml(
+        "<node><interface name='org.kde.KWin.InputDeviceManager'>"
+        "<property name='devicesSysNames' type='as' access='read'/></interface></node>",
+        nullptr
+      );
+      static const GDBusInterfaceVTable manager_vtable {
+        .method_call = nullptr,
+        .get_property = [](GDBusConnection *, const gchar *, const gchar *, const gchar *, const gchar *, GError **, gpointer) {
+          const std::array nodes {"event7", "event8"};
+          return g_variant_new_strv(nodes.data(), static_cast<gssize>(nodes.size()));
+        },
+        .set_property = nullptr,
+        .padding = {},
+      };
+      manager_id_ = g_dbus_connection_register_object(connection_, "/org/kde/KWin/InputDevice", manager_info->interfaces[0], &manager_vtable, this, nullptr, nullptr);
+      registrations_.push_back(manager_id_);
+    }
+
+    /**
      * @brief Remove the Wayland manager while keeping the compositor service alive.
      */
     void unregister_manager() {
       g_dbus_connection_unregister_object(connection_, manager_id_);
-      registrations_.erase(registrations_.begin());
+      std::erase(registrations_, manager_id_);
     }
 
     /**
@@ -223,22 +245,7 @@ namespace {
         "</interface></node>",
         nullptr
       );
-      g_autoptr(GDBusNodeInfo) manager_info = g_dbus_node_info_new_for_xml(
-        "<node><interface name='org.kde.KWin.InputDeviceManager'>"
-        "<property name='devicesSysNames' type='as' access='read'/></interface></node>",
-        nullptr
-      );
-      static const GDBusInterfaceVTable manager_vtable {
-        .method_call = nullptr,
-        .get_property = [](GDBusConnection *, const gchar *, const gchar *, const gchar *, const gchar *, GError **, gpointer) {
-          const std::array nodes {"event7", "event8"};
-          return g_variant_new_strv(nodes.data(), static_cast<gssize>(nodes.size()));
-        },
-        .set_property = nullptr,
-        .padding = {},
-      };
-      manager_id_ = g_dbus_connection_register_object(connection_, "/org/kde/KWin/InputDevice", manager_info->interfaces[0], &manager_vtable, this, nullptr, nullptr);
-      registrations_.push_back(manager_id_);
+      register_manager();
       register_device("event7");
       register_device("event8");
       ready.set_value();
@@ -323,6 +330,23 @@ namespace {
     });
     EXPECT_TRUE(mapping().update("/dev/input/event7", "DP-1", false).ok());
     EXPECT_EQ(device("event7").assignments, 0);
+  }
+
+  TEST_F(KWinMappingTest, RetriesCapabilityProbeAfterManagerBecomesAvailable) {
+    on_service([this] {
+      unregister_manager();
+    });
+    ASSERT_TRUE(mapping().update("/dev/input/event7", "DP-1", false).ok());
+    EXPECT_EQ(device("event7").assignments, 0);
+    EXPECT_EQ(device("event7").output, "HDMI-A-1");
+    on_service([this] {
+      register_manager();
+    });
+    ASSERT_TRUE(mapping().update("/dev/input/event7", "DP-1", false).ok());
+    EXPECT_EQ(device("event7").output, "DP-1");
+    EXPECT_EQ(device("event7").assignments, 1);
+    ASSERT_TRUE(mapping().update("/dev/input/event7", "DP-1", false).ok());
+    EXPECT_EQ(device("event7").assignments, 1);
   }
 
   TEST_F(KWinMappingTest, MapsWaylandDeviceWithoutWaylandDisplayEnvironment) {

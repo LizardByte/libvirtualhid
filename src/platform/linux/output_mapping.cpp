@@ -6,6 +6,7 @@
 // standard includes
 #include <algorithm>
 #include <chrono>
+#include <optional>
 #include <string>
 #include <thread>
 
@@ -77,18 +78,18 @@ namespace lvh::detail {
      * @param devnode Owned event node.
      * @param output_name Native display connector.
      * @param tablet Whether workspace-wide tablet mapping must be disabled.
-     * @return Success for unsupported sessions, or the KDE mapping result.
+     * @return The KDE mapping result, or no result when capability is unconfirmed.
      */
-    OperationStatus assign_if_supported(std::string_view devnode, const std::string &output_name, bool tablet) {
+    std::optional<OperationStatus> assign_if_supported(std::string_view devnode, const std::string &output_name, bool tablet) {
       g_autoptr(GError) error = nullptr;
       g_autoptr(GDBusConnection) connection = g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, &error);
       if (!connection) {
-        return OperationStatus::success();
+        return std::nullopt;
       }
       // This manager is exposed by KWin's Wayland input backend. Detect it
       // directly because a user service may not inherit WAYLAND_DISPLAY.
       if (g_autoptr(GVariant) manager = g_dbus_connection_call_sync(connection, kwin_service, "/org/kde/KWin/InputDevice", "org.freedesktop.DBus.Properties", "Get", g_variant_new("(ss)", "org.kde.KWin.InputDeviceManager", "devicesSysNames"), G_VARIANT_TYPE("(v)"), G_DBUS_CALL_FLAGS_NO_AUTO_START, call_timeout_ms, nullptr, nullptr); !manager) {
-        return OperationStatus::success();
+        return std::nullopt;
       }
       if (constexpr std::string_view prefix = "/dev/input/event"; !devnode.starts_with(prefix) || devnode.size() == prefix.size() || !std::ranges::all_of(devnode.substr(prefix.size()), [](char c) {
             return c >= '0' && c <= '9';
@@ -106,14 +107,18 @@ namespace lvh::detail {
       return OperationStatus::success();
     }
 #if defined(LIBVIRTUALHID_HAVE_GIO)
-    if (const auto status = assign_if_supported(devnode, output_name, tablet); !status.ok()) {
-      return status;
+    const auto status = assign_if_supported(devnode, output_name, tablet);
+    if (!status) {
+      return OperationStatus::success();
     }
+    if (!status->ok()) {
+      return *status;
+    }
+    devnode_ = devnode;
+    output_name_ = output_name;
 #else
     static_cast<void>(tablet);
 #endif
-    devnode_ = devnode;
-    output_name_ = output_name;
     return OperationStatus::success();
   }
 }  // namespace lvh::detail
