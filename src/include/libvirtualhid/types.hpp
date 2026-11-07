@@ -496,6 +496,16 @@ namespace lvh {
      * @brief Viewport height in native screen units, or `0` to use the platform default.
      */
     std::int32_t height = 0;
+
+    /**
+     * @brief Optional native display name for compositor-managed touch and pen devices.
+     *
+     * On KDE Wayland this is the connector name, such as `DP-1`. The backend
+     * assigns only its own event device to that output and keeps contact
+     * coordinates monitor-local. An empty name preserves compositor defaults.
+     * Backends without display assignment support ignore this hint.
+     */
+    std::string output_name {};
   };
 
   /**

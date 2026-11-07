@@ -533,6 +533,13 @@ extern "C" int lvh_linux_test_libevdev_uinput_create_from_device(
   return ::libevdev_uinput_create_from_device(device, uinput_fd, uinput_device);
 }
 
+extern "C" const char *lvh_linux_test_libevdev_uinput_get_devnode(libevdev_uinput *device) {
+  if (lvh::detail::test::active_test_syscalls() != nullptr && lvh::detail::test::active_test_syscalls()->override_libevdev) {
+    return "/dev/input/event7";
+  }
+  return ::libevdev_uinput_get_devnode(device);
+}
+
 extern "C" void lvh_linux_test_libevdev_uinput_destroy(libevdev_uinput *raw_uinput_handle) {
   if (lvh::detail::test::active_test_syscalls() != nullptr && lvh::detail::test::active_test_syscalls()->override_libevdev) {
     ++lvh::detail::test::active_test_syscalls()->libevdev_destroy_count;
@@ -566,6 +573,7 @@ extern "C" void lvh_linux_test_libevdev_uinput_destroy(libevdev_uinput *raw_uinp
   #define libevdev_set_name lvh_linux_test_libevdev_set_name
   #define libevdev_uinput_create_from_device lvh_linux_test_libevdev_uinput_create_from_device
   #define libevdev_uinput_destroy lvh_linux_test_libevdev_uinput_destroy
+  #define libevdev_uinput_get_devnode lvh_linux_test_libevdev_uinput_get_devnode
 
   #if defined(LIBVIRTUALHID_HAVE_XTEST)
     #if defined(DefaultScreen)
@@ -617,6 +625,7 @@ extern "C" void lvh_linux_test_libevdev_uinput_destroy(libevdev_uinput *raw_uinp
   #undef open
   #undef ioctl
   #undef access
+  #undef libevdev_uinput_get_devnode
   #undef libevdev_uinput_destroy
   #undef libevdev_uinput_create_from_device
   #undef libevdev_set_name
@@ -1457,6 +1466,38 @@ namespace lvh::detail::test {
     static_cast<void>(::close(relative_descriptors[0]));
     static_cast<void>(::close(absolute_descriptors[0]));
     return {std::move(status), std::move(relative_records), std::move(absolute_records)};
+  }
+
+  LinuxInputSubmissionResult linux_uinput_mapped_contact(const TouchContact &contact) {
+    LinuxTestSyscalls syscalls;
+    enable_fake_device_syscalls(syscalls);
+    syscalls.capture_input_events = true;
+    ScopedLinuxTestSyscalls scoped {syscalls};
+    UinputTouchscreen device {open_test_fd()};
+    CreateTouchscreenOptions options;
+    options.profile = profiles::touchscreen();
+    auto status = device.create(1, options);
+    if (status.ok()) {
+      status = device.place_contact(contact);
+    }
+    static_cast<void>(device.close());
+    return {std::move(status), std::move(syscalls.written_input_events)};
+  }
+
+  LinuxInputSubmissionResult linux_uinput_mapped_tool(const PenToolState &tool) {
+    LinuxTestSyscalls syscalls;
+    enable_fake_device_syscalls(syscalls);
+    syscalls.capture_input_events = true;
+    ScopedLinuxTestSyscalls scoped {syscalls};
+    UinputPenTablet device {open_test_fd()};
+    CreatePenTabletOptions options;
+    options.profile = profiles::pen_tablet();
+    auto status = device.create(1, options);
+    if (status.ok()) {
+      status = device.place_tool(tool);
+    }
+    static_cast<void>(device.close());
+    return {std::move(status), std::move(syscalls.written_input_events)};
   }
 
   LinuxInputSubmissionResult linux_uinput_touchscreen_contact_pipe(const TouchContact &contact) {
