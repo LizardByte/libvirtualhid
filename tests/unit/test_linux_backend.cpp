@@ -101,6 +101,7 @@ TEST_F(LinuxBackendTest, TranslatesKeyboardKeys) {
   EXPECT_EQ(lvh::detail::test::linux_key_code(0xBE), KEY_DOT);
   EXPECT_EQ(lvh::detail::test::linux_key_code(0xBF), KEY_SLASH);
   EXPECT_EQ(lvh::detail::test::linux_key_code(0xC0), KEY_GRAVE);
+  EXPECT_EQ(lvh::detail::test::linux_key_code(0xC1), KEY_RO);
   EXPECT_EQ(lvh::detail::test::linux_key_code(0xDB), KEY_LEFTBRACE);
   EXPECT_EQ(lvh::detail::test::linux_key_code(0xDC), KEY_BACKSLASH);
   EXPECT_EQ(lvh::detail::test::linux_key_code(0xDD), KEY_RIGHTBRACE);
@@ -393,6 +394,19 @@ TEST_F(LinuxBackendTest, PipeBackedUinputKeyboardEmitsComposeKey) {
     ASSERT_EQ(result.events.size(), 2U);
     EXPECT_EQ(result.events[0].type, EV_KEY);
     EXPECT_EQ(result.events[0].code, KEY_COMPOSE);
+    EXPECT_EQ(result.events[0].value, pressed ? 1 : 0);
+    EXPECT_EQ(result.events[1].type, EV_SYN);
+    EXPECT_EQ(result.events[1].code, SYN_REPORT);
+  }
+}
+
+TEST_F(LinuxBackendTest, PipeBackedUinputKeyboardEmitsAbnt2SlashKey) {
+  for (const auto pressed : {true, false}) {
+    const auto result = lvh::detail::test::linux_uinput_keyboard_submit_pipe({.key_code = 0xC1, .pressed = pressed});
+    ASSERT_TRUE(result.status.ok()) << result.status.message();
+    ASSERT_EQ(result.events.size(), 2U);
+    EXPECT_EQ(result.events[0].type, EV_KEY);
+    EXPECT_EQ(result.events[0].code, KEY_RO);
     EXPECT_EQ(result.events[0].value, pressed ? 1 : 0);
     EXPECT_EQ(result.events[1].type, EV_SYN);
     EXPECT_EQ(result.events[1].code, SYN_REPORT);
@@ -1270,7 +1284,7 @@ TEST_F(LinuxBackendTest, FakeUinputConstructionCoversCapabilitiesAndFailureBranc
   EXPECT_EQ(keyboard.name, lvh::profiles::keyboard().name);
   EXPECT_EQ(keyboard.bustype, BUS_USB);
   EXPECT_TRUE(has_type(keyboard, EV_KEY));
-  for (const auto code : {KEY_A, KEY_ENTER, KEY_LEFTSHIFT, KEY_F1, KEY_VOLUMEUP, KEY_OK}) {
+  for (const auto code : {KEY_A, KEY_ENTER, KEY_LEFTSHIFT, KEY_RO, KEY_F1, KEY_VOLUMEUP, KEY_OK}) {
     EXPECT_NE(find_code(keyboard, EV_KEY, code), nullptr) << code;
   }
   for (const auto code : {BTN_LEFT, BTN_SOUTH, BTN_TOOL_PEN, BTN_TOUCH}) {
