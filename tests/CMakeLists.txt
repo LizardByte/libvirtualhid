@@ -33,6 +33,7 @@ endif()
 libvirtualhid_add_library(libvirtualhid_test)
 
 set(LIBVIRTUALHID_TEST_SOURCES
+  "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_esp32_bridge.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_gamepad_adapter.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_gamepad_lifecycle.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/unit/test_license.cpp"

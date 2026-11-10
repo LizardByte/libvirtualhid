@@ -558,12 +558,12 @@ namespace lvh::detail {
   };
 
   /**
-   * @brief Create a backend for the requested backend kind.
+   * @brief Create the backend requested by runtime options.
    *
-   * @param kind Requested backend kind.
+   * @param options Runtime options naming the backend kind and its settings.
    * @return Backend implementation.
    */
-  std::unique_ptr<Backend> create_backend(BackendKind kind);
+  std::unique_ptr<Backend> create_backend(const RuntimeOptions &options);
 
   /**
    * @brief Create the platform default backend for the current operating system.

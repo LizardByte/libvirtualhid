@@ -36,7 +36,18 @@ function(libvirtualhid_add_library target_name)
       "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/core/profiles.cpp"
       "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/core/report.cpp"
       "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/core/runtime.cpp"
-      "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/core/types.cpp")
+      "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/core/types.cpp"
+      "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/platform/esp32/bridge_client.cpp"
+      "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/platform/esp32/credential_store.cpp"
+      "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/platform/esp32/esp32_backend.cpp"
+      "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/platform/esp32/hmac_sha256.cpp"
+      "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/platform/esp32/keyboard_mouse_reports.cpp"
+      "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/platform/esp32/serial_port.cpp"
+      "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/platform/esp32/xinput_reports.cpp"
+      "${PROJECT_SOURCE_DIR}/third-party/lizardbyte-common/src/common/env.cpp")
+    target_include_directories(${target_name}
+      PRIVATE
+      "${PROJECT_SOURCE_DIR}/third-party/lizardbyte-common/src/include")
 
     if(LIBVIRTUALHID_USES_THREADS)
         find_package(Threads REQUIRED)
@@ -76,7 +87,6 @@ function(libvirtualhid_add_library target_name)
     elseif(WIN32)
         target_sources(${target_name}
           PRIVATE
-          "${PROJECT_SOURCE_DIR}/third-party/lizardbyte-common/src/common/env.cpp"
           "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/platform/windows/windows_backend.cpp"
           "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/platform/windows/windows_broker_client.cpp"
           "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/platform/windows/windows_license.cpp")
@@ -92,6 +102,7 @@ function(libvirtualhid_add_library target_name)
         target_link_libraries(${target_name}
           PRIVATE
           advapi32
+          cfgmgr32
           setupapi)
     elseif(APPLE)
         target_sources(${target_name}

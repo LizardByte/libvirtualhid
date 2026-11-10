@@ -5,6 +5,7 @@
 #pragma once
 
 // local includes
+#include <libvirtualhid/esp32_bridge.hpp>
 #include <libvirtualhid/gamepad_adapter.hpp>
 #include <libvirtualhid/license.hpp>
 #include <libvirtualhid/profiles.hpp>

@@ -198,7 +198,7 @@ namespace lvh::detail {
     explicit RuntimeState(RuntimeOptions runtime_options):
         options {std::move(runtime_options)},
         logger {std::make_shared<Logger>(options.log_callback)},
-        backend {create_backend(options.backend)},
+        backend {create_backend(options)},
         caps {backend->capabilities()} {
       logger->emit(LogLevel::info, "initialized " + caps.backend_name + " backend");
     }
