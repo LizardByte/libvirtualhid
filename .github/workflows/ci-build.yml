@@ -166,6 +166,7 @@ jobs:
             clang \
             cmake \
             libevdev-dev \
+            libglib2.0-dev \
             libinput-dev \
             libsdl2-dev \
             libx11-dev \

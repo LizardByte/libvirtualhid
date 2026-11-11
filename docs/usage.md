@@ -133,3 +133,19 @@ processes.
 
 See [platform support](platform-support.md) for availability and
 [development](development.md) for build commands and optional targets.
+
+## Touch and pen output assignment
+
+Set `TouchContact::viewport.output_name` or `PenToolState::viewport.output_name`
+to the streamed display's native connector name (for example `DP-1`) to assign
+the library's virtual device to that display on KDE Wayland. Keep coordinates
+normalized within that display; the compositor handles its position and scale.
+The library waits briefly for newly created event devices to appear in KWin,
+caches successful assignments, and updates the mapping when the name changes.
+A failed KDE assignment returns an error before submitting the position.
+
+This integration is built when `gio-2.0` is available. Empty names and other
+compositors retain the compositor's default mapping; configure those devices
+through the desktop's input settings. KDE Plasma 6.5.1 or later includes the
+fix for changing an already assigned device's output. Native output names do
+not affect the mouse's existing desktop/viewport coordinate mapping.

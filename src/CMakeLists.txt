@@ -54,10 +54,20 @@ function(libvirtualhid_add_library target_name)
         if(LIBVIRTUALHID_ENABLE_XTEST)
             find_package(X11 QUIET COMPONENTS Xtst)
         endif()
+        if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND LIBVIRTUALHID_ENABLE_OUTPUT_MAPPING)
+            find_package(PkgConfig REQUIRED)
+            pkg_check_modules(GIO QUIET IMPORTED_TARGET gio-2.0)
+            if(GIO_FOUND)
+                set(LIBVIRTUALHID_USES_GIO ON PARENT_SCOPE)
+                target_compile_definitions(${target_name} PRIVATE LIBVIRTUALHID_HAVE_GIO=1)
+                target_link_libraries(${target_name} PRIVATE PkgConfig::GIO)
+            endif()
+        endif()
 
         target_sources(${target_name}
           PRIVATE
-          "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/platform/linux/uhid_backend.cpp")
+          "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/platform/linux/uhid_backend.cpp"
+          "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/platform/linux/output_mapping.cpp")
         target_link_libraries(${target_name}
           PUBLIC
           Threads::Threads
@@ -133,6 +143,7 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
   EXPORT_NAME libvirtualhid
   OUTPUT_NAME virtualhid)
 set(LIBVIRTUALHID_USES_XTEST ${LIBVIRTUALHID_USES_XTEST} PARENT_SCOPE)
+set(LIBVIRTUALHID_USES_GIO ${LIBVIRTUALHID_USES_GIO} PARENT_SCOPE)
 
 if(LIBVIRTUALHID_INSTALL)
     install(TARGETS ${PROJECT_NAME}

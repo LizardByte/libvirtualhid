@@ -63,6 +63,7 @@
 
 // local includes
 #include "core/backend.hpp"
+#include "output_mapping.hpp"
 #include "platform/shared/xbox_bluetooth_transport.hpp"
 #if defined(__linux__)
   #include "shared/playstation_feature_reports.hpp"
@@ -1043,6 +1044,20 @@ namespace lvh::detail {
 
       std::vector<DeviceNode> uinput_device_nodes(const std::string &device_name) const;
 
+      /**
+       * @brief Assign this owned event device to a compositor output.
+       * @param viewport Target display metadata.
+       * @param tablet Whether this device is a pen tablet.
+       * @return Success or an output assignment error before emitting input.
+       */
+      OperationStatus map_output(const PointerViewport &viewport, bool tablet) {
+        if (viewport.output_name.empty()) {
+          return OperationStatus::success();
+        }
+        const auto *node = uinput_device_ ? libevdev_uinput_get_devnode(uinput_device_) : nullptr;
+        return output_mapping_.update(node ? node : "", viewport.output_name, tablet);
+      }
+
       OperationStatus emit_event(std::uint16_t type, std::uint16_t code, std::int32_t value) {
         std::lock_guard lock {write_mutex_};
         return emit_event_locked(type, code, value);
@@ -1107,6 +1122,7 @@ namespace lvh::detail {
 
       int fd_ = -1;
       libevdev_uinput *uinput_device_ = nullptr;
+      OutputMapping output_mapping_;  ///< Per-device compositor output assignment.
       std::atomic_bool open_ = true;
       std::mutex write_mutex_;
     };
@@ -1706,8 +1722,8 @@ namespace lvh::detail {
       UinputMouse(
         int relative_file_descriptor,
         int absolute_file_descriptor,
-        PointerViewport desktop = {},
-        PointerViewport viewport = {}
+        const PointerViewport &desktop = {},
+        const PointerViewport &viewport = {}
       ):
           relative_device_ {relative_file_descriptor},
           absolute_device_ {absolute_file_descriptor},
@@ -1944,9 +1960,19 @@ namespace lvh::detail {
         return create_uinput_device(profile, id);
       }
 
+      /**
+       * @brief Submit a contact after assigning a touchscreen to its requested output.
+       *
+       * @param contact Monitor-local contact state and optional output identity.
+       * @param update_trackpad_buttons Whether to use trackpad buttons and preserve compositor mapping.
+       * @return Submission status, or a mapping error before any input is emitted.
+       */
       OperationStatus place_touch_contact(const TouchContact &contact, bool update_trackpad_buttons) {
         if (!is_open()) {
           return OperationStatus::failure(ErrorCode::device_closed, "uinput touch device is closed");
+        }
+        if (const auto status = map_touch_output(contact.viewport, update_trackpad_buttons); !status.ok()) {
+          return status;
         }
         if (contact.id < 0) {
           return OperationStatus::failure(ErrorCode::invalid_argument, "touch contact id must not be negative");
@@ -2046,6 +2072,20 @@ namespace lvh::detail {
       }
 
     private:
+      /**
+       * @brief Assign touchscreen contacts while preserving relative trackpad mapping.
+       *
+       * @param viewport Contact output metadata.
+       * @param trackpad Whether the device uses relative trackpad behavior.
+       * @return Mapping status, or success when a trackpad needs no assignment.
+       */
+      OperationStatus map_touch_output(const PointerViewport &viewport, bool trackpad) {
+        if (trackpad) {
+          return OperationStatus::success();
+        }
+        return map_output(viewport, false);
+      }
+
       std::optional<int> slot_for_contact(std::int32_t contact_id) {
         if (const auto it = contacts_.find(contact_id); it != contacts_.end()) {
           new_slot_ = false;
@@ -2235,6 +2275,9 @@ namespace lvh::detail {
           return OperationStatus::failure(ErrorCode::device_closed, "uinput pen tablet is closed");
         }
 
+        if (const auto status = map_output(state.viewport, true); !status.ok()) {
+          return status;
+        }
         if (const auto status = update_pen_tool(state.tool); !status.ok()) {
           return status;
         }
