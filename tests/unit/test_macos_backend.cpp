@@ -5,6 +5,7 @@
 
 // standard includes
 #include <array>
+#include <vector>
 
 // lib includes
 #include <libvirtualhid/libvirtualhid.hpp>
@@ -451,6 +452,34 @@ TEST_F(MacosBackendTest, RecoversFromMouseEventAllocationFailureOnNextSubmission
   EXPECT_NE(result.events[0].timestamp, 1U);
   EXPECT_DOUBLE_EQ(result.events[0].delta.x, 3);
   EXPECT_DOUBLE_EQ(result.events[0].delta.y, 4);
+}
+
+TEST_F(MacosBackendTest, FailedButtonAllocationPreservesButtonState) {
+  using enum lvh::MouseEventKind;
+
+  const std::vector<lvh::MouseEvent> events {
+    {.kind = button, .button = lvh::MouseButton::left, .pressed = true},
+    {.kind = relative_motion, .x = 1, .y = 2},
+    {.kind = button, .button = lvh::MouseButton::left, .pressed = true},
+    {.kind = relative_motion, .x = 3, .y = 4},
+    {.kind = button, .button = lvh::MouseButton::left, .pressed = false},
+    {.kind = relative_motion, .x = 5, .y = 6},
+  };
+  const auto result = lvh::detail::test::macos_backend_mouse_events(events, true);
+
+  ASSERT_EQ(result.statuses.size(), events.size());
+  EXPECT_EQ(result.statuses.front().code(), lvh::ErrorCode::backend_failure);
+  for (std::size_t i = 1; i < result.statuses.size(); ++i) {
+    ASSERT_TRUE(result.statuses[i].ok()) << result.statuses[i].message();
+  }
+  ASSERT_EQ(result.events.size(), 5U);
+  EXPECT_EQ(result.cursor_warps, result.events.size());
+  EXPECT_EQ(result.events[0].event_type, kCGEventMouseMoved);
+  EXPECT_EQ(result.events[1].event_type, kCGEventLeftMouseDown);
+  EXPECT_EQ(result.events[1].click_count, 1);
+  EXPECT_EQ(result.events[2].event_type, kCGEventLeftMouseDragged);
+  EXPECT_EQ(result.events[3].event_type, kCGEventLeftMouseUp);
+  EXPECT_EQ(result.events[4].event_type, kCGEventMouseMoved);
 }
 
 TEST_F(MacosBackendTest, RejectsMouseSubmissionWithoutAnEventSource) {

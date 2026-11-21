@@ -845,6 +845,12 @@ namespace lvh::detail {
         return post_mouse(motion.button, motion.event_type, location, current_location(), 0);
       }
 
+      /**
+       * @brief Post a button transition and update the drag and click state on success.
+       *
+       * @param event Requested mouse button transition.
+       * @return Submission status. A failed allocation leaves button and click state unchanged.
+       */
       OperationStatus submit_button(const MouseEvent &event) {
         using enum ErrorCode;
 
@@ -853,14 +859,17 @@ namespace lvh::detail {
           return OperationStatus::failure(unsupported_profile, "macOS mouse backend supports only left, middle, and right buttons");
         }
 
-        mouse_down_[button->index] = event.pressed;
         const auto now = std::chrono::steady_clock::now();
         const auto release_index = event.pressed ? 0U : 1U;
         const auto mouse_position = current_location();
         const auto click_count = now < last_mouse_event_[button->index][release_index] + multi_click_delay ? 2 : 1;
 
-        last_mouse_event_[button->index][release_index] = now;
-        return post_mouse(button->button, event.pressed ? button->down_event : button->up_event, mouse_position, mouse_position, click_count);
+        const auto status = post_mouse(button->button, event.pressed ? button->down_event : button->up_event, mouse_position, mouse_position, click_count);
+        if (status.ok()) {
+          mouse_down_[button->index] = event.pressed;
+          last_mouse_event_[button->index][release_index] = now;
+        }
+        return status;
       }
 
       OperationStatus submit_scroll(std::int32_t high_resolution_vertical, std::int32_t high_resolution_horizontal) const {
