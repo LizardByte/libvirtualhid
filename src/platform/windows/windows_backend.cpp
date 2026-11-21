@@ -2190,10 +2190,12 @@ namespace lvh::detail {
       /**
        * @brief Construct a Win32 mouse injection backend.
        *
+       * The backend stores copies of both bounds.
+       *
        * @param desktop Native virtual-desktop bounds.
        * @param viewport Native desktop viewport receiving absolute input.
        */
-      explicit WindowsMouse(PointerViewport desktop = {}, PointerViewport viewport = {}):
+      explicit WindowsMouse(const PointerViewport &desktop = {}, const PointerViewport &viewport = {}):
           desktop_ {desktop},
           viewport_ {viewport} {}
 
