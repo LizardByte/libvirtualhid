@@ -340,7 +340,7 @@ TEST(RuntimeTest, CreatesSubmitsAndClosesMouse) {
 
 TEST(RuntimeTest, RejectsIncompleteMouseViewport) {
   auto runtime = lvh::Runtime::create();
-  const auto expect_invalid = [&runtime](lvh::PointerViewport desktop, lvh::PointerViewport viewport) {
+  const auto expect_invalid = [&runtime](const lvh::PointerViewport &desktop, const lvh::PointerViewport &viewport) {
     lvh::CreateMouseOptions options;
     options.profile = lvh::profiles::mouse();
     options.desktop = desktop;
