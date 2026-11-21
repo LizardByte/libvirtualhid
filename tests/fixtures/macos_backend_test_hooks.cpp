@@ -61,7 +61,59 @@ namespace {
     lvh::detail::test::MacosPoint cursor_location;
     std::optional<lvh::detail::test::MacosPoint> posted_location;
     std::optional<lvh::detail::test::MacosPoint> warped_location;
+    lvh::detail::test::MacosMouseEventsResult *events = nullptr;  ///< Optional capture of native event metadata.
+    bool fail_first_creation = false;  ///< Whether to fail the next mouse event allocation.
   };
+
+  /**
+   * @brief Age cursor snapshots while capturing fresh mouse event submissions.
+   *
+   * @param source CoreGraphics event source.
+   * @return Native cursor snapshot, or null when allocation fails.
+   */
+  CGEventRef mouse_create_event(CGEventSourceRef source) {
+    const auto event = CGEventCreate(source);
+    if (event && mouse_environment() && mouse_environment()->events) {
+      CGEventSetTimestamp(event, 1);
+    }
+    return event;
+  }
+
+  /**
+   * @brief Count native mouse event allocations and optionally fail the first allocation.
+   *
+   * @param source CoreGraphics event source.
+   * @param type Requested event type.
+   * @param location Cursor location.
+   * @param button CoreGraphics button number.
+   * @return New native mouse event, or null for the injected failure.
+   */
+  CGEventRef mouse_create_mouse_event(CGEventSourceRef source, CGEventType type, CGPoint location, CGMouseButton button) {
+    if (mouse_environment() && mouse_environment()->events) {
+      ++mouse_environment()->events->creation_attempts;
+      if (mouse_environment()->fail_first_creation) {
+        mouse_environment()->fail_first_creation = false;
+        return nullptr;
+      }
+    }
+    return CGEventCreateMouseEvent(source, type, location, button);
+  }
+
+  /**
+   * @brief Read the local-event suppression copied into a native event source.
+   *
+   * @param event Mouse event whose source is inspected.
+   * @return Suppression interval in seconds, or no value when source creation fails.
+   */
+  std::optional<double> mouse_event_suppression_interval(CGEventRef event) {
+    const auto source = CGEventCreateSourceFromEvent(event);
+    if (!source) {
+      return std::nullopt;
+    }
+    const auto interval = CGEventSourceGetLocalEventsSuppressionInterval(source);
+    CFRelease(source);
+    return interval;
+  }
 
   CGDirectDisplayID mouse_main_display_id() {
     return mouse_environment() ? 42 : CGMainDisplayID();
@@ -89,6 +141,19 @@ namespace {
     }
     const auto point = CGEventGetLocation(event);
     mouse_environment()->posted_location = {.x = point.x, .y = point.y};
+    if (mouse_environment()->events) {
+      mouse_environment()->events->events.push_back({
+        .tap_location = static_cast<std::uint32_t>(tap),
+        .event_type = static_cast<std::uint32_t>(CGEventGetType(event)),
+        .button = CGEventGetIntegerValueField(event, kCGMouseEventButtonNumber),
+        .click_count = CGEventGetIntegerValueField(event, kCGMouseEventClickState),
+        .timestamp = CGEventGetTimestamp(event),
+        .flags = static_cast<std::uint64_t>(CGEventGetFlags(event)),
+        .suppression_interval = mouse_event_suppression_interval(event),
+        .location = {point.x, point.y},
+        .delta = {CGEventGetDoubleValueField(event, kCGMouseEventDeltaX), CGEventGetDoubleValueField(event, kCGMouseEventDeltaY)},
+      });
+    }
   }
 
   CGError mouse_warp_cursor_position(CGPoint point) {
@@ -96,6 +161,9 @@ namespace {
       return CGWarpMouseCursorPosition(point);
     }
     mouse_environment()->warped_location = {.x = point.x, .y = point.y};
+    if (mouse_environment()->events) {
+      ++mouse_environment()->events->cursor_warps;
+    }
     return kCGErrorSuccess;
   }
 
@@ -105,6 +173,8 @@ namespace {
 // separate namespace so instrumented inline symbols remain isolated.
 #define macos macos_backend_test
 #define CGMainDisplayID mouse_main_display_id
+#define CGEventCreate mouse_create_event
+#define CGEventCreateMouseEvent mouse_create_mouse_event
 #define CGDisplayBounds mouse_display_bounds
 #define CGEventGetLocation mouse_event_location
 #define CGEventPost mouse_event_post
@@ -116,6 +186,8 @@ namespace {
 #undef CGEventPost
 #undef CGEventGetLocation
 #undef CGDisplayBounds
+#undef CGEventCreateMouseEvent
+#undef CGEventCreate
 #undef CGMainDisplayID
 #undef macos
 
@@ -124,17 +196,8 @@ namespace lvh::detail::test {
   namespace macos = lvh::detail::macos_backend_test;
 
   std::optional<double> macos_backend_mouse_event_suppression_interval() {
-    macos::MacosInputState state;
-    if (!state.mouse_event) {
-      return std::nullopt;
-    }
-    const auto source = CGEventCreateSourceFromEvent(state.mouse_event);
-    if (!source) {
-      return std::nullopt;
-    }
-    const auto interval = CGEventSourceGetLocalEventsSuppressionInterval(source);
-    CFRelease(source);
-    return interval;
+    const auto result = macos_backend_mouse_events({{.kind = MouseEventKind::relative_motion, .x = 1, .y = 1}});
+    return result.events.empty() ? std::nullopt : result.events.front().suppression_interval;
   }
 
   std::optional<std::uint16_t> macos_backend_key_code(KeyboardKeyCode key_code) {
@@ -261,6 +324,27 @@ namespace lvh::detail::test {
       .button = static_cast<std::uint32_t>(motion.button),
       .event_type = static_cast<std::uint32_t>(motion.event_type),
     };
+  }
+
+  MacosMouseEventsResult macos_backend_mouse_events(const std::vector<MouseEvent> &events, bool fail_first_creation, bool source_available) {
+    MacosMouseEventsResult result;
+    MouseEnvironment environment {{.origin_x = 10, .origin_y = 20, .width = 400, .height = 200}};
+    environment.cursor_location = {40, 60};
+    environment.events = &result;
+    environment.fail_first_creation = fail_first_creation;
+
+    auto state = std::make_shared<macos::MacosInputState>();
+    state->keyboard_flags = kCGEventFlagMaskShift | kCGEventFlagMaskControl;
+    if (!source_available && state->source) {
+      CFRelease(state->source);
+      state->source = nullptr;
+    }
+
+    macos::MacosMouse mouse {std::move(state), {}};
+    for (const auto &event : events) {
+      result.statuses.push_back(mouse.submit(event));
+    }
+    return result;
   }
 
   MacosBackendUtilityResult macos_backend_utilities() {

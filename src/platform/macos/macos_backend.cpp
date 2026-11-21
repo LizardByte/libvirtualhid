@@ -487,23 +487,19 @@ namespace lvh::detail {
      *
      * Local-event suppression on `source` is set to zero so cursor warps do not
      * discard the following click or mouse-moved events. CoreGraphics copies
-     * that configuration into each event at creation time, so `mouse_event` is
-     * refreshed from `source` after the interval is configured.
+     * that configuration into each event at creation time, so mouse events are
+     * created after the interval is configured.
      */
     class MacosInputState {
     public:
       MacosInputState():
           source {CGEventSourceCreate(kCGEventSourceStateHIDSystemState)},
           keyboard_source {CGEventSourceCreate(kCGEventSourceStatePrivate)},
-          mouse_event {source ? CGEventCreate(source) : nullptr},
           scroll_lines_per_detent_value {read_scroll_lines_per_detent(scrollwheel_scaling)} {
         // Each move warps the cursor. The default 250ms suppression then drops the
         // following click and mouse-moved events. The cursor image still moves.
         if (source) {
           CGEventSourceSetLocalEventsSuppressionInterval(source, 0);
-          if (mouse_event) {
-            CGEventSetSource(mouse_event, source);
-          }
         }
       }
 
@@ -513,9 +509,6 @@ namespace lvh::detail {
       MacosInputState &operator=(MacosInputState &&) noexcept = delete;
 
       ~MacosInputState() {
-        if (mouse_event) {
-          CFRelease(mouse_event);
-        }
         if (keyboard_source) {
           CFRelease(keyboard_source);
         }
@@ -526,7 +519,6 @@ namespace lvh::detail {
 
       CGEventSourceRef source {};  ///< Mouse/scroll source with local-event suppression disabled.
       CGEventSourceRef keyboard_source {};  ///< CoreGraphics event source for keyboard events.
-      CGEventRef mouse_event {};  ///< Reusable mouse event refreshed from `source` after suppression is disabled.
       double scrollwheel_scaling = default_scrollwheel_scaling;  ///< Raw macOS scroll-wheel scaling preference.
       int scroll_lines_per_detent_value = default_scroll_lines_per_detent;  ///< Logical lines per wheel detent.
       CGEventFlags keyboard_flags {};  ///< Active modifier flags applied to mouse events.
@@ -734,7 +726,7 @@ namespace lvh::detail {
     }
 
     /**
-     * @brief Backend mouse backed by CoreGraphics mouse and scroll events.
+     * @brief Backend mouse that creates a fresh CoreGraphics event for each submission.
      */
     class MacosMouse final: public BackendMouse {
     public:
@@ -753,7 +745,7 @@ namespace lvh::detail {
         if (!open_) {
           return OperationStatus::failure(ErrorCode::device_closed, "macOS mouse is closed");
         }
-        if (!state_->source || !state_->mouse_event) {
+        if (!state_->source) {
           return OperationStatus::failure(ErrorCode::backend_failure, "macOS mouse event source is unavailable");
         }
 
@@ -798,6 +790,16 @@ namespace lvh::detail {
         return current;
       }
 
+      /**
+       * @brief Create and post a fresh native mouse event with the requested metadata.
+       *
+       * @param button CoreGraphics mouse button.
+       * @param type Mouse movement, drag, or button event type.
+       * @param raw_location Requested cursor location before display clamping.
+       * @param previous_location Cursor location used to calculate movement deltas.
+       * @param click_count Number of clicks in the current button sequence.
+       * @return Submission status, including an event allocation failure when applicable.
+       */
       OperationStatus post_mouse(
         CGMouseButton button,
         CGEventType type,
@@ -810,10 +812,11 @@ namespace lvh::detail {
           std::clamp(raw_location.y, viewport_bounds_.origin.y, viewport_bounds_.origin.y + viewport_bounds_.size.height - 1)
         };
 
-        const auto event = state_->mouse_event;
-        CGEventSetType(event, type);
-        CGEventSetLocation(event, location);
-        CGEventSetIntegerValueField(event, kCGMouseEventButtonNumber, button);
+        const auto event = CGEventCreateMouseEvent(state_->source, type, location, button);
+        if (!event) {
+          return OperationStatus::failure(ErrorCode::backend_failure, "create macOS mouse event");
+        }
+
         CGEventSetIntegerValueField(event, kCGMouseEventClickState, click_count);
         CGEventSetDoubleValueField(event, kCGMouseEventDeltaX, raw_location.x - previous_location.x);
         CGEventSetDoubleValueField(event, kCGMouseEventDeltaY, raw_location.y - previous_location.y);
@@ -824,6 +827,7 @@ namespace lvh::detail {
         }
 
         CGEventPost(kCGHIDEventTap, event);
+        CFRelease(event);
         CGWarpMouseCursorPosition(location);
         return OperationStatus::success();
       }
@@ -841,6 +845,12 @@ namespace lvh::detail {
         return post_mouse(motion.button, motion.event_type, location, current_location(), 0);
       }
 
+      /**
+       * @brief Post a button transition and update the drag and click state on success.
+       *
+       * @param event Requested mouse button transition.
+       * @return Submission status. A failed allocation leaves button and click state unchanged.
+       */
       OperationStatus submit_button(const MouseEvent &event) {
         using enum ErrorCode;
 
@@ -849,14 +859,17 @@ namespace lvh::detail {
           return OperationStatus::failure(unsupported_profile, "macOS mouse backend supports only left, middle, and right buttons");
         }
 
-        mouse_down_[button->index] = event.pressed;
         const auto now = std::chrono::steady_clock::now();
         const auto release_index = event.pressed ? 0U : 1U;
         const auto mouse_position = current_location();
         const auto click_count = now < last_mouse_event_[button->index][release_index] + multi_click_delay ? 2 : 1;
 
-        last_mouse_event_[button->index][release_index] = now;
-        return post_mouse(button->button, event.pressed ? button->down_event : button->up_event, mouse_position, mouse_position, click_count);
+        const auto status = post_mouse(button->button, event.pressed ? button->down_event : button->up_event, mouse_position, mouse_position, click_count);
+        if (status.ok()) {
+          mouse_down_[button->index] = event.pressed;
+          last_mouse_event_[button->index][release_index] = now;
+        }
+        return status;
       }
 
       OperationStatus submit_scroll(std::int32_t high_resolution_vertical, std::int32_t high_resolution_horizontal) const {
@@ -927,7 +940,7 @@ namespace lvh::detail {
           return {OperationStatus::failure(ErrorCode::unsupported_profile, "device profile is not a mouse"), nullptr};
         }
         auto state = input_state();
-        if (!state->source || !state->mouse_event) {
+        if (!state->source) {
           return {OperationStatus::failure(ErrorCode::backend_failure, "macOS mouse event source is unavailable"), nullptr};
         }
 

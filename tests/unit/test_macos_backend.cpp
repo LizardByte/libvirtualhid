@@ -5,6 +5,7 @@
 
 // standard includes
 #include <array>
+#include <vector>
 
 // lib includes
 #include <libvirtualhid/libvirtualhid.hpp>
@@ -21,7 +22,7 @@
  */
 class MacosBackendTest: public MacOSTest {};
 
-TEST_F(MacosBackendTest, DisablesSuppressionForReusableMouseEvent) {
+TEST_F(MacosBackendTest, DisablesSuppressionForFreshMouseEvent) {
   const auto interval = lvh::detail::test::macos_backend_mouse_event_suppression_interval();
   ASSERT_TRUE(interval.has_value());
   EXPECT_DOUBLE_EQ(*interval, 0.0);
@@ -353,6 +354,148 @@ TEST_F(MacosBackendTest, SelectsMouseMotionMetadataForHeldButtons) {
   motion = macos_backend_mouse_motion(false, false, true);
   EXPECT_EQ(motion.button, kCGMouseButtonCenter);
   EXPECT_EQ(motion.event_type, kCGEventOtherMouseDragged);
+}
+
+TEST_F(MacosBackendTest, PostsFreshMouseEventsAfterAgedCursorSnapshots) {
+  using enum lvh::MouseEventKind;
+
+  const auto result = lvh::detail::test::macos_backend_mouse_events({
+    {.kind = relative_motion, .x = 10, .y = -5},
+    {.kind = button, .button = lvh::MouseButton::left, .pressed = true},
+    {.kind = relative_motion, .x = 500, .y = -100},
+    {.kind = button, .button = lvh::MouseButton::left, .pressed = false},
+    {.kind = absolute_motion, .x = 100, .y = 100, .width = 200, .height = 100},
+  });
+
+  ASSERT_EQ(result.statuses.size(), 5U);
+  for (const auto &status : result.statuses) {
+    ASSERT_TRUE(status.ok()) << status.message();
+  }
+  ASSERT_EQ(result.events.size(), 5U);
+  EXPECT_EQ(result.creation_attempts, 5U);
+  EXPECT_EQ(result.cursor_warps, 5U);
+  for (const auto &event : result.events) {
+    EXPECT_EQ(event.tap_location, kCGHIDEventTap);
+    // Fresh synthetic events may have timestamp zero before posting; the aged snapshot has timestamp one.
+    EXPECT_NE(event.timestamp, 1U);
+    EXPECT_EQ(event.flags, kCGEventFlagMaskShift | kCGEventFlagMaskControl);
+    ASSERT_TRUE(event.suppression_interval.has_value());
+    EXPECT_DOUBLE_EQ(*event.suppression_interval, 0.0);
+    EXPECT_EQ(event.button, kCGMouseButtonLeft);
+  }
+
+  EXPECT_EQ(result.events[0].event_type, kCGEventMouseMoved);
+  EXPECT_DOUBLE_EQ(result.events[0].location.x, 50);
+  EXPECT_DOUBLE_EQ(result.events[0].location.y, 55);
+  EXPECT_DOUBLE_EQ(result.events[0].delta.x, 10);
+  EXPECT_DOUBLE_EQ(result.events[0].delta.y, -5);
+  EXPECT_EQ(result.events[1].event_type, kCGEventLeftMouseDown);
+  EXPECT_EQ(result.events[1].click_count, 1);
+  EXPECT_EQ(result.events[2].event_type, kCGEventLeftMouseDragged);
+  EXPECT_DOUBLE_EQ(result.events[2].location.x, 409);
+  EXPECT_DOUBLE_EQ(result.events[2].location.y, 20);
+  EXPECT_DOUBLE_EQ(result.events[2].delta.x, 500);
+  EXPECT_DOUBLE_EQ(result.events[2].delta.y, -100);
+  EXPECT_EQ(result.events[3].event_type, kCGEventLeftMouseUp);
+  EXPECT_EQ(result.events[3].click_count, 1);
+  EXPECT_EQ(result.events[4].event_type, kCGEventMouseMoved);
+  EXPECT_DOUBLE_EQ(result.events[4].location.x, 210);
+  EXPECT_DOUBLE_EQ(result.events[4].location.y, 219);
+  EXPECT_DOUBLE_EQ(result.events[4].delta.x, 170);
+  EXPECT_DOUBLE_EQ(result.events[4].delta.y, 160);
+}
+
+TEST_F(MacosBackendTest, PreservesRightAndMiddleButtonDragMetadataOnFreshEvents) {
+  using enum lvh::MouseEventKind;
+
+  const auto result = lvh::detail::test::macos_backend_mouse_events({
+    {.kind = button, .button = lvh::MouseButton::right, .pressed = true},
+    {.kind = relative_motion, .x = 1, .y = 2},
+    {.kind = button, .button = lvh::MouseButton::right, .pressed = false},
+    {.kind = button, .button = lvh::MouseButton::middle, .pressed = true},
+    {.kind = relative_motion, .x = -1, .y = -2},
+    {.kind = button, .button = lvh::MouseButton::middle, .pressed = false},
+  });
+
+  for (const auto &status : result.statuses) {
+    ASSERT_TRUE(status.ok()) << status.message();
+  }
+  ASSERT_EQ(result.events.size(), 6U);
+  EXPECT_EQ(result.events[0].event_type, kCGEventRightMouseDown);
+  EXPECT_EQ(result.events[1].event_type, kCGEventRightMouseDragged);
+  EXPECT_EQ(result.events[2].event_type, kCGEventRightMouseUp);
+  EXPECT_EQ(result.events[3].event_type, kCGEventOtherMouseDown);
+  EXPECT_EQ(result.events[4].event_type, kCGEventOtherMouseDragged);
+  EXPECT_EQ(result.events[5].event_type, kCGEventOtherMouseUp);
+  for (std::size_t index = 0; index < result.events.size(); ++index) {
+    EXPECT_EQ(result.events[index].button, index < 3 ? kCGMouseButtonRight : kCGMouseButtonCenter);
+    EXPECT_NE(result.events[index].timestamp, 1U);
+  }
+}
+
+TEST_F(MacosBackendTest, RecoversFromMouseEventAllocationFailureOnNextSubmission) {
+  using enum lvh::MouseEventKind;
+
+  const auto result = lvh::detail::test::macos_backend_mouse_events({
+                                                                      {.kind = relative_motion, .x = 1, .y = 2},
+                                                                      {.kind = relative_motion, .x = 3, .y = 4},
+                                                                    },
+                                                                    true);
+
+  ASSERT_EQ(result.statuses.size(), 2U);
+  EXPECT_EQ(result.statuses[0].code(), lvh::ErrorCode::backend_failure);
+  EXPECT_EQ(result.statuses[0].message(), "create macOS mouse event");
+  ASSERT_TRUE(result.statuses[1].ok()) << result.statuses[1].message();
+  EXPECT_EQ(result.creation_attempts, 2U);
+  EXPECT_EQ(result.cursor_warps, 1U);
+  ASSERT_EQ(result.events.size(), 1U);
+  EXPECT_NE(result.events[0].timestamp, 1U);
+  EXPECT_DOUBLE_EQ(result.events[0].delta.x, 3);
+  EXPECT_DOUBLE_EQ(result.events[0].delta.y, 4);
+}
+
+TEST_F(MacosBackendTest, FailedButtonAllocationPreservesButtonState) {
+  using enum lvh::MouseEventKind;
+
+  const std::vector<lvh::MouseEvent> events {
+    {.kind = button, .button = lvh::MouseButton::left, .pressed = true},
+    {.kind = relative_motion, .x = 1, .y = 2},
+    {.kind = button, .button = lvh::MouseButton::left, .pressed = true},
+    {.kind = relative_motion, .x = 3, .y = 4},
+    {.kind = button, .button = lvh::MouseButton::left, .pressed = false},
+    {.kind = relative_motion, .x = 5, .y = 6},
+  };
+  const auto result = lvh::detail::test::macos_backend_mouse_events(events, true);
+
+  ASSERT_EQ(result.statuses.size(), events.size());
+  EXPECT_EQ(result.statuses.front().code(), lvh::ErrorCode::backend_failure);
+  for (std::size_t i = 1; i < result.statuses.size(); ++i) {
+    ASSERT_TRUE(result.statuses[i].ok()) << result.statuses[i].message();
+  }
+  ASSERT_EQ(result.events.size(), 5U);
+  EXPECT_EQ(result.cursor_warps, result.events.size());
+  EXPECT_EQ(result.events[0].event_type, kCGEventMouseMoved);
+  EXPECT_EQ(result.events[1].event_type, kCGEventLeftMouseDown);
+  EXPECT_EQ(result.events[1].click_count, 1);
+  EXPECT_EQ(result.events[2].event_type, kCGEventLeftMouseDragged);
+  EXPECT_EQ(result.events[3].event_type, kCGEventLeftMouseUp);
+  EXPECT_EQ(result.events[4].event_type, kCGEventMouseMoved);
+}
+
+TEST_F(MacosBackendTest, RejectsMouseSubmissionWithoutAnEventSource) {
+  using enum lvh::MouseEventKind;
+
+  const auto result = lvh::detail::test::macos_backend_mouse_events({
+                                                                      {.kind = relative_motion, .x = 1, .y = 2},
+                                                                    },
+                                                                    false,
+                                                                    false);
+
+  ASSERT_EQ(result.statuses.size(), 1U);
+  EXPECT_EQ(result.statuses[0].code(), lvh::ErrorCode::backend_failure);
+  EXPECT_EQ(result.creation_attempts, 0U);
+  EXPECT_EQ(result.cursor_warps, 0U);
+  EXPECT_TRUE(result.events.empty());
 }
 
 TEST_F(MacosBackendTest, ReportsCapabilitiesAndUnsupportedDevices) {
