@@ -650,8 +650,13 @@ namespace lvh::detail {
       return it->second;
     }
 
+    /**
+     * @brief Convert a virtual key to a Linux key code, including the ABNT2 extra slash key.
+     * @param key_code Windows virtual key or an extended editing key code.
+     * @return Linux key code, or -1 when the key is unsupported.
+     */
     int key_code_to_linux(KeyboardKeyCode key_code) {
-      static constexpr std::array<std::pair<KeyboardKeyCode, int>, 52> special_keys {{
+      static constexpr std::array<std::pair<KeyboardKeyCode, int>, 53> special_keys {{
         {0x08, KEY_BACKSPACE},
         {0x09, KEY_TAB},
         {0x0D, KEY_ENTER},
@@ -695,6 +700,7 @@ namespace lvh::detail {
         {0xBE, KEY_DOT},
         {0xBF, KEY_SLASH},
         {0xC0, KEY_GRAVE},
+        {0xC1, KEY_RO},
         {0xDB, KEY_LEFTBRACE},
         {0xDC, KEY_BACKSLASH},
         {0xDD, KEY_RIGHTBRACE},
