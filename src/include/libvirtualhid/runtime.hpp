@@ -988,7 +988,7 @@ namespace lvh {
     Runtime(Runtime &&other) noexcept;
 
     /**
-     * @brief Move assign a runtime.
+     * @brief Move assign a runtime and close the devices owned by the replaced runtime.
      *
      * @param other Runtime to move from.
      * @return This runtime.

@@ -1186,7 +1186,13 @@ namespace lvh {
       state_ {std::make_shared<detail::RuntimeState>(options)} {}
 
   Runtime::Runtime(Runtime &&) noexcept = default;
-  Runtime &Runtime::operator=(Runtime &&) noexcept = default;
+
+  Runtime &Runtime::operator=(Runtime &&other) noexcept {
+    Runtime replacement {std::move(other)};
+    // The temporary closes the replaced runtime's devices when it is destroyed.
+    state_.swap(replacement.state_);
+    return *this;
+  }
 
   Runtime::~Runtime() {
     if (state_) {

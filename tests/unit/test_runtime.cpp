@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 // local includes
@@ -36,6 +37,43 @@ TEST(RuntimeTest, FakeBackendReportsCapabilities) {
   EXPECT_TRUE(runtime->capabilities().supports_pen_tablet);
   EXPECT_TRUE(runtime->capabilities().supports_output_reports);
   EXPECT_FALSE(runtime->capabilities().requires_installed_driver);
+}
+
+TEST(RuntimeTest, MoveAssignmentClosesReplacedDevices) {
+  auto runtime = lvh::Runtime::create();
+  auto old_gamepad = runtime->create_gamepad(lvh::profiles::xbox_360());
+  auto old_keyboard = runtime->create_keyboard();
+  ASSERT_TRUE(old_gamepad);
+  ASSERT_TRUE(old_keyboard);
+
+  auto replacement = lvh::Runtime::create();
+  auto new_gamepad = replacement->create_gamepad(lvh::profiles::xbox_360());
+  ASSERT_TRUE(new_gamepad);
+
+  *runtime = std::move(*replacement);
+
+  EXPECT_FALSE(old_gamepad.gamepad->is_open());
+  EXPECT_FALSE(old_keyboard.keyboard->is_open());
+  EXPECT_EQ(old_gamepad.gamepad->submit({}).code(), lvh::ErrorCode::device_closed);
+  EXPECT_EQ(runtime->active_device_count(), 1U);
+  EXPECT_TRUE(new_gamepad.gamepad->submit({}).ok());
+
+  *replacement = std::move(*runtime);
+  EXPECT_EQ(replacement->active_device_count(), 1U);
+  replacement.reset();
+  EXPECT_FALSE(new_gamepad.gamepad->is_open());
+}
+
+TEST(RuntimeTest, SelfMoveAssignmentKeepsDevicesOpen) {
+  auto runtime = lvh::Runtime::create();
+  auto created = runtime->create_gamepad(lvh::profiles::xbox_360());
+  ASSERT_TRUE(created);
+
+  auto &same_runtime = *runtime;
+  *runtime = std::move(same_runtime);
+
+  EXPECT_EQ(runtime->active_device_count(), 1U);
+  EXPECT_TRUE(created.gamepad->submit({}).ok());
 }
 
 TEST(RuntimeTest, RoutesDiagnosticsToConsumerCallback) {
