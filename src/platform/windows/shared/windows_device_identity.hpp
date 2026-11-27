@@ -10,7 +10,9 @@
 #include <bcrypt.h>
 
 // standard includes
+#include <array>
 #include <bit>
+#include <cstddef>
 #include <cstdint>
 #include <string>
 
@@ -26,17 +28,19 @@ namespace lvh::detail::windows {
    * @return Status from the Windows random number generator.
    */
   inline NTSTATUS generate_random_guid(GUID &guid) {
-    GUID generated {};
+    std::array<std::byte, sizeof(GUID)> random_bytes {};
     const auto status = ::BCryptGenRandom(
       nullptr,
-      std::bit_cast<PUCHAR>(&generated),
-      static_cast<ULONG>(sizeof(generated)),
+      std::bit_cast<PUCHAR>(random_bytes.data()),
+      static_cast<ULONG>(random_bytes.size()),
       BCRYPT_USE_SYSTEM_PREFERRED_RNG
     );
     if (status == 0) {
-      generated.Data3 = static_cast<unsigned short>((generated.Data3 & 0x0FFFU) | 0x4000U);
-      generated.Data4[0] = static_cast<unsigned char>((generated.Data4[0] & 0x3FU) | 0x80U);
-      guid = generated;
+      constexpr auto variant_byte_offset = offsetof(GUID, Data4);
+      random_bytes[variant_byte_offset] =
+        (random_bytes[variant_byte_offset] & std::byte {0x3FU}) | std::byte {0x80U};
+      guid = std::bit_cast<GUID>(random_bytes);
+      guid.Data3 = static_cast<unsigned short>((guid.Data3 & 0x0FFFU) | 0x4000U);
     }
     return status;
   }
