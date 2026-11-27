@@ -542,8 +542,22 @@ namespace {
     delete_vhf_devices_for_device(device);
   }
 
+  /**
+   * @brief Create and start a VHF device with the container selected for its type.
+   *
+   * @param device UMDF control device owning the VHF target.
+   * @param record State for the new virtual device.
+   * @return Windows status for device creation and startup.
+   */
   NTSTATUS create_vhf_device(WDFDEVICE device, const std::shared_ptr<DeviceRecord> &record) {
-    auto status = initialize_vhf_target(device, record);
+    GUID container_id {};
+    auto status = lvh::detail::windows::assign_vhf_container_id(record->request.device_type, container_id);
+    if (!NT_SUCCESS(status)) {
+      trace_status("create_vhf_device assign_vhf_container_id", status);
+      return status;
+    }
+
+    status = initialize_vhf_target(device, record);
     if (!NT_SUCCESS(status)) {
       return status;
     }
@@ -566,6 +580,7 @@ namespace {
     vhf_config.VendorID = record->request.hardware_ids.vendor_id;
     vhf_config.ProductID = record->request.hardware_ids.product_id;
     vhf_config.VersionNumber = record->request.hardware_ids.device_version;
+    vhf_config.ContainerID = container_id;
     vhf_config.HardwareIDsLength = static_cast<USHORT>(record->hardware_ids.size() * sizeof(wchar_t));
     vhf_config.HardwareIDs = record->hardware_ids.data();
     vhf_config.EvtVhfReadyForNextReadReport = LvhEvtVhfReadyForNextReadReport;

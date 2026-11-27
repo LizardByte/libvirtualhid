@@ -1,10 +1,18 @@
 /**
  * @file src/platform/windows/shared/windows_device_identity.hpp
- * @brief Windows virtual HID device hardware-ID helpers shared by the driver and tests.
+ * @brief Windows virtual HID device identity helpers.
  */
 #pragma once
 
+// platform includes
+#include <Windows.h>
+// BCrypt declarations depend on Windows types.
+#include <bcrypt.h>
+
 // standard includes
+#include <array>
+#include <bit>
+#include <cstddef>
 #include <cstdint>
 #include <string>
 
@@ -12,6 +20,49 @@
 #include "lvh_windows_protocol.h"
 
 namespace lvh::detail::windows {
+
+  /**
+   * @brief Generate a version 4 GUID for one virtual device instance.
+   *
+   * @param guid Destination for the generated GUID on success.
+   * @return Status from the Windows random number generator.
+   */
+  inline NTSTATUS generate_random_guid(GUID &guid) {
+    std::array<std::byte, sizeof(GUID)> random_bytes {};
+    const auto status = ::BCryptGenRandom(
+      nullptr,
+      std::bit_cast<PUCHAR>(random_bytes.data()),
+      static_cast<ULONG>(random_bytes.size()),
+      BCRYPT_USE_SYSTEM_PREFERRED_RNG
+    );
+    if (status == 0) {
+      constexpr auto variant_byte_offset = offsetof(GUID, Data4);
+      random_bytes[variant_byte_offset] =
+        (random_bytes[variant_byte_offset] & std::byte {0x3FU}) | std::byte {0x80U};
+      guid = std::bit_cast<GUID>(random_bytes);
+      guid.Data3 = static_cast<unsigned short>((guid.Data3 & 0x0FFFU) | 0x4000U);
+    }
+    return status;
+  }
+
+  /**
+   * @brief Select the Plug and Play container for a VHF device.
+   *
+   * A separate container lets Windows distinguish each virtual mouse from an
+   * integrated pointing device eligible for touchpad click suppression.
+   * Keyboards and gamepads use VHF's default container selection.
+   *
+   * @param device_type Windows protocol device type.
+   * @param container_id Destination for the GUID, or a zero GUID for the default.
+   * @return Zero on success or a Windows error if GUID generation fails.
+   */
+  inline NTSTATUS assign_vhf_container_id(std::uint32_t device_type, GUID &container_id) {
+    container_id = {};
+    if (device_type == LVH_WINDOWS_DEVICE_MOUSE) {
+      return generate_random_guid(container_id);
+    }
+    return 0;
+  }
 
   constexpr wchar_t hardware_id_hex_digit(std::uint16_t value) {
     constexpr auto digits = L"0123456789ABCDEF";

@@ -159,6 +159,33 @@ TEST_F(WindowsDriverProtocolTest, VhfResponseAcceptsExactlySizedRequests) {
   EXPECT_EQ(unnumbered_buffer, (std::array<std::uint8_t, 4> {0, 1, 2, 3}));
 }
 
+/**
+ * @brief Verify that separate VHF mouse instances receive distinct container GUIDs.
+ */
+TEST_F(WindowsDriverProtocolTest, VhfMiceUseSeparateDeviceContainers) {
+  GUID first_container {};
+  GUID second_container {};
+  ASSERT_EQ(lvh::detail::windows::assign_vhf_container_id(LVH_WINDOWS_DEVICE_MOUSE, first_container), 0);
+  ASSERT_EQ(lvh::detail::windows::assign_vhf_container_id(LVH_WINDOWS_DEVICE_MOUSE, second_container), 0);
+  EXPECT_NE(first_container, second_container);
+  for (const auto &container : {first_container, second_container}) {
+    EXPECT_EQ(container.Data3 & 0xF000U, 0x4000U);
+    EXPECT_EQ(container.Data4[0] & 0xC0U, 0x80U);
+  }
+}
+
+/**
+ * @brief Verify that VHF keyboards and gamepads keep using the default container.
+ */
+TEST_F(WindowsDriverProtocolTest, VhfKeyboardsAndGamepadsUseDefaultDeviceContainer) {
+  for (const auto device_type : {LVH_WINDOWS_DEVICE_KEYBOARD, LVH_WINDOWS_DEVICE_GAMEPAD}) {
+    SCOPED_TRACE(device_type);
+    GUID container {.Data1 = 1};
+    ASSERT_EQ(lvh::detail::windows::assign_vhf_container_id(device_type, container), 0);
+    EXPECT_EQ(container, GUID {});
+  }
+}
+
 TEST_F(WindowsDriverProtocolTest, SeriesUsesCapturedXInputHidIdentity) {
   auto request = series_request();
   request.hardware_ids.product_id = 0x0B12;
