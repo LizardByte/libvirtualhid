@@ -495,12 +495,9 @@ namespace lvh::detail {
       MacosInputState():
           source {CGEventSourceCreate(kCGEventSourceStateHIDSystemState)},
           keyboard_source {CGEventSourceCreate(kCGEventSourceStatePrivate)},
-          scroll_lines_per_detent_value {read_scroll_lines_per_detent(scrollwheel_scaling)} {
-        // Each move warps the cursor. The default 250ms suppression then drops the
-        // following click and mouse-moved events. The cursor image still moves.
-        if (source) {
-          CGEventSourceSetLocalEventsSuppressionInterval(source, 0);
-        }
+          scroll_lines_per_detent_value {read_scroll_lines_per_detent(scrollwheel_scaling)},
+          last_screen_locked {screen_locked()} {
+        configure_source();
       }
 
       MacosInputState(const MacosInputState &) = delete;
@@ -517,12 +514,68 @@ namespace lvh::detail {
         }
       }
 
+      /**
+       * @brief Recreate the mouse source when the session lock state changed.
+       *
+       * A HID-system-state source created before the session locks (or unlocks)
+       * stops moving the cursor afterwards, clicks and keyboard still work.
+       * The caller must hold `source_mutex`.
+       */
+      void refresh_source_on_lock_change() {
+        const auto now = std::chrono::steady_clock::now();
+        if (now - last_lock_check < std::chrono::milliseconds {500}) {
+          return;
+        }
+        last_lock_check = now;
+
+        const bool locked = screen_locked();
+        if (locked == last_screen_locked) {
+          return;
+        }
+        last_screen_locked = locked;
+
+        if (source) {
+          CFRelease(source);
+        }
+        source = CGEventSourceCreate(kCGEventSourceStateHIDSystemState);
+        configure_source();
+      }
+
+      std::mutex source_mutex;  ///< Guards `source` replacement across mouse devices.
       CGEventSourceRef source {};  ///< Mouse/scroll source with local-event suppression disabled.
       CGEventSourceRef keyboard_source {};  ///< CoreGraphics event source for keyboard events.
       double scrollwheel_scaling = default_scrollwheel_scaling;  ///< Raw macOS scroll-wheel scaling preference.
       int scroll_lines_per_detent_value = default_scroll_lines_per_detent;  ///< Logical lines per wheel detent.
       CGEventFlags keyboard_flags {};  ///< Active modifier flags applied to mouse events.
       std::mutex keyboard_mutex;  ///< Guards shared keyboard modifier state.
+      std::chrono::steady_clock::time_point last_lock_check {};  ///< Last lock-state poll.
+      bool last_screen_locked = false;  ///< Lock state the current `source` was created in.
+
+    private:
+      /**
+       * @brief Read the session lock state published by loginwindow.
+       * @return `true` when the screen is locked.
+       */
+      static bool screen_locked() {
+        bool locked = false;
+        if (const auto session = CGSessionCopyCurrentDictionary()) {
+          const auto value = static_cast<CFBooleanRef>(CFDictionaryGetValue(session, CFSTR("CGSSessionScreenIsLocked")));
+          locked = value && CFBooleanGetValue(value);
+          CFRelease(session);
+        }
+        return locked;
+      }
+
+      /**
+       * @brief Disable local-event suppression on the mouse source.
+       */
+      void configure_source() const {
+        // Each move warps the cursor. The default 250ms suppression then drops the
+        // following click and mouse-moved events. The cursor image still moves.
+        if (source) {
+          CGEventSourceSetLocalEventsSuppressionInterval(source, 0);
+        }
+      }
     };
 
     /**
@@ -745,6 +798,8 @@ namespace lvh::detail {
         if (!open_) {
           return OperationStatus::failure(ErrorCode::device_closed, "macOS mouse is closed");
         }
+        std::lock_guard source_lock {state_->source_mutex};
+        state_->refresh_source_on_lock_change();
         if (!state_->source) {
           return OperationStatus::failure(ErrorCode::backend_failure, "macOS mouse event source is unavailable");
         }
@@ -940,7 +995,7 @@ namespace lvh::detail {
           return {OperationStatus::failure(ErrorCode::unsupported_profile, "device profile is not a mouse"), nullptr};
         }
         auto state = input_state();
-        if (!state->source) {
+        if (std::lock_guard source_lock {state->source_mutex}; !state->source) {
           return {OperationStatus::failure(ErrorCode::backend_failure, "macOS mouse event source is unavailable"), nullptr};
         }
 
