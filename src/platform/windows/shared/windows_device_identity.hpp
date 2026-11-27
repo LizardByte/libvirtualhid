@@ -1,10 +1,16 @@
 /**
  * @file src/platform/windows/shared/windows_device_identity.hpp
- * @brief Windows virtual HID device hardware-ID helpers shared by the driver and tests.
+ * @brief Windows virtual HID device identity helpers.
  */
 #pragma once
 
+// platform includes
+#include <Windows.h>
+// BCrypt declarations depend on Windows types.
+#include <bcrypt.h>
+
 // standard includes
+#include <bit>
 #include <cstdint>
 #include <string>
 
@@ -12,6 +18,47 @@
 #include "lvh_windows_protocol.h"
 
 namespace lvh::detail::windows {
+
+  /**
+   * @brief Generate a version 4 GUID for one virtual device instance.
+   *
+   * @param guid Destination for the generated GUID on success.
+   * @return Status from the Windows random number generator.
+   */
+  inline NTSTATUS generate_random_guid(GUID &guid) {
+    GUID generated {};
+    const auto status = ::BCryptGenRandom(
+      nullptr,
+      std::bit_cast<PUCHAR>(&generated),
+      static_cast<ULONG>(sizeof(generated)),
+      BCRYPT_USE_SYSTEM_PREFERRED_RNG
+    );
+    if (status == 0) {
+      generated.Data3 = static_cast<unsigned short>((generated.Data3 & 0x0FFFU) | 0x4000U);
+      generated.Data4[0] = static_cast<unsigned char>((generated.Data4[0] & 0x3FU) | 0x80U);
+      guid = generated;
+    }
+    return status;
+  }
+
+  /**
+   * @brief Select the Plug and Play container for a VHF device.
+   *
+   * A separate container lets Windows distinguish each virtual mouse from an
+   * integrated pointing device eligible for touchpad click suppression.
+   * Keyboards and gamepads use VHF's default container selection.
+   *
+   * @param device_type Windows protocol device type.
+   * @param container_id Destination for the GUID, or a zero GUID for the default.
+   * @return Zero on success or a Windows error if GUID generation fails.
+   */
+  inline NTSTATUS assign_vhf_container_id(std::uint32_t device_type, GUID &container_id) {
+    container_id = {};
+    if (device_type == LVH_WINDOWS_DEVICE_MOUSE) {
+      return generate_random_guid(container_id);
+    }
+    return 0;
+  }
 
   constexpr wchar_t hardware_id_hex_digit(std::uint16_t value) {
     constexpr auto digits = L"0123456789ABCDEF";

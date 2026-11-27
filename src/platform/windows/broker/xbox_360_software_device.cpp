@@ -8,11 +8,11 @@
 
 #include "xbox_360_software_device.hpp"
 
+#include "windows_device_identity.hpp"
 #include "xbox_360_protocol.hpp"
 
 #include <algorithm>
 #include <array>
-#include <bcrypt.h>
 #include <bit>
 #include <cfgmgr32.h>
 #include <combaseapi.h>
@@ -142,20 +142,6 @@ namespace lvh::windows {
         message.pop_back();
       }
       return message;
-    }
-
-    bool random_guid(GUID &guid) {
-      std::array<std::byte, sizeof(GUID)> random_bytes {};
-      if (const auto status = ::BCryptGenRandom(nullptr, std::bit_cast<PUCHAR>(random_bytes.data()), static_cast<ULONG>(random_bytes.size()), BCRYPT_USE_SYSTEM_PREFERRED_RNG); status != 0) {
-        return false;
-      }
-
-      constexpr auto variant_byte_offset = offsetof(GUID, Data4);
-      random_bytes[variant_byte_offset] =
-        (random_bytes[variant_byte_offset] & std::byte {0x3FU}) | std::byte {0x80U};
-      guid = std::bit_cast<GUID>(random_bytes);
-      guid.Data3 = static_cast<unsigned short>((guid.Data3 & 0x0FFFU) | 0x4000U);
-      return true;
     }
 
     std::wstring guid_string(const GUID &guid) {
@@ -387,7 +373,7 @@ namespace lvh::windows {
 
     GUID container_id {};
     GUID instance_guid {};
-    if (!random_guid(container_id) || !random_guid(instance_guid)) {
+    if (detail::windows::generate_random_guid(container_id) != 0 || detail::windows::generate_random_guid(instance_guid) != 0) {
       message = "Unable to generate Xbox 360 software-device identities.";
       return nullptr;
     }
