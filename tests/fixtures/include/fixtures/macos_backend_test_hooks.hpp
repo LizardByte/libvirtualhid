@@ -86,6 +86,24 @@ namespace lvh::detail::test {
   };
 
   /**
+   * @brief One mouse submission made under a simulated session lock state.
+   */
+  struct MacosMouseLockSubmission {
+    bool screen_locked {};  ///< Whether the session reports a locked screen.
+    bool poll_due {};  ///< Whether the backend's lock-state poll interval has elapsed.
+    bool fail_source_creation {};  ///< Whether the next mouse event source creation fails.
+  };
+
+  /**
+   * @brief Result of one mouse submission made under a simulated session lock state.
+   */
+  struct MacosMouseLockSubmissionResult {
+    OperationStatus status;  ///< Status returned by the submission.
+    std::size_t source_creations {};  ///< Mouse event source creations attempted so far.
+    std::optional<double> suppression_interval;  ///< Suppression interval on the posted event.
+  };
+
+  /**
    * @brief Portable view of one CoreGraphics keyboard event the macOS backend built.
    */
   struct MacosKeyEventResult {
@@ -233,6 +251,16 @@ namespace lvh::detail::test {
     const std::vector<MouseEvent> &events,
     bool fail_first_creation = false,
     bool source_available = true
+  );
+
+  /**
+   * @brief Submit relative mouse motion across simulated session lock changes.
+   *
+   * @param submissions Lock state and poll timing for each submission.
+   * @return Status, mouse event source count, and suppression interval after each submission.
+   */
+  std::vector<MacosMouseLockSubmissionResult> macos_backend_mouse_lock_submissions(
+    const std::vector<MacosMouseLockSubmission> &submissions
   );
 
   /**

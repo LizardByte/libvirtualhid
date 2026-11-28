@@ -63,7 +63,43 @@ namespace {
     std::optional<lvh::detail::test::MacosPoint> warped_location;
     lvh::detail::test::MacosMouseEventsResult *events = nullptr;  ///< Optional capture of native event metadata.
     bool fail_first_creation = false;  ///< Whether to fail the next mouse event allocation.
+    bool screen_locked = false;  ///< Session lock state reported to the backend.
+    std::size_t source_creations {};  ///< HID-system-state event source creations the backend attempted.
+    bool fail_next_source_creation = false;  ///< Whether to fail the next mouse event source creation.
   };
+
+  /**
+   * @brief Report the scoped session lock state instead of the real login session.
+   *
+   * @return Session dictionary owned by the caller, or null when the session is unavailable.
+   */
+  CFDictionaryRef mouse_session_dictionary() {
+    if (!mouse_environment()) {
+      return CGSessionCopyCurrentDictionary();
+    }
+    const auto session = CFDictionaryCreateMutable(kCFAllocatorDefault, 1, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+    if (session) {
+      CFDictionarySetValue(session, CFSTR("CGSSessionScreenIsLocked"), mouse_environment()->screen_locked ? kCFBooleanTrue : kCFBooleanFalse);
+    }
+    return session;
+  }
+
+  /**
+   * @brief Count mouse event source creations and optionally fail the next one.
+   *
+   * @param state Requested event source state.
+   * @return New native event source, or null when creation fails.
+   */
+  CGEventSourceRef mouse_create_event_source(CGEventSourceStateID state) {
+    if (mouse_environment() && state == kCGEventSourceStateHIDSystemState) {
+      ++mouse_environment()->source_creations;
+      if (mouse_environment()->fail_next_source_creation) {
+        mouse_environment()->fail_next_source_creation = false;
+        return nullptr;
+      }
+    }
+    return CGEventSourceCreate(state);
+  }
 
   /**
    * @brief Age cursor snapshots while capturing fresh mouse event submissions.
@@ -179,9 +215,13 @@ namespace {
 #define CGEventGetLocation mouse_event_location
 #define CGEventPost mouse_event_post
 #define CGWarpMouseCursorPosition mouse_warp_cursor_position
+#define CGSessionCopyCurrentDictionary mouse_session_dictionary
+#define CGEventSourceCreate mouse_create_event_source
 #define create_platform_backend create_platform_backend_for_macos_backend_test_hooks
 #include "../../src/platform/macos/macos_backend.cpp"
 #undef create_platform_backend
+#undef CGEventSourceCreate
+#undef CGSessionCopyCurrentDictionary
 #undef CGWarpMouseCursorPosition
 #undef CGEventPost
 #undef CGEventGetLocation
@@ -345,6 +385,34 @@ namespace lvh::detail::test {
       result.statuses.push_back(mouse.submit(event));
     }
     return result;
+  }
+
+  std::vector<MacosMouseLockSubmissionResult> macos_backend_mouse_lock_submissions(
+    const std::vector<MacosMouseLockSubmission> &submissions
+  ) {
+    MacosMouseEventsResult captured;
+    MouseEnvironment environment {{.origin_x = 0, .origin_y = 0, .width = 400, .height = 200}};
+    environment.events = &captured;
+
+    const auto state = std::make_shared<macos::MacosInputState>();
+    macos::MacosMouse mouse {state, {}};
+
+    std::vector<MacosMouseLockSubmissionResult> results;
+    for (const auto &submission : submissions) {
+      environment.screen_locked = submission.screen_locked;
+      environment.fail_next_source_creation = submission.fail_source_creation;
+      if (submission.poll_due) {
+        state->last_lock_check = {};
+      }
+      captured.events.clear();
+      const auto status = mouse.submit({.kind = MouseEventKind::relative_motion, .x = 1, .y = 1});
+      results.push_back({
+        .status = status,
+        .source_creations = environment.source_creations,
+        .suppression_interval = captured.events.empty() ? std::nullopt : captured.events.back().suppression_interval,
+      });
+    }
+    return results;
   }
 
   MacosBackendUtilityResult macos_backend_utilities() {
