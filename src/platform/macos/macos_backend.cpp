@@ -532,13 +532,18 @@ namespace lvh::detail {
         if (locked == last_screen_locked) {
           return;
         }
-        last_screen_locked = locked;
 
+        // Keep the current source and retry on the next poll when creation fails.
+        const auto refreshed_source = CGEventSourceCreate(kCGEventSourceStateHIDSystemState);
+        if (!refreshed_source) {
+          return;
+        }
         if (source) {
           CFRelease(source);
         }
-        source = CGEventSourceCreate(kCGEventSourceStateHIDSystemState);
+        source = refreshed_source;
         configure_source();
+        last_screen_locked = locked;
       }
 
       std::mutex source_mutex;  ///< Guards `source` replacement across mouse devices.

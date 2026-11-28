@@ -64,7 +64,8 @@ namespace {
     lvh::detail::test::MacosMouseEventsResult *events = nullptr;  ///< Optional capture of native event metadata.
     bool fail_first_creation = false;  ///< Whether to fail the next mouse event allocation.
     bool screen_locked = false;  ///< Session lock state reported to the backend.
-    std::size_t source_creations {};  ///< HID-system-state event sources the backend created.
+    std::size_t source_creations {};  ///< HID-system-state event source creations the backend attempted.
+    bool fail_next_source_creation = false;  ///< Whether to fail the next mouse event source creation.
   };
 
   /**
@@ -84,7 +85,7 @@ namespace {
   }
 
   /**
-   * @brief Count the mouse event sources the backend creates.
+   * @brief Count mouse event source creations and optionally fail the next one.
    *
    * @param state Requested event source state.
    * @return New native event source, or null when creation fails.
@@ -92,6 +93,10 @@ namespace {
   CGEventSourceRef mouse_create_event_source(CGEventSourceStateID state) {
     if (mouse_environment() && state == kCGEventSourceStateHIDSystemState) {
       ++mouse_environment()->source_creations;
+      if (mouse_environment()->fail_next_source_creation) {
+        mouse_environment()->fail_next_source_creation = false;
+        return nullptr;
+      }
     }
     return CGEventSourceCreate(state);
   }
@@ -395,6 +400,7 @@ namespace lvh::detail::test {
     std::vector<MacosMouseLockSubmissionResult> results;
     for (const auto &submission : submissions) {
       environment.screen_locked = submission.screen_locked;
+      environment.fail_next_source_creation = submission.fail_source_creation;
       if (submission.poll_due) {
         state->last_lock_check = {};
       }

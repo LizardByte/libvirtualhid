@@ -91,6 +91,7 @@ namespace lvh::detail::test {
   struct MacosMouseLockSubmission {
     bool screen_locked {};  ///< Whether the session reports a locked screen.
     bool poll_due {};  ///< Whether the backend's lock-state poll interval has elapsed.
+    bool fail_source_creation {};  ///< Whether the next mouse event source creation fails.
   };
 
   /**
@@ -98,7 +99,7 @@ namespace lvh::detail::test {
    */
   struct MacosMouseLockSubmissionResult {
     OperationStatus status;  ///< Status returned by the submission.
-    std::size_t source_creations {};  ///< Mouse event sources created so far.
+    std::size_t source_creations {};  ///< Mouse event source creations attempted so far.
     std::optional<double> suppression_interval;  ///< Suppression interval on the posted event.
   };
 

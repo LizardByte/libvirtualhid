@@ -519,6 +519,26 @@ TEST_F(MacosBackendTest, RecreatesMouseEventSourceWhenSessionLockStateChanges) {
   }
 }
 
+TEST_F(MacosBackendTest, RetriesMouseEventSourceRecreationAfterCreationFailure) {
+  const std::vector<lvh::detail::test::MacosMouseLockSubmission> submissions {
+    {.screen_locked = false, .poll_due = true},
+    {.screen_locked = true, .poll_due = true, .fail_source_creation = true},
+    {.screen_locked = true, .poll_due = true},
+    {.screen_locked = true, .poll_due = true},
+  };
+  const auto results = lvh::detail::test::macos_backend_mouse_lock_submissions(submissions);
+
+  ASSERT_EQ(results.size(), submissions.size());
+  const std::array<std::size_t, 4> expected_source_creations {1, 2, 3, 3};
+  for (std::size_t index = 0; index < results.size(); ++index) {
+    SCOPED_TRACE(index);
+    ASSERT_TRUE(results[index].status.ok()) << results[index].status.message();
+    EXPECT_EQ(results[index].source_creations, expected_source_creations[index]);
+    ASSERT_TRUE(results[index].suppression_interval.has_value());
+    EXPECT_DOUBLE_EQ(*results[index].suppression_interval, 0.0);
+  }
+}
+
 TEST_F(MacosBackendTest, ReportsCapabilitiesAndUnsupportedDevices) {
   const auto result = lvh::detail::test::macos_backend_utilities();
 
